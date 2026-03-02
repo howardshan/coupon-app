@@ -58,9 +58,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final searchQuery = ref.watch(searchQueryProvider);
     final isSearching = searchQuery.isNotEmpty;
     final deals = ref.watch(dealsListProvider(0));
-    final featuredDeals = ref.watch(featuredDealsProvider);
     final merchantResults =
         isSearching ? ref.watch(merchantSearchProvider) : null;
+    final merchantList = ref.watch(merchantListProvider);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -69,7 +69,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           RefreshIndicator(
             onRefresh: () async {
               ref.invalidate(dealsListProvider);
-              ref.invalidate(featuredDealsProvider);
+              ref.invalidate(merchantListProvider);
               if (isSearching) ref.invalidate(merchantSearchProvider);
             },
             child: CustomScrollView(
@@ -378,61 +378,38 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     ),
                   ),
 
-                  // Featured deals (horizontal)
-                  featuredDeals.when(
-                    data: (featured) => featured.isEmpty
+                  // Deals 一行3个（取前3个）
+                  deals.when(
+                    data: (list) => list.isEmpty
                         ? const SliverToBoxAdapter(
                             child: SizedBox.shrink())
                         : SliverToBoxAdapter(
-                            child: Column(
-                              crossAxisAlignment:
-                                  CrossAxisAlignment.start,
-                              children: [
-                                Padding(
-                                  padding: const EdgeInsets.fromLTRB(
-                                      16, 8, 16, 10),
-                                  child: Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      const Text(
-                                        'Featured',
-                                        style: TextStyle(
-                                          fontSize: 18,
-                                          fontWeight: FontWeight.bold,
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(
+                                  16, 8, 16, 0),
+                              child: SizedBox(
+                                height: 180,
+                                child: Row(
+                                  children: List.generate(
+                                    list.length > 3
+                                        ? 3
+                                        : list.length,
+                                    (i) => Expanded(
+                                      child: Padding(
+                                        padding: EdgeInsets.only(
+                                          left: i == 0 ? 0 : 4,
+                                          right: i == 2 ||
+                                                  i == list.length - 1
+                                              ? 0
+                                              : 4,
                                         ),
+                                        child: _SmallDealCard(
+                                            deal: list[i]),
                                       ),
-                                      TextButton(
-                                        onPressed: () =>
-                                            context.push('/search'),
-                                        child: const Text(
-                                          'View All',
-                                          style: TextStyle(
-                                            color: AppColors.primary,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                SizedBox(
-                                  height: 190,
-                                  child: ListView.separated(
-                                    scrollDirection: Axis.horizontal,
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 16),
-                                    itemCount: featured.length,
-                                    separatorBuilder: (_, _) =>
-                                        const SizedBox(width: 12),
-                                    itemBuilder: (_, i) => SizedBox(
-                                      width: 190,
-                                      child: _SmallDealCard(
-                                          deal: featured[i]),
                                     ),
                                   ),
                                 ),
-                              ],
+                              ),
                             ),
                           ),
                     loading: () => const SliverToBoxAdapter(
@@ -441,50 +418,51 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         child: SizedBox.shrink()),
                   ),
 
-                  // All deals header
+                  // 分隔线
                   const SliverToBoxAdapter(
                     child: Padding(
-                      padding: EdgeInsets.fromLTRB(16, 20, 16, 10),
-                      child: Text(
-                        'High-Quality Deals',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
+                      padding: EdgeInsets.fromLTRB(16, 12, 16, 8),
+                      child: Divider(
+                        height: 1,
+                        thickness: 1,
+                        color: Color(0xFFE0E0E0),
                       ),
                     ),
                   ),
 
-                  // Deals vertical list
-                  deals.when(
-                    data: (list) => list.isEmpty
+                  // 商家双列网格
+                  merchantList.when(
+                    data: (merchants) => merchants.isEmpty
                         ? const SliverFillRemaining(
                             child: Center(
                               child: Column(
                                 mainAxisAlignment:
                                     MainAxisAlignment.center,
                                 children: [
-                                  Icon(Icons.search_off,
+                                  Icon(Icons.store_outlined,
                                       size: 64,
                                       color: AppColors.textHint),
                                   SizedBox(height: 12),
-                                  Text('No deals found'),
+                                  Text('No restaurants found'),
                                 ],
                               ),
                             ),
                           )
                         : SliverPadding(
                             padding:
-                                const EdgeInsets.fromLTRB(16, 0, 16, 100),
-                            sliver: SliverList(
+                                const EdgeInsets.fromLTRB(16, 8, 16, 100),
+                            sliver: SliverGrid(
+                              gridDelegate:
+                                  const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 2,
+                                mainAxisSpacing: 12,
+                                crossAxisSpacing: 12,
+                                childAspectRatio: 0.72,
+                              ),
                               delegate: SliverChildBuilderDelegate(
-                                (_, i) => Padding(
-                                  padding:
-                                      const EdgeInsets.only(bottom: 20),
-                                  child:
-                                      _LargeDealCard(deal: list[i]),
-                                ),
-                                childCount: list.length,
+                                (_, i) => _MerchantGridCard(
+                                    merchant: merchants[i]),
+                                childCount: merchants.length,
                               ),
                             ),
                           ),
@@ -1081,6 +1059,128 @@ class _SearchModeChip extends StatelessWidget {
             fontWeight: FontWeight.w600,
             color: selected ? Colors.white : AppColors.textSecondary,
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Merchant grid card (首页双列) ─────────────────────────────
+class _MerchantGridCard extends StatelessWidget {
+  final MerchantModel merchant;
+
+  const _MerchantGridCard({required this.merchant});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => context.push('/merchant/${merchant.id}'),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 10,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 图片
+            Expanded(
+              child: ClipRRect(
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(12),
+                ),
+                child: merchant.logoUrl != null &&
+                        merchant.logoUrl!.isNotEmpty
+                    ? CachedNetworkImage(
+                        imageUrl: merchant.logoUrl!,
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                      )
+                    : Container(
+                        color: AppColors.surfaceVariant,
+                        child: const Center(
+                          child: Icon(Icons.restaurant,
+                              size: 40, color: AppColors.textHint),
+                        ),
+                      ),
+              ),
+            ),
+            // 信息区
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 8, 8, 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 店名
+                  Text(
+                    merchant.name,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  // 评分 + 评价数
+                  Row(
+                    children: [
+                      if (merchant.avgRating != null) ...[
+                        const Icon(Icons.star,
+                            size: 13, color: Colors.amber),
+                        const SizedBox(width: 2),
+                        Text(
+                          merchant.avgRating!.toStringAsFixed(1),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                      ],
+                      if (merchant.totalReviewCount != null &&
+                          merchant.totalReviewCount! > 0)
+                        Text(
+                          '${merchant.totalReviewCount} reviews',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                    ],
+                  ),
+                  // 折扣价
+                  if (merchant.bestDiscount != null) ...[
+                    const SizedBox(height: 4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary
+                            .withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        'From \$${merchant.bestDiscount!.toStringAsFixed(0)}',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
