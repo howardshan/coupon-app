@@ -104,7 +104,7 @@ class CouponsRepository {
         'create-refund',
         body: {
           'orderId': orderId,
-          if (reason != null) 'reason': reason,
+          'reason': ?reason,
         },
       );
 
@@ -153,7 +153,7 @@ class CouponsRepository {
         'create-refund',
         body: {
           'orderId': orderId,
-          if (reason != null) 'reason': reason,
+          'reason': ?reason,
         },
       );
 

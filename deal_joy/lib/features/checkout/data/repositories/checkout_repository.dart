@@ -173,7 +173,7 @@ class CheckoutRepository {
           'currency': 'usd',
           'dealId': dealId,
           'userId': userId,
-          if (promoCode != null) 'promoCode': promoCode,
+          'promoCode': ?promoCode,
         },
       );
 
