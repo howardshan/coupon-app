@@ -10,23 +10,32 @@ final dealsRepositoryProvider = Provider<DealsRepository>((ref) {
   return DealsRepository(ref.watch(supabaseClientProvider));
 });
 
+// 选中的城市
+final selectedLocationProvider =
+    StateProvider<({String state, String metro, String city})>(
+      (ref) => (state: 'Texas', metro: 'DFW', city: 'Dallas'),
+    );
+
 // 选中的分类筛选
 final selectedCategoryProvider = StateProvider<String>((ref) => 'All');
 
 // 搜索关键词
 final searchQueryProvider = StateProvider<String>((ref) => '');
 
-// 精选 Deals
+// 精选 Deals（按城市过滤）
 final featuredDealsProvider = FutureProvider<List<DealModel>>((ref) async {
-  return ref.watch(dealsRepositoryProvider).fetchFeaturedDeals();
+  final city = ref.watch(selectedLocationProvider).city;
+  return ref.watch(dealsRepositoryProvider).fetchFeaturedDeals(city: city);
 });
 
-// Deals 列表（含筛选条件）
+// Deals 列表（含城市 + 分类 + 搜索筛选）
 final dealsListProvider =
     FutureProvider.family<List<DealModel>, int>((ref, page) async {
+  final city = ref.watch(selectedLocationProvider).city;
   final category = ref.watch(selectedCategoryProvider);
   final search = ref.watch(searchQueryProvider);
   return ref.watch(dealsRepositoryProvider).fetchDeals(
+        city: city,
         category: category,
         search: search,
         page: page,

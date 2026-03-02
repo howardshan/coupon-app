@@ -9,6 +9,7 @@ class DealsRepository {
   DealsRepository(this._client);
 
   Future<List<DealModel>> fetchDeals({
+    String? city,
     String? category,
     String? search,
     int page = 0,
@@ -20,12 +21,22 @@ class DealsRepository {
           .eq('is_active', true)
           .gt('expires_at', DateTime.now().toIso8601String());
 
+      if (city != null && city.isNotEmpty) {
+        query = query.ilike('address', '%$city%');
+      }
+
       if (category != null && category != 'All') {
         query = query.eq('category', category);
       }
 
       if (search != null && search.isNotEmpty) {
-        query = query.ilike('title', '%$search%');
+        final pattern = '%$search%';
+        query = query.or(
+          'title.ilike.$pattern,'
+          'description.ilike.$pattern,'
+          'category.ilike.$pattern,'
+          'address.ilike.$pattern',
+        );
       }
 
       final data = await query
@@ -42,14 +53,20 @@ class DealsRepository {
     }
   }
 
-  Future<List<DealModel>> fetchFeaturedDeals() async {
+  Future<List<DealModel>> fetchFeaturedDeals({String? city}) async {
     try {
-      final data = await _client
+      var query = _client
           .from('deals')
           .select('*, merchants(id, name, logo_url, phone)')
           .eq('is_active', true)
           .eq('is_featured', true)
-          .gt('expires_at', DateTime.now().toIso8601String())
+          .gt('expires_at', DateTime.now().toIso8601String());
+
+      if (city != null && city.isNotEmpty) {
+        query = query.ilike('address', '%$city%');
+      }
+
+      final data = await query
           .order('created_at', ascending: false)
           .limit(10);
       return (data as List).map((e) => DealModel.fromJson(e)).toList();
