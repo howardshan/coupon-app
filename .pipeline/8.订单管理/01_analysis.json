@@ -1,0 +1,50 @@
+{
+  "module": "8.订单系统 - 8.1 订单管理",
+  "requirements": {
+    "8.1.1_订单列表": {
+      "tabs": "All / Pending / Active / Completed / Refunded",
+      "card": "商家Logo + 名称 + Deal标题 + 数量金额 + 状态 + 下单时间",
+      "actions": {
+        "Pending": "Pay Now / Cancel",
+        "Active": "View Coupon / Refund",
+        "Completed": "Write Review",
+        "Refunded": "退款金额和时间"
+      }
+    },
+    "8.1.2_订单详情": {
+      "info": "订单号 + 下单时间 + 支付方式 + 支付时间 + Deal标题价格数量 + 商家名地址",
+      "amount": "单价 x 数量 = 小计 + 优惠券抵扣 = 实付金额",
+      "coupon_info": "Active → QR Code, Completed → 核销时间"
+    }
+  },
+  "status_mapping": {
+    "Pending": "refund_requested (no true pending state since orders created post-payment)",
+    "Active": "unused (paid, coupon ready)",
+    "Completed": "used (coupon redeemed)",
+    "Refunded": "refunded"
+  },
+  "existing_code": {
+    "implemented": [
+      "OrderModel - basic model (missing unit_price, updated_at, refund_reason)",
+      "DealSummary - nested deal info (missing merchant logo, address)",
+      "OrdersRepository - fetchUserOrders, fetchOrderById, requestRefund, fetchCoupon",
+      "OrdersProvider - userOrdersProvider, orderDetailProvider, couponDataProvider",
+      "OrdersScreen - simple flat list with _OrderCard (no tabs, no actions)",
+      "CouponScreen - QR code display for coupons",
+      "create-refund Edge Function - Stripe refund flow",
+      "Database schema - orders/coupons tables with RLS"
+    ],
+    "needs_modification": [
+      "OrderModel - add unit_price, updatedAt, refundReason fields",
+      "DealSummary - add merchant logoUrl, address fields",
+      "OrdersRepository - add refund via Edge Function, add status filter query",
+      "OrdersScreen - add TabBar (All/Active/Completed/Refunded), add action buttons, add order time",
+      "_OrderCard - add merchant logo, order time, action buttons per status",
+      "app_router.dart - add /orders/:orderId route for order detail"
+    ],
+    "needs_creation": [
+      "OrderDetailScreen - full order detail page with amount breakdown and coupon info",
+      "OrdersProvider - add filtered orders provider, refund provider"
+    ]
+  }
+}

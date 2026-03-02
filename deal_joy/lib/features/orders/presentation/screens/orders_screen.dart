@@ -66,7 +66,9 @@ class _OrderCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         onTap: order.isUnused
             ? () => context.push('/coupon/${order.couponId}')
-            : null,
+            : order.isRefundRequested || order.isRefunded
+                ? () => context.push('/refund/${order.id}')
+                : null,
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Row(
@@ -118,7 +120,7 @@ class _OrderCard extends StatelessWidget {
                 ),
               ),
 
-              // Status badge
+              // Status badge + actions
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
@@ -140,8 +142,20 @@ class _OrderCard extends StatelessWidget {
                   ),
                   if (order.isUnused) ...[
                     const SizedBox(height: 6),
-                    const Icon(Icons.qr_code_2,
-                        color: AppColors.primary, size: 20),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.qr_code_2,
+                            color: AppColors.primary, size: 20),
+                        const SizedBox(width: 8),
+                        // 退款快捷入口
+                        GestureDetector(
+                          onTap: () => context.push('/refund/${order.id}'),
+                          child: const Icon(Icons.undo_outlined,
+                              color: AppColors.error, size: 20),
+                        ),
+                      ],
+                    ),
                   ],
                 ],
               ),

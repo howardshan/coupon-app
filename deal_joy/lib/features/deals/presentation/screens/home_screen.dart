@@ -194,41 +194,57 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       separatorBuilder: (_, _) => const SizedBox(width: 16),
                       itemBuilder: (_, i) {
                         final cat = _categories[i];
+                        final selectedCat = ref.watch(selectedCategoryProvider);
                         final isHot = cat.id == 'hot';
-                        return Column(
-                          children: [
-                            Container(
-                              width: 52,
-                              height: 52,
-                              decoration: BoxDecoration(
-                                color: isHot
-                                    ? AppColors.primary.withValues(alpha: 0.1)
-                                    : Colors.white,
-                                borderRadius: BorderRadius.circular(16),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.06),
-                                    blurRadius: 8,
-                                    offset: const Offset(0, 2),
-                                  ),
-                                ],
+                        // 选中态：Hot Deals 对应 'All'，其他对应 cat.name
+                        final catValue = isHot ? 'All' : cat.name;
+                        final isSelected = selectedCat == catValue;
+                        return GestureDetector(
+                          onTap: () {
+                            // 点击分类图标 → 设置筛选条件
+                            ref.read(selectedCategoryProvider.notifier).state =
+                                catValue;
+                          },
+                          child: Column(
+                            children: [
+                              Container(
+                                width: 52,
+                                height: 52,
+                                decoration: BoxDecoration(
+                                  color: isSelected
+                                      ? AppColors.primary.withValues(alpha: 0.15)
+                                      : Colors.white,
+                                  borderRadius: BorderRadius.circular(16),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(alpha: 0.06),
+                                      blurRadius: 8,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: Icon(
+                                  cat.icon,
+                                  color: isSelected
+                                      ? AppColors.primary
+                                      : AppColors.textSecondary,
+                                ),
                               ),
-                              child: Icon(
-                                cat.icon,
-                                color: isHot
-                                    ? AppColors.primary
-                                    : AppColors.textSecondary,
+                              const SizedBox(height: 4),
+                              Text(
+                                cat.name,
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: isSelected
+                                      ? FontWeight.bold
+                                      : FontWeight.w500,
+                                  color: isSelected
+                                      ? AppColors.primary
+                                      : AppColors.textPrimary,
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              cat.name,
-                              style: const TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
+                            ],
+                          ),
                         );
                       },
                     ),
@@ -262,7 +278,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                       ),
                                     ),
                                     TextButton(
-                                      onPressed: () {},
+                                      onPressed: () =>
+                                          context.push('/search'),
                                       child: const Text(
                                         'View All',
                                         style: TextStyle(
@@ -577,15 +594,15 @@ class _LocationItem extends StatelessWidget {
 }
 
 // ── Large vertical deal card (Home feed) ─────────────────────
-class _LargeDealCard extends StatelessWidget {
+class _LargeDealCard extends ConsumerWidget {
   final DealModel deal;
 
   const _LargeDealCard({required this.deal});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return GestureDetector(
-      onTap: () => context.push('/merchant/${deal.merchantId}'),
+      onTap: () => context.push('/deals/${deal.id}'),
       child: Container(
         decoration: BoxDecoration(
           color: Colors.white,
@@ -644,21 +661,33 @@ class _LargeDealCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                // Fav button
+                // 收藏按钮
                 Positioned(
                   top: 10,
                   right: 10,
-                  child: Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.85),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.favorite_border,
-                      size: 18,
-                      color: AppColors.textPrimary,
+                  child: GestureDetector(
+                    onTap: () => ref
+                        .read(savedDealsNotifierProvider.notifier)
+                        .toggle(deal.id),
+                    child: Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.85),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        (ref.watch(savedDealIdsProvider).valueOrNull ?? {})
+                                .contains(deal.id)
+                            ? Icons.favorite
+                            : Icons.favorite_border,
+                        size: 18,
+                        color: (ref.watch(savedDealIdsProvider).valueOrNull ??
+                                    {})
+                                .contains(deal.id)
+                            ? AppColors.primary
+                            : AppColors.textPrimary,
+                      ),
                     ),
                   ),
                 ),
@@ -722,13 +751,8 @@ class _LargeDealCard extends StatelessWidget {
                         color: AppColors.textSecondary,
                       ),
                       const SizedBox(width: 4),
-                      const Text(
-                        '1.2 mi',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
+                      // 使用 GPS 计算实际距离
+                      _DistanceText(deal: deal),
                       const SizedBox(width: 6),
                       const Text(
                         '•',
@@ -773,6 +797,31 @@ class _LargeDealCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ── GPS 距离文本 ─────────────────────────────────────────────
+class _DistanceText extends ConsumerWidget {
+  final DealModel deal;
+  const _DistanceText({required this.deal});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final userLoc = ref.watch(userLocationProvider);
+    final distance = userLoc.whenOrNull(data: (loc) {
+      if (deal.lat == null || deal.lng == null) return null;
+      return distanceMiles(loc.lat, loc.lng, deal.lat!, deal.lng!);
+    });
+    final text = distance != null
+        ? '${distance.toStringAsFixed(1)} mi'
+        : '--';
+    return Text(
+      text,
+      style: const TextStyle(
+        fontSize: 13,
+        color: AppColors.textSecondary,
       ),
     );
   }

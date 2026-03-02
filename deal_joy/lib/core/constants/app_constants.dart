@@ -54,6 +54,7 @@ class AppConstants {
   static const String orderStatusUnused = 'unused';
   static const String orderStatusUsed = 'used';
   static const String orderStatusRefunded = 'refunded';
+  static const String orderStatusRefundRequested = 'refund_requested';
   static const String orderStatusExpired = 'expired';
 
   // Merchant status

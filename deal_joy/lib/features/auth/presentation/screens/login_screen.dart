@@ -1,3 +1,4 @@
+import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -18,6 +19,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
 
+  // "Remember me" 复选框状态，默认不勾选
+  bool _rememberMe = false;
+
   @override
   void dispose() {
     _emailCtrl.dispose();
@@ -25,6 +29,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     super.dispose();
   }
 
+  // 邮箱格式正则验证
+  static final _emailRegex = RegExp(
+    r'^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$',
+  );
+
+  // 表单提交：验证后调用 signIn
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     await ref.read(authNotifierProvider.notifier).signIn(
@@ -33,10 +43,22 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         );
   }
 
+  // Google 登录
+  Future<void> _signInWithGoogle() async {
+    await ref.read(authNotifierProvider.notifier).signInWithGoogle();
+  }
+
+  // Apple 登录（仅 iOS）
+  Future<void> _signInWithApple() async {
+    await ref.read(authNotifierProvider.notifier).signInWithApple();
+  }
+
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authNotifierProvider);
+    final isLoading = authState is AsyncLoading;
 
+    // 监听 auth 状态，出错时显示 SnackBar
     ref.listen(authNotifierProvider, (_, next) {
       if (next is AsyncError) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -49,98 +71,237 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     });
 
     return Scaffold(
+      backgroundColor: AppColors.background,
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Form(
             key: _formKey,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const SizedBox(height: 48),
-                // Logo / Brand
+                const SizedBox(height: 56),
+
+                // ---- 品牌区域 ----
                 Center(
-                  child: Text(
-                    'DealJoy',
-                    style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                          color: AppColors.primary,
-                          fontWeight: FontWeight.bold,
-                        ),
+                  child: Column(
+                    children: [
+                      // Logo 文字
+                      Text(
+                        'DealJoy',
+                        style: Theme.of(context)
+                            .textTheme
+                            .headlineLarge
+                            ?.copyWith(
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: -0.5,
+                            ),
+                      ),
+                      const SizedBox(height: 6),
+                      // 副标题
+                      Text(
+                        'Best local deals in Dallas',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: AppColors.textSecondary,
+                            ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 8),
-                Center(
-                  child: Text(
-                    'Best local deals in Dallas',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: AppColors.textSecondary,
-                        ),
-                  ),
-                ),
+
                 const SizedBox(height: 48),
 
+                // ---- 欢迎语 ----
                 Text(
                   'Welcome back',
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                         fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimary,
                       ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 Text(
                   'Sign in to continue',
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodyMedium
-                      ?.copyWith(color: AppColors.textSecondary),
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
                 ),
+
                 const SizedBox(height: 32),
 
+                // ---- 邮箱输入框（正则验证）----
                 AppTextField(
                   controller: _emailCtrl,
                   label: 'Email',
                   hint: 'you@example.com',
                   keyboardType: TextInputType.emailAddress,
-                  validator: (v) =>
-                      v != null && v.contains('@') ? null : 'Enter valid email',
+                  prefixIcon: const Icon(Icons.email_outlined),
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) {
+                      return 'Email is required';
+                    }
+                    if (!_emailRegex.hasMatch(v.trim())) {
+                      return 'Enter a valid email address';
+                    }
+                    return null;
+                  },
                 ),
+
                 const SizedBox(height: 16),
+
+                // ---- 密码输入框（最小 8 位，show/hide 内置于 AppTextField）----
                 AppTextField(
                   controller: _passwordCtrl,
                   label: 'Password',
                   hint: '••••••••',
                   obscureText: true,
-                  validator: (v) => v != null && v.length >= 6
-                      ? null
-                      : 'Min 6 characters',
+                  prefixIcon: const Icon(Icons.lock_outline),
+                  validator: (v) {
+                    if (v == null || v.isEmpty) {
+                      return 'Password is required';
+                    }
+                    if (v.length < 8) {
+                      return 'Password must be at least 8 characters';
+                    }
+                    return null;
+                  },
                 ),
-                const SizedBox(height: 8),
 
+                const SizedBox(height: 4),
+
+                // ---- Forgot password 链接（右对齐）----
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
                     onPressed: () => context.push('/auth/forgot-password'),
-                    child: const Text('Forgot password?'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.primary,
+                      padding: EdgeInsets.zero,
+                      minimumSize: const Size(0, 36),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: const Text(
+                      'Forgot password?',
+                      style: TextStyle(fontWeight: FontWeight.w500),
+                    ),
                   ),
                 ),
-                const SizedBox(height: 16),
 
+                const SizedBox(height: 12),
+
+                // ---- Remember me 复选框 ----
+                GestureDetector(
+                  onTap: () => setState(() => _rememberMe = !_rememberMe),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: Checkbox(
+                          value: _rememberMe,
+                          onChanged: (v) =>
+                              setState(() => _rememberMe = v ?? false),
+                          activeColor: AppColors.primary,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        'Keep me signed in for 30 days',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: AppColors.textPrimary,
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 28),
+
+                // ---- Sign In 按钮 ----
                 AppButton(
                   label: 'Sign In',
-                  isLoading: authState is AsyncLoading,
-                  onPressed: _submit,
+                  isLoading: isLoading,
+                  onPressed: isLoading ? null : _submit,
                 ),
-                const SizedBox(height: 24),
 
+                const SizedBox(height: 28),
+
+                // ---- "or continue with" 分割线 ----
+                Row(
+                  children: [
+                    const Expanded(child: Divider(thickness: 1)),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Text(
+                        'or continue with',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: AppColors.textSecondary,
+                            ),
+                      ),
+                    ),
+                    const Expanded(child: Divider(thickness: 1)),
+                  ],
+                ),
+
+                const SizedBox(height: 20),
+
+                // ---- Google 登录按钮 ----
+                AppButton(
+                  label: 'Continue with Google',
+                  isOutlined: true,
+                  isLoading: false,
+                  onPressed: isLoading ? null : _signInWithGoogle,
+                  // AppButton 的 icon 参数只接受 IconData，改用自定义 widget 包装
+                  icon: Icons.g_mobiledata,
+                ),
+
+                const SizedBox(height: 12),
+
+                // ---- Apple 登录按钮（仅 iOS 平台显示）----
+                if (Platform.isIOS)
+                  AppButton(
+                    label: 'Continue with Apple',
+                    isOutlined: true,
+                    isLoading: false,
+                    onPressed: isLoading ? null : _signInWithApple,
+                    icon: Icons.apple,
+                  ),
+
+                if (Platform.isIOS) const SizedBox(height: 12),
+
+                const SizedBox(height: 28),
+
+                // ---- 跳转注册页链接 ----
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Text("Don't have an account? "),
+                    Text(
+                      "Don't have an account? ",
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: AppColors.textSecondary,
+                          ),
+                    ),
                     TextButton(
                       onPressed: () => context.push('/auth/register'),
-                      child: const Text('Sign Up'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: AppColors.primary,
+                        padding: EdgeInsets.zero,
+                        minimumSize: const Size(0, 36),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: const Text(
+                        'Sign Up',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
                     ),
                   ],
                 ),
+
+                const SizedBox(height: 32),
               ],
             ),
           ),

@@ -5,9 +5,12 @@ class OrderModel {
   final String? couponId; // nullable — auto-filled by DB trigger
   final int quantity;
   final double totalAmount;
-  final String status; // unused | used | refunded | expired
+  final String status; // unused | used | refunded | refund_requested | expired
   final String paymentIntentId;
+  final String? refundReason;
   final DateTime createdAt;
+  final DateTime? refundRequestedAt;
+  final DateTime? refundedAt;
   final DealSummary? deal;
 
   const OrderModel({
@@ -19,7 +22,10 @@ class OrderModel {
     required this.totalAmount,
     required this.status,
     required this.paymentIntentId,
+    this.refundReason,
     required this.createdAt,
+    this.refundRequestedAt,
+    this.refundedAt,
     this.deal,
   });
 
@@ -32,7 +38,14 @@ class OrderModel {
         totalAmount: (json['total_amount'] as num).toDouble(),
         status: json['status'] as String,
         paymentIntentId: json['payment_intent_id'] as String,
+        refundReason: json['refund_reason'] as String?,
         createdAt: DateTime.parse(json['created_at'] as String),
+        refundRequestedAt: json['refund_requested_at'] != null
+            ? DateTime.parse(json['refund_requested_at'] as String)
+            : null,
+        refundedAt: json['refunded_at'] != null
+            ? DateTime.parse(json['refunded_at'] as String)
+            : null,
         deal: json['deals'] != null
             ? DealSummary.fromJson(json['deals'] as Map<String, dynamic>)
             : null,
@@ -41,6 +54,11 @@ class OrderModel {
   bool get isUnused => status == 'unused';
   bool get isUsed => status == 'used';
   bool get isRefunded => status == 'refunded';
+  bool get isRefundRequested => status == 'refund_requested';
+  bool get isExpired => status == 'expired';
+
+  /// 仅未使用的订单可以退款（已使用/过期/已退款/已申请退款 均不可）
+  bool get canRefund => isUnused;
 }
 
 class DealSummary {

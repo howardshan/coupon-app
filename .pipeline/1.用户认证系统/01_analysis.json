@@ -1,0 +1,149 @@
+{
+  "module": "1.用户认证系统",
+  "analyzed_at": "2026-03-01",
+  "total_requirements": 47,
+  "summary": {
+    "implemented": 12,
+    "needs_modification": 8,
+    "needs_creation": 27
+  },
+  "gap_analysis": {
+    "1.1_email_registration": {
+      "1.1.1_basic_registration": {
+        "status": "partial",
+        "implemented": [
+          "Full name field (but requirement wants separate username)",
+          "Email field (basic @ validation only)",
+          "Password field (min 6 chars, no complexity)",
+          "Submit button with loading state"
+        ],
+        "missing": [
+          "Username field (2-30 chars, alphanumeric, unique)",
+          "Confirm password field with match validation",
+          "Password complexity: min 8 chars, upper+lower+digit",
+          "Password strength indicator (Weak/Medium/Strong)",
+          "Terms of Service checkbox (blocks submit until checked)",
+          "Proper email regex validation",
+          "Email uniqueness check on blur"
+        ]
+      },
+      "1.1.2_email_verification": {
+        "status": "not_implemented",
+        "missing": [
+          "Verification success page (icon + auto-redirect 3s)",
+          "Verification failure page (expired/used/invalid + resend)",
+          "Resend verification email (60s cooldown, 5/day limit)"
+        ]
+      },
+      "1.1.3_registration_success": {
+        "status": "partial",
+        "implemented": [
+          "Auto-login after signup (Supabase default)",
+          "Profile record creation (DB trigger)"
+        ],
+        "missing": [
+          "Verification email sent message",
+          "Record signup source"
+        ]
+      }
+    },
+    "1.2_user_login": {
+      "1.2.1_email_password_login": {
+        "status": "partial",
+        "implemented": [
+          "Email/password fields",
+          "Password show/hide toggle (in AppTextField)",
+          "Login button with loading",
+          "Error display via SnackBar",
+          "Forgot password link",
+          "Sign up link"
+        ],
+        "missing": [
+          "Remember me checkbox (30 days)",
+          "Login failure count tracking (3x captcha, 5x lockout 15min)",
+          "Email verification status check after login",
+          "Update login timestamp + IP/device",
+          "Unified error message (don't distinguish email vs password)"
+        ]
+      },
+      "1.2.2_third_party_login": {
+        "status": "minimal",
+        "implemented": [
+          "google_sign_in package declared in pubspec",
+          "signInWithGoogle() stub in AuthRepository"
+        ],
+        "missing": [
+          "Google Sign In UI button on login screen",
+          "Apple Sign In (iOS required) - package + UI",
+          "OAuth first-time auto-create account",
+          "Account linking (one email, multiple auth methods)"
+        ]
+      }
+    },
+    "1.3_password_recovery": {
+      "1.3.1_forgot_password": {
+        "status": "partial",
+        "implemented": [
+          "Forgot password page with email input",
+          "Send reset link button",
+          "Success state display"
+        ],
+        "missing": [
+          "Send rate limiting (60s cooldown, 3/day)",
+          "Privacy-safe message (don't reveal if email exists)",
+          "Uses setState instead of Riverpod (inconsistent)"
+        ]
+      },
+      "1.3.2_reset_password": {
+        "status": "not_implemented",
+        "missing": [
+          "Reset password page (new pw + confirm pw)",
+          "Password strength indicator",
+          "Success page with auto-redirect to login (3s)",
+          "Error handling for expired/used/invalid links"
+        ]
+      }
+    },
+    "1.4_session_management": {
+      "1.4.1_session_management": {
+        "status": "partial",
+        "implemented": [
+          "Supabase Auth session management",
+          "Auth state change stream",
+          "Router redirect on auth state change"
+        ],
+        "missing": [
+          "Remember me toggle (2h default vs 30d)",
+          "Activity-based session extension"
+        ]
+      },
+      "1.4.2_auto_logout": {
+        "status": "partial",
+        "implemented": [
+          "Sign out clears state",
+          "Router redirects to login on session loss"
+        ],
+        "missing": [
+          "Sign out success toast message",
+          "Clear all server sessions on password reset"
+        ]
+      }
+    }
+  },
+  "existing_files": {
+    "models": ["deal_joy/lib/features/auth/data/models/user_model.dart"],
+    "repositories": ["deal_joy/lib/features/auth/data/repositories/auth_repository.dart"],
+    "providers": ["deal_joy/lib/features/auth/domain/providers/auth_provider.dart"],
+    "screens": [
+      "deal_joy/lib/features/auth/presentation/screens/login_screen.dart",
+      "deal_joy/lib/features/auth/presentation/screens/register_screen.dart",
+      "deal_joy/lib/features/auth/presentation/screens/forgot_password_screen.dart"
+    ],
+    "router": ["deal_joy/lib/core/router/app_router.dart"],
+    "database": [
+      "deal_joy/supabase/schema.sql",
+      "deal_joy/supabase/migrations/20260228000000_initial_schema.sql"
+    ],
+    "tests": ["deal_joy/test/widget_test.dart"]
+  }
+}

@@ -45,17 +45,19 @@ class _QrScannerScreenState extends ConsumerState<QrScannerScreen> {
       } else if (DateTime.now().isAfter(expiresAt)) {
         _showResult(false, 'Coupon expired');
       } else {
-        // Mark as used
-        await client
-            .from('coupons')
-            .update({'status': 'used', 'used_at': DateTime.now().toIso8601String()})
-            .eq('id', couponId);
+        // 标记为已使用，记录核销人和时间
+        final currentUserId = client.auth.currentUser?.id;
+        await client.from('coupons').update({
+          'status': 'used',
+          'used_at': DateTime.now().toIso8601String(),
+          if (currentUserId != null) 'verified_by': currentUserId,
+        }).eq('id', couponId);
         await client
             .from('orders')
             .update({'status': 'used'})
             .eq('coupon_id', couponId);
 
-        _showResult(true, 'Coupon redeemed successfully!');
+        _showResult(true, 'Verified!');
       }
     } catch (e) {
       _showResult(false, 'Error: $e');
