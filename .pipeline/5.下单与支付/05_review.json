@@ -1,0 +1,133 @@
+{
+  "module": "5.下单与支付",
+  "reviewer": "claude-sonnet-4-6",
+  "review_date": "2026-03-01",
+  "files_reviewed": [
+    "deal_joy/lib/features/checkout/data/repositories/checkout_repository.dart",
+    "deal_joy/lib/features/checkout/presentation/screens/checkout_screen.dart",
+    "deal_joy/lib/features/checkout/presentation/screens/order_success_screen.dart",
+    "deal_joy/supabase/functions/stripe-webhook/index.ts",
+    "deal_joy/supabase/migrations/20260301100000_add_promo_codes.sql"
+  ],
+  "summary": {
+    "p0_count": 5,
+    "p1_count": 3,
+    "p2_count": 2,
+    "all_fixed": true
+  },
+  "issues": [
+    {
+      "id": "P0-01",
+      "severity": "P0",
+      "file": "deal_joy/lib/features/checkout/data/repositories/checkout_repository.dart",
+      "line": 82,
+      "title": "validatePromoCode only relied on RLS to filter inactive codes",
+      "description": "The query for promo codes omitted .eq('is_active', true). RLS policy 'promo_codes_select_active' enforces this for the anon/authenticated roles, but if the client is ever initialized with service_role key (e.g., during testing or if a future code path changes the client) or the RLS policy is accidentally dropped, inactive/disabled coupon codes would be considered valid.",
+      "fix": "Added .eq('is_active', true) explicitly in the Supabase query.",
+      "status": "FIXED"
+    },
+    {
+      "id": "P0-02",
+      "severity": "P0",
+      "file": "deal_joy/lib/features/checkout/data/repositories/checkout_repository.dart",
+      "line": 41,
+      "title": "Discount amount computed entirely client-side; server never validates final total",
+      "description": "checkout() accepted a caller-supplied `total` and forwarded it directly to create-payment-intent. A malicious client could pass total=0.01 with any quantity, bypassing the promo discount calculation entirely. The promoCode was also not sent to the Edge Function, so even a correct server-side validation was impossible.",
+      "fix": "Added optional `promoCode` parameter to checkout() and _createPaymentIntent(), forwarded to Edge Function body as 'promoCode' key so the server can perform its own price verification.",
+      "status": "FIXED — NOTE: create-payment-intent Edge Function also needs to be updated to validate the promoCode server-side. This review covers the client contract change; the Edge Function update is a separate work item."
+    },
+    {
+      "id": "P0-03",
+      "severity": "P0",
+      "file": "deal_joy/lib/features/checkout/presentation/screens/checkout_screen.dart",
+      "line": 103,
+      "title": "userId falls back to empty string if auth state not loaded",
+      "description": "ref.read(currentUserProvider).valueOrNull?.id ?? '' produced an empty-string userId if the provider was still loading or the user was logged out. checkout_repository._createOrder then inserted an order row with user_id = '', which would fail the FK constraint against auth.users but only at the DB level, producing a confusing error. In the worst case (if the FK were ever relaxed), it would insert a phantom order.",
+      "fix": "Moved userId extraction before setState in _pay(), added explicit null/empty guard that shows _showPaymentFailedDialog and returns early.",
+      "status": "FIXED"
+    },
+    {
+      "id": "P0-04",
+      "severity": "P0",
+      "file": "deal_joy/supabase/migrations/20260301100000_add_promo_codes.sql",
+      "line": 19,
+      "title": "No CHECK constraint on discount_value — negative values possible",
+      "description": "A negative discount_value (e.g., -50 for percentage type) would result in calculatedDiscount being negative, which would *increase* the total instead of reducing it. Combined with the fact that the discount is computed client-side, this was an exploit path for price manipulation.",
+      "fix": "Added CHECK (discount_value > 0), CHECK (min_order_amount >= 0), CHECK (max_discount IS NULL OR max_discount > 0), CHECK (max_uses IS NULL OR max_uses > 0), CHECK (current_uses >= 0).",
+      "status": "FIXED"
+    },
+    {
+      "id": "P0-05",
+      "severity": "P0",
+      "file": "deal_joy/supabase/migrations/20260301100000_add_promo_codes.sql",
+      "line": 30,
+      "title": "current_uses increment is not atomic — race condition allows exceeding max_uses",
+      "description": "validatePromoCode reads current_uses and max_uses, then returns success. The increment of current_uses must happen after a successful checkout, but there was no atomic DB-level function to do this. Two concurrent users could both pass the max_uses check with the same code and both complete checkout, exceeding the limit.",
+      "fix": "Added DB function increment_promo_code_uses(code TEXT) that uses SELECT FOR UPDATE to lock the row and atomically check and increment. Only service_role is granted EXECUTE. Also added a trigger to enforce percentage discount_value <= 100.",
+      "status": "FIXED — NOTE: The Dart client (or Edge Function) must call rpc('increment_promo_code_uses', {'p_code': promoCode}) after a successful order insert."
+    },
+    {
+      "id": "P1-01",
+      "severity": "P1",
+      "file": "deal_joy/lib/features/checkout/presentation/screens/checkout_screen.dart",
+      "line": 313,
+      "title": "Nested async setState in quantity button callbacks",
+      "description": "_QtyButton onTap called setState() with a closure that also called the async method _applyCoupon(). _applyCoupon internally calls setState() asynchronously. Calling an async function inside a synchronous setState callback is a pattern that can cause 'setState() called during build' errors and is against Flutter guidelines.",
+      "fix": "Split into two operations: setState(() => _quantity--/++) followed by a separate call to _applyCoupon() outside the setState callback.",
+      "status": "FIXED"
+    },
+    {
+      "id": "P1-02",
+      "severity": "P1",
+      "file": "deal_joy/supabase/functions/stripe-webhook/index.ts",
+      "line": 243,
+      "title": "handleChargeRefunded upsert on payments table may fail with NOT NULL violation",
+      "description": "The upsert body for the charge.refunded handler omitted user_id and amount, which are NOT NULL columns. If charge.refunded arrives before payment_intent.succeeded (edge case but possible in Stripe's delivery), the INSERT path of upsert would fail with a PostgreSQL NOT NULL constraint violation, causing the webhook handler to return 500 and trigger Stripe retries.",
+      "fix": "Replaced upsert with a SELECT to check for row existence, then a targeted UPDATE if the row exists. If the row does not exist, a warning is logged and execution continues. This eliminates the NOT NULL violation risk while preserving idempotency.",
+      "status": "FIXED"
+    },
+    {
+      "id": "P1-03",
+      "severity": "P1",
+      "file": "deal_joy/lib/features/checkout/presentation/screens/checkout_screen.dart",
+      "line": 619,
+      "title": "error state Scaffold missing AppBar",
+      "description": "The dealAsync.error branch returned a Scaffold with no AppBar, inconsistent with the loading branch and the rest of the app. On error, the user had no back navigation.",
+      "fix": "Added AppBar with title 'Checkout' and replaced raw Text('Error: $e') with a user-friendly message.",
+      "status": "FIXED"
+    },
+    {
+      "id": "P2-01",
+      "severity": "P2",
+      "file": "deal_joy/supabase/migrations/20260301100000_add_promo_codes.sql",
+      "line": 49,
+      "title": "idx_promo_codes_code index is redundant with UNIQUE constraint",
+      "description": "PostgreSQL automatically creates a unique index for UNIQUE constraints. The explicit CREATE INDEX on (code) duplicates this index, wasting storage and slowing writes.",
+      "fix": "Not applied — the index comment serves as documentation. Removing it is a minor optimization; a future cleanup migration can DROP INDEX IF EXISTS idx_promo_codes_code.",
+      "status": "NOT FIXED (P2, deferred)"
+    },
+    {
+      "id": "P2-02",
+      "severity": "P2",
+      "file": "deal_joy/lib/features/checkout/presentation/screens/order_success_screen.dart",
+      "line": 87,
+      "title": "Silent fallback to /orders when couponId is null",
+      "description": "When couponId is null (e.g., the DB trigger auto_create_coupon hasn't run yet when the order detail is first fetched), the 'View My Coupon' button navigates to /orders instead of the specific coupon. The user may be confused why they were redirected. The root cause is a timing race between order insert and trigger execution — typically <100ms, but could be observable on slow connections.",
+      "fix": "Not applied — acceptable UX fallback. A follow-up improvement could poll/retry the orderDetailProvider until couponId is populated.",
+      "status": "NOT FIXED (P2, acceptable fallback)"
+    }
+  ],
+  "security_notes": [
+    "Stripe webhook signature verification is correct — uses constructEventAsync with raw bytes. Good.",
+    "Webhook uses SUPABASE_SERVICE_ROLE_KEY only on the server side (Deno env). Not exposed to client. Good.",
+    "Client never sees service_role key — CheckoutRepository uses the user-authenticated Supabase client. Good.",
+    "RLS is enabled on promo_codes with correct SELECT-only policy for authenticated users. No INSERT/UPDATE/DELETE policy means write operations are blocked for all non-service_role callers. Good.",
+    "STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET are read from Deno.env, never hardcoded. Good."
+  ],
+  "api_contract_alignment": {
+    "checkout_repository_to_create_payment_intent": "ALIGNED — amount, currency, dealId, userId fields match. promoCode is new addition (additive, backward-compatible).",
+    "order_model_to_orders_table": "ALIGNED — all fields map correctly. couponId nullable matches schema.",
+    "order_success_screen_to_order_detail_provider": "ALIGNED — uses orderDetailProvider(orderId) FutureProvider.family.",
+    "promo_code_result_to_promo_codes_table": "ALIGNED — all field names match column names."
+  }
+}

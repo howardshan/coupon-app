@@ -5,12 +5,16 @@ import '../../features/auth/domain/providers/auth_provider.dart';
 import '../../features/auth/presentation/screens/login_screen.dart';
 import '../../features/auth/presentation/screens/register_screen.dart';
 import '../../features/auth/presentation/screens/forgot_password_screen.dart';
+import '../../features/auth/presentation/screens/reset_password_screen.dart';
 import '../../features/deals/presentation/screens/home_screen.dart';
 import '../../features/deals/presentation/screens/deal_detail_screen.dart';
+import '../../features/deals/presentation/screens/search_screen.dart';
 import '../../features/checkout/presentation/screens/checkout_screen.dart';
 import '../../features/checkout/presentation/screens/order_success_screen.dart';
 import '../../features/orders/presentation/screens/orders_screen.dart';
 import '../../features/orders/presentation/screens/coupon_screen.dart';
+import '../../features/orders/presentation/screens/coupons_screen.dart';
+import '../../features/orders/presentation/screens/refund_request_screen.dart';
 import '../../features/profile/presentation/screens/profile_screen.dart';
 import '../../features/reviews/presentation/screens/write_review_screen.dart';
 import '../../features/merchant/presentation/screens/merchant_dashboard_screen.dart';
@@ -27,7 +31,7 @@ class _AuthChangeNotifier extends ChangeNotifier {
   late final ProviderSubscription _sub;
 
   _AuthChangeNotifier(Ref ref) {
-    _sub = ref.listen(authStateProvider, (_, __) => notifyListeners());
+    _sub = ref.listen(authStateProvider, (_, _) => notifyListeners());
   }
 
   @override
@@ -61,6 +65,9 @@ final routerProvider = Provider<GoRouter>((ref) {
         return '/auth/login';
       }
 
+      // 已登录但在重置密码页面 — 允许留在该页面（recovery session）
+      if (currentPath == '/auth/reset-password') return null;
+
       // Logged in — leave splash or auth routes
       if (isSplash || isAuthRoute) return '/home';
 
@@ -79,6 +86,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/auth/forgot-password',
         builder: (_, _) => const ForgotPasswordScreen(),
+      ),
+      GoRoute(
+        path: '/auth/reset-password',
+        builder: (_, _) => const ResetPasswordScreen(),
       ),
 
       // Main shell with 4-tab bottom nav
@@ -109,6 +120,12 @@ final routerProvider = Provider<GoRouter>((ref) {
             MerchantDetailScreen(merchantId: state.pathParameters['id']!),
       ),
 
+      // Search
+      GoRoute(
+        path: '/search',
+        builder: (_, _) => const SearchScreen(),
+      ),
+
       // Deal detail
       GoRoute(
         path: '/deals/:id',
@@ -137,6 +154,16 @@ final routerProvider = Provider<GoRouter>((ref) {
 
       // Orders (standalone, accessible from profile)
       GoRoute(path: '/orders', builder: (_, _) => const OrdersScreen()),
+
+      // Refund request
+      GoRoute(
+        path: '/refund/:orderId',
+        builder: (_, state) =>
+            RefundRequestScreen(orderId: state.pathParameters['orderId']!),
+      ),
+
+      // My Coupons list (tabbed by status)
+      GoRoute(path: '/coupons', builder: (_, _) => const CouponsScreen()),
 
       // Reviews
       GoRoute(

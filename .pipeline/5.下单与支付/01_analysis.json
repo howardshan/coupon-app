@@ -1,0 +1,65 @@
+{
+  "module": "5.下单与支付",
+  "analysis_date": "2026-03-01",
+  "requirements_summary": {
+    "5.1.1": "确认订单页: Deal信息+数量选择器+小计+优惠券输入+优惠金额+应付总额+限购提示",
+    "5.1.2": "优惠券使用: Apply Coupon输入框+可用券筛选+每单限一张+不为负+无效码提示",
+    "5.2.1": "支付方式: Apple Pay/Google Pay/信用卡(Stripe Elements)+3D Secure",
+    "5.2.2": "支付处理: Loading→Stripe PI→Webhook确认→成功页(订单号+金额+QR入口)+失败处理(重试/换支付)+30分钟自动取消",
+    "5.2.3": "Stripe Webhook: payment_intent.succeeded/failed, charge.refunded/dispute + 签名验证+幂等性"
+  },
+  "implemented": [
+    "CheckoutScreen 基本UI (deal summary, quantity selector, payment method, price breakdown)",
+    "CheckoutRepository (create-payment-intent → present Stripe sheet → insert order)",
+    "OrderSuccessScreen 基础确认页",
+    "OrdersScreen 订单列表",
+    "CouponScreen QR码展示",
+    "create-payment-intent Edge Function",
+    "create-refund Edge Function",
+    "Database: orders, coupons, payments 表 + RLS + auto_create_coupon trigger"
+  ],
+  "needs_modification": [
+    {
+      "item": "CheckoutScreen 优惠券Apply按钮",
+      "issue": "onPressed为空函数，无任何逻辑",
+      "requirement": "5.1.2"
+    },
+    {
+      "item": "CheckoutScreen 折扣计算",
+      "issue": "硬编码10%折扣，应根据优惠券实际面额计算",
+      "requirement": "5.1.1"
+    },
+    {
+      "item": "CheckoutScreen 限购显示",
+      "issue": "quantity上限硬编码为10，未展示每人限购数量",
+      "requirement": "5.1.1"
+    },
+    {
+      "item": "OrderSuccessScreen 信息不全",
+      "issue": "缺少订单号、Deal信息、金额展示",
+      "requirement": "5.2.2"
+    },
+    {
+      "item": "支付失败处理",
+      "issue": "仅显示SnackBar，无重试/换支付方式流程",
+      "requirement": "5.2.2"
+    }
+  ],
+  "needs_creation": [
+    {
+      "item": "promo_codes 数据库表",
+      "description": "存储优惠码：code, discount_type, discount_value, min_order, expires_at 等",
+      "requirement": "5.1.2"
+    },
+    {
+      "item": "Stripe Webhook Edge Function",
+      "description": "处理 payment_intent.succeeded/failed, charge.refunded, charge.dispute.created",
+      "requirement": "5.2.3"
+    },
+    {
+      "item": "validate-promo-code Edge Function 或 Repository 方法",
+      "description": "验证优惠码有效性并返回折扣信息",
+      "requirement": "5.1.2"
+    }
+  ]
+}

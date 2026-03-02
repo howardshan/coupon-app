@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../data/models/deal_model.dart';
@@ -30,16 +32,16 @@ class DealDetailScreen extends ConsumerWidget {
   }
 }
 
-class _DealDetailBody extends StatefulWidget {
+class _DealDetailBody extends ConsumerStatefulWidget {
   final DealModel deal;
 
   const _DealDetailBody({required this.deal});
 
   @override
-  State<_DealDetailBody> createState() => _DealDetailBodyState();
+  ConsumerState<_DealDetailBody> createState() => _DealDetailBodyState();
 }
 
-class _DealDetailBodyState extends State<_DealDetailBody> {
+class _DealDetailBodyState extends ConsumerState<_DealDetailBody> {
   late Duration _timeLeft;
   Timer? _timer;
 
@@ -93,7 +95,10 @@ class _DealDetailBodyState extends State<_DealDetailBody> {
             ),
             actions: [
               GestureDetector(
-                onTap: () {},
+                onTap: () => Share.share(
+                  '${deal.title} - \$${deal.discountPrice.toStringAsFixed(2)} '
+                  '(${deal.effectiveDiscountLabel}) on DealJoy!',
+                ),
                 child: Container(
                   margin: const EdgeInsets.all(8),
                   padding: const EdgeInsets.all(8),
@@ -303,43 +308,77 @@ class _DealDetailBodyState extends State<_DealDetailBody> {
                   ],
                   const SizedBox(height: 12),
 
-                  // Map placeholder
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(14),
-                    child: Stack(
-                      children: [
-                        CachedNetworkImage(
-                          imageUrl:
-                              'https://images.unsplash.com/photo-1526778548025-fa2f459cd5c1?auto=format&fit=crop&w=800&q=80',
-                          height: 120,
-                          width: double.infinity,
-                          fit: BoxFit.cover,
-                          color: Colors.black.withValues(alpha: 0.3),
-                          colorBlendMode: BlendMode.darken,
+                  // 地图占位 — 点击打开导航
+                  GestureDetector(
+                    onTap: () {
+                      final addr = deal.address ?? deal.merchant?.address;
+                      if (addr != null && addr.isNotEmpty) {
+                        final query = Uri.encodeComponent(addr);
+                        launchUrl(
+                          Uri.parse('https://maps.google.com/?q=$query'),
+                          mode: LaunchMode.externalApplication,
+                        );
+                      }
+                    },
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(14),
+                      child: Container(
+                        height: 120,
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceVariant,
+                          borderRadius: BorderRadius.circular(14),
                         ),
-                        Positioned.fill(
-                          child: Center(
-                            child: Container(
-                              width: 28,
-                              height: 28,
-                              decoration: BoxDecoration(
-                                color: AppColors.primary,
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                    color: Colors.white, width: 3),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: AppColors.primary
-                                        .withValues(alpha: 0.4),
-                                    blurRadius: 12,
-                                    spreadRadius: 4,
-                                  ),
-                                ],
+                        child: Stack(
+                          children: [
+                            // 使用 deal 坐标或灰色背景
+                            if (deal.lat != null && deal.lng != null)
+                              CachedNetworkImage(
+                                imageUrl:
+                                    'https://maps.googleapis.com/maps/api/staticmap'
+                                    '?center=${deal.lat},${deal.lng}'
+                                    '&zoom=15&size=800x240&scale=2'
+                                    '&markers=color:red|${deal.lat},${deal.lng}',
+                                height: 120,
+                                width: double.infinity,
+                                fit: BoxFit.cover,
+                                errorWidget: (_, _, _) =>
+                                    _mapFallback(),
+                              )
+                            else
+                              _mapFallback(),
+                            // 导航提示
+                            Positioned(
+                              bottom: 8,
+                              right: 8,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.directions,
+                                        size: 14, color: AppColors.primary),
+                                    SizedBox(width: 4),
+                                    Text(
+                                      'Get Directions',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.primary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
-                          ),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
                   ),
                   const SizedBox(height: 28),
@@ -430,21 +469,73 @@ class _DealDetailBodyState extends State<_DealDetailBody> {
         ],
       ),
 
-      // ── Buy button ──────────────────────────────────
+      // ── 底部操作栏：收藏 + 购买 ──────────────────────
       bottomNavigationBar: deal.isExpired
           ? null
-          : Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 36),
-              child: AppButton(
-                label:
-                    'Buy Now — \$${deal.discountPrice.toStringAsFixed(2)}',
-                onPressed: () => context.push('/checkout/${deal.id}'),
-                icon: Icons.shopping_cart_outlined,
+          : SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+                child: Row(
+                  children: [
+                    // 收藏按钮
+                    GestureDetector(
+                      onTap: () => ref
+                          .read(savedDealsNotifierProvider.notifier)
+                          .toggle(deal.id),
+                      child: Container(
+                        width: 52,
+                        height: 52,
+                        decoration: BoxDecoration(
+                          border: Border.all(color: AppColors.surfaceVariant),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(
+                          (ref.watch(savedDealIdsProvider).valueOrNull ?? {})
+                                  .contains(deal.id)
+                              ? Icons.favorite
+                              : Icons.favorite_border,
+                          color:
+                              (ref.watch(savedDealIdsProvider).valueOrNull ?? {})
+                                      .contains(deal.id)
+                                  ? AppColors.primary
+                                  : AppColors.textSecondary,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    // Buy Now 按钮
+                    Expanded(
+                      child: AppButton(
+                        label:
+                            'Buy Now — \$${deal.discountPrice.toStringAsFixed(2)}',
+                        onPressed: () =>
+                            context.push('/checkout/${deal.id}'),
+                        icon: Icons.shopping_cart_outlined,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
     );
   }
 }
+
+// ── 地图占位回退 ──────────────────────────────────────────────
+Widget _mapFallback() => Container(
+      height: 120,
+      width: double.infinity,
+      color: AppColors.surfaceVariant,
+      child: const Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.map_outlined, size: 32, color: AppColors.textHint),
+          SizedBox(height: 4),
+          Text('Tap to open in Maps',
+              style: TextStyle(color: AppColors.textHint, fontSize: 12)),
+        ],
+      ),
+    );
 
 // ── Time box widget ───────────────────────────────────────────
 class _TimeBox extends StatelessWidget {

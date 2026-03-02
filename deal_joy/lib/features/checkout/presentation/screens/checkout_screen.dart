@@ -7,13 +7,14 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../auth/domain/providers/auth_provider.dart';
 import '../../../deals/domain/providers/deals_provider.dart';
+import '../../data/repositories/checkout_repository.dart';
 import '../../domain/providers/checkout_provider.dart';
 
-// Payment method options (mirrors web app)
+// 支付方式选项
 const _paymentMethods = [
   {'id': 'apple', 'name': 'Apple Pay', 'sub': 'Secure 1-click payment', 'icon': Icons.phone_iphone},
   {'id': 'google', 'name': 'Google Pay', 'sub': 'Fast checkout', 'icon': Icons.g_mobiledata},
-  {'id': 'card', 'name': 'Credit Card', 'sub': 'Visa •••• 4242', 'icon': Icons.credit_card},
+  {'id': 'card', 'name': 'Credit Card', 'sub': 'Visa / Mastercard / Amex', 'icon': Icons.credit_card},
 ];
 
 class CheckoutScreen extends ConsumerStatefulWidget {
@@ -31,16 +32,81 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   final _couponCtrl = TextEditingController();
   bool _isProcessing = false;
 
+  // 优惠码状态
+  bool _isValidatingCoupon = false;
+  PromoCodeResult? _promoResult;
+  String? _couponError;
+
   @override
   void dispose() {
     _couponCtrl.dispose();
     super.dispose();
   }
 
+  /// 验证优惠码
+  Future<void> _applyCoupon(double subtotal) async {
+    final code = _couponCtrl.text.trim();
+    if (code.isEmpty) {
+      setState(() => _couponError = 'Please enter a coupon code');
+      return;
+    }
+
+    setState(() {
+      _isValidatingCoupon = true;
+      _couponError = null;
+      _promoResult = null;
+    });
+
+    try {
+      final repo = ref.read(checkoutRepositoryProvider);
+      final result = await repo.validatePromoCode(
+        code: code,
+        dealId: widget.dealId,
+        subtotal: subtotal,
+      );
+      if (mounted) {
+        setState(() {
+          _promoResult = result;
+          _isValidatingCoupon = false;
+        });
+      }
+    } on AppException catch (e) {
+      if (mounted) {
+        setState(() {
+          _couponError = e.message;
+          _isValidatingCoupon = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _couponError = 'Failed to validate coupon';
+          _isValidatingCoupon = false;
+        });
+      }
+    }
+  }
+
+  /// 移除已应用的优惠码
+  void _removeCoupon() {
+    setState(() {
+      _promoResult = null;
+      _couponError = null;
+      _couponCtrl.clear();
+    });
+  }
+
+  /// 发起支付
   Future<void> _pay(double total) async {
+    // P0 fix: 严格校验 userId，空串会导致订单写入无效用户
+    final userId = ref.read(currentUserProvider).valueOrNull?.id;
+    if (userId == null || userId.isEmpty) {
+      _showPaymentFailedDialog('Please sign in to complete your purchase.');
+      return;
+    }
+
     setState(() => _isProcessing = true);
     try {
-      final userId = ref.read(currentUserProvider).valueOrNull?.id ?? '';
       final repo = ref.read(checkoutRepositoryProvider);
 
       final result = await repo.checkout(
@@ -48,25 +114,51 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         dealId: widget.dealId,
         quantity: _quantity,
         total: total,
+        promoCode: _promoResult?.code, // P0 fix: 传递优惠码给服务端验证
       );
 
       if (mounted) context.go('/order-success/${result.orderId}');
     } on StripeException catch (e) {
       if (e.error.code == FailureCode.Canceled) return;
-      _showError('Payment failed: ${e.error.localizedMessage}');
+      if (mounted) _showPaymentFailedDialog(e.error.localizedMessage ?? 'Payment was declined');
     } on AppException catch (e) {
-      _showError(e.message);
+      if (mounted) _showPaymentFailedDialog(e.message);
     } catch (e) {
-      _showError('Payment failed: $e');
+      if (mounted) _showPaymentFailedDialog('An unexpected error occurred. Please try again.');
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
   }
 
-  void _showError(String message) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: AppColors.error),
+  /// 支付失败弹窗 — 提供重试和换支付方式选项
+  void _showPaymentFailedDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Payment Failed'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Change Payment Method'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              // 重新计算 total 后重试
+              final deal = ref.read(dealDetailProvider(widget.dealId)).valueOrNull;
+              if (deal != null) {
+                final subtotal = deal.discountPrice * _quantity;
+                final discount = _promoResult?.calculatedDiscount ?? 0;
+                final tax = (subtotal - discount) * 0.0825;
+                final total = subtotal - discount + tax;
+                _pay(total);
+              }
+            },
+            child: const Text('Try Again'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -76,10 +168,14 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
 
     return dealAsync.when(
       data: (deal) {
+        // 限购逻辑：使用 deal 的库存限制（上限 10）
+        final maxPerPerson = deal.stockLimit.clamp(1, 10);
+
         final subtotal = deal.discountPrice * _quantity;
-        final discount = subtotal * 0.1; // 10% promo placeholder
-        final tax = subtotal * 0.0825;   // Texas 8.25% tax
-        final total = subtotal - discount + tax;
+        final discount = _promoResult?.calculatedDiscount ?? 0;
+        final taxableAmount = subtotal - discount;
+        final tax = taxableAmount * 0.0825; // Texas 8.25% sales tax
+        final total = taxableAmount + tax;
 
         return Scaffold(
           backgroundColor: AppColors.background,
@@ -114,7 +210,6 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                   padding: const EdgeInsets.all(14),
                   child: Row(
                     children: [
-                      // Deal image
                       if (deal.imageUrls.isNotEmpty)
                         ClipRRect(
                           borderRadius: BorderRadius.circular(10),
@@ -154,12 +249,24 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                                     fontSize: 13),
                               ),
                             const SizedBox(height: 6),
-                            Text(
-                              '\$${deal.discountPrice.toStringAsFixed(2)}',
-                              style: const TextStyle(
-                                  color: AppColors.primary,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 18),
+                            Row(
+                              children: [
+                                Text(
+                                  '\$${deal.discountPrice.toStringAsFixed(2)}',
+                                  style: const TextStyle(
+                                      color: AppColors.primary,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 18),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  '\$${deal.originalPrice.toStringAsFixed(2)}',
+                                  style: const TextStyle(
+                                      color: AppColors.textHint,
+                                      fontSize: 13,
+                                      decoration: TextDecoration.lineThrough),
+                                ),
+                              ],
                             ),
                           ],
                         ),
@@ -183,11 +290,21 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                           color: AppColors.primary, size: 20),
                     ),
                     const SizedBox(width: 12),
-                    const Text('Quantity',
-                        style: TextStyle(
-                            fontWeight: FontWeight.w500, fontSize: 15)),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Quantity',
+                            style: TextStyle(
+                                fontWeight: FontWeight.w500, fontSize: 15)),
+                        // 显示限购信息
+                        Text(
+                          'Maximum $maxPerPerson per person',
+                          style: const TextStyle(
+                              fontSize: 11, color: AppColors.textHint),
+                        ),
+                      ],
+                    ),
                     const Spacer(),
-                    // +/- control
                     Container(
                       decoration: BoxDecoration(
                         color: Colors.white,
@@ -200,12 +317,21 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                           _QtyButton(
                             icon: Icons.remove,
                             onTap: _quantity > 1
-                                ? () => setState(() => _quantity--)
+                                ? () {
+                                    setState(() => _quantity--);
+                                    // P1 fix: 在 setState 之外发起异步优惠码重算，
+                                    // 避免在 setState 回调中调用异步方法触发嵌套 setState
+                                    if (_promoResult != null) {
+                                      _applyCoupon(
+                                          deal.discountPrice * _quantity);
+                                    }
+                                  }
                                 : null,
                             filled: false,
                           ),
                           Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 14),
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 14),
                             child: Text(
                               '$_quantity',
                               style: const TextStyle(
@@ -214,8 +340,15 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                           ),
                           _QtyButton(
                             icon: Icons.add,
-                            onTap: _quantity < 10
-                                ? () => setState(() => _quantity++)
+                            onTap: _quantity < maxPerPerson
+                                ? () {
+                                    setState(() => _quantity++);
+                                    // P1 fix: 同上，避免嵌套 setState
+                                    if (_promoResult != null) {
+                                      _applyCoupon(
+                                          deal.discountPrice * _quantity);
+                                    }
+                                  }
                                 : null,
                             filled: true,
                           ),
@@ -234,35 +367,103 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                         color: AppColors.textSecondary,
                         letterSpacing: 0.8)),
                 const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _couponCtrl,
-                        decoration: const InputDecoration(
-                          hintText: 'Enter coupon code',
-                        ),
-                      ),
+                if (_promoResult != null)
+                  // 已应用优惠码
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: AppColors.success.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                          color: AppColors.success.withValues(alpha: 0.3)),
                     ),
-                    const SizedBox(width: 10),
-                    SizedBox(
-                      height: 52,
-                      child: ElevatedButton(
-                        onPressed: () {},
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor:
-                              AppColors.primary.withValues(alpha: 0.1),
-                          foregroundColor: AppColors.primary,
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.check_circle,
+                            color: AppColors.success, size: 20),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _promoResult!.code,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.success),
+                              ),
+                              Text(
+                                _promoResult!.label,
+                                style: const TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.textSecondary),
+                              ),
+                            ],
+                          ),
                         ),
-                        child: const Text('Apply',
-                            style: TextStyle(fontWeight: FontWeight.bold)),
-                      ),
+                        GestureDetector(
+                          onTap: _removeCoupon,
+                          child: const Icon(Icons.close,
+                              color: AppColors.textSecondary, size: 20),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  )
+                else
+                  // 优惠码输入框
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _couponCtrl,
+                              textCapitalization: TextCapitalization.characters,
+                              decoration: InputDecoration(
+                                hintText: 'Enter coupon code',
+                                errorText: _couponError,
+                              ),
+                              onChanged: (_) {
+                                // 输入变化时清除错误
+                                if (_couponError != null) {
+                                  setState(() => _couponError = null);
+                                }
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          SizedBox(
+                            height: 52,
+                            child: ElevatedButton(
+                              onPressed: _isValidatingCoupon
+                                  ? null
+                                  : () => _applyCoupon(subtotal),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor:
+                                    AppColors.primary.withValues(alpha: 0.1),
+                                foregroundColor: AppColors.primary,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12)),
+                              ),
+                              child: _isValidatingCoupon
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2),
+                                    )
+                                  : const Text('Apply',
+                                      style: TextStyle(
+                                          fontWeight: FontWeight.bold)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 const SizedBox(height: 20),
 
                 // ── Payment method ─────────────────────────
@@ -276,8 +477,8 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                 ...(_paymentMethods.map((method) {
                   final isSelected = _selectedPayment == method['id'];
                   return GestureDetector(
-                    onTap: () =>
-                        setState(() => _selectedPayment = method['id'] as String),
+                    onTap: () => setState(
+                        () => _selectedPayment = method['id'] as String),
                     child: Container(
                       margin: const EdgeInsets.only(bottom: 10),
                       padding: const EdgeInsets.all(14),
@@ -331,7 +532,6 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                               ],
                             ),
                           ),
-                          // Radio dot
                           Container(
                             width: 20,
                             height: 20,
@@ -374,14 +574,16 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                   ),
                   child: Column(
                     children: [
-                      _PriceRow('Subtotal (×$_quantity)',
+                      _PriceRow('Subtotal (\u00d7$_quantity)',
                           '\$${subtotal.toStringAsFixed(2)}'),
-                      const SizedBox(height: 8),
-                      _PriceRow(
-                        'Discount (10%)',
-                        '-\$${discount.toStringAsFixed(2)}',
-                        valueColor: AppColors.success,
-                      ),
+                      if (discount > 0) ...[
+                        const SizedBox(height: 8),
+                        _PriceRow(
+                          'Coupon (${_promoResult!.label})',
+                          '-\$${discount.toStringAsFixed(2)}',
+                          valueColor: AppColors.success,
+                        ),
+                      ],
                       const SizedBox(height: 8),
                       _PriceRow(
                           'Tax (8.25%)', '\$${tax.toStringAsFixed(2)}'),
@@ -398,7 +600,8 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                 const SizedBox(height: 32),
 
                 AppButton(
-                  label: 'Confirm Payment — \$${total.toStringAsFixed(2)}',
+                  label:
+                      'Confirm Payment \u2014 \$${total.toStringAsFixed(2)}',
                   isLoading: _isProcessing,
                   onPressed: () => _pay(total),
                   icon: Icons.lock_outline,
@@ -422,7 +625,18 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       loading: () =>
           const Scaffold(body: Center(child: CircularProgressIndicator())),
       error: (e, _) => Scaffold(
-          appBar: AppBar(), body: Center(child: Text('Error: $e'))),
+        appBar: AppBar(title: const Text('Checkout')),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text(
+              'Unable to load deal. Please try again.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

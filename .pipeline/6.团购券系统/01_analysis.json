@@ -1,0 +1,51 @@
+{
+  "module": "6.团购券系统",
+  "analysis_date": "2026-03-01",
+  "requirements": {
+    "6.1.1_券列表": {
+      "tabs": "Unused(default)/Used/Expired/Refunded",
+      "card": "商家Logo+名称+Deal标题+状态标签(颜色区分)+有效期+购买时间",
+      "empty_state": "No coupons yet + Browse Deals 按钮"
+    },
+    "6.1.2_券详情": {
+      "qr_code": "QR Code居中大图+券码文字+屏幕亮度自动调最高",
+      "info": "Deal标题内容+商家名地址+使用规则+有效期",
+      "actions": "Navigate to Store/Call Store/Request Refund(未使用)/Gift to Friend(未使用)"
+    },
+    "6.1.3_到店核销": {
+      "flow": "展示QR→商家扫码→验证→Verified!→状态Used→记录时间/核销人",
+      "duplicate_prevention": "已核销不显示QR，显示Used on date at time"
+    },
+    "6.1.4_券转赠": {
+      "flow": "Gift to Friend→生成Deep Link→分享→好友打开登录→领取",
+      "rules": "转赠后原券失效/只能转赠一次/过期不可转赠/好友领取生成新券码"
+    }
+  },
+  "existing_code": {
+    "implemented": [
+      "DB: coupons table with basic fields + RLS + auto_create trigger",
+      "Backend: auto_create_coupon trigger on order insert",
+      "Frontend: CouponScreen (basic QR display + status)",
+      "Frontend: OrdersScreen (order list, navigates to coupon for unused)",
+      "Frontend: QrScannerScreen (merchant scan + validate + mark used)",
+      "Router: /coupon/:couponId route",
+      "Models: OrderModel with couponId field",
+      "Repos: OrdersRepository.fetchCoupon()"
+    ],
+    "needs_modification": [
+      "CouponScreen: missing deal info, merchant info, auto-brightness, action buttons, used-on display",
+      "QrScannerScreen: missing verified_by recording",
+      "CouponScreen uses raw Map<String,dynamic> instead of proper model"
+    ],
+    "needs_creation": [
+      "CouponModel (proper data model)",
+      "CouponsRepository (dedicated, with rich queries joining deals/merchants)",
+      "CouponsProvider (with tab filtering by status)",
+      "CouponsScreen (tabbed list: Unused/Used/Expired/Refunded)",
+      "CouponCard widget (merchant logo, deal title, status, expiry, purchase time)",
+      "Coupon gifting feature (DB schema + edge function + Flutter UI)",
+      "Migration: add gifted_from, verified_by columns",
+      "Route: /coupons for list screen"
+    ]
+  }
+}

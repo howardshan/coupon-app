@@ -8,6 +8,28 @@ class CheckoutResult {
   const CheckoutResult({required this.orderId});
 }
 
+/// 优惠码验证结果
+class PromoCodeResult {
+  final String code;
+  final String discountType; // 'percentage' | 'fixed'
+  final double discountValue;
+  final double? maxDiscount;
+  final double calculatedDiscount; // 根据 subtotal 计算出的实际折扣金额
+
+  const PromoCodeResult({
+    required this.code,
+    required this.discountType,
+    required this.discountValue,
+    this.maxDiscount,
+    required this.calculatedDiscount,
+  });
+
+  /// 获取折扣描述文字
+  String get label => discountType == 'percentage'
+      ? '${discountValue.toStringAsFixed(0)}% off'
+      : '\$${discountValue.toStringAsFixed(2)} off';
+}
+
 class CheckoutRepository {
   final SupabaseClient _client;
 
@@ -21,12 +43,19 @@ class CheckoutRepository {
     required String dealId,
     required int quantity,
     required double total,
+    String? promoCode, // P0 fix: 将优惠码传给服务端，让 Edge Function 进行服务端价格验证
   }) async {
+    // P0 fix: userId 不能为空串，否则订单会插入错误数据
+    if (userId.isEmpty) {
+      throw const PaymentException('User not authenticated', code: 'unauthenticated');
+    }
+
     // 1. Call Edge Function to create PaymentIntent
     final response = await _createPaymentIntent(
       amount: total,
       dealId: dealId,
       userId: userId,
+      promoCode: promoCode,
     );
 
     final clientSecret = response['clientSecret'] as String;
@@ -48,10 +77,93 @@ class CheckoutRepository {
     return CheckoutResult(orderId: orderId);
   }
 
+  /// 验证优惠码并计算折扣金额
+  /// 如果优惠码无效/过期/不适用，抛出 [AppException]
+  Future<PromoCodeResult> validatePromoCode({
+    required String code,
+    required String dealId,
+    required double subtotal,
+  }) async {
+    try {
+      // P0 fix: 在查询层也强制过滤 is_active=true，不能仅依赖 RLS。
+      // RLS 在 service_role 连接或策略变更时可能被绕过。
+      final data = await _client
+          .from('promo_codes')
+          .select()
+          .eq('code', code.toUpperCase().trim())
+          .eq('is_active', true)
+          .maybeSingle();
+
+      if (data == null) {
+        throw const AppException('Invalid coupon code');
+      }
+
+      // 检查是否过期
+      final expiresAt = data['expires_at'] as String?;
+      if (expiresAt != null && DateTime.parse(expiresAt).isBefore(DateTime.now())) {
+        throw const AppException('This coupon has expired');
+      }
+
+      // 检查使用次数
+      final maxUses = data['max_uses'] as int?;
+      final currentUses = data['current_uses'] as int? ?? 0;
+      if (maxUses != null && currentUses >= maxUses) {
+        throw const AppException('This coupon has reached its usage limit');
+      }
+
+      // 检查 deal 限制（null 表示适用于所有 deal）
+      final promoDealId = data['deal_id'] as String?;
+      if (promoDealId != null && promoDealId != dealId) {
+        throw const AppException('This coupon is not valid for this deal');
+      }
+
+      // 检查最低消费
+      final minOrder = (data['min_order_amount'] as num?)?.toDouble() ?? 0;
+      if (subtotal < minOrder) {
+        throw AppException(
+          'Minimum order \$${minOrder.toStringAsFixed(2)} required for this coupon',
+        );
+      }
+
+      // 计算折扣
+      final discountType = data['discount_type'] as String;
+      final discountValue = (data['discount_value'] as num).toDouble();
+      final maxDiscount = (data['max_discount'] as num?)?.toDouble();
+
+      double calculatedDiscount;
+      if (discountType == 'percentage') {
+        calculatedDiscount = subtotal * (discountValue / 100);
+        if (maxDiscount != null && calculatedDiscount > maxDiscount) {
+          calculatedDiscount = maxDiscount;
+        }
+      } else {
+        calculatedDiscount = discountValue;
+      }
+
+      // 折扣不能超过小计
+      if (calculatedDiscount > subtotal) {
+        calculatedDiscount = subtotal;
+      }
+
+      return PromoCodeResult(
+        code: code.toUpperCase().trim(),
+        discountType: discountType,
+        discountValue: discountValue,
+        maxDiscount: maxDiscount,
+        calculatedDiscount: calculatedDiscount,
+      );
+    } on AppException {
+      rethrow;
+    } catch (e) {
+      throw AppException('Failed to validate coupon: $e');
+    }
+  }
+
   Future<Map<String, dynamic>> _createPaymentIntent({
     required double amount,
     required String dealId,
     required String userId,
+    String? promoCode, // P0 fix: 传递优惠码给服务端做价格验证，防止客户端篡改总额
   }) async {
     try {
       final response = await _client.functions.invoke(
@@ -61,6 +173,7 @@ class CheckoutRepository {
           'currency': 'usd',
           'dealId': dealId,
           'userId': userId,
+          if (promoCode != null) 'promoCode': promoCode,
         },
       );
 
