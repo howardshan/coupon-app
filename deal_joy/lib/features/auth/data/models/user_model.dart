@@ -6,6 +6,8 @@ class UserModel {
   final String? avatarUrl;
   final String? phone;
   final String role; // 'user' | 'merchant' | 'admin'
+  final String registrationSource; // 'email' | 'google' | 'apple'
+  final DateTime? lastLoginAt;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -17,6 +19,8 @@ class UserModel {
     this.avatarUrl,
     this.phone,
     this.role = 'user',
+    this.registrationSource = 'email',
+    this.lastLoginAt,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -29,6 +33,11 @@ class UserModel {
         avatarUrl: json['avatar_url'] as String?,
         phone: json['phone'] as String?,
         role: json['role'] as String? ?? 'user',
+        registrationSource:
+            json['registration_source'] as String? ?? 'email',
+        lastLoginAt: json['last_login_at'] != null
+            ? DateTime.parse(json['last_login_at'] as String)
+            : null,
         createdAt: DateTime.parse(json['created_at'] as String),
         updatedAt: DateTime.parse(json['updated_at'] as String),
       );
@@ -41,6 +50,8 @@ class UserModel {
         'avatar_url': avatarUrl,
         'phone': phone,
         'role': role,
+        'registration_source': registrationSource,
+        'last_login_at': lastLoginAt?.toIso8601String(),
         'created_at': createdAt.toIso8601String(),
         'updated_at': updatedAt.toIso8601String(),
       };
@@ -50,6 +61,7 @@ class UserModel {
     String? fullName,
     String? avatarUrl,
     String? phone,
+    DateTime? lastLoginAt,
   }) =>
       UserModel(
         id: id,
@@ -59,6 +71,8 @@ class UserModel {
         avatarUrl: avatarUrl ?? this.avatarUrl,
         phone: phone ?? this.phone,
         role: role,
+        registrationSource: registrationSource,
+        lastLoginAt: lastLoginAt ?? this.lastLoginAt,
         createdAt: createdAt,
         updatedAt: updatedAt,
       );

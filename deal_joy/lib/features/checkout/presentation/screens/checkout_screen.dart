@@ -436,6 +436,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                           const SizedBox(width: 10),
                           SizedBox(
                             height: 52,
+                            width: 80,
                             child: ElevatedButton(
                               onPressed: _isValidatingCoupon
                                   ? null

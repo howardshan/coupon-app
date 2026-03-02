@@ -62,14 +62,22 @@ final routerProvider = Provider<GoRouter>((ref) {
       // Auth resolved, not logged in
       if (!isLoggedIn) {
         if (isAuthRoute) return null; // already on login/register
-        return '/auth/login';
+        // 保存用户想去的页面，登录后跳回
+        return '/auth/login?redirect=${Uri.encodeComponent(currentPath)}';
       }
 
       // 已登录但在重置密码页面 — 允许留在该页面（recovery session）
       if (currentPath == '/auth/reset-password') return null;
 
       // Logged in — leave splash or auth routes
-      if (isSplash || isAuthRoute) return '/home';
+      if (isSplash || isAuthRoute) {
+        // 登录后跳回之前的页面
+        final redirect = state.uri.queryParameters['redirect'];
+        if (redirect != null && redirect.isNotEmpty && !redirect.startsWith('/auth')) {
+          return redirect;
+        }
+        return '/home';
+      }
 
       return null; // no redirect needed
     },
