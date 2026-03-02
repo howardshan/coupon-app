@@ -51,6 +51,8 @@ class AuthNotifier extends Notifier<AsyncValue<UserModel?>> {
     );
     if (state.hasError) {
       debugPrint('[Auth] signIn error: ${state.error}');
+    } else {
+      ref.read(authRepositoryProvider).recordLogin(provider: 'email');
     }
   }
 
@@ -81,6 +83,8 @@ class AuthNotifier extends Notifier<AsyncValue<UserModel?>> {
     );
     if (state.hasError) {
       debugPrint('[Auth] Google signIn error: ${state.error}');
+    } else {
+      ref.read(authRepositoryProvider).recordLogin(provider: 'google');
     }
   }
 
@@ -91,6 +95,8 @@ class AuthNotifier extends Notifier<AsyncValue<UserModel?>> {
     );
     if (state.hasError) {
       debugPrint('[Auth] Apple signIn error: ${state.error}');
+    } else {
+      ref.read(authRepositoryProvider).recordLogin(provider: 'apple');
     }
   }
 

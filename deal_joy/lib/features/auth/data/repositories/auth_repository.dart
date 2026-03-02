@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as sb;
 import '../../../../core/errors/app_exception.dart';
@@ -183,11 +184,41 @@ class AuthRepository {
     return user?.emailConfirmedAt != null;
   }
 
-  // ---- 获取用户 Profile ----
+  // ---- 获取用户 Profile（不存在则自动创建）----
   Future<UserModel> _fetchUserProfile(String userId) async {
-    final data =
-        await _client.from('users').select().eq('id', userId).single();
+    final rows =
+        await _client.from('users').select().eq('id', userId);
+    if (rows.isNotEmpty) {
+      return UserModel.fromJson(rows.first);
+    }
+    // trigger 未生效时回退：用 auth user 信息手动插入
+    final authUser = _client.auth.currentUser;
+    final now = DateTime.now().toIso8601String();
+    final provider = authUser?.appMetadata['provider'] as String? ?? 'email';
+    final data = await _client.from('users').insert({
+      'id': userId,
+      'email': authUser?.email ?? '',
+      'full_name': authUser?.userMetadata?['full_name'],
+      'username': authUser?.userMetadata?['username'],
+      'avatar_url': authUser?.userMetadata?['avatar_url'],
+      'role': 'user',
+      'registration_source': provider,
+      'created_at': now,
+      'updated_at': now,
+    }).select().single();
     return UserModel.fromJson(data);
+  }
+
+  // ---- 记录登录（调用 Supabase RPC） ----
+  Future<void> recordLogin({String provider = 'email'}) async {
+    try {
+      await _client.rpc('record_login', params: {
+        'p_provider': provider,
+      });
+    } catch (e) {
+      // 登录记录失败不应阻塞用户体验，仅打印日志
+      debugPrint('[Auth] recordLogin failed: $e');
+    }
   }
 
   // ---- 更新用户 Profile ----

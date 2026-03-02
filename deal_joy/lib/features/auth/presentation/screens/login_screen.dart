@@ -1,4 +1,4 @@
-import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -262,7 +262,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 const SizedBox(height: 12),
 
                 // ---- Apple 登录按钮（仅 iOS 平台显示）----
-                if (Platform.isIOS)
+                if (defaultTargetPlatform == TargetPlatform.iOS)
                   AppButton(
                     label: 'Continue with Apple',
                     isOutlined: true,
@@ -271,7 +271,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     icon: Icons.apple,
                   ),
 
-                if (Platform.isIOS) const SizedBox(height: 12),
+                if (defaultTargetPlatform == TargetPlatform.iOS) const SizedBox(height: 12),
 
                 const SizedBox(height: 28),
 
