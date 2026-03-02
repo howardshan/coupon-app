@@ -4,6 +4,7 @@ import 'package:geolocator/geolocator.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../shared/providers/supabase_provider.dart';
 import '../../data/models/deal_model.dart';
+import '../../data/models/review_model.dart';
 import '../../data/repositories/deals_repository.dart';
 
 final dealsRepositoryProvider = Provider<DealsRepository>((ref) {
@@ -46,6 +47,21 @@ final dealsListProvider =
 final dealDetailProvider =
     FutureProvider.family<DealModel, String>((ref, dealId) async {
   return ref.watch(dealsRepositoryProvider).fetchDealById(dealId);
+});
+
+// Other deals from the same merchant
+final merchantDealsProvider = FutureProvider.family<List<DealModel>,
+    ({String merchantId, String excludeDealId})>((ref, params) async {
+  return ref.watch(dealsRepositoryProvider).fetchDealsByMerchant(
+        params.merchantId,
+        excludeDealId: params.excludeDealId,
+      );
+});
+
+// Reviews for a specific deal
+final dealReviewsProvider =
+    FutureProvider.family<List<ReviewModel>, String>((ref, dealId) async {
+  return ref.watch(dealsRepositoryProvider).fetchReviewsByDeal(dealId);
 });
 
 // ---- GPS 位置 Provider ----

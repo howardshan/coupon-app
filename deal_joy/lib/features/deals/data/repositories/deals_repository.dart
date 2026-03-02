@@ -2,6 +2,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/errors/app_exception.dart';
 import '../models/deal_model.dart';
+import '../models/review_model.dart';
 
 class DealsRepository {
   final SupabaseClient _client;
@@ -109,6 +110,46 @@ class DealsRepository {
           .eq('deal_id', dealId);
     } on PostgrestException catch (e) {
       throw AppException('Failed to unsave deal: ${e.message}', code: e.code);
+    }
+  }
+
+  Future<List<DealModel>> fetchDealsByMerchant(
+    String merchantId, {
+    String? excludeDealId,
+  }) async {
+    try {
+      var query = _client
+          .from('deals')
+          .select('*, merchants(id, name, logo_url, phone)')
+          .eq('merchant_id', merchantId)
+          .eq('is_active', true)
+          .gt('expires_at', DateTime.now().toIso8601String());
+
+      if (excludeDealId != null) {
+        query = query.neq('id', excludeDealId);
+      }
+
+      final data =
+          await query.order('total_sold', ascending: false).limit(5);
+      return (data as List).map((e) => DealModel.fromJson(e)).toList();
+    } on PostgrestException catch (e) {
+      throw AppException('Failed to load merchant deals: ${e.message}',
+          code: e.code);
+    }
+  }
+
+  Future<List<ReviewModel>> fetchReviewsByDeal(String dealId) async {
+    try {
+      final data = await _client
+          .from('reviews')
+          .select('*, users(full_name, avatar_url)')
+          .eq('deal_id', dealId)
+          .order('created_at', ascending: false)
+          .limit(20);
+      return (data as List).map((e) => ReviewModel.fromJson(e)).toList();
+    } on PostgrestException catch (e) {
+      throw AppException('Failed to load reviews: ${e.message}',
+          code: e.code);
     }
   }
 

@@ -50,7 +50,7 @@ class _QrScannerScreenState extends ConsumerState<QrScannerScreen> {
         await client.from('coupons').update({
           'status': 'used',
           'used_at': DateTime.now().toIso8601String(),
-          if (currentUserId != null) 'verified_by': currentUserId,
+          'verified_by': ?currentUserId,
         }).eq('id', couponId);
         await client
             .from('orders')

@@ -957,17 +957,20 @@ class _SmallDealCard extends StatelessWidget {
             Expanded(
               child: Stack(
                 children: [
-                  ClipRRect(
-                    borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(16),
+                  Positioned.fill(
+                    child: ClipRRect(
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(16),
+                      ),
+                      child: deal.imageUrls.isNotEmpty
+                          ? CachedNetworkImage(
+                              imageUrl: deal.imageUrls.first,
+                              width: double.infinity,
+                              height: double.infinity,
+                              fit: BoxFit.cover,
+                            )
+                          : Container(color: AppColors.surfaceVariant),
                     ),
-                    child: deal.imageUrls.isNotEmpty
-                        ? CachedNetworkImage(
-                            imageUrl: deal.imageUrls.first,
-                            width: double.infinity,
-                            fit: BoxFit.cover,
-                          )
-                        : Container(color: AppColors.surfaceVariant),
                   ),
                   Positioned(
                     top: 8,
@@ -1092,24 +1095,27 @@ class _MerchantGridCard extends StatelessWidget {
           children: [
             // 图片
             Expanded(
-              child: ClipRRect(
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(12),
-                ),
-                child: merchant.logoUrl != null &&
-                        merchant.logoUrl!.isNotEmpty
-                    ? CachedNetworkImage(
-                        imageUrl: merchant.logoUrl!,
-                        width: double.infinity,
-                        fit: BoxFit.cover,
-                      )
-                    : Container(
-                        color: AppColors.surfaceVariant,
-                        child: const Center(
-                          child: Icon(Icons.restaurant,
-                              size: 40, color: AppColors.textHint),
+              child: SizedBox.expand(
+                child: ClipRRect(
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(12),
+                  ),
+                  child: merchant.logoUrl != null &&
+                          merchant.logoUrl!.isNotEmpty
+                      ? CachedNetworkImage(
+                          imageUrl: merchant.logoUrl!,
+                          width: double.infinity,
+                          height: double.infinity,
+                          fit: BoxFit.cover,
+                        )
+                      : Container(
+                          color: AppColors.surfaceVariant,
+                          child: const Center(
+                            child: Icon(Icons.restaurant,
+                                size: 40, color: AppColors.textHint),
+                          ),
                         ),
-                      ),
+                ),
               ),
             ),
             // 信息区
