@@ -7,6 +7,26 @@ class MerchantRepository {
 
   MerchantRepository(this._client);
 
+  /// 获取商家列表（按城市筛选，含 deals 聚合数据）
+  Future<List<MerchantModel>> fetchMerchants({String? city}) async {
+    try {
+      var query = _client
+          .from('merchants')
+          .select('*, deals(rating, review_count, discount_price, is_active)')
+          .eq('status', 'approved');
+
+      if (city != null && city.isNotEmpty) {
+        query = query.ilike('address', '%$city%');
+      }
+
+      final data = await query.order('name').limit(30);
+      return (data as List).map((e) => MerchantModel.fromJson(e)).toList();
+    } on PostgrestException catch (e) {
+      throw AppException('Failed to fetch merchants: ${e.message}',
+          code: e.code);
+    }
+  }
+
   /// 搜索商家：直接匹配商家名/描述/地址 + 通过 deal 标题/描述匹配菜名
   Future<List<MerchantModel>> searchMerchants(String query) async {
     try {
