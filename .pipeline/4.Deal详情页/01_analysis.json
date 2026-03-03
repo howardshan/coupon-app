@@ -1,0 +1,40 @@
+{
+  "module": "4.Deal详情页",
+  "analysis_date": "2026-03-01",
+  "existing_files": [
+    "lib/features/deals/presentation/screens/deal_detail_screen.dart"
+  ],
+  "already_implemented": [
+    "DealDetailScreen 基本布局（图片轮播、价格信息、描述、评论列表）",
+    "SliverAppBar 折叠效果",
+    "底部 Buy Now 按钮",
+    "DealModel 解析 lat/lng/address/merchantHours",
+    "dealDetailProvider 获取 deal 数据"
+  ],
+  "gaps_found": [
+    {
+      "id": "GAP-D1",
+      "description": "分享按钮使用错误的 SharePlus API",
+      "severity": "critical",
+      "status": "fixed"
+    },
+    {
+      "id": "GAP-D2",
+      "description": "地图区域为纯占位，未集成静态地图 + 导航",
+      "severity": "high",
+      "status": "fixed"
+    },
+    {
+      "id": "GAP-D3",
+      "description": "底部栏无收藏按钮",
+      "severity": "medium",
+      "status": "fixed"
+    },
+    {
+      "id": "GAP-D4",
+      "description": "_DealDetailBody 为 StatefulWidget，未集成 Riverpod",
+      "severity": "medium",
+      "status": "fixed"
+    }
+  ]
+}

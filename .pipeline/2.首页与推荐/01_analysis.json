@@ -1,0 +1,56 @@
+{
+  "module": "2.首页与推荐",
+  "analysis_date": "2026-03-01",
+  "existing_files": [
+    "lib/features/deals/presentation/screens/home_screen.dart",
+    "lib/features/deals/domain/providers/deals_provider.dart",
+    "lib/features/deals/data/repositories/deals_repository.dart",
+    "lib/features/deals/data/models/deal_model.dart"
+  ],
+  "already_implemented": [
+    "HomeScreen 基本布局（Banner、分类图标、Featured Deals、Deals Near You）",
+    "FeaturedDeals 横向滑动卡片",
+    "DealModel 数据模型（fromJson、字段完整）",
+    "DealsRepository 基本 CRUD（fetchDeals、fetchFeaturedDeals、fetchDealById）",
+    "dealsListProvider、featuredDealsProvider、dealDetailProvider",
+    "selectedCategoryProvider、searchQueryProvider"
+  ],
+  "gaps_found": [
+    {
+      "id": "GAP-H1",
+      "description": "分类图标点击未关联 selectedCategoryProvider",
+      "severity": "high",
+      "status": "fixed"
+    },
+    {
+      "id": "GAP-H2",
+      "description": "'View All' 按钮无导航目标",
+      "severity": "medium",
+      "status": "fixed"
+    },
+    {
+      "id": "GAP-H3",
+      "description": "Deal 卡片上无收藏按钮",
+      "severity": "medium",
+      "status": "fixed"
+    },
+    {
+      "id": "GAP-H4",
+      "description": "距离显示为硬编码 '1.2 mi'，未使用 GPS",
+      "severity": "high",
+      "status": "fixed"
+    },
+    {
+      "id": "GAP-H5",
+      "description": "缺少 savedDealIdsProvider / savedDealsListProvider",
+      "severity": "medium",
+      "status": "fixed"
+    },
+    {
+      "id": "GAP-H6",
+      "description": "缺少 userLocationProvider（GPS 定位）",
+      "severity": "high",
+      "status": "fixed"
+    }
+  ]
+}

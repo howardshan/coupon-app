@@ -1,0 +1,51 @@
+{
+  "module": "7.退款系统",
+  "requirements": {
+    "7.1.1_用户退款": {
+      "entry": "券详情 'Request Refund' / 订单详情 'Refund' 按钮",
+      "confirm": "弹窗 + 退款金额 + 退回方式 + Confirm Refund / Cancel",
+      "rules": "仅未使用可退; 已使用/过期/已转赠不可退"
+    },
+    "7.1.2_过期自动退": {
+      "rule": "过期后24h自动退全额, 退回原支付方式",
+      "notify": "Push + 邮件通知退款详情"
+    },
+    "7.1.3_退款跟踪": {
+      "status": "Processing → Refunded → Failed(联系客服)",
+      "eta": "Apple/Google Pay 1-3工作日; 信用卡3-5工作日; 显示预计到账日"
+    }
+  },
+  "existing_code": {
+    "implemented": [
+      "DB: order_status enum has 'refunded' + 'refund_requested'",
+      "DB: orders.refund_reason column",
+      "DB: payments.refund_amount column",
+      "DB: deals.refund_policy column",
+      "DB: coupon_status enum has 'refunded'",
+      "Edge Function: create-refund/index.ts (Stripe refund + DB update)",
+      "OrderModel: isRefunded getter, status display",
+      "OrdersRepository: requestRefund(orderId) method (DB-only, no Stripe)",
+      "OrdersScreen: status badge for 'refund_requested'",
+      "DealDetailScreen: 'Risk-Free Refund' badge",
+      "Profile: 'Refunds' label in quick-links"
+    ],
+    "needs_modification": [
+      "Edge Function: add double-refund guard, update payments table",
+      "OrderModel: add isRefundRequested getter, refundReason field",
+      "OrdersRepository: call Edge Function instead of direct DB update, add reason param",
+      "OrdersScreen: add 'Request Refund' button for unused orders",
+      "DB: add RLS UPDATE policy on orders table for refund_requested"
+    ],
+    "needs_creation": [
+      "RefundModel: data model for refund tracking",
+      "RefundRepository: calls create-refund Edge Function",
+      "RefundProvider: AsyncNotifier for refund state management",
+      "RefundRequestScreen: confirmation dialog with amount + payment method",
+      "RefundStatusScreen: tracking screen with Processing/Refunded/Failed + ETA",
+      "Router: /refund/:orderId route",
+      "DB migration: add refund_status, refund_requested_at, refunded_at columns",
+      "Edge Function: auto-refund-expired for 24h auto-refund",
+      "Tests: refund feature tests"
+    ]
+  }
+}
