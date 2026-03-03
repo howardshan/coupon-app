@@ -9,6 +9,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../data/models/deal_model.dart';
 import '../../data/models/review_model.dart';
 import '../../domain/providers/deals_provider.dart';
+import '../../domain/providers/history_provider.dart';
 
 class DealDetailScreen extends ConsumerWidget {
   final String dealId;
@@ -18,6 +19,13 @@ class DealDetailScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final dealAsync = ref.watch(dealDetailProvider(dealId));
+
+    // deal 数据可用时记录浏览历史（postFrame 避免在 build 内产生副作用）
+    dealAsync.whenData((deal) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ref.read(historyRepositoryProvider).addToHistory(deal.id);
+      });
+    });
 
     return dealAsync.when(
       data: (deal) => _DealDetailBody(deal: deal),
@@ -106,7 +114,7 @@ class _DealDetailBody extends ConsumerWidget {
             ],
           ),
 
-          // Floating back & share buttons
+          // Floating back / heart / share buttons
           Positioned(
             top: MediaQuery.of(context).padding.top + 8,
             left: 12,
@@ -118,12 +126,18 @@ class _DealDetailBody extends ConsumerWidget {
                   icon: Icons.arrow_back,
                   onTap: () => context.pop(),
                 ),
-                _CircleButton(
-                  icon: Icons.share_outlined,
-                  onTap: () => Share.share(
-                    '${deal.title} - \$${deal.discountPrice.toStringAsFixed(2)} '
-                    '(${deal.effectiveDiscountLabel}) on DealJoy!',
-                  ),
+                Row(
+                  children: [
+                    _SaveButton(dealId: deal.id),
+                    const SizedBox(width: 8),
+                    _CircleButton(
+                      icon: Icons.share_outlined,
+                      onTap: () => Share.share(
+                        '${deal.title} - \$${deal.discountPrice.toStringAsFixed(2)} '
+                        '(${deal.effectiveDiscountLabel}) on DealJoy!',
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -160,6 +174,43 @@ class _CircleButton extends StatelessWidget {
           ],
         ),
         child: Icon(icon, size: 20, color: AppColors.textPrimary),
+      ),
+    );
+  }
+}
+
+// ── 收藏心形按钮（已收藏红心 / 未收藏空心）────────────────────
+class _SaveButton extends ConsumerWidget {
+  final String dealId;
+
+  const _SaveButton({required this.dealId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final savedIds = ref.watch(savedDealIdsProvider).valueOrNull ?? {};
+    final isSaved = savedIds.contains(dealId);
+
+    return GestureDetector(
+      onTap: () =>
+          ref.read(savedDealsNotifierProvider.notifier).toggle(dealId),
+      child: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.9),
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.1),
+              blurRadius: 8,
+            ),
+          ],
+        ),
+        child: Icon(
+          isSaved ? Icons.favorite : Icons.favorite_border,
+          size: 20,
+          color: isSaved ? Colors.red : AppColors.textSecondary,
+        ),
       ),
     );
   }

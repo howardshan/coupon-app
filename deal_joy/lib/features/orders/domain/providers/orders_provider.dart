@@ -14,12 +14,16 @@ final userOrdersProvider = FutureProvider<List<OrderModel>>((ref) async {
   return ref.watch(ordersRepositoryProvider).fetchUserOrders(user.id);
 });
 
-final orderDetailProvider =
-    FutureProvider.family<OrderModel, String>((ref, orderId) {
+final orderDetailProvider = FutureProvider.family<OrderModel, String>((
+  ref,
+  orderId,
+) {
   return ref.watch(ordersRepositoryProvider).fetchOrderById(orderId);
 });
 
-final couponDataProvider =
-    FutureProvider.family<Map<String, dynamic>, String>((ref, couponId) {
+final couponDataProvider = FutureProvider.family<Map<String, dynamic>, String>((
+  ref,
+  couponId,
+) {
   return ref.watch(ordersRepositoryProvider).fetchCoupon(couponId);
 });

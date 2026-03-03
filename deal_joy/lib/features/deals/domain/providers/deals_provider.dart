@@ -30,43 +30,53 @@ final featuredDealsProvider = FutureProvider<List<DealModel>>((ref) async {
 });
 
 // Deals 列表（含城市 + 分类 + 搜索筛选）
-final dealsListProvider =
-    FutureProvider.family<List<DealModel>, int>((ref, page) async {
+final dealsListProvider = FutureProvider.family<List<DealModel>, int>((
+  ref,
+  page,
+) async {
   final city = ref.watch(selectedLocationProvider).city;
   final category = ref.watch(selectedCategoryProvider);
   final search = ref.watch(searchQueryProvider);
-  return ref.watch(dealsRepositoryProvider).fetchDeals(
-        city: city,
-        category: category,
-        search: search,
-        page: page,
-      );
+  return ref
+      .watch(dealsRepositoryProvider)
+      .fetchDeals(city: city, category: category, search: search, page: page);
 });
 
 // 单个 Deal 详情
-final dealDetailProvider =
-    FutureProvider.family<DealModel, String>((ref, dealId) async {
+final dealDetailProvider = FutureProvider.family<DealModel, String>((
+  ref,
+  dealId,
+) async {
   return ref.watch(dealsRepositoryProvider).fetchDealById(dealId);
 });
 
 // Other deals from the same merchant
-final merchantDealsProvider = FutureProvider.family<List<DealModel>,
-    ({String merchantId, String excludeDealId})>((ref, params) async {
-  return ref.watch(dealsRepositoryProvider).fetchDealsByMerchant(
-        params.merchantId,
-        excludeDealId: params.excludeDealId,
-      );
-});
+final merchantDealsProvider =
+    FutureProvider.family<
+      List<DealModel>,
+      ({String merchantId, String excludeDealId})
+    >((ref, params) async {
+      return ref
+          .watch(dealsRepositoryProvider)
+          .fetchDealsByMerchant(
+            params.merchantId,
+            excludeDealId: params.excludeDealId,
+          );
+    });
 
 // Reviews for a specific deal
-final dealReviewsProvider =
-    FutureProvider.family<List<ReviewModel>, String>((ref, dealId) async {
+final dealReviewsProvider = FutureProvider.family<List<ReviewModel>, String>((
+  ref,
+  dealId,
+) async {
   return ref.watch(dealsRepositoryProvider).fetchReviewsByDeal(dealId);
 });
 
 // ---- GPS 位置 Provider ----
 // 获取当前 GPS 坐标，权限被拒则返回 Dallas 默认坐标
-final userLocationProvider = FutureProvider<({double lat, double lng})>((ref) async {
+final userLocationProvider = FutureProvider<({double lat, double lng})>((
+  ref,
+) async {
   try {
     LocationPermission permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
@@ -94,7 +104,8 @@ double distanceMiles(double lat1, double lng1, double lat2, double lng2) {
   const earthRadiusMiles = 3958.8;
   final dLat = _toRad(lat2 - lat1);
   final dLng = _toRad(lng2 - lng1);
-  final a = sin(dLat / 2) * sin(dLat / 2) +
+  final a =
+      sin(dLat / 2) * sin(dLat / 2) +
       cos(_toRad(lat1)) * cos(_toRad(lat2)) * sin(dLng / 2) * sin(dLng / 2);
   final c = 2 * asin(sqrt(a));
   return earthRadiusMiles * c;
@@ -159,4 +170,5 @@ class SavedDealsNotifier extends Notifier<AsyncValue<void>> {
 
 final savedDealsNotifierProvider =
     NotifierProvider<SavedDealsNotifier, AsyncValue<void>>(
-        SavedDealsNotifier.new);
+      SavedDealsNotifier.new,
+    );

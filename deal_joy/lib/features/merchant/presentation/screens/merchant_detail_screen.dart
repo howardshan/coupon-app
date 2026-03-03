@@ -5,18 +5,23 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/providers/supabase_provider.dart';
 import '../../../deals/data/models/deal_model.dart';
+import '../../../deals/domain/providers/history_provider.dart';
+import '../../domain/providers/merchant_provider.dart';
 
 // Provider to fetch merchant with their deals
 final merchantDetailProvider =
-    FutureProvider.family<Map<String, dynamic>, String>((ref, merchantId) async {
-  final client = ref.watch(supabaseClientProvider);
-  final merchant = await client
-      .from('merchants')
-      .select('*, deals(*)')
-      .eq('id', merchantId)
-      .single();
-  return merchant;
-});
+    FutureProvider.family<Map<String, dynamic>, String>((
+      ref,
+      merchantId,
+    ) async {
+      final client = ref.watch(supabaseClientProvider);
+      final merchant = await client
+          .from('merchants')
+          .select('*, deals(*)')
+          .eq('id', merchantId)
+          .single();
+      return merchant;
+    });
 
 class MerchantDetailScreen extends ConsumerStatefulWidget {
   final String merchantId;
@@ -28,8 +33,7 @@ class MerchantDetailScreen extends ConsumerStatefulWidget {
       _MerchantDetailScreenState();
 }
 
-class _MerchantDetailScreenState
-    extends ConsumerState<MerchantDetailScreen>
+class _MerchantDetailScreenState extends ConsumerState<MerchantDetailScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabCtrl;
 
@@ -48,6 +52,13 @@ class _MerchantDetailScreenState
   @override
   Widget build(BuildContext context) {
     final merchantAsync = ref.watch(merchantDetailProvider(widget.merchantId));
+
+    // merchant 数据可用时记录浏览历史（postFrame 避免在 build 内产生副作用）
+    merchantAsync.whenData((_) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ref.read(historyRepositoryProvider).addMerchantToHistory(widget.merchantId);
+      });
+    });
 
     return merchantAsync.when(
       data: (data) => _MerchantBody(data: data, tabCtrl: _tabCtrl),
@@ -82,8 +93,9 @@ class _MerchantBody extends StatelessWidget {
       final map = Map<String, dynamic>.from(d as Map);
       // Provide defaults for required fields
       map['image_urls'] ??= <String>[];
-      map['expires_at'] ??=
-          DateTime.now().add(const Duration(days: 1)).toIso8601String();
+      map['expires_at'] ??= DateTime.now()
+          .add(const Duration(days: 1))
+          .toIso8601String();
       map['stock_limit'] ??= 100;
       return DealModel.fromJson(map);
     }).toList();
@@ -110,13 +122,16 @@ class _MerchantBody extends StatelessWidget {
                   color: AppColors.surfaceVariant,
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.arrow_back,
-                    color: AppColors.textSecondary, size: 20),
+                child: const Icon(
+                  Icons.arrow_back,
+                  color: AppColors.textSecondary,
+                  size: 20,
+                ),
               ),
             ),
             actions: [
               _ActionBtn(Icons.search),
-              _ActionBtn(Icons.favorite_border),
+              _SaveMerchantBtn(merchantId: data['id'] as String),
               _ActionBtn(Icons.share_outlined),
               const SizedBox(width: 8),
             ],
@@ -152,49 +167,78 @@ class _MerchantBody extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(name,
-                      style: const TextStyle(
-                          fontSize: 22, fontWeight: FontWeight.bold)),
+                  Text(
+                    name,
+                    style: const TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                   const SizedBox(height: 6),
                   Row(
                     children: [
                       Text(
                         rating.toStringAsFixed(1),
                         style: const TextStyle(
-                            color: AppColors.primary,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16),
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
                       ),
                       const SizedBox(width: 6),
-                      Text('$reviewCount reviews',
-                          style: const TextStyle(
-                              color: AppColors.textSecondary, fontSize: 13)),
+                      Text(
+                        '$reviewCount reviews',
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 13,
+                        ),
+                      ),
                       const SizedBox(width: 6),
-                      const Text('·',
-                          style: TextStyle(color: AppColors.textHint)),
+                      const Text(
+                        '·',
+                        style: TextStyle(color: AppColors.textHint),
+                      ),
                       const SizedBox(width: 6),
-                      const Text('2k+ saved',
-                          style: TextStyle(
-                              color: AppColors.textSecondary, fontSize: 13)),
+                      const Text(
+                        '2k+ saved',
+                        style: TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 13,
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 10),
                   // Hours + parking
                   Row(
                     children: [
-                      const Icon(Icons.schedule_outlined,
-                          size: 14, color: AppColors.textSecondary),
+                      const Icon(
+                        Icons.schedule_outlined,
+                        size: 14,
+                        color: AppColors.textSecondary,
+                      ),
                       const SizedBox(width: 4),
-                      Text(hours,
-                          style: const TextStyle(
-                              fontSize: 12, color: AppColors.textSecondary)),
+                      Text(
+                        hours,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
                       const SizedBox(width: 12),
-                      const Icon(Icons.local_parking,
-                          size: 14, color: AppColors.textSecondary),
+                      const Icon(
+                        Icons.local_parking,
+                        size: 14,
+                        color: AppColors.textSecondary,
+                      ),
                       const SizedBox(width: 4),
-                      const Text('Parking available',
-                          style: TextStyle(
-                              fontSize: 12, color: AppColors.textSecondary)),
+                      const Text(
+                        'Parking available',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 12),
@@ -212,13 +256,19 @@ class _MerchantBody extends StatelessWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(address,
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.w500)),
-                              const Text('1.2 km away',
-                                  style: TextStyle(
-                                      fontSize: 12,
-                                      color: AppColors.textSecondary)),
+                              Text(
+                                address,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              const Text(
+                                '1.2 km away',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
                             ],
                           ),
                         ),
@@ -227,11 +277,14 @@ class _MerchantBody extends StatelessWidget {
                         Row(
                           children: [
                             _MerchantAction(
-                                icon: Icons.directions_car_outlined,
-                                label: 'Drive'),
+                              icon: Icons.directions_car_outlined,
+                              label: 'Drive',
+                            ),
                             const SizedBox(width: 16),
                             _MerchantAction(
-                                icon: Icons.call_outlined, label: 'Call'),
+                              icon: Icons.call_outlined,
+                              label: 'Call',
+                            ),
                           ],
                         ),
                       ],
@@ -286,8 +339,7 @@ class _MerchantBody extends StatelessWidget {
                 }
                 return GridView.builder(
                   padding: const EdgeInsets.all(16),
-                  gridDelegate:
-                      const SliverGridDelegateWithFixedCrossAxisCount(
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: 2,
                     crossAxisSpacing: 12,
                     mainAxisSpacing: 12,
@@ -347,6 +399,39 @@ class _ActionBtn extends StatelessWidget {
   }
 }
 
+// ── 收藏商家按钮（已收藏红心 / 未收藏空心）────────────────────
+class _SaveMerchantBtn extends ConsumerWidget {
+  final String merchantId;
+
+  const _SaveMerchantBtn({required this.merchantId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final savedIds = ref.watch(savedMerchantIdsProvider).valueOrNull ?? {};
+    final isSaved = savedIds.contains(merchantId);
+
+    return GestureDetector(
+      onTap: () => ref
+          .read(savedMerchantsNotifierProvider.notifier)
+          .toggle(merchantId),
+      child: Container(
+        margin: const EdgeInsets.only(left: 6),
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          color: AppColors.surfaceVariant,
+          shape: BoxShape.circle,
+        ),
+        child: Icon(
+          isSaved ? Icons.favorite : Icons.favorite_border,
+          size: 18,
+          color: isSaved ? Colors.red : AppColors.textSecondary,
+        ),
+      ),
+    );
+  }
+}
+
 class _MerchantAction extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -359,9 +444,10 @@ class _MerchantAction extends StatelessWidget {
       children: [
         Icon(icon, color: AppColors.primary, size: 22),
         const SizedBox(height: 2),
-        Text(label,
-            style:
-                const TextStyle(fontSize: 10, color: AppColors.primary)),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 10, color: AppColors.primary),
+        ),
       ],
     );
   }
@@ -409,14 +495,20 @@ class _DealRow extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(deal.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.bold)),
+                  Text(
+                    deal.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
                   const SizedBox(height: 4),
-                  Text('${deal.totalSold}+ sold this season',
-                      style: const TextStyle(
-                          fontSize: 11, color: AppColors.textSecondary)),
+                  Text(
+                    '${deal.totalSold}+ sold this season',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
                   const SizedBox(height: 6),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -426,17 +518,19 @@ class _DealRow extends StatelessWidget {
                           Text(
                             '\$${deal.discountPrice.toStringAsFixed(0)}',
                             style: const TextStyle(
-                                color: AppColors.primary,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 18),
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 18,
+                            ),
                           ),
                           const SizedBox(width: 4),
                           Text(
                             '\$${deal.originalPrice.toStringAsFixed(0)}',
                             style: const TextStyle(
-                                color: AppColors.textHint,
-                                fontSize: 11,
-                                decoration: TextDecoration.lineThrough),
+                              color: AppColors.textHint,
+                              fontSize: 11,
+                              decoration: TextDecoration.lineThrough,
+                            ),
                           ),
                         ],
                       ),
@@ -448,9 +542,12 @@ class _DealRow extends StatelessWidget {
                           minimumSize: const Size(60, 32),
                           padding: const EdgeInsets.symmetric(horizontal: 12),
                           shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(20)),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
                           textStyle: const TextStyle(
-                              fontSize: 12, fontWeight: FontWeight.bold),
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                         child: const Text('Buy'),
                       ),
@@ -483,19 +580,16 @@ class _DishCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           ClipRRect(
-            borderRadius:
-                const BorderRadius.vertical(top: Radius.circular(16)),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
             child: CachedNetworkImage(
-              imageUrl:
-                  'https://picsum.photos/seed/${name.hashCode}/300/200',
+              imageUrl: 'https://picsum.photos/seed/${name.hashCode}/300/200',
               height: 100,
               width: double.infinity,
               fit: BoxFit.cover,
               errorWidget: (_, _, _) => Container(
                 height: 100,
                 color: AppColors.surfaceVariant,
-                child: const Icon(Icons.restaurant,
-                    color: AppColors.textHint),
+                child: const Icon(Icons.restaurant, color: AppColors.textHint),
               ),
             ),
           ),
@@ -504,17 +598,24 @@ class _DishCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 13)),
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                ),
                 const SizedBox(height: 2),
-                const Text('\$18–32',
-                    style: TextStyle(
-                        color: AppColors.primary,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13)),
+                const Text(
+                  '\$18–32',
+                  style: TextStyle(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                ),
               ],
             ),
           ),
@@ -529,8 +630,11 @@ class _ReviewCard extends StatelessWidget {
   final int rating;
   final String text;
 
-  const _ReviewCard(
-      {required this.name, required this.rating, required this.text});
+  const _ReviewCard({
+    required this.name,
+    required this.rating,
+    required this.text,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -547,23 +651,26 @@ class _ReviewCard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(name,
-                  style: const TextStyle(fontWeight: FontWeight.bold)),
+              Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
               Row(
                 children: List.generate(
-                    5,
-                    (i) => Icon(Icons.star,
-                        size: 14,
-                        color: i < rating
-                            ? AppColors.featuredBadge
-                            : AppColors.textHint)),
+                  5,
+                  (i) => Icon(
+                    Icons.star,
+                    size: 14,
+                    color: i < rating
+                        ? AppColors.featuredBadge
+                        : AppColors.textHint,
+                  ),
+                ),
               ),
             ],
           ),
           const SizedBox(height: 8),
-          Text(text,
-              style: const TextStyle(
-                  color: AppColors.textSecondary, height: 1.5)),
+          Text(
+            text,
+            style: const TextStyle(color: AppColors.textSecondary, height: 1.5),
+          ),
         ],
       ),
     );
@@ -584,11 +691,13 @@ class _TabBarDelegate extends SliverPersistentHeaderDelegate {
 
   @override
   Widget build(
-          BuildContext context, double shrinkOffset, bool overlapsContent) =>
-      Container(
-        color: AppColors.background.withValues(alpha: 0.98),
-        child: tabBar,
-      );
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) => Container(
+    color: AppColors.background.withValues(alpha: 0.98),
+    child: tabBar,
+  );
 
   @override
   bool shouldRebuild(_TabBarDelegate oldDelegate) => false;

@@ -22,16 +22,15 @@ class ReviewModel {
   });
 
   factory ReviewModel.fromJson(Map<String, dynamic> json) => ReviewModel(
-        id: json['id'] as String,
-        dealId: json['deal_id'] as String,
-        userId: json['user_id'] as String,
-        rating: json['rating'] as int,
-        comment: json['comment'] as String?,
-        isVerified: json['is_verified'] as bool? ?? false,
-        createdAt: DateTime.parse(json['created_at'] as String),
-        userName:
-            (json['users'] as Map<String, dynamic>?)?['full_name'] as String?,
-        userAvatarUrl:
-            (json['users'] as Map<String, dynamic>?)?['avatar_url'] as String?,
-      );
+    id: json['id'] as String,
+    dealId: json['deal_id'] as String,
+    userId: json['user_id'] as String,
+    rating: json['rating'] as int,
+    comment: json['comment'] as String?,
+    isVerified: json['is_verified'] as bool? ?? false,
+    createdAt: DateTime.parse(json['created_at'] as String),
+    userName: (json['users'] as Map<String, dynamic>?)?['full_name'] as String?,
+    userAvatarUrl:
+        (json['users'] as Map<String, dynamic>?)?['avatar_url'] as String?,
+  );
 }

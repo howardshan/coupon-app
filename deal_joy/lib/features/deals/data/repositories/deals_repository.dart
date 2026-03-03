@@ -153,6 +153,24 @@ class DealsRepository {
     }
   }
 
+  /// 按 ID 列表批量获取 deal（保持原顺序）
+  Future<List<DealModel>> fetchDealsByIds(List<String> ids) async {
+    if (ids.isEmpty) return [];
+    try {
+      final data = await _client
+          .from('deals')
+          .select('*, merchants(id, name, logo_url, phone)')
+          .inFilter('id', ids);
+      final map = {
+        for (final d in data as List)
+          (d as Map<String, dynamic>)['id'] as String: DealModel.fromJson(d),
+      };
+      return ids.map((id) => map[id]).whereType<DealModel>().toList();
+    } on PostgrestException catch (e) {
+      throw AppException('Failed to load deals: ${e.message}', code: e.code);
+    }
+  }
+
   Future<List<DealModel>> fetchSavedDeals(String userId) async {
     try {
       final data = await _client

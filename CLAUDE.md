@@ -1,3 +1,15 @@
+# 沟通规则（最高优先级）
+- **所有与用户的对话和解释必须用中文回复**
+- **代码注释用中文**
+- **代码本身（变量名、函数名、类名等）和 UI 文案用英文**
+- **每次完成代码改动后，必须自动重启 Android 模拟器**：
+  ```bash
+  pkill -f "qemu-system" 2>/dev/null; pkill -f "emulator" 2>/dev/null
+  nohup ~/Library/Android/sdk/emulator/emulator -avd Medium_Phone_API_36.1 -no-snapshot-load > /tmp/emulator.log 2>&1 &
+  sleep 20
+  cd "/Users/howardshansmac/github/coupon app/coupon-app/deal_joy" && nohup ~/flutter/bin/flutter run -d emulator-5554 > /tmp/flutter_run.log 2>&1 &
+  ```
+
 # DealJoy - 本地生活团购平台
 
 ## 项目概述
