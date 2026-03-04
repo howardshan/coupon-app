@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import { toast } from 'sonner'
 import { approveMerchant, rejectMerchant } from '@/app/actions/admin'
 
 interface MerchantActionButtonsProps {
@@ -36,8 +37,10 @@ export default function MerchantActionButtons({
       try {
         await approveMerchant(merchantId, merchantUserId)
         setStatus('approved')
+        toast.success('Merchant approved')
       } catch {
         setError('Failed')
+        toast.error('Action failed. Check RLS policies.')
       }
     })
   }
@@ -48,8 +51,10 @@ export default function MerchantActionButtons({
       try {
         await rejectMerchant(merchantId)
         setStatus('rejected')
+        toast.success('Merchant rejected')
       } catch {
         setError('Failed')
+        toast.error('Action failed. Check RLS policies.')
       }
     })
   }

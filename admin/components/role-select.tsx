@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import { toast } from 'sonner'
 import { updateUserRole } from '@/app/actions/admin'
 
 interface RoleSelectProps {
@@ -23,9 +24,11 @@ export default function RoleSelect({ userId, currentRole }: RoleSelectProps) {
     startTransition(async () => {
       try {
         await updateUserRole(userId, newRole as 'user' | 'merchant' | 'admin')
+        toast.success(`Role updated to ${newRole}`)
       } catch {
         setRole(previous)
         setError('Failed to update role')
+        toast.error('Failed to update role. Check permissions.')
       }
     })
   }
