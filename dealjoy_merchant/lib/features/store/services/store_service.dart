@@ -166,15 +166,17 @@ class StoreService {
   // ----------------------------------------------------------
   // 6. 重排序照片（批量更新 sort_order）
   //    orderedIds: 照片 ID 列表，顺序即为新的 sort_order (0, 1, 2...)
+  //    通过 Edge Function 调用，确保权限验证
   // ----------------------------------------------------------
   Future<void> reorderPhotos(List<String> orderedIds) async {
-    // 直接操作 DB：对每个 ID 更新 sort_order
-    // 使用 Supabase client 直接更新（绕过 Edge Function 以减少延迟）
-    for (int i = 0; i < orderedIds.length; i++) {
-      await _supabase
-          .from('merchant_photos')
-          .update({'sort_order': i})
-          .eq('id', orderedIds[i]);
+    final response = await _supabase.functions.invoke(
+      '$_functionName/photos/reorder',
+      method: HttpMethod.patch,
+      body: {'ordered_ids': orderedIds},
+    );
+
+    if (response.status != 200) {
+      throw _handleError(response);
     }
   }
 

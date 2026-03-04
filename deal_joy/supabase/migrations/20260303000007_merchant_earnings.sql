@@ -263,6 +263,13 @@ end;
 $$;
 
 -- =============================================================
+-- 6.5 统一授予函数执行权限（商家端 Edge Function 通过 authenticated 调用）
+-- =============================================================
+GRANT EXECUTE ON FUNCTION public.get_merchant_earnings_summary(uuid, date) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_merchant_transactions(uuid, date, date, int, int) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_merchant_report_data(uuid, date, date) TO authenticated;
+
+-- =============================================================
 -- 7. 为 orders 表添加商家视角 RLS（若尚未存在）
 -- 商家可查看自己旗下 deals 的所有订单
 -- =============================================================
