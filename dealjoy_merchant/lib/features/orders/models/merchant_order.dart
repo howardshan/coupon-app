@@ -13,6 +13,8 @@ enum OrderStatus {
   paid,
   /// 已核销（used）
   redeemed,
+  /// 退款处理中（refund_requested）
+  refundRequested,
   /// 已退款
   refunded,
   /// 已取消 / 过期
@@ -27,10 +29,9 @@ enum OrderStatus {
       case 'used':
       case 'redeemed':
         return OrderStatus.redeemed;
-      case 'refunded':
-        return OrderStatus.refunded;
       case 'refund_requested':
-        // 退款处理中，UI 显示为 refunded tab
+        return OrderStatus.refundRequested;
+      case 'refunded':
         return OrderStatus.refunded;
       case 'expired':
       case 'cancelled':
@@ -47,6 +48,8 @@ enum OrderStatus {
         return 'Paid';
       case OrderStatus.redeemed:
         return 'Redeemed';
+      case OrderStatus.refundRequested:
+        return 'Refund Requested';
       case OrderStatus.refunded:
         return 'Refunded';
       case OrderStatus.cancelled:
@@ -67,6 +70,8 @@ enum OrderStatus {
         return const Color(0xFF3B82F6); // 蓝色
       case OrderStatus.redeemed:
         return const Color(0xFF10B981); // 绿色
+      case OrderStatus.refundRequested:
+        return const Color(0xFFEF4444); // 红色
       case OrderStatus.refunded:
         return const Color(0xFFF59E0B); // 橙色
       case OrderStatus.cancelled:
@@ -81,6 +86,8 @@ enum OrderStatus {
         return const Color(0xFFEFF6FF);
       case OrderStatus.redeemed:
         return const Color(0xFFECFDF5);
+      case OrderStatus.refundRequested:
+        return const Color(0xFFFEF2F2);
       case OrderStatus.refunded:
         return const Color(0xFFFFFBEB);
       case OrderStatus.cancelled:
@@ -470,6 +477,8 @@ class OrderFilter {
         return 'unused'; // 数据库中 paid 对应 unused
       case OrderStatus.redeemed:
         return 'used';
+      case OrderStatus.refundRequested:
+        return 'refund_requested';
       case OrderStatus.refunded:
         return 'refunded';
       case OrderStatus.cancelled:

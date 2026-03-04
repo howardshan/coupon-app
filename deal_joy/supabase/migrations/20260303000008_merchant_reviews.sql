@@ -137,6 +137,9 @@ begin
 end;
 $$;
 
+-- 授予函数执行权限（商家端 Edge Function 通过 authenticated 调用）
+GRANT EXECUTE ON FUNCTION public.get_review_stats(uuid) TO authenticated;
+
 -- =============================================================
 -- 3. RLS 策略：商家可更新自己门店评价的 merchant_reply 字段
 -- =============================================================

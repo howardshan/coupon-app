@@ -43,15 +43,28 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
   final _step4FormKey = GlobalKey<FormState>();
   final _einCtrl = TextEditingController();
 
-  // Step 5: 地址表单
+  // Step 5: 地址表单（拆分为多字段）
   final _step5FormKey = GlobalKey<FormState>();
-  final _addressCtrl = TextEditingController();
+  final _address1Ctrl = TextEditingController();
+  final _address2Ctrl = TextEditingController();
+  final _cityCtrl = TextEditingController();
+  final _stateCtrl = TextEditingController();
+  final _zipcodeCtrl = TextEditingController();
 
   // 记录每个证件上传是否在加载中
   final Map<DocumentType, bool> _uploadingMap = {};
 
   static const _primaryOrange = Color(0xFFFF6B35);
   static const _bgColor = Color(0xFFF8F9FA);
+
+  @override
+  void initState() {
+    super.initState();
+    // 进入注册页时重置状态，清除上次的错误
+    Future.microtask(() {
+      ref.read(merchantAuthProvider.notifier).resetState();
+    });
+  }
 
   @override
   void dispose() {
@@ -63,7 +76,11 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
     _contactEmailCtrl.dispose();
     _phoneCtrl.dispose();
     _einCtrl.dispose();
-    _addressCtrl.dispose();
+    _address1Ctrl.dispose();
+    _address2Ctrl.dispose();
+    _cityCtrl.dispose();
+    _stateCtrl.dispose();
+    _zipcodeCtrl.dispose();
     super.dispose();
   }
 
@@ -451,13 +468,59 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
           ),
           const SizedBox(height: 24),
           _AppTextField(
-            controller: _addressCtrl,
-            label: 'Store Address',
-            hint: '123 Main St, Dallas, TX 75201',
-            maxLines: 3,
+            controller: _address1Ctrl,
+            label: 'Address Line 1',
+            hint: '123 Main St',
             validator: (v) => v == null || v.trim().isEmpty
-                ? 'Store address is required'
+                ? 'Address is required'
                 : null,
+          ),
+          const SizedBox(height: 16),
+          _AppTextField(
+            controller: _address2Ctrl,
+            label: 'Address Line 2 (Optional)',
+            hint: 'Apt, Suite, Unit, etc.',
+          ),
+          const SizedBox(height: 16),
+          _AppTextField(
+            controller: _cityCtrl,
+            label: 'City',
+            hint: 'Dallas',
+            validator: (v) => v == null || v.trim().isEmpty
+                ? 'City is required'
+                : null,
+          ),
+          const SizedBox(height: 16),
+          // State + Zipcode 同一行
+          Row(
+            children: [
+              Expanded(
+                child: _AppTextField(
+                  controller: _stateCtrl,
+                  label: 'State',
+                  hint: 'TX',
+                  validator: (v) => v == null || v.trim().isEmpty
+                      ? 'Required'
+                      : null,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _AppTextField(
+                  controller: _zipcodeCtrl,
+                  label: 'Zip Code',
+                  hint: '75201',
+                  keyboardType: TextInputType.number,
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) return 'Required';
+                    if (!RegExp(r'^\d{5}(-\d{4})?$').hasMatch(v.trim())) {
+                      return 'Invalid zip';
+                    }
+                    return null;
+                  },
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 32),
 
@@ -630,7 +693,13 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
       case 4:
         // Step 5: 地址 + 提交
         if (!(_step5FormKey.currentState?.validate() ?? false)) return;
-        notifier.updateAddress(_addressCtrl.text.trim());
+        notifier.updateAddress(
+          address1: _address1Ctrl.text.trim(),
+          address2: _address2Ctrl.text.trim(),
+          city: _cityCtrl.text.trim(),
+          state: _stateCtrl.text.trim(),
+          zipcode: _zipcodeCtrl.text.trim(),
+        );
 
         await notifier.submitApplication();
         final state5 = ref.read(merchantAuthProvider);
@@ -875,6 +944,10 @@ class _SummaryCard extends StatelessWidget {
           _SummaryRow(label: 'Email', value: app.contactEmail),
           _SummaryRow(label: 'Category', value: app.category?.label ?? '-'),
           _SummaryRow(label: 'EIN', value: app.ein),
+          _SummaryRow(
+            label: 'Address',
+            value: '${app.address1}${app.address2.isNotEmpty ? ', ${app.address2}' : ''}\n${app.city}, ${app.state} ${app.zipcode}',
+          ),
           _SummaryRow(
             label: 'Documents',
             value: '${app.documents.length} uploaded',

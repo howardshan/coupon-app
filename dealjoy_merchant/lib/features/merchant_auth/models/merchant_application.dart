@@ -302,8 +302,12 @@ class MerchantApplication {
     // Step 4: EIN + 证件
     this.ein = '',
     this.documents = const [],
-    // Step 5: 地址
-    this.address = '',
+    // Step 5: 地址（拆分为多字段）
+    this.address1 = '',
+    this.address2 = '',
+    this.city = '',
+    this.state = '',
+    this.zipcode = '',
     // 状态
     this.status = ApplicationStatus.pending,
     this.rejectionReason,
@@ -319,7 +323,11 @@ class MerchantApplication {
   final MerchantCategory? category;
   final String ein;
   final List<MerchantDocument> documents;
-  final String address;
+  final String address1;
+  final String address2;
+  final String city;
+  final String state;
+  final String zipcode;
   final ApplicationStatus status;
   final String? rejectionReason;
   final DateTime? submittedAt;
@@ -330,7 +338,10 @@ class MerchantApplication {
         contactName.isEmpty ||
         phone.isEmpty ||
         ein.isEmpty ||
-        address.isEmpty ||
+        address1.isEmpty ||
+        city.isEmpty ||
+        state.isEmpty ||
+        zipcode.isEmpty ||
         category == null) {
       return false;
     }
@@ -366,7 +377,12 @@ class MerchantApplication {
         'phone': phone,
         'category': category?.apiValue ?? '',
         'ein': ein,
-        'address': address,
+        'address': '$address1${address2.isNotEmpty ? ', $address2' : ''}, $city, $state $zipcode',
+        'address1': address1,
+        'address2': address2,
+        'city': city,
+        'state': state,
+        'zipcode': zipcode,
         'documents': documents.map((d) => d.toJson()).toList(),
       };
 
@@ -382,7 +398,11 @@ class MerchantApplication {
           ? MerchantCategory.fromApiValue(json['category'] as String)
           : null,
       ein: json['ein'] as String? ?? '',
-      address: json['address'] as String? ?? '',
+      address1: json['address1'] as String? ?? json['address'] as String? ?? '',
+      address2: json['address2'] as String? ?? '',
+      city: json['city'] as String? ?? '',
+      state: json['state'] as String? ?? '',
+      zipcode: json['zipcode'] as String? ?? '',
       status: ApplicationStatus.fromString(json['status'] as String? ?? 'pending'),
       rejectionReason: json['rejection_reason'] as String?,
       submittedAt: json['submitted_at'] != null
@@ -401,7 +421,11 @@ class MerchantApplication {
     MerchantCategory? category,
     String? ein,
     List<MerchantDocument>? documents,
-    String? address,
+    String? address1,
+    String? address2,
+    String? city,
+    String? state,
+    String? zipcode,
     ApplicationStatus? status,
     String? rejectionReason,
     DateTime? submittedAt,
@@ -416,7 +440,11 @@ class MerchantApplication {
       category: category ?? this.category,
       ein: ein ?? this.ein,
       documents: documents ?? this.documents,
-      address: address ?? this.address,
+      address1: address1 ?? this.address1,
+      address2: address2 ?? this.address2,
+      city: city ?? this.city,
+      state: state ?? this.state,
+      zipcode: zipcode ?? this.zipcode,
       status: status ?? this.status,
       rejectionReason: rejectionReason ?? this.rejectionReason,
       submittedAt: submittedAt ?? this.submittedAt,

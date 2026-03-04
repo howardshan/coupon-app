@@ -124,6 +124,18 @@ Deno.serve(async (req: Request) => {
       return await handlePostPhoto(supabaseAdmin, merchantId, body);
     }
 
+    // --- PATCH /merchant-store/photos/reorder ---
+    // 批量更新照片排序
+    if (
+      req.method === "PATCH" &&
+      pathSegments[0] === "photos" &&
+      pathSegments[1] === "reorder" &&
+      pathSegments.length === 2
+    ) {
+      const body = await req.json();
+      return await handleReorderPhotos(supabaseAdmin, merchantId, body);
+    }
+
     // --- DELETE /merchant-store/photos/:id ---
     // 删除照片记录
     if (
@@ -418,4 +430,54 @@ async function handleDeletePhoto(
   }
 
   return jsonResponse({ success: true, deleted_id: photoId });
+}
+
+// =============================================================
+// Handler: PATCH /merchant-store/photos/reorder
+// 批量更新照片排序（照片 ID 列表顺序即新的 sort_order）
+// =============================================================
+async function handleReorderPhotos(
+  supabase: ReturnType<typeof createClient>,
+  merchantId: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  body: Record<string, any>
+): Promise<Response> {
+  const { ordered_ids } = body;
+
+  if (!Array.isArray(ordered_ids) || ordered_ids.length === 0) {
+    return errorResponse("ordered_ids must be a non-empty array", 400);
+  }
+
+  // 验证所有照片 ID 属于当前商家
+  const { data: photos, error: fetchError } = await supabase
+    .from("merchant_photos")
+    .select("id")
+    .eq("merchant_id", merchantId)
+    .in("id", ordered_ids);
+
+  if (fetchError) {
+    return errorResponse("Failed to verify photo ownership", 500);
+  }
+
+  const ownedIds = new Set((photos ?? []).map((p: { id: string }) => p.id));
+  for (const id of ordered_ids) {
+    if (!ownedIds.has(id)) {
+      return errorResponse(`Photo ${id} not found or access denied`, 403);
+    }
+  }
+
+  // 批量更新 sort_order
+  for (let i = 0; i < ordered_ids.length; i++) {
+    const { error } = await supabase
+      .from("merchant_photos")
+      .update({ sort_order: i })
+      .eq("id", ordered_ids[i])
+      .eq("merchant_id", merchantId);
+
+    if (error) {
+      return errorResponse(`Failed to update sort_order for ${ordered_ids[i]}`, 500);
+    }
+  }
+
+  return jsonResponse({ success: true, count: ordered_ids.length });
 }

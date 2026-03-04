@@ -120,7 +120,8 @@ CREATE POLICY "review_photos_insert_own" ON public.review_photos
 
 -- -------------------------------------------------------------
 -- 6. get_merchant_review_summary 函数（用户端公开版）
---    聚合某商家所有 deal 的评价统计
+--    复用 000008 get_review_stats 的统计逻辑和停用词列表
+--    区别：无 auth.uid() 权限检查（面向所有用户），返回 jsonb
 -- -------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.get_merchant_review_summary(
   p_merchant_id uuid
@@ -132,6 +133,8 @@ AS $$
 DECLARE
   v_result jsonb;
 BEGIN
+  -- 统计逻辑与 get_review_stats（000008）保持一致
+  -- 不做 auth.uid() 权限检查，因为用户端需要公开访问
   WITH review_base AS (
     SELECT r.rating, r.comment
     FROM public.reviews r
@@ -140,33 +143,47 @@ BEGIN
   ),
   stats AS (
     SELECT
-      COALESCE(ROUND(AVG(rating::numeric), 1), 0) AS avg_rating,
+      -- 精度与 get_review_stats 保持一致：2 位小数
+      COALESCE(ROUND(AVG(rating::numeric), 2), 0::numeric) AS avg_rating,
       COUNT(*) AS total_count,
       jsonb_build_object(
-        '5', COUNT(*) FILTER (WHERE rating = 5),
-        '4', COUNT(*) FILTER (WHERE rating = 4),
-        '3', COUNT(*) FILTER (WHERE rating = 3),
+        '1', COUNT(*) FILTER (WHERE rating = 1),
         '2', COUNT(*) FILTER (WHERE rating = 2),
-        '1', COUNT(*) FILTER (WHERE rating = 1)
+        '3', COUNT(*) FILTER (WHERE rating = 3),
+        '4', COUNT(*) FILTER (WHERE rating = 4),
+        '5', COUNT(*) FILTER (WHERE rating = 5)
       ) AS distribution
     FROM review_base
   ),
-  -- 简化版标签提取（从评论中提取高频词）
-  word_freq AS (
+  -- 分词 + 停用词列表与 get_review_stats（000008）完全一致
+  words_raw AS (
     SELECT
-      w.word,
-      COUNT(*) AS cnt
-    FROM review_base rb,
-    LATERAL (
-      SELECT lower(regexp_replace(token, '[^a-zA-Z]', '', 'g')) AS word
-      FROM regexp_split_to_table(COALESCE(rb.comment, ''), '\s+') AS token
-    ) w
-    WHERE length(w.word) >= 5
-      AND w.word NOT IN ('about','their','there','these','would','could','should','really','very','this','that','with','from','have','been','were','they','also','just','more','than','them','some','other','which','will','each','make','like','what','when','only')
-    GROUP BY w.word
-    HAVING COUNT(*) >= 2
+      lower(regexp_replace(word, '[^a-zA-Z]', '', 'g')) AS word
+    FROM review_base,
+    LATERAL regexp_split_to_table(COALESCE(comment, ''), '\s+') AS word
+    WHERE length(word) > 0
+  ),
+  clean_words AS (
+    SELECT word
+    FROM words_raw
+    WHERE length(word) >= 4
+      AND word NOT IN (
+        'the','a','an','is','it','in','on','at','to','for','of','and','or',
+        'was','were','be','been','being','have','has','had','do','does','did',
+        'will','would','could','should','may','might','this','that','these',
+        'those','my','our','your','his','her','its','their','with','very',
+        'just','like','great','good','nice','also','from','they','were',
+        'really','very','more','some','than','when','then','here','food',
+        'place','time','back','came','came','went','said'
+      )
+  ),
+  word_freq AS (
+    SELECT word, COUNT(*) AS cnt
+    FROM clean_words
+    WHERE word != ''
+    GROUP BY word
     ORDER BY cnt DESC
-    LIMIT 8
+    LIMIT 10
   )
   SELECT jsonb_build_object(
     'avg_rating', s.avg_rating,
