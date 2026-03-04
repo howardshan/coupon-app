@@ -194,12 +194,24 @@ class MerchantAuthNotifier extends AsyncNotifier<MerchantApplication?> {
   }
 
   // ----------------------------------------------------------
-  // Step 5: 更新门店地址（本地状态）
+  // Step 5: 更新门店地址（本地状态，拆分为多字段）
   // ----------------------------------------------------------
-  void updateAddress(String address) {
-    final current = state.value;
-    state = AsyncData(
-      (current ?? const MerchantApplication()).copyWith(address: address),
+  void updateAddress({
+    required String address1,
+    required String address2,
+    required String city,
+    required String state,
+    required String zipcode,
+  }) {
+    final current = this.state.value;
+    this.state = AsyncData(
+      (current ?? const MerchantApplication()).copyWith(
+        address1: address1,
+        address2: address2,
+        city: city,
+        state: state,
+        zipcode: zipcode,
+      ),
     );
   }
 
