@@ -12,7 +12,8 @@ class OrdersRepository {
       final data = await _client
           .from('orders')
           .select(
-              'id, user_id, deal_id, coupon_id, quantity, total_amount, status, payment_intent_id, refund_reason, created_at, refund_requested_at, refunded_at, deals(id, title, image_urls, merchants(name))')
+            'id, user_id, deal_id, coupon_id, quantity, total_amount, status, payment_intent_id, refund_reason, created_at, deals(id, title, image_urls, merchants(name))',
+          )
           .eq('user_id', userId)
           .order('created_at', ascending: false);
       return (data as List).map((e) => OrderModel.fromJson(e)).toList();
@@ -26,7 +27,8 @@ class OrdersRepository {
       final data = await _client
           .from('orders')
           .select(
-              'id, user_id, deal_id, coupon_id, quantity, total_amount, status, payment_intent_id, refund_reason, created_at, refund_requested_at, refunded_at, deals(id, title, image_urls, merchants(name))')
+            'id, user_id, deal_id, coupon_id, quantity, total_amount, status, payment_intent_id, refund_reason, created_at, deals(id, title, image_urls, merchants(name))',
+          )
           .eq('id', orderId)
           .single();
       return OrderModel.fromJson(data);
@@ -39,10 +41,13 @@ class OrdersRepository {
     try {
       await _client
           .from('orders')
-          .update({'status': 'refund_requested'}).eq('id', orderId);
+          .update({'status': 'refund_requested'})
+          .eq('id', orderId);
     } on PostgrestException catch (e) {
-      throw AppException('Failed to request refund: ${e.message}',
-          code: e.code);
+      throw AppException(
+        'Failed to request refund: ${e.message}',
+        code: e.code,
+      );
     }
   }
 
