@@ -1,23 +1,26 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import RoleSelect from '@/components/role-select'
 
 export default async function UsersPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   const { data: profile } = await supabase.from('users').select('role').eq('id', user!.id).single()
 
-  // 只有 admin 可以访问
   if (profile?.role !== 'admin') redirect('/dashboard')
 
   const { data: users } = await supabase
     .from('users')
     .select('id, email, full_name, role, created_at')
     .order('created_at', { ascending: false })
-    .limit(50)
+    .limit(100)
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">Users</h1>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold text-gray-900">Users</h1>
+        <span className="text-sm text-gray-500">{users?.length ?? 0} total</span>
+      </div>
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <table className="w-full text-sm">
@@ -35,7 +38,14 @@ export default async function UsersPage() {
                 <td className="px-4 py-3 font-medium text-gray-900">{u.full_name || '—'}</td>
                 <td className="px-4 py-3 text-gray-600">{u.email}</td>
                 <td className="px-4 py-3">
-                  <RoleBadge role={u.role} />
+                  {/* 不能修改自己的 role */}
+                  {u.id === user!.id ? (
+                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">
+                      admin (you)
+                    </span>
+                  ) : (
+                    <RoleSelect userId={u.id} currentRole={u.role} />
+                  )}
                 </td>
                 <td className="px-4 py-3 text-gray-500">
                   {new Date(u.created_at).toLocaleDateString()}
@@ -49,18 +59,5 @@ export default async function UsersPage() {
         )}
       </div>
     </div>
-  )
-}
-
-function RoleBadge({ role }: { role: string }) {
-  const styles: Record<string, string> = {
-    admin: 'bg-red-100 text-red-700',
-    merchant: 'bg-blue-100 text-blue-700',
-    user: 'bg-gray-100 text-gray-600',
-  }
-  return (
-    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${styles[role] ?? styles.user}`}>
-      {role}
-    </span>
   )
 }
