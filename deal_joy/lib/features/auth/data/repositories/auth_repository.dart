@@ -186,6 +186,21 @@ class AuthRepository {
 
   // ---- 获取用户 Profile（不存在则自动创建）----
   Future<UserModel> _fetchUserProfile(String userId) async {
+    // 没有 session 时（邮件验证未完成），无法查询 RLS 保护的表，返回临时对象
+    if (_client.auth.currentSession == null) {
+      final authUser = _client.auth.currentUser;
+      final now = DateTime.now().toIso8601String();
+      return UserModel(
+        id: userId,
+        email: authUser?.email ?? '',
+        fullName: authUser?.userMetadata?['full_name'] as String?,
+        username: authUser?.userMetadata?['username'] as String?,
+        avatarUrl: null,
+        role: 'user',
+        createdAt: DateTime.parse(now),
+        updatedAt: DateTime.parse(now),
+      );
+    }
     final rows =
         await _client.from('users').select().eq('id', userId);
     if (rows.isNotEmpty) {
