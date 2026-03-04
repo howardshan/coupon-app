@@ -12,7 +12,7 @@ class OrdersRepository {
       final data = await _client
           .from('orders')
           .select(
-            'id, user_id, deal_id, coupon_id, quantity, total_amount, status, payment_intent_id, refund_reason, created_at, refund_requested_at, refunded_at, deals(id, title, image_urls, merchants(name))',
+            'id, user_id, deal_id, coupon_id, quantity, total_amount, status, payment_intent_id, refund_reason, created_at, deals(id, title, image_urls, merchants(name))',
           )
           .eq('user_id', userId)
           .order('created_at', ascending: false);
@@ -27,7 +27,7 @@ class OrdersRepository {
       final data = await _client
           .from('orders')
           .select(
-            'id, user_id, deal_id, coupon_id, quantity, total_amount, status, payment_intent_id, refund_reason, created_at, refund_requested_at, refunded_at, deals(id, title, image_urls, merchants(name))',
+            'id, user_id, deal_id, coupon_id, quantity, total_amount, status, payment_intent_id, refund_reason, created_at, deals(id, title, image_urls, merchants(name))',
           )
           .eq('id', orderId)
           .single();

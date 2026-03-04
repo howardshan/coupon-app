@@ -1,0 +1,202 @@
+// 门店信息 Riverpod Provider
+// 使用 AsyncNotifier 管理 StoreInfo 状态
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../models/store_info.dart';
+import '../services/store_service.dart';
+
+// ============================================================
+// StoreService Provider — 注入 Supabase 客户端
+// ============================================================
+final storeServiceProvider = Provider<StoreService>((ref) {
+  return StoreService(Supabase.instance.client);
+});
+
+// ============================================================
+// StoreNotifier — AsyncNotifier<StoreInfo>
+// 负责加载门店信息和触发各类更新操作
+// ============================================================
+class StoreNotifier extends AsyncNotifier<StoreInfo> {
+  late StoreService _service;
+
+  @override
+  Future<StoreInfo> build() async {
+    _service = ref.read(storeServiceProvider);
+    // 加载门店完整信息
+    return await _service.fetchStoreInfo();
+  }
+
+  // ----------------------------------------------------------
+  // 刷新门店信息（从服务器重新加载）
+  // ----------------------------------------------------------
+  Future<void> refresh() async {
+    state = const AsyncValue.loading();
+    state = await AsyncValue.guard(() => _service.fetchStoreInfo());
+  }
+
+  // ----------------------------------------------------------
+  // 更新基本信息（乐观更新：先更新本地状态，再调 API）
+  // ----------------------------------------------------------
+  Future<void> updateBasicInfo({
+    String? name,
+    String? description,
+    String? phone,
+    String? address,
+  }) async {
+    final current = state.valueOrNull;
+    if (current == null) return;
+
+    // 乐观更新本地状态
+    state = AsyncValue.data(
+      current.copyWith(
+        name: name ?? current.name,
+        description: description ?? current.description,
+        phone: phone ?? current.phone,
+        address: address ?? current.address,
+      ),
+    );
+
+    try {
+      await _service.updateStoreInfo(
+        name: name,
+        description: description,
+        phone: phone,
+        address: address,
+      );
+    } catch (e, st) {
+      // 失败时回滚本地状态
+      state = AsyncValue.data(current);
+      state = AsyncValue.error(e, st);
+    }
+  }
+
+  // ----------------------------------------------------------
+  // 更新标签
+  // ----------------------------------------------------------
+  Future<void> updateTags(List<String> tags) async {
+    final current = state.valueOrNull;
+    if (current == null) return;
+
+    // 乐观更新
+    state = AsyncValue.data(current.copyWith(tags: tags));
+
+    try {
+      await _service.updateStoreInfo(tags: tags);
+    } catch (e, st) {
+      state = AsyncValue.data(current);
+      state = AsyncValue.error(e, st);
+    }
+  }
+
+  // ----------------------------------------------------------
+  // 批量保存营业时间
+  // ----------------------------------------------------------
+  Future<void> updateBusinessHours(List<BusinessHours> hours) async {
+    final current = state.valueOrNull;
+    if (current == null) return;
+
+    // 乐观更新本地营业时间
+    state = AsyncValue.data(current.copyWith(hours: hours));
+
+    try {
+      final updatedHours = await _service.updateBusinessHours(hours);
+      // 用服务器返回的数据更新（含服务端生成的 id）
+      final updatedStore = current.copyWith(hours: updatedHours);
+      state = AsyncValue.data(updatedStore);
+    } catch (e, st) {
+      state = AsyncValue.data(current);
+      state = AsyncValue.error(e, st);
+    }
+  }
+
+  // ----------------------------------------------------------
+  // 上传照片
+  // ----------------------------------------------------------
+  Future<void> uploadPhoto({
+    required String merchantId,
+    required XFile file,
+    required StorePhotoType type,
+    int sortOrder = 0,
+  }) async {
+    final current = state.valueOrNull;
+    if (current == null) return;
+
+    // 上传过程中不乐观更新（需要等待 Storage URL）
+    try {
+      final newPhoto = await _service.uploadPhoto(
+        merchantId: merchantId,
+        file: file,
+        type: type,
+        sortOrder: sortOrder,
+      );
+      // 追加到照片列表
+      final updatedPhotos = [...current.photos, newPhoto];
+      state = AsyncValue.data(current.copyWith(photos: updatedPhotos));
+    } catch (e, st) {
+      state = AsyncValue.error(e, st);
+    }
+  }
+
+  // ----------------------------------------------------------
+  // 删除照片
+  // ----------------------------------------------------------
+  Future<void> deletePhoto(String photoId) async {
+    final current = state.valueOrNull;
+    if (current == null) return;
+
+    // 乐观从列表移除
+    final updatedPhotos =
+        current.photos.where((p) => p.id != photoId).toList();
+    state = AsyncValue.data(current.copyWith(photos: updatedPhotos));
+
+    try {
+      await _service.deletePhoto(photoId);
+    } catch (e, st) {
+      // 失败回滚
+      state = AsyncValue.data(current);
+      state = AsyncValue.error(e, st);
+    }
+  }
+
+  // ----------------------------------------------------------
+  // 重新排序照片（拖拽排序后调用）
+  // orderedIds: 新顺序的照片 ID 列表
+  // ----------------------------------------------------------
+  Future<void> reorderPhotos(List<String> orderedIds) async {
+    final current = state.valueOrNull;
+    if (current == null) return;
+
+    // 构造新顺序的照片列表（乐观更新）
+    final photoMap = {for (final p in current.photos) p.id: p};
+    final reorderedPhotos = orderedIds
+        .asMap()
+        .entries
+        .map((e) => photoMap[e.value]?.copyWith(sortOrder: e.key))
+        .whereType<StorePhoto>()
+        .toList();
+
+    // 保留未在 orderedIds 中的照片（其他类型）
+    final otherPhotos = current.photos
+        .where((p) => !orderedIds.contains(p.id))
+        .toList();
+
+    state = AsyncValue.data(
+      current.copyWith(photos: [...reorderedPhotos, ...otherPhotos]),
+    );
+
+    try {
+      await _service.reorderPhotos(orderedIds);
+    } catch (e, st) {
+      state = AsyncValue.data(current);
+      state = AsyncValue.error(e, st);
+    }
+  }
+}
+
+// ============================================================
+// storeProvider — 全局单例，供所有门店信息页面使用
+// ============================================================
+final storeProvider =
+    AsyncNotifierProvider<StoreNotifier, StoreInfo>(StoreNotifier.new);

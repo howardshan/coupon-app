@@ -1,3 +1,8 @@
+# 项目路径规则（最高优先级）
+- **商家端代码**（dealjoy_merchant）：只修改 `/Users/howardshansmac/github/coupon app/coupon-app/dealjoy_merchant/` 下的文件
+- **用户端代码**（deal_joy）：只修改 `/Users/howardshansmac/github/coupon app/coupon-app/deal_joy/` 下的文件
+- 两个项目的代码互不交叉修改
+
 # 沟通规则（最高优先级）
 - **所有与用户的对话和解释必须用中文回复**
 - **代码注释用中文**
