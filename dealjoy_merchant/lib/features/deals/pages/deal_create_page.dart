@@ -1,0 +1,1106 @@
+// Deal创建/编辑页面
+// 5步 Stepper 表单: 基本信息 → 价格 → 库存+有效期 → 使用规则 → 图片上传
+// editDeal 不为 null 时为编辑模式
+
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
+import '../models/merchant_deal.dart';
+import '../providers/deals_provider.dart';
+import '../widgets/price_input_row.dart';
+
+// ============================================================
+// DealCreatePage — Deal创建/编辑页面（ConsumerStatefulWidget）
+// ============================================================
+class DealCreatePage extends ConsumerStatefulWidget {
+  const DealCreatePage({super.key, this.editDeal});
+
+  /// 不为 null 时为编辑模式（回填表单数据）
+  final MerchantDeal? editDeal;
+
+  @override
+  ConsumerState<DealCreatePage> createState() => _DealCreatePageState();
+}
+
+class _DealCreatePageState extends ConsumerState<DealCreatePage> {
+  // 当前步骤索引（0-based）
+  int _currentStep = 0;
+
+  // Step 1: 基本信息
+  final _step1Key = GlobalKey<FormState>();
+  late final TextEditingController _titleController;
+  late final TextEditingController _descriptionController;
+  late final TextEditingController _packageController;
+  late final TextEditingController _usageNotesController;
+
+  // Step 2: 价格
+  final _step2Key = GlobalKey<FormState>();
+  double? _originalPrice;
+  double? _dealPrice;
+
+  // Step 3: 库存和有效期
+  final _step3Key = GlobalKey<FormState>();
+  bool _isUnlimited = false;
+  late final TextEditingController _stockController;
+  ValidityType _validityType = ValidityType.fixedDate;
+  DateTime? _endDate;
+  late final TextEditingController _validityDaysController;
+
+  // Step 4: 使用规则
+  final _step4Key = GlobalKey<FormState>();
+  final Set<String> _selectedDays = {};
+  late final TextEditingController _maxPerPersonController;
+  bool _isStackable = true;
+
+  // Step 5: 图片
+  final List<XFile> _selectedImages = [];
+  bool _isSubmitting = false;
+
+  static const _dayOptions = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  static const _categoryOptions = [
+    'Restaurant', 'Spa & Massage', 'Hair & Beauty',
+    'Fitness', 'Fun & Games', 'Nail & Lash', 'Wellness', 'Other',
+  ];
+  String _selectedCategory = 'Restaurant';
+
+  @override
+  void initState() {
+    super.initState();
+    final deal = widget.editDeal;
+
+    // 若为编辑模式，回填数据
+    _titleController       = TextEditingController(text: deal?.title ?? '');
+    _descriptionController = TextEditingController(text: deal?.description ?? '');
+    _packageController     = TextEditingController(text: deal?.packageContents ?? '');
+    _usageNotesController  = TextEditingController(text: deal?.usageNotes ?? '');
+    _stockController       = TextEditingController(
+      text: deal != null && !deal.isUnlimited ? deal.stockLimit.toString() : '',
+    );
+    _validityDaysController = TextEditingController(
+      text: deal?.validityDays?.toString() ?? '',
+    );
+    _maxPerPersonController = TextEditingController(
+      text: deal?.maxPerPerson?.toString() ?? '',
+    );
+
+    if (deal != null) {
+      _originalPrice  = deal.originalPrice;
+      _dealPrice      = deal.discountPrice;
+      _isUnlimited    = deal.isUnlimited;
+      _validityType   = deal.validityType;
+      _endDate        = deal.expiresAt;
+      _isStackable    = deal.isStackable;
+      _selectedCategory = deal.category;
+      if (deal.usageDays.isNotEmpty) {
+        _selectedDays.addAll(deal.usageDays);
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _descriptionController.dispose();
+    _packageController.dispose();
+    _usageNotesController.dispose();
+    _stockController.dispose();
+    _validityDaysController.dispose();
+    _maxPerPersonController.dispose();
+    super.dispose();
+  }
+
+  // --------------------------------------------------------
+  // Step 验证方法
+  // --------------------------------------------------------
+  bool _validateCurrentStep() {
+    switch (_currentStep) {
+      case 0:
+        return _step1Key.currentState?.validate() ?? false;
+      case 1:
+        if (!(_step2Key.currentState?.validate() ?? false)) return false;
+        if (_originalPrice == null || _dealPrice == null) {
+          _showSnack('Please enter both prices');
+          return false;
+        }
+        if (_dealPrice! >= _originalPrice!) {
+          _showSnack('Deal price must be less than original price');
+          return false;
+        }
+        return true;
+      case 2:
+        if (!(_step3Key.currentState?.validate() ?? false)) return false;
+        if (_validityType == ValidityType.fixedDate && _endDate == null) {
+          _showSnack('Please select an expiry date');
+          return false;
+        }
+        return true;
+      case 3:
+        return _step4Key.currentState?.validate() ?? true;
+      case 4:
+        if (_selectedImages.isEmpty && widget.editDeal == null) {
+          _showSnack('Please upload at least 1 image');
+          return false;
+        }
+        return true;
+      default:
+        return true;
+    }
+  }
+
+  void _showSnack(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: const Color(0xFFE53935),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  // --------------------------------------------------------
+  // 最终提交
+  // --------------------------------------------------------
+  Future<void> _submit() async {
+    if (!_validateCurrentStep()) return;
+
+    setState(() => _isSubmitting = true);
+
+    try {
+      final notifier = ref.read(dealsProvider.notifier);
+      final merchantId = notifier.merchantId;
+
+      // 计算过期时间
+      DateTime expiresAt;
+      if (_validityType == ValidityType.fixedDate) {
+        expiresAt = _endDate!;
+      } else {
+        // days_after_purchase: 设置远期过期（实际在购买时计算）
+        expiresAt = DateTime.now().add(const Duration(days: 730));
+      }
+
+      // 构造 Deal 对象
+      final deal = MerchantDeal(
+        id:              widget.editDeal?.id ?? '',
+        merchantId:      merchantId,
+        title:           _titleController.text.trim(),
+        description:     _descriptionController.text.trim(),
+        category:        _selectedCategory,
+        originalPrice:   _originalPrice!,
+        discountPrice:   _dealPrice!,
+        stockLimit:      _isUnlimited ? -1 : int.parse(_stockController.text),
+        totalSold:       widget.editDeal?.totalSold ?? 0,
+        rating:          widget.editDeal?.rating ?? 0.0,
+        reviewCount:     widget.editDeal?.reviewCount ?? 0,
+        isActive:        false,
+        dealStatus:      DealStatus.pending,
+        packageContents: _packageController.text.trim(),
+        usageNotes:      _usageNotesController.text.trim(),
+        validityType:    _validityType,
+        expiresAt:       expiresAt,
+        validityDays:    _validityType == ValidityType.daysAfterPurchase
+            ? int.tryParse(_validityDaysController.text)
+            : null,
+        usageDays:       _selectedDays.toList(),
+        maxPerPerson:    _maxPerPersonController.text.isNotEmpty
+            ? int.tryParse(_maxPerPersonController.text)
+            : null,
+        isStackable:     _isStackable,
+        images:          widget.editDeal?.images ?? [],
+        createdAt:       widget.editDeal?.createdAt ?? DateTime.now(),
+        updatedAt:       DateTime.now(),
+      );
+
+      MerchantDeal savedDeal;
+
+      if (widget.editDeal != null) {
+        // 编辑模式：更新
+        await notifier.updateDeal(deal);
+        savedDeal = deal;
+      } else {
+        // 创建模式：先创建 Deal，再上传图片
+        savedDeal = await notifier.createDeal(deal);
+
+        // 上传图片（按顺序，第一张设为主图）
+        for (int i = 0; i < _selectedImages.length; i++) {
+          await notifier.uploadImage(
+            dealId:    savedDeal.id,
+            file:      _selectedImages[i],
+            sortOrder: i,
+            isPrimary: i == 0,
+          );
+        }
+      }
+
+      if (!mounted) return;
+
+      // 成功提示
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Deal submitted for review!'),
+          backgroundColor: Color(0xFF4CAF50),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+
+      context.pop();
+    } catch (e) {
+      if (!mounted) return;
+      _showSnack('Failed to submit deal: $e');
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  // --------------------------------------------------------
+  // 图片选择
+  // --------------------------------------------------------
+  Future<void> _pickImage() async {
+    if (_selectedImages.length >= 5) {
+      _showSnack('Maximum 5 images allowed');
+      return;
+    }
+
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1200,
+      maxHeight: 1200,
+      imageQuality: 85, // 压缩质量
+    );
+
+    if (picked != null) {
+      setState(() => _selectedImages.add(picked));
+    }
+  }
+
+  void _removeImage(int index) {
+    setState(() => _selectedImages.removeAt(index));
+  }
+
+  // --------------------------------------------------------
+  // Build
+  // --------------------------------------------------------
+  @override
+  Widget build(BuildContext context) {
+    final isEditing = widget.editDeal != null;
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8F9FA),
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.close_rounded, color: Color(0xFF333333)),
+          onPressed: () => context.pop(),
+        ),
+        title: Text(
+          isEditing ? 'Edit Deal' : 'Create Deal',
+          style: const TextStyle(
+            color: Color(0xFF1A1A1A),
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+      body: Stepper(
+        currentStep: _currentStep,
+        onStepTapped: (step) {
+          // 允许向后导航（点击已完成的步骤）
+          if (step < _currentStep) {
+            setState(() => _currentStep = step);
+          }
+        },
+        controlsBuilder: (context, details) {
+          final isLast = _currentStep == 4;
+          return Padding(
+            padding: const EdgeInsets.only(top: 16),
+            child: Row(
+              children: [
+                // 继续/提交按钮
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: _isSubmitting
+                        ? null
+                        : () {
+                            if (isLast) {
+                              _submit();
+                            } else {
+                              if (_validateCurrentStep()) {
+                                setState(() => _currentStep++);
+                              }
+                            }
+                          },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFFF6B35),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                    child: _isSubmitting
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : Text(
+                            isLast ? 'Submit for Review' : 'Continue',
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                  ),
+                ),
+                if (_currentStep > 0) ...[
+                  const SizedBox(width: 12),
+                  OutlinedButton(
+                    onPressed: () => setState(() => _currentStep--),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF666666),
+                      side: const BorderSide(color: Color(0xFFDDDDDD)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
+                    ),
+                    child: const Text('Back'),
+                  ),
+                ],
+              ],
+            ),
+          );
+        },
+        steps: [
+          _buildStep1(),
+          _buildStep2(),
+          _buildStep3(),
+          _buildStep4(),
+          _buildStep5(),
+        ],
+      ),
+    );
+  }
+
+  // ============================================================
+  // Step 1: 基本信息
+  // ============================================================
+  Step _buildStep1() {
+    return Step(
+      title: const Text('Basic Info'),
+      subtitle: const Text('Title, description and package'),
+      isActive: _currentStep >= 0,
+      state: _currentStep > 0 ? StepState.complete : StepState.indexed,
+      content: Form(
+        key: _step1Key,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 标题
+            _buildTextField(
+              controller: _titleController,
+              label: 'Deal Title',
+              hint: 'e.g. 2-Person BBQ Set for 2',
+              maxLength: 100,
+              validator: (v) {
+                if (v == null || v.trim().isEmpty) return 'Title is required';
+                if (v.trim().length < 5) return 'Title must be at least 5 characters';
+                return null;
+              },
+            ),
+            const SizedBox(height: 16),
+
+            // 类别选择
+            _buildCategoryDropdown(),
+            const SizedBox(height: 16),
+
+            // 描述
+            _buildTextField(
+              controller: _descriptionController,
+              label: 'Description',
+              hint: 'Describe what customers will get...',
+              maxLines: 4,
+              maxLength: 500,
+              validator: (v) {
+                if (v == null || v.trim().isEmpty) return 'Description is required';
+                return null;
+              },
+            ),
+            const SizedBox(height: 16),
+
+            // 套餐内容
+            _buildTextField(
+              controller: _packageController,
+              label: 'Package Contents',
+              hint: '• 2x Main dishes\n• 2x Drinks\n• Dessert',
+              maxLines: 5,
+              maxLength: 1000,
+              validator: (v) {
+                if (v == null || v.trim().isEmpty) return 'Package contents is required';
+                return null;
+              },
+            ),
+            const SizedBox(height: 16),
+
+            // 使用须知
+            _buildTextField(
+              controller: _usageNotesController,
+              label: 'Usage Notes (Optional)',
+              hint: 'e.g. Reservation required 24 hours in advance',
+              maxLines: 3,
+              maxLength: 500,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ============================================================
+  // Step 2: 价格
+  // ============================================================
+  Step _buildStep2() {
+    return Step(
+      title: const Text('Pricing'),
+      subtitle: const Text('Original price and deal price'),
+      isActive: _currentStep >= 1,
+      state: _currentStep > 1 ? StepState.complete : StepState.indexed,
+      content: Form(
+        key: _step2Key,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Set the original price and your deal price. The discount percentage will be calculated automatically.',
+              style: TextStyle(fontSize: 13, color: Color(0xFF666666)),
+            ),
+            const SizedBox(height: 16),
+            PriceInputRow(
+              initialOriginalPrice: _originalPrice,
+              initialDealPrice:     _dealPrice,
+              onOriginalPriceChanged: (v) => setState(() => _originalPrice = v),
+              onDealPriceChanged:     (v) => setState(() => _dealPrice = v),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ============================================================
+  // Step 3: 库存和有效期
+  // ============================================================
+  Step _buildStep3() {
+    return Step(
+      title: const Text('Stock & Validity'),
+      subtitle: const Text('Quantity and expiration'),
+      isActive: _currentStep >= 2,
+      state: _currentStep > 2 ? StepState.complete : StepState.indexed,
+      content: Form(
+        key: _step3Key,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // --- 库存 ---
+            _sectionLabel('Stock Quantity'),
+            const SizedBox(height: 8),
+
+            // 无限制 Toggle
+            Row(
+              children: [
+                Switch(
+                  value: _isUnlimited,
+                  activeThumbColor: const Color(0xFFFF6B35),
+                  onChanged: (v) => setState(() => _isUnlimited = v),
+                ),
+                const SizedBox(width: 8),
+                const Text(
+                  'Unlimited',
+                  style: TextStyle(fontSize: 14, color: Color(0xFF333333)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+
+            // 库存数量输入（unlimited 时禁用）
+            if (!_isUnlimited)
+              TextFormField(
+                controller: _stockController,
+                enabled: !_isUnlimited,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                validator: (v) {
+                  if (_isUnlimited) return null;
+                  if (v == null || v.isEmpty) return 'Stock quantity is required';
+                  final qty = int.tryParse(v);
+                  if (qty == null || qty < 1) return 'Must be at least 1';
+                  return null;
+                },
+                decoration: _inputDecoration(
+                  label: 'Stock Quantity',
+                  hint: 'e.g. 50',
+                ),
+              ),
+
+            const SizedBox(height: 24),
+
+            // --- 有效期 ---
+            _sectionLabel('Validity Period'),
+            const SizedBox(height: 8),
+
+            // 有效期类型选择
+            Row(
+              children: [
+                _ValidityTypeChip(
+                  label: 'Fixed Date',
+                  selected: _validityType == ValidityType.fixedDate,
+                  onTap: () => setState(() => _validityType = ValidityType.fixedDate),
+                ),
+                const SizedBox(width: 8),
+                _ValidityTypeChip(
+                  label: 'Days After Purchase',
+                  selected: _validityType == ValidityType.daysAfterPurchase,
+                  onTap: () => setState(
+                    () => _validityType = ValidityType.daysAfterPurchase,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            // 根据有效期类型显示对应输入
+            if (_validityType == ValidityType.fixedDate)
+              _buildDateRangePicker()
+            else
+              _buildDaysAfterPurchaseInput(),
+
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF3E0),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.info_outline, size: 16, color: Color(0xFFF57C00)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _validityType == ValidityType.daysAfterPurchase
+                          ? 'Expired deals will be automatically refunded. DealJoy\'s customer guarantee.'
+                          : 'Deals purchased before expiry but not used will be automatically refunded.',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFFF57C00),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDateRangePicker() {
+    return Column(
+      children: [
+        // 结束日期选择（主要是 expires_at）
+        InkWell(
+          onTap: () async {
+            final picked = await showDatePicker(
+              context: context,
+              initialDate: _endDate ?? DateTime.now().add(const Duration(days: 30)),
+              firstDate: DateTime.now().add(const Duration(days: 1)),
+              lastDate: DateTime.now().add(const Duration(days: 365)),
+              builder: (context, child) {
+                return Theme(
+                  data: Theme.of(context).copyWith(
+                    colorScheme: const ColorScheme.light(
+                      primary: Color(0xFFFF6B35),
+                    ),
+                  ),
+                  child: child!,
+                );
+              },
+            );
+            if (picked != null) {
+              setState(() => _endDate = picked);
+            }
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8F9FA),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFE0E0E0)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.calendar_today_outlined, size: 18, color: Color(0xFF999999)),
+                const SizedBox(width: 10),
+                Text(
+                  _endDate != null
+                      ? 'Expires: ${_endDate!.day}/${_endDate!.month}/${_endDate!.year}'
+                      : 'Select expiry date',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: _endDate != null
+                        ? const Color(0xFF333333)
+                        : const Color(0xFF999999),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDaysAfterPurchaseInput() {
+    return TextFormField(
+      controller: _validityDaysController,
+      keyboardType: TextInputType.number,
+      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+      validator: (v) {
+        if (_validityType != ValidityType.daysAfterPurchase) return null;
+        if (v == null || v.isEmpty) return 'Number of days is required';
+        final days = int.tryParse(v);
+        if (days == null || days < 1 || days > 365) {
+          return 'Must be between 1 and 365 days';
+        }
+        return null;
+      },
+      decoration: _inputDecoration(
+        label: 'Valid for (days)',
+        hint: 'e.g. 30',
+      ).copyWith(
+        suffixText: 'days after purchase',
+        suffixStyle: const TextStyle(fontSize: 12, color: Color(0xFF999999)),
+      ),
+    );
+  }
+
+  // ============================================================
+  // Step 4: 使用规则
+  // ============================================================
+  Step _buildStep4() {
+    return Step(
+      title: const Text('Usage Rules'),
+      subtitle: const Text('Days, limits and stacking'),
+      isActive: _currentStep >= 3,
+      state: _currentStep > 3 ? StepState.complete : StepState.indexed,
+      content: Form(
+        key: _step4Key,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 可用日期（多选）
+            _sectionLabel('Available Days (leave empty for all days)'),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: _dayOptions.map((day) {
+                final selected = _selectedDays.contains(day);
+                return FilterChip(
+                  label: Text(day),
+                  selected: selected,
+                  selectedColor: const Color(0xFFFF6B35),
+                  checkmarkColor: Colors.white,
+                  labelStyle: TextStyle(
+                    color: selected ? Colors.white : const Color(0xFF555555),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  backgroundColor: const Color(0xFFF5F5F5),
+                  side: BorderSide(
+                    color: selected
+                        ? const Color(0xFFFF6B35)
+                        : const Color(0xFFE0E0E0),
+                  ),
+                  onSelected: (val) {
+                    setState(() {
+                      if (val) {
+                        _selectedDays.add(day);
+                      } else {
+                        _selectedDays.remove(day);
+                      }
+                    });
+                  },
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 20),
+
+            // 每人限用数量
+            _buildTextField(
+              controller: _maxPerPersonController,
+              label: 'Max Per Person (Optional)',
+              hint: 'Leave empty for no limit',
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              validator: (v) {
+                if (v == null || v.isEmpty) return null;
+                final n = int.tryParse(v);
+                if (n == null || n < 1 || n > 99) {
+                  return 'Must be between 1 and 99';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 16),
+
+            // 是否可叠加
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFE0E0E0)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: const [
+                      Text(
+                        'Allow Stacking',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: Color(0xFF333333),
+                        ),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        'Can be used with other promotions',
+                        style: TextStyle(fontSize: 12, color: Color(0xFF999999)),
+                      ),
+                    ],
+                  ),
+                  Switch(
+                    value: _isStackable,
+                    activeThumbColor: const Color(0xFFFF6B35),
+                    onChanged: (v) => setState(() => _isStackable = v),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ============================================================
+  // Step 5: 图片上传
+  // ============================================================
+  Step _buildStep5() {
+    return Step(
+      title: const Text('Images'),
+      subtitle: const Text('Upload 1-5 photos'),
+      isActive: _currentStep >= 4,
+      state: StepState.indexed,
+      content: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Upload 1 to 5 images. The first image will be the cover photo shown in listings.',
+            style: TextStyle(fontSize: 13, color: Color(0xFF666666)),
+          ),
+          const SizedBox(height: 16),
+
+          // 图片预览网格
+          if (_selectedImages.isNotEmpty) ...[
+            SizedBox(
+              height: 100,
+              child: ReorderableListView.builder(
+                scrollDirection: Axis.horizontal,
+                itemCount: _selectedImages.length,
+                onReorder: (oldIndex, newIndex) {
+                  setState(() {
+                    if (newIndex > oldIndex) newIndex--;
+                    final item = _selectedImages.removeAt(oldIndex);
+                    _selectedImages.insert(newIndex, item);
+                  });
+                },
+                itemBuilder: (context, index) {
+                  final file = _selectedImages[index];
+                  return _ImagePreviewTile(
+                    key: ValueKey(file.path),
+                    file: file,
+                    index: index,
+                    isPrimary: index == 0,
+                    onRemove: () => _removeImage(index),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+
+          // 添加图片按钮
+          if (_selectedImages.length < 5)
+            InkWell(
+              onTap: _pickImage,
+              child: Container(
+                width: double.infinity,
+                height: 100,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8F9FA),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: const Color(0xFFDDDDDD),
+                    style: BorderStyle.solid,
+                  ),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.add_photo_alternate_outlined,
+                      size: 32,
+                      color: _selectedImages.isEmpty
+                          ? const Color(0xFFFF6B35)
+                          : const Color(0xFF999999),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      _selectedImages.isEmpty
+                          ? 'Add Cover Image'
+                          : 'Add More Photos (${_selectedImages.length}/5)',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: _selectedImages.isEmpty
+                            ? const Color(0xFFFF6B35)
+                            : const Color(0xFF999999),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+          // 说明文字
+          const SizedBox(height: 12),
+          const Text(
+            'Tip: Drag to reorder images. The leftmost image is the cover.',
+            style: TextStyle(fontSize: 12, color: Color(0xFFBBBBBB)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ============================================================
+  // 辅助 Widget 构建方法
+  // ============================================================
+  Widget _buildTextField({
+    required TextEditingController controller,
+    required String label,
+    String? hint,
+    int? maxLines,
+    int? maxLength,
+    TextInputType? keyboardType,
+    List<TextInputFormatter>? inputFormatters,
+    FormFieldValidator<String>? validator,
+  }) {
+    return TextFormField(
+      controller: controller,
+      maxLines: maxLines ?? 1,
+      maxLength: maxLength,
+      keyboardType: keyboardType,
+      inputFormatters: inputFormatters,
+      validator: validator,
+      style: const TextStyle(fontSize: 14, color: Color(0xFF1A1A1A)),
+      decoration: _inputDecoration(label: label, hint: hint ?? ''),
+    );
+  }
+
+  Widget _buildCategoryDropdown() {
+    return DropdownButtonFormField<String>(
+      initialValue: _selectedCategory,
+      decoration: _inputDecoration(label: 'Category', hint: ''),
+      items: _categoryOptions.map((cat) {
+        return DropdownMenuItem(value: cat, child: Text(cat));
+      }).toList(),
+      onChanged: (v) {
+        if (v != null) setState(() => _selectedCategory = v);
+      },
+    );
+  }
+
+  /// 统一输入框样式
+  InputDecoration _inputDecoration({required String label, required String hint}) {
+    return InputDecoration(
+      labelText: label,
+      hintText: hint,
+      filled: true,
+      fillColor: const Color(0xFFF8F9FA),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: Color(0xFFE0E0E0)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: Color(0xFFE0E0E0)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: Color(0xFFFF6B35), width: 1.5),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: Color(0xFFE53935)),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+      labelStyle: const TextStyle(fontSize: 13, color: Color(0xFF999999)),
+    );
+  }
+
+  Widget _sectionLabel(String text) {
+    return Text(
+      text,
+      style: const TextStyle(
+        fontSize: 13,
+        fontWeight: FontWeight.w600,
+        color: Color(0xFF555555),
+      ),
+    );
+  }
+}
+
+// ============================================================
+// 有效期类型选择 Chip
+// ============================================================
+class _ValidityTypeChip extends StatelessWidget {
+  const _ValidityTypeChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFFFF6B35) : const Color(0xFFF5F5F5),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: selected ? const Color(0xFFFF6B35) : const Color(0xFFE0E0E0),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+            color: selected ? Colors.white : const Color(0xFF555555),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================
+// 图片预览卡片（可拖拽重排）
+// ============================================================
+class _ImagePreviewTile extends StatelessWidget {
+  const _ImagePreviewTile({
+    super.key,
+    required this.file,
+    required this.index,
+    required this.isPrimary,
+    required this.onRemove,
+  });
+
+  final XFile file;
+  final int index;
+  final bool isPrimary;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 88,
+      height: 88,
+      margin: const EdgeInsets.only(right: 8),
+      child: Stack(
+        children: [
+          // 图片
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image.file(
+              File(file.path),
+              width: 88,
+              height: 88,
+              fit: BoxFit.cover,
+            ),
+          ),
+
+          // 主图标签
+          if (isPrimary)
+            Positioned(
+              left: 4,
+              bottom: 4,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFF6B35),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Text(
+                  'Cover',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+
+          // 删除按钮
+          Positioned(
+            right: 2,
+            top: 2,
+            child: GestureDetector(
+              onTap: onRemove,
+              child: Container(
+                padding: const EdgeInsets.all(2),
+                decoration: const BoxDecoration(
+                  color: Color(0xFF333333),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.close, color: Colors.white, size: 14),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

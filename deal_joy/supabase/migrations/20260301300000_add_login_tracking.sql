@@ -24,13 +24,29 @@ CREATE INDEX IF NOT EXISTS idx_login_history_user_id
 -- 3. RLS 策略：用户只能查看自己的登录记录
 ALTER TABLE public.login_history ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Users can view own login history"
-  ON public.login_history FOR SELECT
-  USING (auth.uid() = user_id);
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'login_history'
+    AND policyname = 'Users can view own login history'
+  ) THEN
+    CREATE POLICY "Users can view own login history"
+      ON public.login_history FOR SELECT
+      USING (auth.uid() = user_id);
+  END IF;
+END $$;
 
-CREATE POLICY "Users can insert own login history"
-  ON public.login_history FOR INSERT
-  WITH CHECK (auth.uid() = user_id);
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'login_history'
+    AND policyname = 'Users can insert own login history'
+  ) THEN
+    CREATE POLICY "Users can insert own login history"
+      ON public.login_history FOR INSERT
+      WITH CHECK (auth.uid() = user_id);
+  END IF;
+END $$;
 
 -- 4. 触发器：登录时自动更新 users.last_login_at
 -- 注意：Supabase auth 不直接触发 public 表的 trigger，

@@ -21,11 +21,16 @@ class OrdersScreen extends ConsumerWidget {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.receipt_long_outlined,
-                        size: 72, color: AppColors.textHint),
+                    Icon(
+                      Icons.receipt_long_outlined,
+                      size: 72,
+                      color: AppColors.textHint,
+                    ),
                     SizedBox(height: 16),
-                    Text('No orders yet',
-                        style: TextStyle(color: AppColors.textSecondary)),
+                    Text(
+                      'No orders yet',
+                      style: TextStyle(color: AppColors.textSecondary),
+                    ),
                   ],
                 ),
               )
@@ -51,12 +56,12 @@ class _OrderCard extends StatelessWidget {
   const _OrderCard({required this.order});
 
   Color _statusColor(String status) => switch (status) {
-        'unused' => AppColors.info,
-        'used' => AppColors.success,
-        'refunded' => AppColors.textSecondary,
-        'refund_requested' => AppColors.warning,
-        _ => AppColors.textHint,
-      };
+    'unused' => AppColors.info,
+    'used' => AppColors.success,
+    'refunded' => AppColors.textSecondary,
+    'refund_requested' => AppColors.warning,
+    _ => AppColors.textHint,
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -67,8 +72,8 @@ class _OrderCard extends StatelessWidget {
         onTap: order.isUnused
             ? () => context.push('/coupon/${order.couponId}')
             : order.isRefundRequested || order.isRefunded
-                ? () => context.push('/refund/${order.id}')
-                : null,
+            ? () => context.push('/refund/${order.id}')
+            : null,
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Row(
@@ -87,8 +92,10 @@ class _OrderCard extends StatelessWidget {
                         width: 70,
                         height: 70,
                         color: AppColors.surfaceVariant,
-                        child: const Icon(Icons.restaurant,
-                            color: AppColors.textHint),
+                        child: const Icon(
+                          Icons.restaurant,
+                          color: AppColors.textHint,
+                        ),
                       ),
               ),
               const SizedBox(width: 12),
@@ -102,7 +109,9 @@ class _OrderCard extends StatelessWidget {
                       Text(
                         deal!.merchantName!,
                         style: const TextStyle(
-                            fontSize: 12, color: AppColors.textSecondary),
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
                       ),
                     Text(
                       deal?.title ?? 'Deal',
@@ -114,7 +123,9 @@ class _OrderCard extends StatelessWidget {
                     Text(
                       '\$${order.totalAmount.toStringAsFixed(2)} · Qty ${order.quantity}',
                       style: const TextStyle(
-                          fontSize: 13, color: AppColors.textSecondary),
+                        fontSize: 13,
+                        color: AppColors.textSecondary,
+                      ),
                     ),
                   ],
                 ),
@@ -126,7 +137,9 @@ class _OrderCard extends StatelessWidget {
                 children: [
                   Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 4),
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: _statusColor(order.status).withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(8),
@@ -145,14 +158,20 @@ class _OrderCard extends StatelessWidget {
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.qr_code_2,
-                            color: AppColors.primary, size: 20),
+                        const Icon(
+                          Icons.qr_code_2,
+                          color: AppColors.primary,
+                          size: 20,
+                        ),
                         const SizedBox(width: 8),
                         // 退款快捷入口
                         GestureDetector(
                           onTap: () => context.push('/refund/${order.id}'),
-                          child: const Icon(Icons.undo_outlined,
-                              color: AppColors.error, size: 20),
+                          child: const Icon(
+                            Icons.undo_outlined,
+                            color: AppColors.error,
+                            size: 20,
+                          ),
                         ),
                       ],
                     ),

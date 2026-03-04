@@ -1,0 +1,13 @@
+{
+  "model": "claude-sonnet-4-20250514",
+  "permissions": {
+    "allowedTools": [
+      "Read",
+      "Write",
+      "Bash",
+      "Glob",
+      "Grep",
+      "Task"
+    ]
+  }
+}

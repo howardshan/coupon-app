@@ -11,6 +11,8 @@ import '../../features/deals/presentation/screens/deal_detail_screen.dart';
 import '../../features/deals/presentation/screens/search_screen.dart';
 import '../../features/checkout/presentation/screens/checkout_screen.dart';
 import '../../features/checkout/presentation/screens/order_success_screen.dart';
+import '../../features/deals/presentation/screens/history_screen.dart';
+import '../../features/deals/presentation/screens/saved_deals_screen.dart';
 import '../../features/orders/presentation/screens/orders_screen.dart';
 import '../../features/orders/presentation/screens/coupon_screen.dart';
 import '../../features/orders/presentation/screens/coupons_screen.dart';
@@ -73,7 +75,9 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (isSplash || isAuthRoute) {
         // 登录后跳回之前的页面
         final redirect = state.uri.queryParameters['redirect'];
-        if (redirect != null && redirect.isNotEmpty && !redirect.startsWith('/auth')) {
+        if (redirect != null &&
+            redirect.isNotEmpty &&
+            !redirect.startsWith('/auth')) {
           return redirect;
         }
         return '/home';
@@ -129,10 +133,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
 
       // Search
-      GoRoute(
-        path: '/search',
-        builder: (_, _) => const SearchScreen(),
-      ),
+      GoRoute(path: '/search', builder: (_, _) => const SearchScreen()),
 
       // Deal detail
       GoRoute(
@@ -162,6 +163,10 @@ final routerProvider = Provider<GoRouter>((ref) {
 
       // Orders (standalone, accessible from profile)
       GoRoute(path: '/orders', builder: (_, _) => const OrdersScreen()),
+
+      // Saved deals (collection)
+      GoRoute(path: '/collection', builder: (_, _) => const SavedDealsScreen()),
+      GoRoute(path: '/history', builder: (_, _) => const HistoryScreen()),
 
       // Refund request
       GoRoute(
