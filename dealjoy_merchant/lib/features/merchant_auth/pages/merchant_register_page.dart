@@ -634,18 +634,12 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
 
     switch (_currentStep) {
       case 0:
-        // Step 1: 注册账号
+        // Step 1: 仅做本地校验，暂存邮箱密码（不调 signUp）
         if (!(_step1FormKey.currentState?.validate() ?? false)) return;
-        await notifier.registerWithEmail(
+        notifier.updateAccountInfo(
           email: _emailCtrl.text.trim(),
           password: _passwordCtrl.text,
         );
-        // 检查是否出错
-        final state1 = ref.read(merchantAuthProvider);
-        if (state1 is AsyncError) {
-          _showError(state1.error.toString());
-          return;
-        }
         _goNext();
 
       case 1:
@@ -691,7 +685,7 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
         _goNext();
 
       case 4:
-        // Step 5: 地址 + 提交
+        // Step 5: 地址 + 注册账号 + 提交申请（一次性完成）
         if (!(_step5FormKey.currentState?.validate() ?? false)) return;
         notifier.updateAddress(
           address1: _address1Ctrl.text.trim(),
@@ -701,7 +695,8 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
           zipcode: _zipcodeCtrl.text.trim(),
         );
 
-        await notifier.submitApplication();
+        // 先注册 Supabase 账号
+        await notifier.registerAndSubmit();
         final state5 = ref.read(merchantAuthProvider);
         if (state5 is AsyncError) {
           _showError(state5.error.toString());
@@ -726,19 +721,12 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
     }
   }
 
-  // 处理证件文件上传
-  Future<void> _handleFileUpload(DocumentType docType, String path) async {
-    setState(() => _uploadingMap[docType] = true);
-    try {
-      await ref.read(merchantAuthProvider.notifier).uploadDocument(
-            documentType: docType,
-            localFilePath: path,
-          );
-    } catch (e) {
-      if (mounted) _showError('Upload failed: $e');
-    } finally {
-      if (mounted) setState(() => _uploadingMap[docType] = false);
-    }
+  // 处理证件文件选择（仅暂存本地路径，延迟到提交时上传）
+  void _handleFileUpload(DocumentType docType, String path) {
+    ref.read(merchantAuthProvider.notifier).addDocumentLocal(
+          documentType: docType,
+          localFilePath: path,
+        );
   }
 
   // 显示错误 SnackBar

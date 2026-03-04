@@ -62,36 +62,78 @@ class MerchantAuthNotifier extends AsyncNotifier<MerchantApplication?> {
   }
 
   // ----------------------------------------------------------
-  // Step 1: 用邮箱+密码注册账号
-  //         注册成功后创建空的 MerchantApplication 草稿
+  // Step 1: 暂存邮箱密码（不调 signUp，延迟到最终提交时）
   // ----------------------------------------------------------
-  Future<void> registerWithEmail({
+  void updateAccountInfo({
     required String email,
     required String password,
-  }) async {
+  }) {
+    _regEmail = email;
+    _regPassword = password;
+    final current = state.value;
+    state = AsyncData(
+      (current ?? const MerchantApplication()).copyWith(
+        email: email,
+        contactEmail: email,
+      ),
+    );
+  }
+
+  // ----------------------------------------------------------
+  // 最终提交: 注册账号 → 上传证件 → 提交申请（一次性完成）
+  // ----------------------------------------------------------
+  Future<void> registerAndSubmit() async {
+    final current = state.value;
+    if (current == null) throw Exception('No application data');
+
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
+      // 1. 注册 Supabase Auth 账号
       final response = await _service.registerWithEmail(
-        email: email,
-        password: password,
+        email: _regEmail!,
+        password: _regPassword!,
       );
       if (response.user == null) {
         throw Exception('Registration failed. Please try again.');
       }
-      // 缓存凭据，用于 signUp 未建立 session 时自动补登录
-      _regEmail = email;
-      _regPassword = password;
-      // signUp 可能不会自动建立 session（Supabase 开启邮件确认时）
-      // 立即尝试 signIn，确保后续上传文件时有 currentUser
+
+      // signUp 可能不会自动建立 session，尝试补登录
       if (_service.currentUser == null) {
-        try {
-          await _service.signInWithEmail(email: email, password: password);
-          _regPassword = null; // 登录成功后立即清除密码
-        } catch (_) {
-          // 若邮件未确认导致 signIn 失败，忽略，流程继续
+        await _service.signInWithEmail(
+          email: _regEmail!,
+          password: _regPassword!,
+        );
+      }
+      _regPassword = null; // 注册成功后立即清除密码
+
+      final userId = _service.currentUser!.id;
+
+      // 2. 上传所有本地暂存的证件文件
+      final uploadedDocs = <MerchantDocument>[];
+      for (final doc in current.documents) {
+        if (doc.localPath != null && doc.localPath!.isNotEmpty) {
+          final fileUrl = await _service.uploadDocument(
+            localFilePath: doc.localPath!,
+            documentType: doc.documentType,
+            userId: userId,
+            customFileName: doc.fileName,
+          );
+          uploadedDocs.add(doc.copyWith(fileUrl: fileUrl));
+        } else {
+          uploadedDocs.add(doc);
         }
       }
-      return MerchantApplication(email: email, contactEmail: email);
+
+      final updatedApp = current.copyWith(documents: uploadedDocs);
+
+      // 3. 提交商家申请
+      final result = await _service.submitApplication(updatedApp);
+      final merchantId = result['merchant_id'] as String?;
+      return updatedApp.copyWith(
+        merchantId: merchantId,
+        status: ApplicationStatus.pending,
+        submittedAt: DateTime.now(),
+      );
     });
   }
 
@@ -140,57 +182,28 @@ class MerchantAuthNotifier extends AsyncNotifier<MerchantApplication?> {
   }
 
   // ----------------------------------------------------------
-  // Step 4b: 上传单个证件文件
-  //          先上传到 Supabase Storage，再更新本地 documents 列表
+  // Step 4b: 暂存证件文件路径（本地记录，延迟到提交时上传）
   // ----------------------------------------------------------
-  Future<void> uploadDocument({
+  void addDocumentLocal({
     required DocumentType documentType,
     required String localFilePath,
     String? fileName,
-  }) async {
+  }) {
     final current = state.value;
     if (current == null) return;
 
-    var userId = _service.currentUser?.id;
-    // session 丢失时用缓存凭据自动补登录（signUp 未建立 session 的情况）
-    if (userId == null && _regEmail != null && _regPassword != null) {
-      try {
-        await _service.signInWithEmail(
-          email: _regEmail!,
-          password: _regPassword!,
-        );
-        userId = _service.currentUser?.id;
-      } catch (_) {}
-    }
-    if (userId == null) throw Exception('User not logged in');
-    final resolvedUserId = userId;
-
-    // 标记为加载中（局部更新，保留已有数据）
-    state = const AsyncLoading();
-
-    state = await AsyncValue.guard(() async {
-      final fileUrl = await _service.uploadDocument(
-        localFilePath: localFilePath,
+    final updatedDocs = List<MerchantDocument>.from(current.documents)
+      ..removeWhere((d) => d.documentType == documentType);
+    updatedDocs.add(
+      MerchantDocument(
         documentType: documentType,
-        userId: resolvedUserId,
-        customFileName: fileName,
-      );
+        fileUrl: 'local://$localFilePath', // 标记为本地文件，提交时上传
+        localPath: localFilePath,
+        fileName: fileName,
+      ),
+    );
 
-      // 读取最新 state 避免并发上传时互相覆盖
-      final latest = state.value ?? current;
-      final updatedDocs = List<MerchantDocument>.from(latest.documents)
-        ..removeWhere((d) => d.documentType == documentType);
-      updatedDocs.add(
-        MerchantDocument(
-          documentType: documentType,
-          fileUrl: fileUrl,
-          localPath: localFilePath,
-          fileName: fileName,
-        ),
-      );
-
-      return latest.copyWith(documents: updatedDocs);
-    });
+    state = AsyncData(current.copyWith(documents: updatedDocs));
   }
 
   // ----------------------------------------------------------
@@ -255,6 +268,13 @@ class MerchantAuthNotifier extends AsyncNotifier<MerchantApplication?> {
         rejectionReason: null,
       );
     });
+  }
+
+  // ----------------------------------------------------------
+  // 重置状态（进入注册页时清除上次错误）
+  // ----------------------------------------------------------
+  void resetState() {
+    state = const AsyncData(null);
   }
 
   // ----------------------------------------------------------

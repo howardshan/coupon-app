@@ -231,7 +231,7 @@ class DashboardPage extends ConsumerWidget {
             physics: const NeverScrollableScrollPhysics(),
             crossAxisSpacing: 12,
             mainAxisSpacing: 12,
-            childAspectRatio: 1.3,
+            childAspectRatio: 1.15,
             children: List.generate(
               4,
               (_) => const StatsCard(
@@ -388,7 +388,7 @@ class _StatsSection extends StatelessWidget {
       physics: const NeverScrollableScrollPhysics(),
       crossAxisSpacing: 12,
       mainAxisSpacing: 12,
-      childAspectRatio: 1.3,
+      childAspectRatio: 1.15,
       children: [
         StatsCard(
           title: 'Today Orders',

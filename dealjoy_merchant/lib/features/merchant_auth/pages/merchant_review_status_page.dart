@@ -4,7 +4,9 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import '../../../router/app_router.dart';
 import '../models/merchant_application.dart';
 import '../providers/merchant_auth_provider.dart';
 
@@ -29,6 +31,8 @@ class _MerchantReviewStatusPageState
     super.initState();
     // 进入页面时刷新状态（可能从 push 通知跳转过来）
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // 清除缓存，确保拿到最新状态
+      MerchantStatusCache.clear();
       ref.read(merchantAuthProvider.notifier).refreshStatus();
     });
   }
@@ -56,6 +60,7 @@ class _MerchantReviewStatusPageState
           IconButton(
             icon: const Icon(Icons.refresh, color: Color(0xFF212121)),
             onPressed: () {
+              MerchantStatusCache.clear();
               ref.read(merchantAuthProvider.notifier).refreshStatus();
             },
           ),
@@ -187,6 +192,34 @@ class _MerchantReviewStatusPageState
               ],
             ),
           ),
+          const SizedBox(height: 32),
+
+          // 退出登录按钮
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: OutlinedButton.icon(
+              onPressed: () async {
+                final router = GoRouter.of(context);
+                await ref.read(merchantAuthProvider.notifier).signOut();
+                if (mounted) {
+                  router.go('/auth/login');
+                }
+              },
+              icon: const Icon(Icons.logout, size: 18),
+              label: const Text(
+                'Sign Out',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF757575),
+                side: const BorderSide(color: Color(0xFFE0E0E0)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -245,8 +278,9 @@ class _MerchantReviewStatusPageState
             height: 52,
             child: ElevatedButton(
               onPressed: () {
-                // 跳转到商家仪表盘
-                Navigator.pushReplacementNamed(context, '/dashboard');
+                // 跳转到商家仪表盘（清除缓存让 redirect 重新检查状态）
+                MerchantStatusCache.clear();
+                GoRouter.of(context).go('/dashboard');
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: _primaryOrange,
@@ -370,7 +404,7 @@ class _MerchantReviewStatusPageState
             child: ElevatedButton(
               onPressed: () {
                 // 跳转到注册页（预填已有数据）
-                Navigator.pushNamed(context, '/auth/merchant-register');
+                GoRouter.of(context).go('/auth/register');
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: _primaryOrange,
@@ -441,10 +475,7 @@ class _MerchantReviewStatusPageState
             const SizedBox(height: 32),
             ElevatedButton(
               onPressed: () {
-                Navigator.pushReplacementNamed(
-                  context,
-                  '/auth/merchant-register',
-                );
+                GoRouter.of(context).go('/auth/register');
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFFFF6B35),
