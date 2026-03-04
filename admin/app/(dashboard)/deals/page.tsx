@@ -5,11 +5,12 @@ export default async function DealsPage() {
   const { data: { user } } = await supabase.auth.getUser()
   const { data: profile } = await supabase.from('users').select('role').eq('id', user!.id).single()
 
+  // 与 deal_joy schema 一致：deals 表为 discount_price、is_active、expires_at，无 price/status 列
   let deals
   if (profile?.role === 'admin') {
     const { data } = await supabase
       .from('deals')
-      .select('id, title, price, original_price, status, created_at, merchants(name)')
+      .select('id, title, discount_price, original_price, is_active, expires_at, created_at, merchants(name)')
       .order('created_at', { ascending: false })
       .limit(50)
     deals = data
@@ -23,7 +24,7 @@ export default async function DealsPage() {
     if (merchant) {
       const { data } = await supabase
         .from('deals')
-        .select('id, title, price, original_price, status, created_at')
+        .select('id, title, discount_price, original_price, is_active, expires_at, created_at')
         .eq('merchant_id', merchant.id)
         .order('created_at', { ascending: false })
       deals = data
@@ -44,7 +45,7 @@ export default async function DealsPage() {
               {profile?.role === 'admin' && (
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Merchant</th>
               )}
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Price</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600">Sale Price</th>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Created</th>
             </tr>
@@ -57,13 +58,13 @@ export default async function DealsPage() {
                   <td className="px-4 py-3 text-gray-600">{d.merchants?.name ?? '—'}</td>
                 )}
                 <td className="px-4 py-3 text-gray-900">
-                  ${d.price}
-                  {d.original_price && (
+                  ${d.discount_price}
+                  {d.original_price != null && (
                     <span className="text-gray-400 line-through ml-2">${d.original_price}</span>
                   )}
                 </td>
                 <td className="px-4 py-3">
-                  <DealStatusBadge status={d.status} />
+                  <DealStatusBadge isActive={d.is_active} expiresAt={d.expires_at} />
                 </td>
                 <td className="px-4 py-3 text-gray-500">
                   {new Date(d.created_at).toLocaleDateString()}
@@ -80,7 +81,10 @@ export default async function DealsPage() {
   )
 }
 
-function DealStatusBadge({ status }: { status: string }) {
+function DealStatusBadge({ isActive, expiresAt }: { isActive: boolean; expiresAt: string }) {
+  const now = new Date()
+  const expired = new Date(expiresAt) < now
+  const status = expired ? 'expired' : isActive ? 'active' : 'inactive'
   const styles: Record<string, string> = {
     active: 'bg-green-100 text-green-700',
     inactive: 'bg-gray-100 text-gray-600',
