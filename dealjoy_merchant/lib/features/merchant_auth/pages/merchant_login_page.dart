@@ -7,6 +7,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../router/app_router.dart';
 
 const _primaryOrange = Color(0xFFFF6B35);
 
@@ -61,13 +62,17 @@ class _MerchantLoginPageState extends State<MerchantLoginPage> {
       if (!mounted) return;
 
       if (data == null) {
-        // 无 merchant 记录 → 去注册
+        // 无 merchant 记录 → 缓存状态并去注册
+        MerchantStatusCache.setStatus('none', user.id);
         context.go('/auth/register');
       } else if (data['status'] == 'approved') {
-        // 已审核通过 → 进 dashboard
+        // 已审核通过 → 缓存状态并进 dashboard
+        MerchantStatusCache.setStatus('approved', user.id);
         context.go('/dashboard');
       } else {
-        // pending / rejected → 审核状态页
+        // pending / rejected → 缓存状态并去审核状态页
+        MerchantStatusCache.setStatus(
+          data['status'] as String? ?? 'pending', user.id);
         context.go('/auth/review');
       }
     } on AuthException catch (e) {

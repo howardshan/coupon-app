@@ -256,6 +256,9 @@ class MerchantDocument {
   /// 是否已上传到服务器
   bool get isUploaded => fileUrl.startsWith('http');
 
+  /// 是否已准备好（已上传或有本地文件待上传）
+  bool get isReady => isUploaded || fileUrl.startsWith('local://');
+
   /// 转为 API 请求格式
   Map<String, dynamic> toJson() => {
         'document_type': documentType.apiValue,
@@ -353,7 +356,7 @@ class MerchantApplication {
     final requiredDocs = category!.requiredDocuments;
     for (final required in requiredDocs) {
       final uploaded =
-          documents.any((d) => d.documentType == required && d.isUploaded);
+          documents.any((d) => d.documentType == required && d.isReady);
       if (!uploaded) return false;
     }
 
