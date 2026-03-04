@@ -307,3 +307,10 @@ begin
   from customer_segments;
 end;
 $$;
+
+-- =============================================================
+-- 统一授予函数执行权限（商家端 Edge Function 通过 authenticated 调用）
+-- =============================================================
+GRANT EXECUTE ON FUNCTION public.get_merchant_overview(uuid, int) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_deal_funnel(uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_customer_analysis(uuid) TO authenticated;

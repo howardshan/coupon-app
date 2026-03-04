@@ -92,10 +92,10 @@ final appRouter = GoRouter(
     // 未登录 → 跳登录页
     if (session == null && !isPublic) return '/auth/login';
 
-    // 已登录但在认证页（login/register）→ 跳 dashboard
+    // 已登录但在登录页 → 跳 dashboard
+    // 注册页不跳转：注册第1步 signUp 就会创建 session，后续4步仍需继续
     // review 页允许已登录用户停留（等待审核状态）
-    if (session != null &&
-        (loc.startsWith('/auth/login') || loc.startsWith('/auth/register'))) {
+    if (session != null && loc.startsWith('/auth/login')) {
       return '/dashboard';
     }
 
