@@ -1,0 +1,28 @@
+# Flutter/Dart build artifacts
+**/build/
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+
+# IDE
+**/.idea/
+**/*.iml
+**/.vscode/
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Env files
+**/.env
+
+# Archives
+*.tar.gz
+*.zip
+
+# Node
+**/node_modules/
+
+# Python
+**/__pycache__/
+*.pyc
