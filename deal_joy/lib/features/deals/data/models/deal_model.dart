@@ -107,6 +107,7 @@ class DealModel {
           id: json['merchant_id'] as String,
           name: json['merchant_name'] as String? ?? '',
           logoUrl: json['merchant_logo_url'] as String?,
+          homepageCoverUrl: json['merchant_homepage_cover_url'] as String?,
         ),
         distanceMeters: (json['distance_meters'] as num?)?.toDouble(),
         merchantCity: json['merchant_city'] as String?,
@@ -130,6 +131,7 @@ class MerchantSummary {
   final String? phone;
   final String? address;
   final String? hours;
+  final String? homepageCoverUrl;
   final double rating;
   final int reviewCount;
 
@@ -140,6 +142,7 @@ class MerchantSummary {
     this.phone,
     this.address,
     this.hours,
+    this.homepageCoverUrl,
     this.rating = 0.0,
     this.reviewCount = 0,
   });
@@ -152,6 +155,7 @@ class MerchantSummary {
         phone: json['phone'] as String?,
         address: json['address'] as String?,
         hours: json['hours'] as String?,
+        homepageCoverUrl: json['homepage_cover_url'] as String?,
         rating: (json['rating'] as num?)?.toDouble() ?? 0.0,
         reviewCount: json['review_count'] as int? ?? 0,
       );

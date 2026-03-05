@@ -111,12 +111,14 @@ class DealImage {
   /// 从 Supabase JSON 构造
   factory DealImage.fromJson(Map<String, dynamic> json) {
     return DealImage(
-      id:         json['id'] as String,
+      id:         json['id'] as String? ?? '',
       dealId:     json['deal_id'] as String? ?? '',
-      imageUrl:   json['image_url'] as String,
+      imageUrl:   json['image_url'] as String? ?? '',
       sortOrder:  json['sort_order'] as int? ?? 0,
       isPrimary:  json['is_primary'] as bool? ?? false,
-      createdAt:  DateTime.parse(json['created_at'] as String),
+      createdAt:  json['created_at'] != null
+          ? DateTime.parse(json['created_at'] as String)
+          : DateTime.now(),
     );
   }
 
@@ -318,13 +320,13 @@ class MerchantDeal {
       ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
 
     return MerchantDeal(
-      id:              json['id'] as String,
+      id:              json['id'] as String? ?? '',
       merchantId:      json['merchant_id'] as String? ?? '',
-      title:           json['title'] as String,
-      description:     json['description'] as String,
-      category:        json['category'] as String,
-      originalPrice:   (json['original_price'] as num).toDouble(),
-      discountPrice:   (json['discount_price'] as num).toDouble(),
+      title:           json['title'] as String? ?? '',
+      description:     json['description'] as String? ?? '',
+      category:        json['category'] as String? ?? '',
+      originalPrice:   (json['original_price'] as num?)?.toDouble() ?? 0,
+      discountPrice:   (json['discount_price'] as num?)?.toDouble() ?? 0,
       discountPercent: json['discount_percent'] as int?,
       stockLimit:      json['stock_limit'] as int? ?? 100,
       totalSold:       json['total_sold'] as int? ?? 0,
@@ -335,9 +337,14 @@ class MerchantDeal {
       packageContents: json['package_contents'] as String? ?? '',
       usageNotes:      json['usage_notes'] as String? ?? '',
       validityType:    ValidityType.fromString(json['validity_type'] as String?),
-      expiresAt:       DateTime.parse(json['expires_at'] as String),
+      expiresAt:       json['expires_at'] != null
+          ? DateTime.parse(json['expires_at'] as String)
+          : DateTime.now().add(const Duration(days: 30)),
       validityDays:    json['validity_days'] as int?,
-      usageDays:       List<String>.from(json['usage_days'] as List<dynamic>? ?? []),
+      usageDays:       (json['usage_days'] as List<dynamic>?)
+          ?.map((e) => e?.toString() ?? '')
+          .where((s) => s.isNotEmpty)
+          .toList() ?? [],
       maxPerPerson:    json['max_per_person'] as int?,
       isStackable:     json['is_stackable'] as bool? ?? true,
       reviewNotes:     json['review_notes'] as String?,
@@ -345,8 +352,12 @@ class MerchantDeal {
           ? DateTime.parse(json['published_at'] as String)
           : null,
       images:          imagesSorted,
-      createdAt:       DateTime.parse(json['created_at'] as String),
-      updatedAt:       DateTime.parse(json['updated_at'] as String),
+      createdAt:       json['created_at'] != null
+          ? DateTime.parse(json['created_at'] as String)
+          : DateTime.now(),
+      updatedAt:       json['updated_at'] != null
+          ? DateTime.parse(json['updated_at'] as String)
+          : DateTime.now(),
     );
   }
 

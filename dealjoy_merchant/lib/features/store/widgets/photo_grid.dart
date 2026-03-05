@@ -205,6 +205,20 @@ class PhotoGrid extends ConsumerWidget {
 
     if (picked == null) return;
 
+    // 检查文件大小（不超过 1MB）
+    final fileSize = await picked.length();
+    if (fileSize > 1024 * 1024) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Photo must be under 1 MB'),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
     // 计算当前同类型照片数量作为 sortOrder
     final storeAsync = ref.read(storeProvider);
     final currentCount = storeAsync.valueOrNull?.photos

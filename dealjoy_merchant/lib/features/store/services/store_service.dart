@@ -22,21 +22,11 @@ class StoreService {
   // ----------------------------------------------------------
   Future<void> _ensureFreshSession() async {
     final session = _supabase.auth.currentSession;
-    print('[StoreService] currentSession: ${session != null ? "EXISTS" : "NULL"}');
-    if (session != null) {
-      final expiresAt = session.expiresAt;
-      final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-      print('[StoreService] token expiresAt: $expiresAt, now: $now, diff: ${(expiresAt ?? 0) - now}s');
-      print('[StoreService] accessToken prefix: ${session.accessToken.substring(0, 20)}...');
-    }
     if (session == null) return;
     try {
-      print('[StoreService] Attempting refreshSession...');
       await _supabase.auth.refreshSession();
-      final newSession = _supabase.auth.currentSession;
-      print('[StoreService] refreshSession OK, new expiresAt: ${newSession?.expiresAt}');
-    } catch (e) {
-      print('[StoreService] refreshSession FAILED: $e');
+    } catch (_) {
+      // refresh 失败则使用现有 token
     }
   }
 
@@ -149,6 +139,77 @@ class StoreService {
       _functionName,
       method: HttpMethod.patch,
       body: body,
+    );
+
+    if (response.status != 200) {
+      throw _handleError(response);
+    }
+  }
+
+  // ----------------------------------------------------------
+  // 2b. 上传首页封面图（上传到 Storage → 保存 URL 到 merchants 表）
+  // ----------------------------------------------------------
+  Future<String> uploadHomepageCover({
+    required String merchantId,
+    required XFile file,
+  }) async {
+    final fileName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
+    final storagePath = '$merchantId/homepage_cover/$fileName';
+
+    final bytes = await file.readAsBytes();
+    await _supabase.storage.from('merchant-photos').uploadBinary(
+          storagePath,
+          bytes,
+          fileOptions: const FileOptions(
+            contentType: 'image/jpeg',
+            upsert: true,
+          ),
+        );
+
+    final publicUrl =
+        _supabase.storage.from('merchant-photos').getPublicUrl(storagePath);
+
+    // 通过 Edge Function PATCH 保存到 merchants 表
+    await _ensureFreshSession();
+    final response = await _supabase.functions.invoke(
+      _functionName,
+      method: HttpMethod.patch,
+      body: {'homepage_cover_url': publicUrl},
+    );
+
+    if (response.status != 200) {
+      throw _handleError(response);
+    }
+
+    return publicUrl;
+  }
+
+  // ----------------------------------------------------------
+  // 2c. 删除首页封面图
+  // ----------------------------------------------------------
+  Future<void> deleteHomepageCover({
+    required String merchantId,
+    required String currentUrl,
+  }) async {
+    // 从 Storage 删除文件
+    try {
+      final prefix = _supabase.storage
+          .from('merchant-photos')
+          .getPublicUrl('');
+      if (currentUrl.startsWith(prefix)) {
+        final storagePath = currentUrl.replaceFirst(prefix, '');
+        await _supabase.storage.from('merchant-photos').remove([storagePath]);
+      }
+    } catch (_) {
+      // Storage 删除失败不阻塞
+    }
+
+    // 清空 merchants 表的 homepage_cover_url
+    await _ensureFreshSession();
+    final response = await _supabase.functions.invoke(
+      _functionName,
+      method: HttpMethod.patch,
+      body: {'homepage_cover_url': null},
     );
 
     if (response.status != 200) {

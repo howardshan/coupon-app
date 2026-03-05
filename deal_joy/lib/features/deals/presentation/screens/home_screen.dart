@@ -761,9 +761,11 @@ class _LargeDealCard extends ConsumerWidget {
                   borderRadius: const BorderRadius.vertical(
                     top: Radius.circular(16),
                   ),
-                  child: deal.imageUrls.isNotEmpty
+                  child: (deal.imageUrls.isNotEmpty || deal.merchant?.homepageCoverUrl != null)
                       ? CachedNetworkImage(
-                          imageUrl: deal.imageUrls.first,
+                          imageUrl: deal.imageUrls.isNotEmpty
+                              ? deal.imageUrls.first
+                              : deal.merchant!.homepageCoverUrl!,
                           height: 200,
                           width: double.infinity,
                           fit: BoxFit.cover,
@@ -999,9 +1001,11 @@ class _SmallDealCard extends StatelessWidget {
                       borderRadius: const BorderRadius.vertical(
                         top: Radius.circular(16),
                       ),
-                      child: deal.imageUrls.isNotEmpty
+                      child: (deal.imageUrls.isNotEmpty || deal.merchant?.homepageCoverUrl != null)
                           ? CachedNetworkImage(
-                              imageUrl: deal.imageUrls.first,
+                              imageUrl: deal.imageUrls.isNotEmpty
+                                  ? deal.imageUrls.first
+                                  : deal.merchant!.homepageCoverUrl!,
                               width: double.infinity,
                               height: double.infinity,
                               fit: BoxFit.cover,
@@ -1137,10 +1141,12 @@ class _MerchantGridCard extends StatelessWidget {
                   borderRadius: const BorderRadius.vertical(
                     top: Radius.circular(12),
                   ),
-                  child: merchant.logoUrl != null &&
-                          merchant.logoUrl!.isNotEmpty
+                  child: () {
+                    // 优先 homepage cover，fallback 到 logo
+                    final coverUrl = merchant.homepageCoverUrl ?? merchant.logoUrl;
+                    return coverUrl != null && coverUrl.isNotEmpty
                       ? CachedNetworkImage(
-                          imageUrl: merchant.logoUrl!,
+                          imageUrl: coverUrl,
                           width: double.infinity,
                           height: double.infinity,
                           fit: BoxFit.cover,
@@ -1151,7 +1157,8 @@ class _MerchantGridCard extends StatelessWidget {
                             child: Icon(Icons.restaurant,
                                 size: 40, color: AppColors.textHint),
                           ),
-                        ),
+                        );
+                  }(),
                 ),
               ),
             ),
@@ -1255,12 +1262,14 @@ class _MerchantCard extends StatelessWidget {
         ),
         child: Row(
           children: [
-            // Logo
+            // 优先 homepage cover，fallback 到 logo
             ClipRRect(
               borderRadius: BorderRadius.circular(12),
-              child: merchant.logoUrl != null && merchant.logoUrl!.isNotEmpty
+              child: () {
+                final coverUrl = merchant.homepageCoverUrl ?? merchant.logoUrl;
+                return coverUrl != null && coverUrl.isNotEmpty
                   ? CachedNetworkImage(
-                      imageUrl: merchant.logoUrl!,
+                      imageUrl: coverUrl,
                       width: 64,
                       height: 64,
                       fit: BoxFit.cover,
@@ -1271,7 +1280,8 @@ class _MerchantCard extends StatelessWidget {
                       color: AppColors.surfaceVariant,
                       child: const Icon(Icons.restaurant,
                           color: AppColors.textHint),
-                    ),
+                    );
+              }(),
             ),
             const SizedBox(width: 12),
             // Info

@@ -235,6 +235,8 @@ class StoreInfo {
     this.ein,
     this.city,
     this.website,
+    // 首页封面图（存在 merchants 表，用于客户端首页 deal 卡片 fallback）
+    this.homepageCoverUrl,
     // 注册时上传的门头照（来自 merchant_documents 表）
     this.registrationStorefrontUrl,
     // 注册时上传的所有证件（来自 merchant_documents 表）
@@ -262,6 +264,9 @@ class StoreInfo {
   final String? ein;
   final String? city;
   final String? website;
+
+  // 首页封面图 URL（从 merchants 表获取）
+  final String? homepageCoverUrl;
 
   // 注册时上传的门头照 URL（从 merchant_documents 表获取）
   final String? registrationStorefrontUrl;
@@ -293,6 +298,7 @@ class StoreInfo {
           .toList(),
       latitude: (storeJson['lat'] as num?)?.toDouble(),
       longitude: (storeJson['lng'] as num?)?.toDouble(),
+      homepageCoverUrl: storeJson['homepage_cover_url'] as String?,
       // 专业资料从 storeJson 中读取（merchants 表字段）
       companyName: storeJson['company_name'] as String?,
       contactName: storeJson['contact_name'] as String?,
@@ -366,6 +372,7 @@ class StoreInfo {
     List<BusinessHours>? hours,
     double? latitude,
     double? longitude,
+    String? homepageCoverUrl,
     String? companyName,
     String? contactName,
     String? contactEmail,
@@ -389,6 +396,7 @@ class StoreInfo {
       hours: hours ?? this.hours,
       latitude: latitude ?? this.latitude,
       longitude: longitude ?? this.longitude,
+      homepageCoverUrl: homepageCoverUrl ?? this.homepageCoverUrl,
       companyName: companyName ?? this.companyName,
       contactName: contactName ?? this.contactName,
       contactEmail: contactEmail ?? this.contactEmail,

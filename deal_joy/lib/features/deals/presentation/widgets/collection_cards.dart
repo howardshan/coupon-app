@@ -16,7 +16,9 @@ class DealListCard extends StatelessWidget {
     return GestureDetector(
       onTap: () => context.push('/deals/${deal.id}'),
       child: _HorizontalCard(
-        imageUrl: deal.imageUrls.isNotEmpty ? deal.imageUrls.first : null,
+        imageUrl: deal.imageUrls.isNotEmpty
+            ? deal.imageUrls.first
+            : deal.merchant?.homepageCoverUrl,
         subtitle: deal.merchant?.name,
         title: deal.title,
         trailing: Row(

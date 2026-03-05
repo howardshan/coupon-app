@@ -2,10 +2,13 @@
 // 分三个区块展示: Storefront / Environment / Products
 // 每个区块使用 PhotoGrid 组件
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 import '../models/store_info.dart';
+import '../providers/store_provider.dart';
 import '../widgets/photo_grid.dart';
 
 // ============================================================
@@ -69,6 +72,15 @@ class StorePhotosPage extends ConsumerWidget {
                   ),
                 ],
               ),
+            ),
+            const SizedBox(height: 16),
+
+            // 首页封面图区块（单张，用于客户端首页 deal 卡片）
+            _PhotoSection(
+              title: 'Homepage Cover',
+              subtitle: 'Displayed on deal cards in customer app',
+              required: true,
+              child: const _HomepageCoverUploader(),
             ),
             const SizedBox(height: 16),
 
@@ -190,6 +202,181 @@ class _PhotoSection extends StatelessWidget {
           const SizedBox(height: 14),
           child,
         ],
+      ),
+    );
+  }
+}
+
+// ============================================================
+// 首页封面图上传组件（单张）
+// ============================================================
+class _HomepageCoverUploader extends ConsumerStatefulWidget {
+  const _HomepageCoverUploader();
+
+  @override
+  ConsumerState<_HomepageCoverUploader> createState() =>
+      _HomepageCoverUploaderState();
+}
+
+class _HomepageCoverUploaderState
+    extends ConsumerState<_HomepageCoverUploader> {
+  bool _uploading = false;
+
+  Future<void> _pickAndUpload() async {
+    final store = ref.read(storeProvider).valueOrNull;
+    if (store == null) return;
+
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 85,
+      maxWidth: 1920,
+      maxHeight: 1920,
+    );
+    if (picked == null) return;
+
+    // 检查文件大小（不超过 1MB）
+    final fileSize = await picked.length();
+    if (fileSize > 1024 * 1024) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Photo must be under 1 MB'),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _uploading = true);
+    try {
+      await ref.read(storeProvider.notifier).uploadHomepageCover(
+            merchantId: store.id,
+            file: picked,
+          );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Upload failed: $e'), backgroundColor: Colors.red),
+      );
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
+  }
+
+  Future<void> _confirmDelete() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Homepage Cover?'),
+        content: const Text('This will remove the cover image from all your deal cards.'),
+        actions: [
+          TextButton(onPressed: () => ctx.pop(false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => ctx.pop(true),
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      await ref.read(storeProvider.notifier).deleteHomepageCover();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Delete failed: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final store = ref.watch(storeProvider).valueOrNull;
+    final url = store?.homepageCoverUrl;
+    final hasImage = url != null && url.isNotEmpty;
+
+    if (_uploading) {
+      return const SizedBox(
+        height: 120,
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (hasImage) {
+      // 已有图片 → 显示缩略图 + 替换/删除按钮
+      return Column(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: CachedNetworkImage(
+              imageUrl: url,
+              height: 160,
+              width: double.infinity,
+              fit: BoxFit.cover,
+              placeholder: (_, __) => Container(
+                height: 160,
+                color: const Color(0xFFF0F0F0),
+                child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+              ),
+              errorWidget: (_, __, ___) => Container(
+                height: 160,
+                color: const Color(0xFFF0F0F0),
+                child: const Icon(Icons.broken_image, size: 40, color: Colors.grey),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _pickAndUpload,
+                  icon: const Icon(Icons.swap_horiz, size: 18),
+                  label: const Text('Replace'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _confirmDelete,
+                  icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
+                  label: const Text('Delete', style: TextStyle(color: Colors.red)),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Colors.red),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      );
+    }
+
+    // 无图片 → 显示上传按钮
+    return GestureDetector(
+      onTap: _pickAndUpload,
+      child: Container(
+        height: 120,
+        decoration: BoxDecoration(
+          border: Border.all(color: const Color(0xFFCCCCCC), style: BorderStyle.solid),
+          borderRadius: BorderRadius.circular(8),
+          color: const Color(0xFFFAFAFA),
+        ),
+        child: const Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.add_photo_alternate_outlined, size: 36, color: Color(0xFF999999)),
+              SizedBox(height: 6),
+              Text(
+                'Add Homepage Cover',
+                style: TextStyle(fontSize: 13, color: Color(0xFF999999)),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

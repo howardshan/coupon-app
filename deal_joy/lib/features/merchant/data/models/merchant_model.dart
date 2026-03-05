@@ -3,6 +3,7 @@ class MerchantModel {
   final String name;
   final String? description;
   final String? logoUrl;
+  final String? homepageCoverUrl;
   final String? address;
   final String? phone;
   final double? lat;
@@ -18,6 +19,7 @@ class MerchantModel {
     required this.name,
     this.description,
     this.logoUrl,
+    this.homepageCoverUrl,
     this.address,
     this.phone,
     this.lat,
@@ -64,6 +66,7 @@ class MerchantModel {
       name: json['name'] as String,
       description: json['description'] as String?,
       logoUrl: json['logo_url'] as String?,
+      homepageCoverUrl: json['homepage_cover_url'] as String?,
       address: json['address'] as String?,
       phone: json['phone'] as String?,
       lat: (json['lat'] as num?)?.toDouble(),

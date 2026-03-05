@@ -166,7 +166,7 @@ async function handleGetStore(
   const { data: storeData, error: storeError } = await supabase
     .from("merchants")
     .select(
-      "id, name, description, phone, address, lat, lng, category, tags, is_online, status"
+      "id, name, description, phone, address, lat, lng, category, tags, is_online, status, homepage_cover_url"
     )
     .eq("id", merchantId)
     .single();
@@ -216,7 +216,7 @@ async function handlePatchStore(
   body: Record<string, any>
 ): Promise<Response> {
   // 只允许更新白名单字段，防止恶意修改 status/user_id 等敏感字段
-  const allowedFields = ["name", "description", "phone", "address", "lat", "lng", "tags"];
+  const allowedFields = ["name", "description", "phone", "address", "lat", "lng", "tags", "homepage_cover_url"];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const updateData: Record<string, any> = { updated_at: new Date().toISOString() };
 

@@ -177,6 +177,50 @@ class StoreNotifier extends AsyncNotifier<StoreInfo> {
   }
 
   // ----------------------------------------------------------
+  // 上传首页封面图
+  // ----------------------------------------------------------
+  Future<void> uploadHomepageCover({
+    required String merchantId,
+    required XFile file,
+  }) async {
+    final current = state.valueOrNull;
+    if (current == null) return;
+
+    try {
+      final url = await _service.uploadHomepageCover(
+        merchantId: merchantId,
+        file: file,
+      );
+      state = AsyncValue.data(current.copyWith(homepageCoverUrl: url));
+    } catch (e, st) {
+      state = AsyncValue.error(e, st);
+    }
+  }
+
+  // ----------------------------------------------------------
+  // 删除首页封面图
+  // ----------------------------------------------------------
+  Future<void> deleteHomepageCover() async {
+    final current = state.valueOrNull;
+    if (current == null) return;
+    final currentUrl = current.homepageCoverUrl;
+    if (currentUrl == null) return;
+
+    // 乐观清空
+    state = AsyncValue.data(current.copyWith(homepageCoverUrl: ''));
+
+    try {
+      await _service.deleteHomepageCover(
+        merchantId: current.id,
+        currentUrl: currentUrl,
+      );
+    } catch (e, st) {
+      state = AsyncValue.data(current);
+      state = AsyncValue.error(e, st);
+    }
+  }
+
+  // ----------------------------------------------------------
   // 重新排序照片（拖拽排序后调用）
   // orderedIds: 新顺序的照片 ID 列表
   // ----------------------------------------------------------
