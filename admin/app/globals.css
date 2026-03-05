@@ -8,6 +8,29 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  /* 按钮用色：Deactivate/Revoke 红，Activate/Approve 绿，Revoke 琥珀 */
+  --color-red-600: #dc2626;
+  --color-red-700: #b91c1c;
+  --color-green-600: #16a34a;
+  --color-green-700: #15803d;
+  --color-amber-100: #fef3c7;
+  --color-amber-200: #fde68a;
+  --color-amber-300: #fcd34d;
+  --color-amber-800: #92400e;
+  --color-white: #ffffff;
+  /* Dashboard 告警条：黄（待审商家）、橙（待处理退款） */
+  --color-yellow-50: #fefce8;
+  --color-yellow-100: #fef9c3;
+  --color-yellow-200: #fef08a;
+  --color-yellow-600: #ca8a04;
+  --color-yellow-700: #a16207;
+  --color-yellow-800: #854d0e;
+  --color-orange-50: #fff7ed;
+  --color-orange-100: #ffedd5;
+  --color-orange-200: #fed7aa;
+  --color-orange-600: #ea580c;
+  --color-orange-700: #c2410c;
+  --color-orange-800: #9a3412;
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }

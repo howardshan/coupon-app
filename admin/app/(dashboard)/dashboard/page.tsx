@@ -6,12 +6,20 @@ async function getStats() {
   const { data: profile } = await supabase.from('users').select('role').eq('id', user!.id).single()
 
   if (profile?.role === 'admin') {
-    const [{ count: userCount }, { count: merchantCount }, { count: dealCount }] = await Promise.all([
+    const [
+      { count: userCount },
+      { count: merchantCount },
+      { count: dealCount },
+      { count: pendingMerchantCount },
+      { count: refundCount },
+    ] = await Promise.all([
       supabase.from('users').select('*', { count: 'exact', head: true }),
       supabase.from('merchants').select('*', { count: 'exact', head: true }),
       supabase.from('deals').select('*', { count: 'exact', head: true }),
+      supabase.from('merchants').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+      supabase.from('orders').select('*', { count: 'exact', head: true }).eq('status', 'refund_requested'),
     ])
-    return { role: 'admin', userCount, merchantCount, dealCount }
+    return { role: 'admin', userCount, merchantCount, dealCount, pendingMerchantCount, refundCount }
   } else {
     const { data: merchant } = await supabase.from('merchants').select('id, name').eq('user_id', user!.id).single()
     if (!merchant) return { role: 'merchant', merchantName: null, dealCount: 0, orderCount: 0 }
@@ -32,11 +40,32 @@ export default async function DashboardPage() {
       <h1 className="text-2xl font-bold text-gray-900 mb-6">Overview</h1>
 
       {stats.role === 'admin' ? (
-        <div className="grid grid-cols-3 gap-4">
-          <StatCard label="Total Users" value={stats.userCount ?? 0} color="blue" />
-          <StatCard label="Total Merchants" value={stats.merchantCount ?? 0} color="green" />
-          <StatCard label="Total Deals" value={stats.dealCount ?? 0} color="purple" />
-        </div>
+        <>
+          <div className="grid grid-cols-3 gap-4">
+            <StatCard label="Total Users" value={stats.userCount ?? 0} color="blue" />
+            <StatCard label="Total Merchants" value={stats.merchantCount ?? 0} color="green" />
+            <StatCard label="Total Deals" value={stats.dealCount ?? 0} color="purple" />
+          </div>
+          <div className="mt-6 bg-white rounded-xl border border-gray-200 p-6">
+            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">Pending</h2>
+            <div className="grid grid-cols-2 gap-4">
+              <a
+                href="/merchants"
+                className="block rounded-xl border border-gray-200 p-6 hover:border-yellow-300 hover:bg-yellow-50/50 transition-colors"
+              >
+                <p className="text-sm text-gray-500">Merchants pending review</p>
+                <p className="text-3xl font-bold mt-1 text-yellow-700">{stats.pendingMerchantCount ?? 0}</p>
+              </a>
+              <a
+                href="/orders"
+                className="block rounded-xl border border-gray-200 p-6 hover:border-orange-300 hover:bg-orange-50/50 transition-colors"
+              >
+                <p className="text-sm text-gray-500">Refund requests pending</p>
+                <p className="text-3xl font-bold mt-1 text-orange-700">{stats.refundCount ?? 0}</p>
+              </a>
+            </div>
+          </div>
+        </>
       ) : (
         <div>
           {stats.merchantName && (
