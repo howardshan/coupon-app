@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import Link from 'next/link'
 import MerchantActionButtons from '@/components/merchant-action-buttons'
 
 export default async function MerchantsPage() {
@@ -35,12 +36,20 @@ export default async function MerchantsPage() {
               <th className="text-left px-4 py-3 font-medium text-gray-600">Category</th>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Status / Action</th>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Applied</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {merchants?.map(m => (
               <tr key={m.id} className={`hover:bg-gray-50 ${m.status === 'pending' ? 'bg-yellow-50/50' : ''}`}>
-                <td className="px-4 py-3 font-medium text-gray-900">{m.name}</td>
+                <td className="px-4 py-3 font-medium text-gray-900">
+                  <Link
+                    href={`/merchants/${m.id}`}
+                    className="font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                  >
+                    {m.name}
+                  </Link>
+                </td>
                 <td className="px-4 py-3 text-gray-600">{m.category || '—'}</td>
                 <td className="px-4 py-3">
                   <MerchantActionButtons
@@ -51,6 +60,14 @@ export default async function MerchantsPage() {
                 </td>
                 <td className="px-4 py-3 text-gray-500">
                   {new Date(m.created_at).toLocaleDateString()}
+                </td>
+                <td className="px-4 py-3">
+                  <Link
+                    href={`/merchants/${m.id}`}
+                    className="inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded-lg border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
+                  >
+                    {m.status === 'pending' ? 'Review' : 'View'}
+                  </Link>
                 </td>
               </tr>
             ))}

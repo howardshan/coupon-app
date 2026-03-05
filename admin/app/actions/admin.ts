@@ -52,15 +52,50 @@ export async function approveMerchant(merchantId: string, merchantUserId: string
   revalidatePath('/merchants')
 }
 
-// 审核商家：拒绝
-export async function rejectMerchant(merchantId: string) {
+// 审核商家：拒绝（可选填写拒绝原因）
+export async function rejectMerchant(merchantId: string, rejectionReason?: string | null) {
   const supabase = await requireAdmin()
 
   const { error } = await supabase
     .from('merchants')
-    .update({ status: 'rejected' })
+    .update({
+      status: 'rejected',
+      rejection_reason: rejectionReason?.trim() || null,
+    })
     .eq('id', merchantId)
 
   if (error) throw new Error(error.message)
   revalidatePath('/merchants')
+  revalidatePath(`/merchants/${merchantId}`)
+}
+
+// 撤销审批：将已通过的商家改回待审核，便于重新审核
+export async function revokeMerchantApproval(merchantId: string) {
+  const supabase = await requireAdmin()
+
+  const { error } = await supabase
+    .from('merchants')
+    .update({
+      status: 'pending',
+      rejection_reason: null,
+    })
+    .eq('id', merchantId)
+
+  if (error) throw new Error(error.message)
+  revalidatePath('/merchants')
+  revalidatePath(`/merchants/${merchantId}`)
+}
+
+// Deal 审核：上架/下架（设置 is_active）
+export async function setDealActive(dealId: string, active: boolean) {
+  const supabase = await requireAdmin()
+
+  const { error } = await supabase
+    .from('deals')
+    .update({ is_active: active })
+    .eq('id', dealId)
+
+  if (error) throw new Error(error.message)
+  revalidatePath('/deals')
+  revalidatePath(`/deals/${dealId}`)
 }

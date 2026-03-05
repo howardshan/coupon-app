@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import Link from 'next/link'
 
 export default async function DealsPage() {
   const supabase = await createClient()
@@ -48,12 +49,20 @@ export default async function DealsPage() {
               <th className="text-left px-4 py-3 font-medium text-gray-600">Sale Price</th>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Created</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {deals?.map((d: any) => (
               <tr key={d.id} className="hover:bg-gray-50">
-                <td className="px-4 py-3 font-medium text-gray-900">{d.title}</td>
+                <td className="px-4 py-3 font-medium text-gray-900">
+                  <Link
+                    href={`/deals/${d.id}`}
+                    className="text-blue-600 hover:text-blue-800 hover:underline"
+                  >
+                    {d.title}
+                  </Link>
+                </td>
                 {profile?.role === 'admin' && (
                   <td className="px-4 py-3 text-gray-600">{d.merchants?.name ?? '—'}</td>
                 )}
@@ -68,6 +77,14 @@ export default async function DealsPage() {
                 </td>
                 <td className="px-4 py-3 text-gray-500">
                   {new Date(d.created_at).toLocaleDateString()}
+                </td>
+                <td className="px-4 py-3">
+                  <Link
+                    href={`/deals/${d.id}`}
+                    className="inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded-lg border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
+                  >
+                    {d.is_active ? 'View' : 'Review'}
+                  </Link>
                 </td>
               </tr>
             ))}
