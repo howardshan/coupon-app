@@ -300,6 +300,9 @@ async function handleCreateDeal(
       : "Risk-Free Refund within 7 days",
     image_urls:       (body.image_urls as string[]) ?? [],
     dishes:           body.dishes ?? [],
+    deal_category_id: body.deal_category_id ?? null,
+    deal_type:        body.deal_type ? String(body.deal_type) : "regular",
+    badge_text:       body.badge_text ? String(body.badge_text) : null,
   };
 
   const { data: deal, error } = await admin
@@ -366,6 +369,7 @@ async function handleUpdateDeal(
     "stock_limit", "expires_at", "package_contents", "usage_notes",
     "usage_days", "max_per_person", "is_stackable", "validity_type",
     "validity_days", "discount_label", "refund_policy", "image_urls", "dishes",
+    "deal_category_id", "deal_type", "badge_text",
   ];
 
   for (const field of updatableFields) {

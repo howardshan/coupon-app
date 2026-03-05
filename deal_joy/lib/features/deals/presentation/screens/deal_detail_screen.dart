@@ -536,10 +536,13 @@ class _DishesSection extends StatelessWidget {
                                 BorderSide(color: AppColors.surfaceVariant)),
                   ),
                   child: Builder(builder: (_) {
-                    // 解析 "name::qty" 格式，无 :: 默认数量 1
+                    // 解析 "name::qty::subtotal" 格式
                     final parts = entry.value.split('::');
                     final name = parts[0];
                     final qty = parts.length > 1 ? parts[1] : '1';
+                    final subtotal = parts.length > 2 ? parts[2] : '';
+                    // 构造右侧文字：×2 $30 或 ×1
+                    final suffix = subtotal.isNotEmpty ? '×$qty \$$subtotal' : '×$qty';
                     return Row(
                       children: [
                         Expanded(
@@ -552,7 +555,7 @@ class _DishesSection extends StatelessWidget {
                           ),
                         ),
                         Text(
-                          '(x$qty)',
+                          suffix,
                           style: const TextStyle(
                             fontSize: 13,
                             color: AppColors.textSecondary,

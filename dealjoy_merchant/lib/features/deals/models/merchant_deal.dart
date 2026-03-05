@@ -185,6 +185,7 @@ class MerchantDeal {
     this.validityDays,
     this.reviewNotes,
     this.publishedAt,
+    this.dealCategoryId,
   });
 
   /// Deal ID
@@ -258,6 +259,9 @@ class MerchantDeal {
 
   /// 首次上架时间
   final DateTime? publishedAt;
+
+  /// Deal 分类 ID（关联 deal_categories 表）
+  final String? dealCategoryId;
 
   /// 图片列表（含主图）
   final List<DealImage> images;
@@ -351,6 +355,7 @@ class MerchantDeal {
       publishedAt:     json['published_at'] != null
           ? DateTime.parse(json['published_at'] as String)
           : null,
+      dealCategoryId:  json['deal_category_id'] as String?,
       images:          imagesSorted,
       createdAt:       json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
@@ -378,6 +383,7 @@ class MerchantDeal {
         'usage_days':       usageDays,
         'max_per_person':   maxPerPerson,
         'is_stackable':     isStackable,
+        'deal_category_id': dealCategoryId,
       };
 
   /// 复制并修改部分字段
@@ -406,6 +412,7 @@ class MerchantDeal {
     bool? isStackable,
     String? reviewNotes,
     DateTime? publishedAt,
+    String? dealCategoryId,
     List<DealImage>? images,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -435,6 +442,7 @@ class MerchantDeal {
       isStackable:     isStackable ?? this.isStackable,
       reviewNotes:     reviewNotes ?? this.reviewNotes,
       publishedAt:     publishedAt ?? this.publishedAt,
+      dealCategoryId:  dealCategoryId ?? this.dealCategoryId,
       images:          images ?? this.images,
       createdAt:       createdAt ?? this.createdAt,
       updatedAt:       updatedAt ?? this.updatedAt,

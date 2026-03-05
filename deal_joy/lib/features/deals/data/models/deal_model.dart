@@ -137,13 +137,23 @@ class DealModel {
         .split('\n')
         .map((line) {
           var s = line.replaceFirst(RegExp(r'^[•\-\*]\s*'), '').trim();
-          // 提取数量前缀 "2× " / "2x "，转为 "name::2" 格式供 UI 解析
-          final m = RegExp(r'^(\d+)\s*[×xX]\s*').firstMatch(s);
-          if (m != null) {
-            final qty = m.group(1)!;
-            s = '${s.substring(m.end).trim()}::$qty';
+          // 提取数量前缀 "2× " / "2x "
+          int qty = 1;
+          final qtyMatch = RegExp(r'^(\d+)\s*[×xX]\s*').firstMatch(s);
+          if (qtyMatch != null) {
+            qty = int.parse(qtyMatch.group(1)!);
+            s = s.substring(qtyMatch.end).trim();
           }
-          return s;
+          // 提取尾部单价 " @15.0"
+          double? unitPrice;
+          final priceMatch = RegExp(r'\s+@([\d.]+)$').firstMatch(s);
+          if (priceMatch != null) {
+            unitPrice = double.tryParse(priceMatch.group(1)!);
+            s = s.substring(0, priceMatch.start).trim();
+          }
+          // 格式: "name::qty::subtotal"
+          final subtotal = unitPrice != null ? (unitPrice * qty).toStringAsFixed(0) : '';
+          return '$s::$qty::$subtotal';
         })
         .where((line) => line.isNotEmpty)
         .toList();

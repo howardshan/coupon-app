@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/merchant_deal.dart';
+import '../models/deal_category.dart';
 import '../providers/deals_provider.dart';
 import '../../store/providers/store_provider.dart';
 import '../../menu/models/menu_item.dart';
@@ -37,6 +38,7 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
   late final TextEditingController _descriptionController;
   late final TextEditingController _usageNotesController;
   List<SelectedMenuItem> _selectedMenuItems = [];
+  String? _selectedDealCategoryId;
 
   // Step 2: 价格
   late final TextEditingController _dealPriceController;
@@ -72,7 +74,10 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
   String get _packageContentsText {
     if (_selectedMenuItems.isEmpty) return widget.deal.packageContents;
     return _selectedMenuItems
-        .map((s) => '• ${s.quantity}× ${s.menuItem.name}')
+        .map((s) {
+          final price = s.menuItem.price ?? 0;
+          return '• ${s.quantity}× ${s.menuItem.name} @$price';
+        })
         .join('\n');
   }
 
@@ -97,6 +102,7 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
       text: deal.maxPerPerson?.toString() ?? '',
     );
 
+    _selectedDealCategoryId = deal.dealCategoryId;
     _isUnlimited = deal.isUnlimited;
     _validityType = deal.validityType;
     _endDate = deal.expiresAt;
@@ -166,6 +172,7 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
             ? int.tryParse(_maxPerPersonController.text)
             : null,
         isStackable: _isStackable,
+        dealCategoryId: _selectedDealCategoryId,
         images: widget.deal.images,
         createdAt: widget.deal.createdAt,
         updatedAt: DateTime.now(),
@@ -603,6 +610,9 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
               ),
             ),
           ),
+          const SizedBox(height: 12),
+          // Deal 分类下拉框
+          _buildDealCategoryDropdown(),
           const SizedBox(height: 12),
           _buildTextField(
             controller: _usageNotesController,
@@ -1240,6 +1250,60 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
       labelStyle: const TextStyle(fontSize: 13, color: Color(0xFF999999)),
+    );
+  }
+
+  // Deal 分类下拉选择器
+  Widget _buildDealCategoryDropdown() {
+    final categoriesAsync = ref.watch(dealCategoriesProvider);
+    return categoriesAsync.when(
+      loading: () => const SizedBox(
+        height: 48,
+        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+      ),
+      error: (_, __) => const Text('Failed to load categories',
+          style: TextStyle(color: Colors.red, fontSize: 13)),
+      data: (categories) {
+        if (categories.isEmpty) {
+          return Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF5F5F5),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFE0E0E0)),
+            ),
+            child: const Text(
+              'No categories yet. Manage in Deals page.',
+              style: TextStyle(fontSize: 13, color: Color(0xFF999999)),
+            ),
+          );
+        }
+        return DropdownButtonFormField<String?>(
+          value: _selectedDealCategoryId,
+          decoration: InputDecoration(
+            labelText: 'Deal Category',
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(color: Color(0xFFE0E0E0)),
+            ),
+          ),
+          hint: const Text('Select a category', style: TextStyle(fontSize: 14)),
+          items: [
+            const DropdownMenuItem<String?>(
+              value: null,
+              child: Text('None', style: TextStyle(color: Color(0xFF999999))),
+            ),
+            ...categories.map((c) => DropdownMenuItem<String?>(
+                  value: c.id,
+                  child: Text(c.name),
+                )),
+          ],
+          onChanged: (value) => setState(() => _selectedDealCategoryId = value),
+        );
+      },
     );
   }
 
