@@ -9,7 +9,7 @@ import 'package:intl/intl.dart';
 import '../models/merchant_deal.dart';
 import '../providers/deals_provider.dart';
 import '../widgets/deal_status_badge.dart';
-import 'deal_create_page.dart';
+import 'deal_edit_page.dart';
 
 // ============================================================
 // DealDetailPage — Deal 完整详情页（ConsumerWidget）
@@ -88,7 +88,7 @@ class _DealDetailView extends StatelessWidget {
               onPressed: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (_) => DealCreatePage(editDeal: deal),
+                    builder: (_) => DealEditPage(deal: deal),
                   ),
                 );
               },

@@ -10,6 +10,18 @@ class DealCard extends StatelessWidget {
 
   const DealCard({super.key, required this.deal});
 
+  // 优先显示距离（Near Me），其次城市名，最后 sold 数量
+  String _locationLabel() {
+    if (deal.distanceMeters != null) {
+      final miles = deal.distanceMeters! / 1609.34;
+      return '${miles.toStringAsFixed(1)} mi';
+    }
+    if (deal.merchantCity != null && deal.merchantCity!.isNotEmpty) {
+      return deal.merchantCity!;
+    }
+    return '${deal.totalSold} sold';
+  }
+
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
@@ -161,7 +173,7 @@ class DealCard extends StatelessWidget {
                       ),
                       const Spacer(),
                       Text(
-                        '${deal.totalSold} sold',
+                        _locationLabel(),
                         style: const TextStyle(
                             fontSize: 12, color: AppColors.textSecondary),
                       ),

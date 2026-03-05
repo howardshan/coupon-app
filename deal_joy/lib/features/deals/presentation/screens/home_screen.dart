@@ -17,6 +17,7 @@ const _locationData = {
       'Richardson',
       'Plano',
       'Frisco',
+      'Fairview',
       'McKinney',
       'Fort Worth',
       'Arlington',
@@ -98,14 +99,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                   }),
                                   child: Row(
                                     children: [
-                                      const Icon(
-                                        Icons.location_on,
+                                      Icon(
+                                        ref.watch(isNearMeProvider)
+                                            ? Icons.my_location
+                                            : Icons.location_on,
                                         color: AppColors.primary,
                                         size: 20,
                                       ),
                                       const SizedBox(width: 4),
                                       Text(
-                                        '${location.city}, TX',
+                                        ref.watch(isNearMeProvider)
+                                            ? 'Near Me'
+                                            : '${location.city}, TX',
                                         style: const TextStyle(
                                           fontSize: 17,
                                           fontWeight: FontWeight.bold,
@@ -503,6 +508,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   _pendingMetro = metro;
                 }),
                 onCitySelected: (city) {
+                  ref.read(isNearMeProvider.notifier).state = false;
                   ref.read(selectedLocationProvider.notifier).state = (
                     state: _pendingState,
                     metro: _pendingMetro,
@@ -510,6 +516,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   );
                   setState(() => _locationMenuOpen = false);
                 },
+                onNearMeSelected: () {
+                  ref.read(isNearMeProvider.notifier).state = true;
+                  setState(() => _locationMenuOpen = false);
+                },
+                isNearMeSelected: ref.read(isNearMeProvider),
               ),
             ),
           ],
@@ -527,6 +538,8 @@ class _LocationDropdown extends StatelessWidget {
   final void Function(String) onStateChange;
   final void Function(String) onMetroChange;
   final void Function(String) onCitySelected;
+  final VoidCallback onNearMeSelected;
+  final bool isNearMeSelected;
 
   const _LocationDropdown({
     required this.location,
@@ -535,6 +548,8 @@ class _LocationDropdown extends StatelessWidget {
     required this.onStateChange,
     required this.onMetroChange,
     required this.onCitySelected,
+    required this.onNearMeSelected,
+    required this.isNearMeSelected,
   });
 
   @override
@@ -604,17 +619,27 @@ class _LocationDropdown extends StatelessWidget {
 
   List<Widget> _buildItems() {
     if (selectionLevel == 'state') {
-      return _locationData.keys.map((state) {
-        return _LocationItem(
-          label: state,
-          selected: location.state == state,
-          hasChildren: true,
-          onTap: () {
-            onStateChange(state);
-            onLevelChange('metro');
-          },
-        );
-      }).toList();
+      return [
+        // Near Me 选项（置顶）
+        _LocationItem(
+          label: 'Near Me',
+          selected: isNearMeSelected,
+          icon: Icons.my_location,
+          onTap: onNearMeSelected,
+        ),
+        const Divider(height: 8),
+        ..._locationData.keys.map((state) {
+          return _LocationItem(
+            label: state,
+            selected: location.state == state,
+            hasChildren: true,
+            onTap: () {
+              onStateChange(state);
+              onLevelChange('metro');
+            },
+          );
+        }),
+      ];
     }
     if (selectionLevel == 'metro') {
       return _locationData[location.state]!.keys.map((metro) {
@@ -646,12 +671,14 @@ class _LocationItem extends StatelessWidget {
   final bool selected;
   final bool hasChildren;
   final VoidCallback onTap;
+  final IconData? icon;
 
   const _LocationItem({
     required this.label,
     required this.selected,
-    required this.hasChildren,
     required this.onTap,
+    this.hasChildren = false,
+    this.icon,
   });
 
   @override
@@ -671,13 +698,23 @@ class _LocationItem extends StatelessWidget {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
-              label,
-              style: TextStyle(
-                fontWeight: FontWeight.w500,
-                fontSize: 14,
-                color: selected ? AppColors.primary : AppColors.textPrimary,
-              ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (icon != null) ...[
+                  Icon(icon, size: 16,
+                      color: selected ? AppColors.primary : AppColors.textSecondary),
+                  const SizedBox(width: 8),
+                ],
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w500,
+                    fontSize: 14,
+                    color: selected ? AppColors.primary : AppColors.textPrimary,
+                  ),
+                ),
+              ],
             ),
             if (hasChildren)
               const Icon(

@@ -10,7 +10,9 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/merchant_deal.dart';
 import '../providers/deals_provider.dart';
-import '../widgets/price_input_row.dart';
+import '../../store/providers/store_provider.dart';
+import '../../menu/models/menu_item.dart';
+import '../../menu/widgets/menu_item_picker.dart';
 
 // ============================================================
 // DealCreatePage — Deal创建/编辑页面（ConsumerStatefulWidget）
@@ -33,12 +35,13 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
   final _step1Key = GlobalKey<FormState>();
   late final TextEditingController _titleController;
   late final TextEditingController _descriptionController;
-  late final TextEditingController _packageController;
   late final TextEditingController _usageNotesController;
 
-  // Step 2: 价格
+  // Step 1: 套餐菜品（从选择器选出）
+  List<SelectedMenuItem> _selectedMenuItems = [];
+
+  // Step 2: 价格（originalPrice 由选中菜品自动计算）
   final _step2Key = GlobalKey<FormState>();
-  double? _originalPrice;
   double? _dealPrice;
 
   // Step 3: 库存和有效期
@@ -60,11 +63,20 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
   bool _isSubmitting = false;
 
   static const _dayOptions = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  static const _categoryOptions = [
-    'Restaurant', 'Spa & Massage', 'Hair & Beauty',
-    'Fitness', 'Fun & Games', 'Nail & Lash', 'Wellness', 'Other',
-  ];
-  String _selectedCategory = 'Restaurant';
+
+  // 计算原价（选中菜品的价格总和）
+  double get _originalPrice {
+    if (_selectedMenuItems.isEmpty) return 0;
+    return _selectedMenuItems.fold(0.0, (sum, item) => sum + item.subtotal);
+  }
+
+  // 生成套餐内容文本
+  String get _packageContentsText {
+    if (_selectedMenuItems.isEmpty) return '';
+    return _selectedMenuItems
+        .map((s) => '• ${s.quantity}× ${s.menuItem.name}')
+        .join('\n');
+  }
 
   @override
   void initState() {
@@ -74,7 +86,6 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
     // 若为编辑模式，回填数据
     _titleController       = TextEditingController(text: deal?.title ?? '');
     _descriptionController = TextEditingController(text: deal?.description ?? '');
-    _packageController     = TextEditingController(text: deal?.packageContents ?? '');
     _usageNotesController  = TextEditingController(text: deal?.usageNotes ?? '');
     _stockController       = TextEditingController(
       text: deal != null && !deal.isUnlimited ? deal.stockLimit.toString() : '',
@@ -87,13 +98,11 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
     );
 
     if (deal != null) {
-      _originalPrice  = deal.originalPrice;
       _dealPrice      = deal.discountPrice;
       _isUnlimited    = deal.isUnlimited;
       _validityType   = deal.validityType;
       _endDate        = deal.expiresAt;
       _isStackable    = deal.isStackable;
-      _selectedCategory = deal.category;
       if (deal.usageDays.isNotEmpty) {
         _selectedDays.addAll(deal.usageDays);
       }
@@ -104,7 +113,6 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
   void dispose() {
     _titleController.dispose();
     _descriptionController.dispose();
-    _packageController.dispose();
     _usageNotesController.dispose();
     _stockController.dispose();
     _validityDaysController.dispose();
@@ -118,14 +126,19 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
   bool _validateCurrentStep() {
     switch (_currentStep) {
       case 0:
-        return _step1Key.currentState?.validate() ?? false;
-      case 1:
-        if (!(_step2Key.currentState?.validate() ?? false)) return false;
-        if (_originalPrice == null || _dealPrice == null) {
-          _showSnack('Please enter both prices');
+        if (!(_step1Key.currentState?.validate() ?? false)) return false;
+        if (_selectedMenuItems.isEmpty) {
+          _showSnack('Please select at least one menu item');
           return false;
         }
-        if (_dealPrice! >= _originalPrice!) {
+        return true;
+      case 1:
+        if (!(_step2Key.currentState?.validate() ?? false)) return false;
+        if (_dealPrice == null) {
+          _showSnack('Please enter the deal price');
+          return false;
+        }
+        if (_dealPrice! >= _originalPrice) {
           _showSnack('Deal price must be less than original price');
           return false;
         }
@@ -161,6 +174,22 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
   }
 
   // --------------------------------------------------------
+  // 打开菜品选择器
+  // --------------------------------------------------------
+  Future<void> _openMenuItemPicker() async {
+    final result = await Navigator.push<List<SelectedMenuItem>>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => MenuItemPicker(initialSelection: _selectedMenuItems),
+      ),
+    );
+
+    if (result != null) {
+      setState(() => _selectedMenuItems = result);
+    }
+  }
+
+  // --------------------------------------------------------
   // 最终提交
   // --------------------------------------------------------
   Future<void> _submit() async {
@@ -171,6 +200,10 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
     try {
       final notifier = ref.read(dealsProvider.notifier);
       final merchantId = notifier.merchantId;
+
+      // 获取商家类别
+      final storeInfo = ref.read(storeProvider).valueOrNull;
+      final category = storeInfo?.category ?? 'Other';
 
       // 计算过期时间
       DateTime expiresAt;
@@ -187,8 +220,8 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
         merchantId:      merchantId,
         title:           _titleController.text.trim(),
         description:     _descriptionController.text.trim(),
-        category:        _selectedCategory,
-        originalPrice:   _originalPrice!,
+        category:        category,
+        originalPrice:   _originalPrice,
         discountPrice:   _dealPrice!,
         stockLimit:      _isUnlimited ? -1 : int.parse(_stockController.text),
         totalSold:       widget.editDeal?.totalSold ?? 0,
@@ -196,7 +229,7 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
         reviewCount:     widget.editDeal?.reviewCount ?? 0,
         isActive:        false,
         dealStatus:      DealStatus.pending,
-        packageContents: _packageController.text.trim(),
+        packageContents: _packageContentsText,
         usageNotes:      _usageNotesController.text.trim(),
         validityType:    _validityType,
         expiresAt:       expiresAt,
@@ -268,7 +301,7 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
       source: ImageSource.gallery,
       maxWidth: 1200,
       maxHeight: 1200,
-      imageQuality: 85, // 压缩质量
+      imageQuality: 85,
     );
 
     if (picked != null) {
@@ -305,86 +338,90 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
           ),
         ),
       ),
-      body: Stepper(
-        currentStep: _currentStep,
-        onStepTapped: (step) {
-          // 允许向后导航（点击已完成的步骤）
-          if (step < _currentStep) {
-            setState(() => _currentStep = step);
-          }
-        },
-        controlsBuilder: (context, details) {
-          final isLast = _currentStep == 4;
-          return Padding(
-            padding: const EdgeInsets.only(top: 16),
-            child: Row(
-              children: [
-                // 继续/提交按钮
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: _isSubmitting
-                        ? null
-                        : () {
-                            if (isLast) {
-                              _submit();
-                            } else {
-                              if (_validateCurrentStep()) {
-                                setState(() => _currentStep++);
+      // 禁用 overscroll 拉伸效果
+      body: ScrollConfiguration(
+        behavior: const ScrollBehavior().copyWith(overscroll: false),
+        child: Stepper(
+          currentStep: _currentStep,
+          onStepTapped: (step) {
+            // 允许向后导航（点击已完成的步骤）
+            if (step < _currentStep) {
+              setState(() => _currentStep = step);
+            }
+          },
+          controlsBuilder: (context, details) {
+            final isLast = _currentStep == 4;
+            return Padding(
+              padding: const EdgeInsets.only(top: 16),
+              child: Row(
+                children: [
+                  // 继续/提交按钮
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: _isSubmitting
+                          ? null
+                          : () {
+                              if (isLast) {
+                                _submit();
+                              } else {
+                                if (_validateCurrentStep()) {
+                                  setState(() => _currentStep++);
+                                }
                               }
-                            }
-                          },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFFF6B35),
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
+                            },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFFF6B35),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
                       ),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      child: _isSubmitting
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : Text(
+                              isLast ? 'Submit for Review' : 'Continue',
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                     ),
-                    child: _isSubmitting
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 2,
-                            ),
-                          )
-                        : Text(
-                            isLast ? 'Submit for Review' : 'Continue',
-                            style: const TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
                   ),
-                ),
-                if (_currentStep > 0) ...[
-                  const SizedBox(width: 12),
-                  OutlinedButton(
-                    onPressed: () => setState(() => _currentStep--),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF666666),
-                      side: const BorderSide(color: Color(0xFFDDDDDD)),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
+                  if (_currentStep > 0) ...[
+                    const SizedBox(width: 12),
+                    OutlinedButton(
+                      onPressed: () => setState(() => _currentStep--),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF666666),
+                        side: const BorderSide(color: Color(0xFFDDDDDD)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
                       ),
-                      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
+                      child: const Text('Back'),
                     ),
-                    child: const Text('Back'),
-                  ),
+                  ],
                 ],
-              ],
-            ),
-          );
-        },
-        steps: [
-          _buildStep1(),
-          _buildStep2(),
-          _buildStep3(),
-          _buildStep4(),
-          _buildStep5(),
-        ],
+              ),
+            );
+          },
+          steps: [
+            _buildStep1(),
+            _buildStep2(),
+            _buildStep3(),
+            _buildStep4(),
+            _buildStep5(),
+          ],
+        ),
       ),
     );
   }
@@ -393,6 +430,10 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
   // Step 1: 基本信息
   // ============================================================
   Step _buildStep1() {
+    // 从 storeProvider 获取商家类别
+    final storeAsync = ref.watch(storeProvider);
+    final category = storeAsync.valueOrNull?.category ?? 'Loading...';
+
     return Step(
       title: const Text('Basic Info'),
       subtitle: const Text('Title, description and package'),
@@ -417,8 +458,36 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
             ),
             const SizedBox(height: 16),
 
-            // 类别选择
-            _buildCategoryDropdown(),
+            // 类别（只读，从注册时的类别继承）
+            _sectionLabel('Category'),
+            const SizedBox(height: 6),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF0F0F0),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFE0E0E0)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.category_outlined,
+                      size: 18, color: Color(0xFF999999)),
+                  const SizedBox(width: 8),
+                  Text(
+                    category,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: Color(0xFF555555),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const Spacer(),
+                  const Icon(Icons.lock_outline,
+                      size: 14, color: Color(0xFFBBBBBB)),
+                ],
+              ),
+            ),
             const SizedBox(height: 16),
 
             // 描述
@@ -435,18 +504,10 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
             ),
             const SizedBox(height: 16),
 
-            // 套餐内容
-            _buildTextField(
-              controller: _packageController,
-              label: 'Package Contents',
-              hint: '• 2x Main dishes\n• 2x Drinks\n• Dessert',
-              maxLines: 5,
-              maxLength: 1000,
-              validator: (v) {
-                if (v == null || v.trim().isEmpty) return 'Package contents is required';
-                return null;
-              },
-            ),
+            // 套餐内容（从菜品选择器选择）
+            _sectionLabel('Package Contents'),
+            const SizedBox(height: 8),
+            _buildPackageContentsSection(),
             const SizedBox(height: 16),
 
             // 使用须知
@@ -463,13 +524,115 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
     );
   }
 
+  // 套餐内容区域
+  Widget _buildPackageContentsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 已选菜品列表
+        if (_selectedMenuItems.isNotEmpty) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFE0E0E0)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ..._selectedMenuItems.map((s) => Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '${s.quantity}× ${s.menuItem.name}',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            color: Color(0xFF333333),
+                          ),
+                        ),
+                      ),
+                      Text(
+                        '\$${s.subtotal.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF333333),
+                        ),
+                      ),
+                    ],
+                  ),
+                )),
+                const Divider(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Total (Original Price)',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF666666),
+                      ),
+                    ),
+                    Text(
+                      '\$${_originalPrice.toStringAsFixed(2)}',
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFFFF6B35),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+
+        // 选择/修改按钮
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: _openMenuItemPicker,
+            icon: Icon(
+              _selectedMenuItems.isEmpty ? Icons.add : Icons.edit_outlined,
+              size: 18,
+            ),
+            label: Text(
+              _selectedMenuItems.isEmpty
+                  ? 'Select Menu Items'
+                  : 'Change Selection',
+            ),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFFFF6B35),
+              side: const BorderSide(color: Color(0xFFFF6B35)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   // ============================================================
   // Step 2: 价格
   // ============================================================
   Step _buildStep2() {
+    final discountPercent = (_originalPrice > 0 && _dealPrice != null && _dealPrice! < _originalPrice)
+        ? ((1 - _dealPrice! / _originalPrice) * 100).round()
+        : null;
+
     return Step(
       title: const Text('Pricing'),
-      subtitle: const Text('Original price and deal price'),
+      subtitle: const Text('Set deal price'),
       isActive: _currentStep >= 1,
       state: _currentStep > 1 ? StepState.complete : StepState.indexed,
       content: Form(
@@ -477,16 +640,81 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Set the original price and your deal price. The discount percentage will be calculated automatically.',
-              style: TextStyle(fontSize: 13, color: Color(0xFF666666)),
+            // 原价（自动计算，只读展示）
+            _sectionLabel('Original Price (from selected items)'),
+            const SizedBox(height: 6),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF0F0F0),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFE0E0E0)),
+              ),
+              child: Text(
+                _originalPrice > 0
+                    ? '\$${_originalPrice.toStringAsFixed(2)}'
+                    : 'Select items first',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: _originalPrice > 0
+                      ? const Color(0xFF333333)
+                      : const Color(0xFF999999),
+                ),
+              ),
             ),
             const SizedBox(height: 16),
-            PriceInputRow(
-              initialOriginalPrice: _originalPrice,
-              initialDealPrice:     _dealPrice,
-              onOriginalPriceChanged: (v) => setState(() => _originalPrice = v),
-              onDealPriceChanged:     (v) => setState(() => _dealPrice = v),
+
+            // 折扣百分比标签
+            if (discountPercent != null) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFF6B35),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  '$discountPercent% OFF',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+
+            // 现价（手动输入）
+            TextFormField(
+              initialValue: _dealPrice?.toStringAsFixed(2),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
+              ],
+              decoration: _inputDecoration(
+                label: 'Deal Price',
+                hint: '0.00',
+              ).copyWith(prefixText: '\$ '),
+              validator: (v) {
+                if (v == null || v.isEmpty) return 'Deal price is required';
+                final price = double.tryParse(v);
+                if (price == null || price <= 0) return 'Enter a valid price';
+                if (_originalPrice > 0 && price >= _originalPrice) {
+                  return 'Must be less than original price';
+                }
+                return null;
+              },
+              onChanged: (v) {
+                setState(() => _dealPrice = double.tryParse(v));
+              },
+            ),
+
+            const SizedBox(height: 12),
+            const Text(
+              'Tip: Set a competitive deal price to attract more customers.',
+              style: TextStyle(fontSize: 12, color: Color(0xFF999999)),
             ),
           ],
         ),
@@ -615,7 +843,6 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
   Widget _buildDateRangePicker() {
     return Column(
       children: [
-        // 结束日期选择（主要是 expires_at）
         InkWell(
           onTap: () async {
             final picked = await showDatePicker(
@@ -773,9 +1000,9 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Column(
+                  const Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: const [
+                    children: [
                       Text(
                         'Allow Stacking',
                         style: TextStyle(
@@ -928,19 +1155,6 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
       validator: validator,
       style: const TextStyle(fontSize: 14, color: Color(0xFF1A1A1A)),
       decoration: _inputDecoration(label: label, hint: hint ?? ''),
-    );
-  }
-
-  Widget _buildCategoryDropdown() {
-    return DropdownButtonFormField<String>(
-      initialValue: _selectedCategory,
-      decoration: _inputDecoration(label: 'Category', hint: ''),
-      items: _categoryOptions.map((cat) {
-        return DropdownMenuItem(value: cat, child: Text(cat));
-      }).toList(),
-      onChanged: (v) {
-        if (v != null) setState(() => _selectedCategory = v);
-      },
     );
   }
 

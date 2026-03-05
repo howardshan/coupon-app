@@ -1,6 +1,7 @@
 // 门店照片网格组件
 // 展示已上传照片（支持删除），包含"Add Photo"按钮
-// 最多 10 张（storefront 类型限制 1 张）
+// cover 最多 5 张，storefront 最多 3 张，environment/product 各最多 10 张
+// cover 类型支持拖拽排序和封面标记
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -22,7 +23,12 @@ class PhotoGrid extends ConsumerWidget {
   final StorePhotoType photoType;
 
   // 各类型照片上限
-  int get _maxPhotos => photoType == StorePhotoType.storefront ? 1 : 10;
+  int get _maxPhotos => switch (photoType) {
+        StorePhotoType.cover => 5,
+        StorePhotoType.storefront => 3,
+        StorePhotoType.environment => 10,
+        StorePhotoType.product => 10,
+      };
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -45,9 +51,8 @@ class PhotoGrid extends ConsumerWidget {
       data: (store) {
         // 根据类型过滤照片列表
         final photos = switch (photoType) {
-          StorePhotoType.storefront => store.storefrontPhoto != null
-              ? [store.storefrontPhoto!]
-              : <StorePhoto>[],
+          StorePhotoType.cover => store.coverPhotos,
+          StorePhotoType.storefront => store.storefrontPhotos,
           StorePhotoType.environment => store.environmentPhotos,
           StorePhotoType.product => store.productPhotos,
         };
@@ -76,7 +81,7 @@ class PhotoGrid extends ConsumerWidget {
                     color: Color(0xFF999999),
                   ),
                 ),
-                if (photoType == StorePhotoType.storefront) ...[
+                if (photoType == StorePhotoType.cover) ...[
                   const SizedBox(width: 4),
                   const Text(
                     '*',
@@ -90,30 +95,65 @@ class PhotoGrid extends ConsumerWidget {
             ),
             const SizedBox(height: 10),
 
-            // 照片网格
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: [
-                // 已有照片
-                ...photos.map(
-                  (photo) => _PhotoCell(
-                    photo: photo,
-                    onDelete: () => _confirmDelete(context, ref, photo),
+            // cover 类型使用可拖拽排序的网格
+            if (photoType == StorePhotoType.cover)
+              _CoverPhotoGrid(
+                photos: photos,
+                canAdd: canAdd,
+                onDelete: (photo) => _confirmDelete(context, ref, photo),
+                onSetCover: (photo) => _setCover(ref, photos, photo),
+                onReorder: (oldIndex, newIndex) =>
+                    _handleReorder(ref, photos, oldIndex, newIndex),
+                onAdd: () => _pickAndUpload(context, ref, store.id),
+              )
+            else
+              // 其他类型使用普通 Wrap 布局
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  ...photos.map(
+                    (photo) => _PhotoCell(
+                      photo: photo,
+                      onDelete: () => _confirmDelete(context, ref, photo),
+                    ),
                   ),
-                ),
-
-                // 添加按钮（未达上限时显示）
-                if (canAdd)
-                  _AddPhotoCell(
-                    onTap: () => _pickAndUpload(context, ref, store.id),
-                  ),
-              ],
-            ),
+                  if (canAdd)
+                    _AddPhotoCell(
+                      onTap: () => _pickAndUpload(context, ref, store.id),
+                    ),
+                ],
+              ),
           ],
         );
       },
     );
+  }
+
+  // 设为封面（移到首位）
+  void _setCover(
+    WidgetRef ref,
+    List<StorePhoto> photos,
+    StorePhoto target,
+  ) {
+    final ids = photos.map((p) => p.id).toList();
+    ids.remove(target.id);
+    ids.insert(0, target.id);
+    ref.read(storeProvider.notifier).reorderPhotos(ids);
+  }
+
+  // 拖拽排序回调
+  void _handleReorder(
+    WidgetRef ref,
+    List<StorePhoto> photos,
+    int oldIndex,
+    int newIndex,
+  ) {
+    if (oldIndex < newIndex) newIndex -= 1;
+    final ids = photos.map((p) => p.id).toList();
+    final id = ids.removeAt(oldIndex);
+    ids.insert(newIndex, id);
+    ref.read(storeProvider.notifier).reorderPhotos(ids);
   }
 
   // 弹出删除确认对话框
@@ -230,6 +270,220 @@ class PhotoGrid extends ConsumerWidget {
 }
 
 // ============================================================
+// Cover 照片可拖拽排序网格
+// ============================================================
+class _CoverPhotoGrid extends StatelessWidget {
+  const _CoverPhotoGrid({
+    required this.photos,
+    required this.canAdd,
+    required this.onDelete,
+    required this.onSetCover,
+    required this.onReorder,
+    required this.onAdd,
+  });
+
+  final List<StorePhoto> photos;
+  final bool canAdd;
+  final void Function(StorePhoto) onDelete;
+  final void Function(StorePhoto) onSetCover;
+  final void Function(int oldIndex, int newIndex) onReorder;
+  final VoidCallback onAdd;
+
+  @override
+  Widget build(BuildContext context) {
+    // 构建所有子项（照片 + 添加按钮）
+    final itemCount = photos.length + (canAdd ? 1 : 0);
+
+    return SizedBox(
+      height: 100,
+      child: ReorderableListView.builder(
+        scrollDirection: Axis.horizontal,
+        buildDefaultDragHandles: false,
+        proxyDecorator: (child, index, animation) {
+          return Material(
+            elevation: 4,
+            borderRadius: BorderRadius.circular(8),
+            child: child,
+          );
+        },
+        onReorder: onReorder,
+        itemCount: itemCount,
+        itemBuilder: (context, index) {
+          // 最后一个是添加按钮
+          if (index >= photos.length) {
+            return Padding(
+              key: const ValueKey('add_button'),
+              padding: const EdgeInsets.only(right: 10),
+              child: _AddPhotoCell(onTap: onAdd),
+            );
+          }
+
+          final photo = photos[index];
+          final isCover = index == 0;
+
+          return ReorderableDragStartListener(
+            key: ValueKey(photo.id),
+            index: index,
+            child: Padding(
+              padding: const EdgeInsets.only(right: 10),
+              child: _CoverPhotoCell(
+                photo: photo,
+                isCover: isCover,
+                onDelete: () => onDelete(photo),
+                onSetCover: isCover ? null : () => onSetCover(photo),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ============================================================
+// Cover 照片格子（缩略图 + 删除 + 封面标记 + 长按菜单）
+// ============================================================
+class _CoverPhotoCell extends StatelessWidget {
+  const _CoverPhotoCell({
+    required this.photo,
+    required this.isCover,
+    required this.onDelete,
+    this.onSetCover,
+  });
+
+  final StorePhoto photo;
+  final bool isCover;
+  final VoidCallback onDelete;
+  final VoidCallback? onSetCover;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onLongPress: () => _showContextMenu(context),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // 照片缩略图
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: CachedNetworkImage(
+              imageUrl: photo.url,
+              width: 88,
+              height: 88,
+              fit: BoxFit.cover,
+              placeholder: (_, _) => Container(
+                width: 88,
+                height: 88,
+                color: const Color(0xFFF0F0F0),
+                child: const Center(
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Color(0xFFFF6B35),
+                  ),
+                ),
+              ),
+              errorWidget: (_, _, _) => Container(
+                width: 88,
+                height: 88,
+                color: const Color(0xFFF0F0F0),
+                child: const Icon(
+                  Icons.broken_image_outlined,
+                  color: Color(0xFFCCCCCC),
+                  size: 32,
+                ),
+              ),
+            ),
+          ),
+
+          // 封面标记（左下角）
+          if (isCover)
+            Positioned(
+              left: 0,
+              bottom: 0,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: const BoxDecoration(
+                  color: Color(0xFFFF6B35),
+                  borderRadius: BorderRadius.only(
+                    topRight: Radius.circular(6),
+                    bottomLeft: Radius.circular(8),
+                  ),
+                ),
+                child: const Text(
+                  'Cover',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+
+          // 右上角删除按钮
+          Positioned(
+            top: -6,
+            right: -6,
+            child: GestureDetector(
+              onTap: onDelete,
+              child: Container(
+                width: 22,
+                height: 22,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFFF4444),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.close_rounded,
+                  size: 14,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showContextMenu(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (onSetCover != null)
+              ListTile(
+                leading: const Icon(Icons.star_rounded,
+                    color: Color(0xFFFF6B35)),
+                title: const Text('Set as Cover'),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  onSetCover!();
+                },
+              ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: Colors.red),
+              title:
+                  const Text('Delete', style: TextStyle(color: Colors.red)),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                onDelete();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================
 // 单张照片格子（显示缩略图 + 右上角删除按钮）
 // ============================================================
 class _PhotoCell extends StatelessWidget {
@@ -325,12 +579,11 @@ class _AddPhotoCell extends StatelessWidget {
           border: Border.all(
             color: const Color(0xFFFF6B35),
             width: 1.5,
-            // 虚线边框效果通过 CustomPaint 实现（简化版用实线）
           ),
         ),
-        child: Column(
+        child: const Column(
           mainAxisAlignment: MainAxisAlignment.center,
-          children: const [
+          children: [
             Icon(
               Icons.add_photo_alternate_outlined,
               size: 28,

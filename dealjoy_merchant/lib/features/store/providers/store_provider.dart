@@ -141,10 +141,14 @@ class StoreNotifier extends AsyncNotifier<StoreInfo> {
 
   // ----------------------------------------------------------
   // 删除照片
+  // 删除 cover 类型照片后自动重排剩余 cover 的 sortOrder
   // ----------------------------------------------------------
   Future<void> deletePhoto(String photoId) async {
     final current = state.valueOrNull;
     if (current == null) return;
+
+    // 找到被删照片的类型
+    final deletedPhoto = current.photos.where((p) => p.id == photoId).firstOrNull;
 
     // 乐观从列表移除
     final updatedPhotos =
@@ -153,6 +157,18 @@ class StoreNotifier extends AsyncNotifier<StoreInfo> {
 
     try {
       await _service.deletePhoto(photoId);
+
+      // 如果删除的是 cover 类型，自动重排剩余 cover 的 sortOrder
+      if (deletedPhoto?.type == StorePhotoType.cover) {
+        final remainingCoverIds = updatedPhotos
+            .where((p) => p.type == StorePhotoType.cover)
+            .toList()
+          ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+
+        if (remainingCoverIds.isNotEmpty) {
+          await reorderPhotos(remainingCoverIds.map((p) => p.id).toList());
+        }
+      }
     } catch (e, st) {
       // 失败回滚
       state = AsyncValue.data(current);

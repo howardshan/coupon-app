@@ -4,6 +4,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/merchant_application.dart';
 import '../providers/merchant_auth_provider.dart';
 import '../widgets/category_selector.dart';
@@ -13,7 +14,10 @@ import '../widgets/document_upload_tile.dart';
 // MerchantRegisterPage — 多步骤注册向导（ConsumerWidget）
 // ============================================================
 class MerchantRegisterPage extends ConsumerStatefulWidget {
-  const MerchantRegisterPage({super.key});
+  const MerchantRegisterPage({super.key, this.isResubmit = false});
+
+  /// 重新提交模式（审核被拒后编辑重提，跳过第1步账号注册）
+  final bool isResubmit;
 
   @override
   ConsumerState<MerchantRegisterPage> createState() =>
@@ -22,8 +26,14 @@ class MerchantRegisterPage extends ConsumerStatefulWidget {
 
 class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
   // 当前步骤索引（0-based）
-  int _currentStep = 0;
+  late int _currentStep;
   static const int _totalSteps = 5;
+
+  /// 是否为重提模式（跳过 Step 0 账号注册）
+  bool get _isResubmit => widget.isResubmit;
+
+  // 是否已经从 DB 预填过表单（防止重复填充）
+  bool _prefilled = false;
 
   // Step 1: 账号注册表单
   final _step1FormKey = GlobalKey<FormState>();
@@ -60,9 +70,17 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
   @override
   void initState() {
     super.initState();
-    // 进入注册页时重置状态，清除上次的错误
+    // 重提模式从 Step 1（Business Info）开始，普通注册从 Step 0
+    _currentStep = _isResubmit ? 1 : 0;
+
     Future.microtask(() {
-      ref.read(merchantAuthProvider.notifier).resetState();
+      if (_isResubmit) {
+        // 重提模式：从 DB 加载已有申请数据
+        ref.read(merchantAuthProvider.notifier).refreshStatus();
+      } else {
+        // 普通注册：重置状态
+        ref.read(merchantAuthProvider.notifier).resetState();
+      }
     });
   }
 
@@ -93,12 +111,23 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
-        leading: _currentStep > 0
+        leading: (_currentStep > 0 && !(_isResubmit && _currentStep == 1))
             ? IconButton(
                 icon: const Icon(Icons.arrow_back, color: Color(0xFF212121)),
                 onPressed: _goBack,
               )
-            : null,
+            : _isResubmit && _currentStep == 1
+                ? IconButton(
+                    icon: const Icon(Icons.close, color: Color(0xFF212121)),
+                    onPressed: () {
+                      if (Navigator.canPop(context)) {
+                        Navigator.pop(context);
+                      } else {
+                        context.go('/auth/review');
+                      }
+                    },
+                  )
+                : null,
         title: Text(
           _stepTitle(_currentStep),
           style: const TextStyle(
@@ -113,8 +142,8 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
         children: [
           // 顶部进度指示器
           _StepProgressBar(
-            currentStep: _currentStep,
-            totalSteps: _totalSteps,
+            currentStep: _isResubmit ? _currentStep - 1 : _currentStep,
+            totalSteps: _isResubmit ? _totalSteps - 1 : _totalSteps,
           ),
           // 表单内容区域
           Expanded(
@@ -135,7 +164,13 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
                   }
                   return _ErrorBanner(message: errStr);
                 },
-                data: (application) => _buildStep(_currentStep, application),
+                data: (application) {
+                  // 重提模式下，数据加载完成后预填表单
+                  if (_isResubmit && !_prefilled && application != null) {
+                    _prefillFromApplication(application);
+                  }
+                  return _buildStep(_currentStep, application);
+                },
               ),
             ),
           ),
@@ -260,7 +295,9 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
                 style: TextStyle(color: Color(0xFF757575)),
               ),
               GestureDetector(
-                onTap: () {
+                onTap: () async {
+                  await Supabase.instance.client.auth.signOut();
+                  if (!context.mounted) return;
                   context.go('/auth/login');
                 },
                 child: const Text(
@@ -685,7 +722,7 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
         _goNext();
 
       case 4:
-        // Step 5: 地址 + 注册账号 + 提交申请（一次性完成）
+        // Step 5: 地址 + 提交申请
         if (!(_step5FormKey.currentState?.validate() ?? false)) return;
         notifier.updateAddress(
           address1: _address1Ctrl.text.trim(),
@@ -695,8 +732,13 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
           zipcode: _zipcodeCtrl.text.trim(),
         );
 
-        // 先注册 Supabase 账号
-        await notifier.registerAndSubmit();
+        if (_isResubmit) {
+          // 重提模式：直接重新提交（已有账号，无需 signUp）
+          await notifier.resubmitApplication();
+        } else {
+          // 新注册模式：注册账号 + 提交申请
+          await notifier.registerAndSubmit();
+        }
         final state5 = ref.read(merchantAuthProvider);
         if (state5 is AsyncError) {
           _showError(state5.error.toString());
@@ -716,7 +758,8 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
 
   // 后退一步
   void _goBack() {
-    if (_currentStep > 0) {
+    final minStep = _isResubmit ? 1 : 0;
+    if (_currentStep > minStep) {
       setState(() => _currentStep--);
     }
   }
@@ -727,6 +770,23 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
           documentType: docType,
           localFilePath: path,
         );
+  }
+
+  // ----------------------------------------------------------
+  // 重提模式：从已有申请数据预填表单
+  // ----------------------------------------------------------
+  void _prefillFromApplication(MerchantApplication app) {
+    _prefilled = true;
+    _companyNameCtrl.text = app.companyName;
+    _contactNameCtrl.text = app.contactName;
+    _contactEmailCtrl.text = app.contactEmail;
+    _phoneCtrl.text = app.phone;
+    _einCtrl.text = app.ein;
+    _address1Ctrl.text = app.address1;
+    _address2Ctrl.text = app.address2;
+    _cityCtrl.text = app.city;
+    _stateCtrl.text = app.state;
+    _zipcodeCtrl.text = app.zipcode;
   }
 
   // 显示错误 SnackBar
@@ -849,7 +909,6 @@ class _AppTextField extends StatelessWidget {
     this.obscureText = false,
     this.suffixIcon,
     this.validator,
-    this.maxLines = 1,
   });
 
   final TextEditingController controller;
@@ -859,7 +918,7 @@ class _AppTextField extends StatelessWidget {
   final bool obscureText;
   final Widget? suffixIcon;
   final String? Function(String?)? validator;
-  final int maxLines;
+  final int maxLines = 1;
 
   @override
   Widget build(BuildContext context) {
