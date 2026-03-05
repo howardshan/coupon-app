@@ -1,113 +1,115 @@
-# 项目路径规则（最高优先级）
-- **商家端代码**（dealjoy_merchant）：只修改 `/Users/howardshansmac/github/coupon app/coupon-app/dealjoy_merchant/` 下的文件
-- **用户端代码**（deal_joy）：只修改 `/Users/howardshansmac/github/coupon app/coupon-app/deal_joy/` 下的文件
-- 两个项目的代码互不交叉修改
-
 # 沟通规则（最高优先级）
 - **所有与用户的对话和解释必须用中文回复**
 - **代码注释用中文**
 - **代码本身（变量名、函数名、类名等）和 UI 文案用英文**
-- **每次完成代码改动后，必须自动重启 Android 模拟器**：
-  ```bash
-  pkill -f "qemu-system" 2>/dev/null; pkill -f "emulator" 2>/dev/null
-  nohup ~/Library/Android/sdk/emulator/emulator -avd Medium_Phone_API_36.1 -no-snapshot-load > /tmp/emulator.log 2>&1 &
-  sleep 20
-  cd "/Users/howardshansmac/github/coupon app/coupon-app/deal_joy" && nohup ~/flutter/bin/flutter run -d emulator-5554 > /tmp/flutter_run.log 2>&1 &
-  ```
 
-# DealJoy - 本地生活团购平台
+# 项目路径规则（最高优先级）
+- **用户端（deal_joy）**: `/Users/howardshansmac/github/coupon app/coupon-app/deal_joy/`
+- **商家端（dealjoy_merchant）**: `/Users/howardshansmac/github/coupon app/coupon-app/dealjoy_merchant/`
+- **Supabase 后端（migrations + functions）**: `/Users/howardshansmac/github/coupon app/coupon-app/deal_joy/supabase/`
+- 两个 Flutter 项目代码互不交叉修改
+- Supabase 相关文件（migrations, functions）统一在 deal_joy/supabase/ 下
+
+# DealJoy — 本地生活团购平台
 
 ## 项目概述
 北美 Dallas 地区本地生活团购平台，核心差异化：**"随时买，随时退"** — 无条件即时退款。
-项目当前完成度约 **70%**，核心购买流程可用，需补全缺失功能并修复问题。
+两个独立 Flutter App + 共享 Supabase 后端。
 
 ## 技术栈
-- **前端**: Flutter 3.x + Dart 3.x, Riverpod 2.x, go_router, Material Design 3
-- **后端**: Supabase (PostgreSQL 15+, Edge Functions/Deno, Auth, Storage, Realtime)
-- **支付**: Stripe
-- **推送**: Firebase Cloud Messaging
+- **前端**: Flutter 3.x + Dart ^3.11.0
+- **状态管理**: Riverpod 2.6.1 (flutter_riverpod), **AsyncNotifier 模式**
+- **导航**: go_router 14.3.0
+- **后端**: Supabase 2.8.0 (PostgreSQL, Edge Functions/Deno, Auth, Storage)
+- **支付**: Stripe (flutter_stripe ^11.1.0, 仅 customer app)
 
-## 项目结构
-所有代码在 `deal_joy/` 目录下：
+## 用户端（deal_joy）目录结构
 ```
-deal_joy/
-├── lib/
-│   ├── main.dart                    # 入口：初始化 Supabase + Stripe
-│   ├── app.dart                     # DealJoyApp 根 Widget
-│   ├── core/
-│   │   ├── config/env.dart          # 环境变量加载
-│   │   ├── constants/app_constants.dart
-│   │   ├── theme/app_theme.dart, app_colors.dart
-│   │   ├── errors/app_exception.dart
-│   │   ├── widgets/main_scaffold.dart  # 底部导航
-│   │   └── router/app_router.dart      # go_router 路由配置
-│   ├── features/                    # Feature-First 架构
-│   │   ├── auth/                    # ✅ 已实现
-│   │   ├── deals/                   # ⚠️ 90% - HomeScreen UI 未完成
-│   │   ├── checkout/                # ⚠️ 95% - UI 部分缺失
-│   │   ├── orders/                  # ✅ 已实现
-│   │   ├── reviews/                 # ✅ 已实现
-│   │   ├── merchant/                # ❌ 20% - dashboard 骨架
-│   │   ├── chat/                    # ❌ 0% - 纯占位
-│   │   ├── cart/                    # ❌ 5% - 纯占位
-│   │   └── profile/                 # ⚠️ 60% - 缺编辑功能
-│   └── shared/
-│       ├── providers/supabase_provider.dart
-│       └── widgets/app_button.dart, app_text_field.dart
-├── supabase/
-│   ├── schema.sql                   # 完整数据库架构
-│   ├── seed.sql                     # 种子数据
-│   ├── migrations/                  # ✅ 2 个 migration
-│   └── functions/                   # ✅ create-payment-intent, create-refund
-├── test/                            # ❌ 仅占位测试
-└── .env                             # Supabase + Stripe 密钥
+deal_joy/lib/
+├── main.dart
+├── app.dart                        # DealJoyApp 根 Widget
+├── core/
+│   ├── config/env.dart             # flutter_dotenv 环境变量
+│   ├── constants/app_constants.dart
+│   ├── theme/app_theme.dart
+│   ├── errors/app_exception.dart
+│   ├── widgets/main_scaffold.dart  # 4-tab 底部导航
+│   └── router/app_router.dart      # go_router
+├── features/                       # Feature-First Clean Architecture
+│   ├── auth/          # ✅ email+password, Google Sign-In
+│   ├── deals/         # ✅ HomeScreen, DealDetail, search, collection
+│   ├── checkout/      # ⚠️ Stripe 支付流程
+│   ├── orders/        # ✅ 订单列表, QR coupon
+│   ├── reviews/       # ✅ 评价系统
+│   ├── profile/       # ⚠️ 个人中心
+│   ├── merchant/      # ⚠️ 商家详情页
+│   ├── chat/          # ❌ 占位
+│   └── cart/          # ❌ 占位
+└── shared/providers/, widgets/
 ```
 
-## 每个目录的约定（必须严格遵循）
+## 用户端模块目录约定（必须严格遵循）
 ```
 features/{module}/
 ├── data/
-│   ├── repositories/   # Repository 类（API 调用、数据库查询）
-│   └── models/         # 数据模型（freezed/json_serializable）
+│   ├── models/         # 数据模型（DealModel, MerchantSummary 等）
+│   └── repositories/   # Repository（直接查 Supabase 表 + RPC 函数）
 ├── domain/
 │   └── providers/      # Riverpod Providers
 └── presentation/
-    ├── screens/        # 页面级 Widget（XxxScreen）
-    └── widgets/        # 模块内组件（XxxCard, XxxTile）
+    ├── screens/        # XxxScreen 页面
+    └── widgets/        # 模块内组件
 ```
 
-## 当前已知问题
-1. test/widget_test.dart 引用不存在的 MyApp（应为 DealJoyApp）
-2. HomeScreen UI 未完成（位置选择菜单和 deal grid 截断）
-3. CheckoutScreen UI 部分缺失
-4. Chat 功能只有静态 UI，无后端
-5. Cart 功能只有空状态，无逻辑
-6. Profile 无编辑功能
-7. Merchant Dashboard 只有骨架
-8. Stripe key 格式为 sb_publishable_*（应为 pk_test_*）
-9. geolocator 已声明但未使用真实 GPS
-10. Saved Deals 有 repository 但无 UI 页面
+## 用户端数据层关键点
+- **Repository 直接查 Supabase 表**，不走 Edge Function
+- deals 查询用 join: `merchants(id, name, logo_url, phone, homepage_cover_url)`
+- 搜索用 RPC: `search_deals_nearby()` / `search_deals_by_city()`
+- RPC 返回扁平结构，用 `DealModel.fromSearchJson()` 解析（字段名带 `merchant_` 前缀）
+- 普通查询返回嵌套结构，用 `DealModel.fromJson()` 解析（merchants 是嵌套对象）
 
-## 需求来源
-- Excel: `requirements/DealJoy_V1_详细需求清单_v3.xlsx`
-- 读取: `python3 scripts/read_excel.py "<模块名>"`
+## 用户端导航
+底部 4 Tab: `/home` | `/chat` | `/cart` | `/profile`
+主要路由: `/deals/:id`, `/checkout/:dealId`, `/merchant/:id`, `/search`, `/orders`, `/collection`, `/coupons`
+
+## Supabase 后端
+### Edge Functions（16个，Deno/TypeScript）
+核心: `create-payment-intent`, `create-refund`, `auto-refund-expired`, `stripe-webhook`
+商家: `merchant-register`, `merchant-store`, `merchant-deals`, `merchant-dashboard`,
+      `merchant-scan`, `merchant-orders`, `merchant-earnings`, `merchant-reviews`,
+      `merchant-analytics`, `merchant-notifications`, `merchant-marketing`, `merchant-influencer`
+
+### RPC 函数
+- `search_deals_nearby(p_lat, p_lng, p_radius_m, p_category, p_limit, p_offset)` → 返回 `merchant_homepage_cover_url`
+- `search_deals_by_city(p_city, p_user_lat, p_user_lng, p_category, p_limit, p_offset)` → 返回 `merchant_homepage_cover_url`
+
+### 主要表
+users, merchants, deals, orders, coupons, reviews, payments, saved_deals, categories,
+merchant_photos, merchant_hours, merchant_documents, deal_images
 
 ## 代码规范
 - **UI 全英文**（面向北美市场），注释用中文
-- Riverpod AsyncNotifier 模式（不要用 setState）
+- Riverpod AsyncNotifier 模式（**不要用 setState**）
 - 每张 Supabase 表必须有 RLS 策略
-- 表单必须用 GlobalKey<FormState> + validator
-- 每个文件只放一个公开 Widget
+- Model 的 `fromJson` 所有字段必须 null-safe（`as String? ?? ''`），避免 `null as String` 崩溃
 - 严格遵循现有目录结构，不要创建新的目录层级
+
+## 常见错误（必须避免）
+1. **fromJson 硬转换**: 写 `json['x'] as String` 而不是 `json['x'] as String? ?? ''` → null 时崩溃
+2. **Edge Function select 不全**: join 子查询没有 select 某字段，但 Dart model 期望该字段
+3. **RPC 字段名不同**: RPC 返回的是 `merchant_name`, `merchant_logo_url` 等带前缀的扁平结构，不是嵌套的 `merchants` 对象
+4. **PostgreSQL 函数改返回类型**: 不能 CREATE OR REPLACE，必须先 DROP FUNCTION 再 CREATE
+5. **Edge Function 本地改了没部署**: 需要 `supabase functions deploy <name>` 或在 Dashboard 更新
 
 ## 开发命令
 ```bash
-# 从 Excel 读取模块需求
-python3 scripts/read_excel.py "1.用户认证系统"
+# Flutter
+cd "/Users/howardshansmac/github/coupon app/coupon-app/deal_joy" && ~/flutter/bin/flutter run -d emulator
 
-# 运行 Flutter 测试
-cd deal_joy && flutter test
+# Supabase (需要先 supabase login)
+/opt/homebrew/bin/supabase functions deploy <function-name> --no-verify-jwt --project-ref kqyolvmgrdekybjrwizx
+/opt/homebrew/bin/supabase db push --project-ref kqyolvmgrdekybjrwizx
 
-# 运行 app
-cd deal_joy && flutter run
+# 需求
+python3 scripts/read_excel.py "<模块名>"
 ```

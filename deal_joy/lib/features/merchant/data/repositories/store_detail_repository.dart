@@ -2,6 +2,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/errors/app_exception.dart';
 import '../../../deals/data/models/deal_model.dart';
 import '../../../deals/data/models/review_model.dart';
+import '../models/deal_category_model.dart';
 import '../models/merchant_detail_model.dart';
 import '../models/menu_item_model.dart';
 import '../models/review_stats_model.dart';
@@ -25,6 +26,26 @@ class StoreDetailRepository {
     } on PostgrestException catch (e) {
       throw AppException(
         'Failed to load store details: ${e.message}',
+        code: e.code,
+      );
+    }
+  }
+
+  /// 获取商家 Deal 分类列表
+  Future<List<DealCategoryModel>> fetchDealCategories(
+      String merchantId) async {
+    try {
+      final data = await _client
+          .from('deal_categories')
+          .select()
+          .eq('merchant_id', merchantId)
+          .order('sort_order');
+      return (data as List)
+          .map((d) => DealCategoryModel.fromJson(d as Map<String, dynamic>))
+          .toList();
+    } on PostgrestException catch (e) {
+      throw AppException(
+        'Failed to load deal categories: ${e.message}',
         code: e.code,
       );
     }

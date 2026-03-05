@@ -1,90 +1,115 @@
-# 项目路径规则（最高优先级）
-- **本项目（商家端）代码路径**：`/Users/howardshansmac/github/coupon app/coupon-app/dealjoy_merchant/`
-- **用户端代码路径**（只读参考）：`/Users/howardshansmac/github/coupon app/coupon-app/deal_joy/`
-- 所有商家端代码修改必须在本项目路径下，不可修改用户端路径
-
 # 沟通规则（最高优先级）
 - **所有与用户的对话和解释必须用中文回复**
 - **代码注释用中文**
 - **代码本身（变量名、函数名、类名等）和 UI 文案用英文**
-- **每次完成代码改动后，必须自动重启 Android 模拟器**：
-  ```bash
-  pkill -f "qemu-system" 2>/dev/null; pkill -f "emulator" 2>/dev/null
-  nohup ~/Library/Android/sdk/emulator/emulator -avd Medium_Phone_API_36.1 -no-snapshot-load -no-audio > /tmp/emulator.log 2>&1 &
-  sleep 20
-  cd "/Users/howardshansmac/github/coupon app/coupon-app/dealjoy_merchant" && nohup ~/flutter/bin/flutter run -d emulator-5554 > /tmp/flutter_run.log 2>&1 &
-  ```
+
+# 项目路径规则（最高优先级）
+- **本项目（商家端）**: `/Users/howardshansmac/github/coupon app/coupon-app/dealjoy_merchant/`
+- **用户端（只读参考）**: `/Users/howardshansmac/github/coupon app/coupon-app/deal_joy/`
+- **Supabase 后端**: `/Users/howardshansmac/github/coupon app/coupon-app/deal_joy/supabase/`
+- 商家端代码修改只改本项目路径，不改用户端路径
+- Edge Functions / migrations 在 deal_joy/supabase/ 下（两个 app 共享）
 
 # DealJoy Merchant — 商家端 App
 
 ## 项目概述
 北美 Dallas 地区本地生活团购平台的**商家端独立 App**。
-与用户端（coupon-app）共享同一套 Supabase 后端，专注商家视角的功能：
-- 店铺管理、Deal 创建、订单核销、收款、数据分析、达人营销
+与用户端共享同一套 Supabase 后端，专注商家视角功能。
 
 ## 技术栈
-- **前端**: Flutter 3.x + Dart 3.x, Riverpod 2.x, go_router, Material Design 3
-- **后端**: Supabase (与用户端共享同一数据库)
-- **扫码**: mobile_scanner
-- **图片**: image_picker + cached_network_image
+- Flutter 3.x + Dart ^3.11.0
+- Riverpod 2.6.1 (flutter_riverpod), **AsyncNotifier 模式**
+- go_router 14.3.0
+- supabase_flutter 2.8.0
+- mobile_scanner ^6.0.3 (扫码核销)
+- image_picker + cached_network_image
 
 ## 项目结构
 ```
-dealjoy_merchant/
-├── lib/
-│   ├── main.dart              # 入口
-│   ├── app_shell.dart         # 商家端主容器（4-tab 底部导航）
-│   └── features/
-│       ├── merchant_auth/     # 商家注册/登录/认证
-│       ├── dashboard/         # 首页仪表盘
-│       ├── store/             # 店铺管理
-│       ├── deals/             # Deal 创建与管理
-│       ├── scan/              # 核销扫码
-│       ├── orders/            # 订单管理
-│       ├── earnings/          # 收益/结算
-│       ├── reviews/           # 评价管理
-│       ├── analytics/         # 数据分析
-│       ├── notifications/     # 通知
-│       ├── marketing/         # 营销工具
-│       ├── influencer/        # 达人合作
-│       └── settings/          # 账户设置
-├── requirements/              # 需求清单 Excel
-├── scripts/                   # 工具脚本
-├── docs/                      # 项目文档
-├── output/                    # Pipeline 输出
-└── .claude/                   # Claude 配置
+dealjoy_merchant/lib/
+├── main.dart
+├── app_shell.dart          # 4-tab 底部导航
+├── router/app_router.dart  # go_router
+└── features/
+    ├── merchant_auth/      # 商家注册/登录/审核
+    ├── dashboard/          # 首页仪表盘
+    ├── store/              # 店铺管理（基本信息、照片、营业时间、标签）
+    ├── deals/              # Deal 创建与管理
+    ├── scan/               # QR 核销
+    ├── orders/             # 订单管理
+    ├── earnings/           # 收益/结算
+    ├── reviews/            # 评价管理
+    ├── analytics/          # 数据分析
+    ├── notifications/      # 通知
+    ├── marketing/          # 营销工具
+    ├── influencer/         # 达人合作
+    ├── menu/               # 菜品/菜单管理
+    └── settings/           # 账户设置
 ```
 
-## 每个模块的目录约定（必须严格遵循）
+## 模块目录约定（必须严格遵循，与用户端不同！）
 ```
 features/{module}/
-├── pages/       # 页面级 Widget（XxxPage）
-├── widgets/     # 模块内组件（XxxCard, XxxTile）
-├── providers/   # Riverpod Providers
-├── services/    # 业务逻辑服务
-└── models/      # 数据模型
+├── models/       # 数据模型（MerchantDeal, StoreInfo, DealImage 等）
+├── services/     # XxxService — 调 Edge Function 的业务逻辑层
+├── providers/    # Riverpod AsyncNotifier Providers
+├── pages/        # XxxPage 页面级 Widget
+└── widgets/      # XxxCard, XxxTile 模块组件
 ```
 
-## 代码规范
-- **UI 全英文**（面向北美市场），注释用中文
-- Riverpod `AsyncNotifier` 模式（不要用 `setState`）
-- 每张 Supabase 表必须有 RLS 策略
-- 表单必须用 `GlobalKey<FormState>` + validator
-- 每个文件只放一个公开 Widget
-- 严格遵循现有目录结构，不要创建新的目录层级
+## 数据层关键点（与用户端完全不同！）
+- **商家端通过 Edge Function 访问数据**，不直接查表
+- `DealsService` 调 `merchant-deals` Edge Function
+- `StoreService` 调 `merchant-store` Edge Function
+- Edge Function 返回的 JSON 结构和 Supabase 直接查表返回的不同！
+- **Edge Function select 的字段可能不全** → Dart model 的 fromJson 必须全部 null-safe
 
-## 需求来源
-- Excel: `requirements/DealJoy_商家端需求清单.xlsx`
-- 读取: `python3 scripts/read_merchant_excel.py "<模块名>"`
+## Edge Function 返回格式（关键参考）
+### merchant-store GET
+```json
+{ "store": {...}, "photos": [...], "hours": [...] }
+```
+- StoreInfo.fromJson 先取 `json['store']`，再取 `json['photos']` 和 `json['hours']`
+
+### merchant-deals GET
+```json
+{ "deals": [{ ...deal, "deal_images": [{id, image_url, sort_order, is_primary}] }] }
+```
+- 注意: deal_images 只 select 4 个字段，**没有 created_at, deal_id**
+- MerchantDeal.fromJson 的所有字段必须 null-safe
+
+### merchant-deals POST/PATCH (create/update deal)
+```json
+{ "deal": { ...all_columns } }
+```
+- 返回 `.select()` 全字段，但不包含 deal_images join
+
+## 导航
+底部 4 Tab: `/dashboard` | `/scan` | `/orders` | `/me`
+主要路由: `/store`, `/deals`, `/deals/create`, `/deals/:dealId`, `/reviews`, `/analytics`, `/earnings`
+
+## 代码规范
+- **UI 全英文**，注释用中文
+- Riverpod AsyncNotifier 模式（**不要用 setState**）
+- Model 的 `fromJson` 所有字段必须 null-safe：
+  - `json['x'] as String? ?? ''` 不是 `json['x'] as String`
+  - `json['x'] != null ? DateTime.parse(json['x'] as String) : DateTime.now()`
+  - `(json['x'] as num?)?.toDouble() ?? 0`
+- 严格遵循现有目录结构
+
+## 常见错误（必须避免）
+1. **fromJson null 崩溃**: Edge Function select 可能不返回某些字段 → 必须 null-safe 解析
+2. **Edge Function 没部署**: 本地改了 index.ts 必须部署才生效
+   - `supabase functions deploy <name> --no-verify-jwt --project-ref kqyolvmgrdekybjrwizx`
+   - 或在 Supabase Dashboard → Edge Functions 手动更新
+3. **Edge Function PATCH 白名单**: 新增字段必须加到 `allowedFields` 数组
+4. **混淆用户端和商家端模式**: 商家端用 `pages/services/`，不是 `presentation/screens/data/repositories/`
 
 ## 开发命令
 ```bash
-# 从 Excel 读取模块需求
-python3 scripts/read_merchant_excel.py "1.商家注册与认证"
+# 运行商家端
+cd "/Users/howardshansmac/github/coupon app/coupon-app/dealjoy_merchant" && ~/flutter/bin/flutter run -d emulator
 
-# 运行 Flutter 测试
-flutter test
-
-# 运行 app
-flutter run
+# 需求
+python3 scripts/read_merchant_excel.py "<模块名>"
 ```

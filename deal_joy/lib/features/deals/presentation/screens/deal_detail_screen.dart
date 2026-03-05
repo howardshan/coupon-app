@@ -535,26 +535,35 @@ class _DishesSection extends StatelessWidget {
                             bottom:
                                 BorderSide(color: AppColors.surfaceVariant)),
                   ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          entry.value,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            color: AppColors.textPrimary,
+                  child: Builder(builder: (_) {
+                    // 解析 "name::qty::subtotal" 格式
+                    final parts = entry.value.split('::');
+                    final name = parts[0];
+                    final qty = parts.length > 1 ? parts[1] : '1';
+                    final subtotal = parts.length > 2 ? parts[2] : '';
+                    // 构造右侧文字：×2 $30 或 ×1
+                    final suffix = subtotal.isNotEmpty ? '×$qty \$$subtotal' : '×$qty';
+                    return Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            name,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              color: AppColors.textPrimary,
+                            ),
                           ),
                         ),
-                      ),
-                      const Text(
-                        '(x1)',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: AppColors.textSecondary,
+                        Text(
+                          suffix,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: AppColors.textSecondary,
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
+                      ],
+                    );
+                  }),
                 );
               }).toList(),
             ),

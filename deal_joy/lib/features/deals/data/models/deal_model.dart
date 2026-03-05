@@ -25,6 +25,10 @@ class DealModel {
   // 搜索结果附加字段
   final double? distanceMeters;
   final String? merchantCity;
+  // V2 新增字段
+  final String dealType; // 'voucher' | 'regular'
+  final String? dealCategoryId;
+  final String? badgeText; // 自定义角标，如 "Best Value"
 
   const DealModel({
     required this.id,
@@ -52,6 +56,9 @@ class DealModel {
     this.merchant,
     this.distanceMeters,
     this.merchantCity,
+    this.dealType = 'regular',
+    this.dealCategoryId,
+    this.badgeText,
   });
 
   factory DealModel.fromJson(Map<String, dynamic> json) => DealModel(
@@ -66,7 +73,7 @@ class DealModel {
             ((1 - (json['discount_price'] as num) / (json['original_price'] as num)) * 100).round(),
         discountLabel: json['discount_label'] as String? ?? '',
         imageUrls: List<String>.from(json['image_urls'] as List? ?? []),
-        dishes: List<String>.from(json['dishes'] as List? ?? []),
+        dishes: _parseDishes(json),
         rating: (json['rating'] as num?)?.toDouble() ?? 0.0,
         reviewCount: json['review_count'] as int? ?? 0,
         totalSold: json['total_sold'] as int? ?? 0,
@@ -83,6 +90,9 @@ class DealModel {
             ? MerchantSummary.fromJson(
                 json['merchants'] as Map<String, dynamic>)
             : null,
+        dealType: json['deal_type'] as String? ?? 'regular',
+        dealCategoryId: json['deal_category_id'] as String?,
+        badgeText: json['badge_text'] as String?,
       );
 
   // RPC 搜索结果（search_deals_nearby / search_deals_by_city）解析
@@ -107,10 +117,47 @@ class DealModel {
           id: json['merchant_id'] as String,
           name: json['merchant_name'] as String? ?? '',
           logoUrl: json['merchant_logo_url'] as String?,
+          homepageCoverUrl: json['merchant_homepage_cover_url'] as String?,
         ),
         distanceMeters: (json['distance_meters'] as num?)?.toDouble(),
         merchantCity: json['merchant_city'] as String?,
+        dealType: json['deal_type'] as String? ?? 'regular',
+        dealCategoryId: json['deal_category_id'] as String?,
+        badgeText: json['badge_text'] as String?,
       );
+
+  /// 解析菜品列表：优先读 dishes 数组，为空时从 package_contents 文本按行解析
+  static List<String> _parseDishes(Map<String, dynamic> json) {
+    final raw = json['dishes'] as List? ?? [];
+    if (raw.isNotEmpty) return List<String>.from(raw);
+    // fallback: 从 package_contents 文本按行拆分
+    final pc = json['package_contents'] as String? ?? '';
+    if (pc.isEmpty) return [];
+    return pc
+        .split('\n')
+        .map((line) {
+          var s = line.replaceFirst(RegExp(r'^[•\-\*]\s*'), '').trim();
+          // 提取数量前缀 "2× " / "2x "
+          int qty = 1;
+          final qtyMatch = RegExp(r'^(\d+)\s*[×xX]\s*').firstMatch(s);
+          if (qtyMatch != null) {
+            qty = int.parse(qtyMatch.group(1)!);
+            s = s.substring(qtyMatch.end).trim();
+          }
+          // 提取尾部单价 " @15.0"
+          double? unitPrice;
+          final priceMatch = RegExp(r'\s+@([\d.]+)$').firstMatch(s);
+          if (priceMatch != null) {
+            unitPrice = double.tryParse(priceMatch.group(1)!);
+            s = s.substring(0, priceMatch.start).trim();
+          }
+          // 格式: "name::qty::subtotal"
+          final subtotal = unitPrice != null ? (unitPrice * qty).toStringAsFixed(0) : '';
+          return '$s::$qty::$subtotal';
+        })
+        .where((line) => line.isNotEmpty)
+        .toList();
+  }
 
   bool get isExpired => DateTime.now().isAfter(expiresAt);
 
@@ -130,6 +177,7 @@ class MerchantSummary {
   final String? phone;
   final String? address;
   final String? hours;
+  final String? homepageCoverUrl;
   final double rating;
   final int reviewCount;
 
@@ -140,6 +188,7 @@ class MerchantSummary {
     this.phone,
     this.address,
     this.hours,
+    this.homepageCoverUrl,
     this.rating = 0.0,
     this.reviewCount = 0,
   });
@@ -152,6 +201,7 @@ class MerchantSummary {
         phone: json['phone'] as String?,
         address: json['address'] as String?,
         hours: json['hours'] as String?,
+        homepageCoverUrl: json['homepage_cover_url'] as String?,
         rating: (json['rating'] as num?)?.toDouble() ?? 0.0,
         reviewCount: json['review_count'] as int? ?? 0,
       );

@@ -874,9 +874,11 @@ class _SearchDealCard extends StatelessWidget {
               child: SizedBox(
                 width: 110,
                 height: 110,
-                child: deal.imageUrls.isNotEmpty
+                child: (deal.imageUrls.isNotEmpty || deal.merchant?.homepageCoverUrl != null)
                     ? CachedNetworkImage(
-                        imageUrl: deal.imageUrls.first,
+                        imageUrl: deal.imageUrls.isNotEmpty
+                            ? deal.imageUrls.first
+                            : deal.merchant!.homepageCoverUrl!,
                         fit: BoxFit.cover,
                         errorWidget: (_, _, _) => Container(
                           color: AppColors.surfaceVariant,

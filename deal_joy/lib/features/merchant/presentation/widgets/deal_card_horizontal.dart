@@ -64,9 +64,11 @@ class _DealImage extends StatelessWidget {
           // 圆角图片
           ClipRRect(
             borderRadius: BorderRadius.circular(10),
-            child: deal.imageUrls.isNotEmpty
+            child: (deal.imageUrls.isNotEmpty || deal.merchant?.homepageCoverUrl != null)
                 ? CachedNetworkImage(
-                    imageUrl: deal.imageUrls.first,
+                    imageUrl: deal.imageUrls.isNotEmpty
+                        ? deal.imageUrls.first
+                        : deal.merchant!.homepageCoverUrl!,
                     width: 90,
                     height: 90,
                     fit: BoxFit.cover,

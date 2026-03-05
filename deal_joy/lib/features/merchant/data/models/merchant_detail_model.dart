@@ -19,6 +19,8 @@ class MerchantDetailModel {
   final int? establishedYear;
   final List<MerchantPhotoModel> photos;
   final List<MerchantHourModel> hours;
+  final String headerPhotoStyle; // 'single' 或 'triple'
+  final List<String> headerPhotos; // triple 模式 3 张 URL
 
   const MerchantDetailModel({
     required this.id,
@@ -37,6 +39,8 @@ class MerchantDetailModel {
     this.establishedYear,
     this.photos = const [],
     this.hours = const [],
+    this.headerPhotoStyle = 'single',
+    this.headerPhotos = const [],
   });
 
   factory MerchantDetailModel.fromJson(Map<String, dynamic> json) {
@@ -77,8 +81,17 @@ class MerchantDetailModel {
       establishedYear: json['established_year'] as int?,
       photos: photos,
       hours: hours,
+      headerPhotoStyle: json['header_photo_style'] as String? ?? 'single',
+      headerPhotos: (json['header_photos'] as List?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          [],
     );
   }
+
+  /// 是否使用三图并排头图模式
+  bool get useTripleHeader =>
+      headerPhotoStyle == 'triple' && headerPhotos.length >= 3;
 
   /// 轮播照片 URL 列表（优先展示 cover 类型，无 cover 时兜底所有照片/logo）
   List<String> get allPhotoUrls {

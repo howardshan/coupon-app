@@ -24,6 +24,7 @@ dependencies:
 
   # 图片
   image_picker: ^1.1.2
+  image_cropper: ^8.0.2
   cached_network_image: ^3.4.1
 
   # 本地存储

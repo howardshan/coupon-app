@@ -6,6 +6,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/store_info.dart';
 import '../providers/store_provider.dart';
@@ -28,6 +29,14 @@ class PhotoGrid extends ConsumerWidget {
         StorePhotoType.storefront => 3,
         StorePhotoType.environment => 10,
         StorePhotoType.product => 10,
+      };
+
+  // 缩略图尺寸（匹配客户端裁剪比例）
+  ({double w, double h}) get _thumbSize => switch (photoType) {
+        StorePhotoType.cover => (w: 140.0, h: 79.0),       // 16:9
+        StorePhotoType.storefront => (w: 120.0, h: 68.0),  // 16:9
+        StorePhotoType.environment => (w: 104.0, h: 78.0), // 4:3
+        StorePhotoType.product => (w: 98.0, h: 70.0),      // 7:5
       };
 
   @override
@@ -115,11 +124,15 @@ class PhotoGrid extends ConsumerWidget {
                   ...photos.map(
                     (photo) => _PhotoCell(
                       photo: photo,
+                      width: _thumbSize.w,
+                      height: _thumbSize.h,
                       onDelete: () => _confirmDelete(context, ref, photo),
                     ),
                   ),
                   if (canAdd)
                     _AddPhotoCell(
+                      width: _thumbSize.w,
+                      height: _thumbSize.h,
                       onTap: () => _pickAndUpload(context, ref, store.id),
                     ),
                 ],
@@ -205,6 +218,77 @@ class PhotoGrid extends ConsumerWidget {
 
     if (picked == null) return;
 
+    // 根据客户端显示框尺寸设定裁剪参数
+    final cropConfig = switch (photoType) {
+      // cover → 客户端轮播 full width × 220h ≈ 16:9
+      StorePhotoType.cover => (
+        ratio: const CropAspectRatio(ratioX: 16, ratioY: 9),
+        maxW: 1080,
+        maxH: 608,
+        lock: true,
+      ),
+      // storefront → 同样用于轮播
+      StorePhotoType.storefront => (
+        ratio: const CropAspectRatio(ratioX: 16, ratioY: 9),
+        maxW: 1080,
+        maxH: 608,
+        lock: true,
+      ),
+      // environment → 客户端 200×150 = 4:3
+      StorePhotoType.environment => (
+        ratio: const CropAspectRatio(ratioX: 4, ratioY: 3),
+        maxW: 800,
+        maxH: 600,
+        lock: true,
+      ),
+      // product → 客户端 140×100 = 7:5
+      StorePhotoType.product => (
+        ratio: const CropAspectRatio(ratioX: 7, ratioY: 5),
+        maxW: 700,
+        maxH: 500,
+        lock: true,
+      ),
+    };
+
+    // 裁剪图片（按客户端显示比例裁剪，支持缩放和移动）
+    final cropped = await ImageCropper().cropImage(
+      sourcePath: picked.path,
+      aspectRatio: cropConfig.ratio,
+      compressQuality: 85,
+      maxWidth: cropConfig.maxW,
+      maxHeight: cropConfig.maxH,
+      uiSettings: [
+        AndroidUiSettings(
+          toolbarTitle: 'Crop ${photoType.displayLabel}',
+          toolbarColor: const Color(0xFFFF6B35),
+          toolbarWidgetColor: Colors.white,
+          lockAspectRatio: cropConfig.lock,
+          hideBottomControls: false,
+        ),
+        IOSUiSettings(
+          title: 'Crop ${photoType.displayLabel}',
+          aspectRatioLockEnabled: cropConfig.lock,
+          resetAspectRatioEnabled: false,
+        ),
+      ],
+    );
+    if (cropped == null) return;
+
+    // 检查文件大小（不超过 1MB）
+    final croppedFile = XFile(cropped.path);
+    final fileSize = await croppedFile.length();
+    if (fileSize > 1024 * 1024) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Photo must be under 1 MB'),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
     // 计算当前同类型照片数量作为 sortOrder
     final storeAsync = ref.read(storeProvider);
     final currentCount = storeAsync.valueOrNull?.photos
@@ -239,7 +323,7 @@ class PhotoGrid extends ConsumerWidget {
     try {
       await ref.read(storeProvider.notifier).uploadPhoto(
             merchantId: merchantId,
-            file: picked,
+            file: croppedFile,
             type: photoType,
             sortOrder: currentCount,
           );
@@ -294,8 +378,12 @@ class _CoverPhotoGrid extends StatelessWidget {
     // 构建所有子项（照片 + 添加按钮）
     final itemCount = photos.length + (canAdd ? 1 : 0);
 
+    // cover 缩略图 16:9
+    const double thumbW = 140;
+    const double thumbH = 79;
+
     return SizedBox(
-      height: 100,
+      height: thumbH + 12, // 留出删除按钮空间
       child: ReorderableListView.builder(
         scrollDirection: Axis.horizontal,
         buildDefaultDragHandles: false,
@@ -314,7 +402,7 @@ class _CoverPhotoGrid extends StatelessWidget {
             return Padding(
               key: const ValueKey('add_button'),
               padding: const EdgeInsets.only(right: 10),
-              child: _AddPhotoCell(onTap: onAdd),
+              child: _AddPhotoCell(width: thumbW, height: thumbH, onTap: onAdd),
             );
           }
 
@@ -328,6 +416,8 @@ class _CoverPhotoGrid extends StatelessWidget {
               padding: const EdgeInsets.only(right: 10),
               child: _CoverPhotoCell(
                 photo: photo,
+                width: thumbW,
+                height: thumbH,
                 isCover: isCover,
                 onDelete: () => onDelete(photo),
                 onSetCover: isCover ? null : () => onSetCover(photo),
@@ -346,12 +436,16 @@ class _CoverPhotoGrid extends StatelessWidget {
 class _CoverPhotoCell extends StatelessWidget {
   const _CoverPhotoCell({
     required this.photo,
+    required this.width,
+    required this.height,
     required this.isCover,
     required this.onDelete,
     this.onSetCover,
   });
 
   final StorePhoto photo;
+  final double width;
+  final double height;
   final bool isCover;
   final VoidCallback onDelete;
   final VoidCallback? onSetCover;
@@ -368,12 +462,12 @@ class _CoverPhotoCell extends StatelessWidget {
             borderRadius: BorderRadius.circular(8),
             child: CachedNetworkImage(
               imageUrl: photo.url,
-              width: 88,
-              height: 88,
+              width: width,
+              height: height,
               fit: BoxFit.cover,
               placeholder: (_, _) => Container(
-                width: 88,
-                height: 88,
+                width: width,
+                height: height,
                 color: const Color(0xFFF0F0F0),
                 child: const Center(
                   child: CircularProgressIndicator(
@@ -383,8 +477,8 @@ class _CoverPhotoCell extends StatelessWidget {
                 ),
               ),
               errorWidget: (_, _, _) => Container(
-                width: 88,
-                height: 88,
+                width: width,
+                height: height,
                 color: const Color(0xFFF0F0F0),
                 child: const Icon(
                   Icons.broken_image_outlined,
@@ -489,10 +583,14 @@ class _CoverPhotoCell extends StatelessWidget {
 class _PhotoCell extends StatelessWidget {
   const _PhotoCell({
     required this.photo,
+    required this.width,
+    required this.height,
     required this.onDelete,
   });
 
   final StorePhoto photo;
+  final double width;
+  final double height;
   final VoidCallback onDelete;
 
   @override
@@ -505,12 +603,12 @@ class _PhotoCell extends StatelessWidget {
           borderRadius: BorderRadius.circular(8),
           child: CachedNetworkImage(
             imageUrl: photo.url,
-            width: 88,
-            height: 88,
+            width: width,
+            height: height,
             fit: BoxFit.cover,
             placeholder: (_, _) => Container(
-              width: 88,
-              height: 88,
+              width: width,
+              height: height,
               color: const Color(0xFFF0F0F0),
               child: const Center(
                 child: CircularProgressIndicator(
@@ -520,8 +618,8 @@ class _PhotoCell extends StatelessWidget {
               ),
             ),
             errorWidget: (_, _, _) => Container(
-              width: 88,
-              height: 88,
+              width: width,
+              height: height,
               color: const Color(0xFFF0F0F0),
               child: const Icon(
                 Icons.broken_image_outlined,
@@ -562,8 +660,14 @@ class _PhotoCell extends StatelessWidget {
 // 添加照片格子（虚线边框 + 加号图标）
 // ============================================================
 class _AddPhotoCell extends StatelessWidget {
-  const _AddPhotoCell({required this.onTap});
+  const _AddPhotoCell({
+    required this.width,
+    required this.height,
+    required this.onTap,
+  });
 
+  final double width;
+  final double height;
   final VoidCallback onTap;
 
   @override
@@ -571,8 +675,8 @@ class _AddPhotoCell extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 88,
-        height: 88,
+        width: width,
+        height: height,
         decoration: BoxDecoration(
           color: const Color(0xFFFFF8F5),
           borderRadius: BorderRadius.circular(8),

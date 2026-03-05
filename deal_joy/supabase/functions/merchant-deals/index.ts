@@ -300,6 +300,9 @@ async function handleCreateDeal(
       : "Risk-Free Refund within 7 days",
     image_urls:       (body.image_urls as string[]) ?? [],
     dishes:           body.dishes ?? [],
+    deal_category_id: body.deal_category_id ?? null,
+    deal_type:        body.deal_type ? String(body.deal_type) : "regular",
+    badge_text:       body.badge_text ? String(body.badge_text) : null,
   };
 
   const { data: deal, error } = await admin
@@ -366,6 +369,7 @@ async function handleUpdateDeal(
     "stock_limit", "expires_at", "package_contents", "usage_notes",
     "usage_days", "max_per_person", "is_stackable", "validity_type",
     "validity_days", "discount_label", "refund_policy", "image_urls", "dishes",
+    "deal_category_id", "deal_type", "badge_text",
   ];
 
   for (const field of updatableFields) {
@@ -563,5 +567,29 @@ async function handleAddImage(
     return errorResponse(error.message, 500);
   }
 
+  // 同步 deal_images 的 URL 到 deals.image_urls，供用户端直接读取
+  await syncDealImageUrls(admin, dealId);
+
   return jsonResponse({ image }, 201);
+}
+
+// =============================================================
+// 辅助：同步 deal_images 表的 URL 到 deals.image_urls 字段
+// =============================================================
+async function syncDealImageUrls(
+  admin: ReturnType<typeof createClient>,
+  dealId: string
+): Promise<void> {
+  const { data: images } = await admin
+    .from("deal_images")
+    .select("image_url")
+    .eq("deal_id", dealId)
+    .order("sort_order");
+
+  const urls = (images ?? []).map((img: { image_url: string }) => img.image_url);
+
+  await admin
+    .from("deals")
+    .update({ image_urls: urls })
+    .eq("id", dealId);
 }
