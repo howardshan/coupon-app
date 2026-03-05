@@ -63,7 +63,7 @@ class MerchantModel {
 
     return MerchantModel(
       id: json['id'] as String,
-      name: json['name'] as String,
+      name: json['name'] as String? ?? '',
       description: json['description'] as String?,
       logoUrl: json['logo_url'] as String?,
       homepageCoverUrl: json['homepage_cover_url'] as String?,

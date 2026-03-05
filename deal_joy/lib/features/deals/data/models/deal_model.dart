@@ -73,7 +73,7 @@ class DealModel {
             ((1 - (json['discount_price'] as num) / (json['original_price'] as num)) * 100).round(),
         discountLabel: json['discount_label'] as String? ?? '',
         imageUrls: List<String>.from(json['image_urls'] as List? ?? []),
-        dishes: List<String>.from(json['dishes'] as List? ?? []),
+        dishes: _parseDishes(json),
         rating: (json['rating'] as num?)?.toDouble() ?? 0.0,
         reviewCount: json['review_count'] as int? ?? 0,
         totalSold: json['total_sold'] as int? ?? 0,
@@ -125,6 +125,29 @@ class DealModel {
         dealCategoryId: json['deal_category_id'] as String?,
         badgeText: json['badge_text'] as String?,
       );
+
+  /// 解析菜品列表：优先读 dishes 数组，为空时从 package_contents 文本按行解析
+  static List<String> _parseDishes(Map<String, dynamic> json) {
+    final raw = json['dishes'] as List? ?? [];
+    if (raw.isNotEmpty) return List<String>.from(raw);
+    // fallback: 从 package_contents 文本按行拆分
+    final pc = json['package_contents'] as String? ?? '';
+    if (pc.isEmpty) return [];
+    return pc
+        .split('\n')
+        .map((line) {
+          var s = line.replaceFirst(RegExp(r'^[•\-\*]\s*'), '').trim();
+          // 提取数量前缀 "2× " / "2x "，转为 "name::2" 格式供 UI 解析
+          final m = RegExp(r'^(\d+)\s*[×xX]\s*').firstMatch(s);
+          if (m != null) {
+            final qty = m.group(1)!;
+            s = '${s.substring(m.end).trim()}::$qty';
+          }
+          return s;
+        })
+        .where((line) => line.isNotEmpty)
+        .toList();
+  }
 
   bool get isExpired => DateTime.now().isAfter(expiresAt);
 

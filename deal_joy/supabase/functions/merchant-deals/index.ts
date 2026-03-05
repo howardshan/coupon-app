@@ -563,5 +563,29 @@ async function handleAddImage(
     return errorResponse(error.message, 500);
   }
 
+  // 同步 deal_images 的 URL 到 deals.image_urls，供用户端直接读取
+  await syncDealImageUrls(admin, dealId);
+
   return jsonResponse({ image }, 201);
+}
+
+// =============================================================
+// 辅助：同步 deal_images 表的 URL 到 deals.image_urls 字段
+// =============================================================
+async function syncDealImageUrls(
+  admin: ReturnType<typeof createClient>,
+  dealId: string
+): Promise<void> {
+  const { data: images } = await admin
+    .from("deal_images")
+    .select("image_url")
+    .eq("deal_id", dealId)
+    .order("sort_order");
+
+  const urls = (images ?? []).map((img: { image_url: string }) => img.image_url);
+
+  await admin
+    .from("deals")
+    .update({ image_urls: urls })
+    .eq("id", dealId);
 }
