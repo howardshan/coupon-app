@@ -62,7 +62,11 @@ class _AuthChangeNotifier extends ChangeNotifier {
   late final StreamSubscription<AuthState> _sub;
 
   _AuthChangeNotifier() {
-    _sub = Supabase.instance.client.auth.onAuthStateChange.listen((_) {
+    _sub = Supabase.instance.client.auth.onAuthStateChange.listen((event) {
+      // 登出时清除审核状态缓存
+      if (event.event == AuthChangeEvent.signedOut) {
+        MerchantStatusCache.clear();
+      }
       notifyListeners();
     });
   }
@@ -71,6 +75,58 @@ class _AuthChangeNotifier extends ChangeNotifier {
   void dispose() {
     _sub.cancel();
     super.dispose();
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// 商家审核状态缓存：避免每次路由跳转都查询数据库
+// ─────────────────────────────────────────────────────────────
+class MerchantStatusCache {
+  static String? _cachedStatus; // 'approved', 'pending', 'rejected', 'none'
+  static String? _cachedUserId;
+
+  /// 获取商家状态（有缓存直接返回，否则查 DB）
+  static Future<String> getStatus() async {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) return 'none';
+
+    // 缓存命中（同一用户）
+    if (_cachedStatus != null && _cachedUserId == user.id) {
+      return _cachedStatus!;
+    }
+
+    // 查询数据库
+    try {
+      final data = await Supabase.instance.client
+          .from('merchants')
+          .select('status')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+      if (data == null) {
+        _cachedStatus = 'none';
+      } else {
+        _cachedStatus = data['status'] as String? ?? 'pending';
+      }
+      _cachedUserId = user.id;
+    } catch (_) {
+      // 查询失败时不缓存，下次重试
+      return 'none';
+    }
+
+    return _cachedStatus!;
+  }
+
+  /// 清除缓存（登出、状态变更时调用）
+  static void clear() {
+    _cachedStatus = null;
+    _cachedUserId = null;
+  }
+
+  /// 手动设置状态（登录后已知状态时直接缓存，避免多余查询）
+  static void setStatus(String status, String userId) {
+    _cachedStatus = status;
+    _cachedUserId = userId;
   }
 }
 
@@ -84,7 +140,7 @@ final appRouter = GoRouter(
   debugLogDiagnostics: false,
   // auth 状态变化时自动重新执行 redirect
   refreshListenable: _authNotifier,
-  redirect: (context, state) {
+  redirect: (context, state) async {
     final session = Supabase.instance.client.auth.currentSession;
     final loc = state.matchedLocation;
     final isPublic = _publicRoutes.any((r) => loc.startsWith(r));
@@ -92,11 +148,42 @@ final appRouter = GoRouter(
     // 未登录 → 跳登录页
     if (session == null && !isPublic) return '/auth/login';
 
-    // 已登录但在登录页 → 跳 dashboard
-    // 注册页不跳转：注册第1步 signUp 就会创建 session，后续4步仍需继续
-    // review 页允许已登录用户停留（等待审核状态）
-    if (session != null && loc.startsWith('/auth/login')) {
-      return '/dashboard';
+    // 未登录且在公开页面 → 放行
+    if (session == null) return null;
+
+    // ── 已登录：检查商家审核状态 ──
+    // 在登录页 → 根据状态跳转
+    // 在注册/审核页 → 放行
+    // 在其他页面 → 检查是否已通过审核
+
+    if (loc.startsWith('/auth/register') || loc.startsWith('/auth/review')) {
+      return null; // 注册页和审核页始终允许访问
+    }
+
+    final merchantStatus = await MerchantStatusCache.getStatus();
+
+    if (loc.startsWith('/auth/login')) {
+      // 已登录在登录页 → 根据状态跳转
+      switch (merchantStatus) {
+        case 'approved':
+          return '/dashboard';
+        case 'pending':
+        case 'rejected':
+          return '/auth/review';
+        default:
+          return '/auth/register';
+      }
+    }
+
+    // 非公开路由：只有 approved 才能进入
+    if (merchantStatus != 'approved') {
+      switch (merchantStatus) {
+        case 'pending':
+        case 'rejected':
+          return '/auth/review';
+        default:
+          return '/auth/register';
+      }
     }
 
     return null;
