@@ -38,6 +38,12 @@ import '../features/store/pages/business_hours_page.dart';
 import '../features/store/pages/store_photos_page.dart';
 import '../features/store/pages/store_tags_page.dart';
 
+// ── 菜品管理 ─────────────────────────────────────────────────
+import '../features/menu/pages/menu_list_page.dart';
+import '../features/menu/pages/menu_edit_page.dart';
+import '../features/menu/pages/category_manage_page.dart';
+import '../features/menu/models/menu_item.dart' as menu_model;
+
 // ── Deal 管理 ─────────────────────────────────────────────────
 import '../features/deals/pages/deals_list_page.dart';
 import '../features/deals/pages/deal_create_page.dart';
@@ -171,7 +177,9 @@ final appRouter = GoRouter(
         case 'rejected':
           return '/auth/review';
         default:
-          return '/auth/register';
+          // 无商家记录 → 登出并留在登录页
+          await Supabase.instance.client.auth.signOut();
+          return '/auth/login';
       }
     }
 
@@ -182,7 +190,9 @@ final appRouter = GoRouter(
         case 'rejected':
           return '/auth/review';
         default:
-          return '/auth/register';
+          // 无商家记录 → 登出并跳登录页
+          await Supabase.instance.client.auth.signOut();
+          return '/auth/login';
       }
     }
 
@@ -283,7 +293,10 @@ final appRouter = GoRouter(
     ),
     GoRoute(
       path: '/auth/register',
-      builder: (context, state) => const MerchantRegisterPage(),
+      builder: (context, state) {
+        final isResubmit = state.extra as bool? ?? false;
+        return MerchantRegisterPage(isResubmit: isResubmit);
+      },
     ),
     GoRoute(
       path: '/auth/review',
@@ -310,6 +323,29 @@ final appRouter = GoRouter(
         GoRoute(
           path: 'tags',
           builder: (context, state) => const StoreTagsPage(),
+        ),
+        // 菜品管理
+        GoRoute(
+          path: 'menu',
+          builder: (context, state) => const MenuListPage(),
+          routes: [
+            // 分类管理
+            GoRoute(
+              path: 'categories',
+              builder: (context, state) => const CategoryManagePage(),
+            ),
+            GoRoute(
+              path: 'create',
+              builder: (context, state) => const MenuEditPage(),
+            ),
+            GoRoute(
+              path: ':itemId',
+              builder: (context, state) {
+                final item = state.extra as menu_model.MenuItem?;
+                return MenuEditPage(editItem: item);
+              },
+            ),
+          ],
         ),
       ],
     ),

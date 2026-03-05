@@ -18,9 +18,33 @@ class StoreService {
   static const String _functionName = 'merchant-store';
 
   // ----------------------------------------------------------
-  // 1. 获取完整门店信息（基本信息 + 照片 + 营业时间）
+  // 确保 access token 有效（functions.invoke 不会自动刷新）
+  // ----------------------------------------------------------
+  Future<void> _ensureFreshSession() async {
+    final session = _supabase.auth.currentSession;
+    print('[StoreService] currentSession: ${session != null ? "EXISTS" : "NULL"}');
+    if (session != null) {
+      final expiresAt = session.expiresAt;
+      final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      print('[StoreService] token expiresAt: $expiresAt, now: $now, diff: ${(expiresAt ?? 0) - now}s');
+      print('[StoreService] accessToken prefix: ${session.accessToken.substring(0, 20)}...');
+    }
+    if (session == null) return;
+    try {
+      print('[StoreService] Attempting refreshSession...');
+      await _supabase.auth.refreshSession();
+      final newSession = _supabase.auth.currentSession;
+      print('[StoreService] refreshSession OK, new expiresAt: ${newSession?.expiresAt}');
+    } catch (e) {
+      print('[StoreService] refreshSession FAILED: $e');
+    }
+  }
+
+  // ----------------------------------------------------------
+  // 1. 获取完整门店信息（基本信息 + 照片 + 营业时间 + 专业资料）
   // ----------------------------------------------------------
   Future<StoreInfo> fetchStoreInfo() async {
+    await _ensureFreshSession();
     final response = await _supabase.functions.invoke(
       _functionName,
       method: HttpMethod.get,
@@ -30,7 +54,74 @@ class StoreService {
       throw _handleError(response);
     }
 
-    return StoreInfo.fromJson(response.data as Map<String, dynamic>);
+    var storeInfo = StoreInfo.fromJson(response.data as Map<String, dynamic>);
+
+    // 补充查询：如果 Edge Function 没返回专业资料，直接查 merchants 表
+    if (storeInfo.companyName == null || storeInfo.companyName!.isEmpty) {
+      storeInfo = await _enrichWithMerchantData(storeInfo);
+    }
+
+    // 补充查询：从 merchant_documents 获取注册时上传的所有证件（含门头照）
+    storeInfo = await _enrichWithDocuments(storeInfo);
+
+    return storeInfo;
+  }
+
+  // 从 merchants 表补充专业资料字段
+  Future<StoreInfo> _enrichWithMerchantData(StoreInfo store) async {
+    try {
+      final userId = _supabase.auth.currentUser?.id;
+      if (userId == null) return store;
+
+      final data = await _supabase
+          .from('merchants')
+          .select('company_name, contact_name, contact_email, ein, city, website')
+          .eq('user_id', userId)
+          .maybeSingle();
+
+      if (data == null) return store;
+
+      return store.copyWith(
+        companyName: data['company_name'] as String?,
+        contactName: data['contact_name'] as String?,
+        contactEmail: data['contact_email'] as String?,
+        ein: data['ein'] as String?,
+        city: data['city'] as String?,
+        website: data['website'] as String?,
+      );
+    } catch (_) {
+      return store;
+    }
+  }
+
+  // 从 merchant_documents 表获取注册时上传的所有证件（含门头照）
+  Future<StoreInfo> _enrichWithDocuments(StoreInfo store) async {
+    try {
+      final rows = await _supabase
+          .from('merchant_documents')
+          .select('document_type, file_url')
+          .eq('merchant_id', store.id);
+
+      if ((rows as List).isEmpty) return store;
+
+      final docs = (rows as List<dynamic>)
+          .map((e) => MerchantDoc.fromJson(e as Map<String, dynamic>))
+          .toList();
+
+      // 从证件列表中提取门头照 URL
+      String? storefrontUrl = store.registrationStorefrontUrl;
+      if (storefrontUrl == null) {
+        final storefrontDoc = docs.where((d) => d.documentType == 'storefront_photo').firstOrNull;
+        storefrontUrl = storefrontDoc?.fileUrl;
+      }
+
+      return store.copyWith(
+        registrationStorefrontUrl: storefrontUrl,
+        documents: docs,
+      );
+    } catch (_) {
+      return store;
+    }
   }
 
   // ----------------------------------------------------------
@@ -53,6 +144,7 @@ class StoreService {
 
     if (body.isEmpty) return; // 没有变更，直接返回
 
+    await _ensureFreshSession();
     final response = await _supabase.functions.invoke(
       _functionName,
       method: HttpMethod.patch,
@@ -71,6 +163,7 @@ class StoreService {
   Future<List<BusinessHours>> updateBusinessHours(
     List<BusinessHours> hours,
   ) async {
+    await _ensureFreshSession();
     final response = await _supabase.functions.invoke(
       _functionName,
       method: HttpMethod.put,
@@ -124,6 +217,7 @@ class StoreService {
         _supabase.storage.from('merchant-photos').getPublicUrl(storagePath);
 
     // 4.4 通知 Edge Function 保存照片记录到 merchant_photos 表
+    await _ensureFreshSession();
     final response = await _supabase.functions.invoke(
       '$_functionName/photos',
       method: HttpMethod.post,
@@ -153,6 +247,7 @@ class StoreService {
   //    Edge Function DELETE /merchant-store/photos/:id 负责双删
   // ----------------------------------------------------------
   Future<void> deletePhoto(String photoId) async {
+    await _ensureFreshSession();
     final response = await _supabase.functions.invoke(
       '$_functionName/photos/$photoId',
       method: HttpMethod.delete,
@@ -169,6 +264,7 @@ class StoreService {
   //    通过 Edge Function 调用，确保权限验证
   // ----------------------------------------------------------
   Future<void> reorderPhotos(List<String> orderedIds) async {
+    await _ensureFreshSession();
     final response = await _supabase.functions.invoke(
       '$_functionName/photos/reorder',
       method: HttpMethod.patch,

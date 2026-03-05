@@ -325,32 +325,22 @@ async function handlePostPhoto(
     return errorResponse("photo_url is required", 400);
   }
 
-  const validTypes = ["storefront", "environment", "product"];
+  const validTypes = ["storefront", "environment", "product", "cover"];
   if (!validTypes.includes(photo_type)) {
     return errorResponse(`photo_type must be one of: ${validTypes.join(", ")}`, 400);
   }
 
-  // storefront 类型限制 1 张：先检查已有数量
-  if (photo_type === "storefront") {
-    const { count, error: countError } = await supabase
-      .from("merchant_photos")
-      .select("id", { count: "exact", head: true })
-      .eq("merchant_id", merchantId)
-      .eq("photo_type", "storefront");
+  // 各类型照片数量上限
+  const maxPhotos: Record<string, number> = {
+    cover: 5,
+    storefront: 3,
+    environment: 10,
+    product: 10,
+  };
 
-    if (countError) {
-      return errorResponse("Failed to check storefront count", 500);
-    }
-    if ((count ?? 0) >= 1) {
-      return errorResponse(
-        "Only 1 storefront photo allowed. Delete the existing one first.",
-        400
-      );
-    }
-  }
-
-  // environment 和 product 各限制 10 张
-  if (photo_type === "environment" || photo_type === "product") {
+  // 检查当前类型已有数量
+  {
+    const limit = maxPhotos[photo_type];
     const { count, error: countError } = await supabase
       .from("merchant_photos")
       .select("id", { count: "exact", head: true })
@@ -360,8 +350,8 @@ async function handlePostPhoto(
     if (countError) {
       return errorResponse("Failed to check photo count", 500);
     }
-    if ((count ?? 0) >= 10) {
-      return errorResponse(`Maximum 10 ${photo_type} photos allowed`, 400);
+    if ((count ?? 0) >= limit) {
+      return errorResponse(`Maximum ${limit} ${photo_type} photos allowed. Delete one first.`, 400);
     }
   }
 

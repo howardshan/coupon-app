@@ -301,8 +301,8 @@ class MerchantDeal {
   /// 是否可以下架
   bool get canDeactivate => dealStatus == DealStatus.active;
 
-  /// 是否可以编辑
-  bool get canEdit => dealStatus != DealStatus.pending;
+  /// 是否可以编辑（所有状态都允许编辑）
+  bool get canEdit => true;
 
   // --------------------------------------------------------
   // 序列化/反序列化

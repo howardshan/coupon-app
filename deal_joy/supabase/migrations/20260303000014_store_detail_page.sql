@@ -47,12 +47,14 @@ CREATE INDEX IF NOT EXISTS idx_menu_items_category
 ALTER TABLE public.menu_items ENABLE ROW LEVEL SECURITY;
 
 -- 用户端：已审批商家的菜品公开可读
+DROP POLICY IF EXISTS "menu_items_read_approved" ON public.menu_items;
 CREATE POLICY "menu_items_read_approved" ON public.menu_items
   FOR SELECT USING (
     merchant_id IN (SELECT id FROM public.merchants WHERE status = 'approved')
   );
 
 -- 商家端：管理自己的菜品
+DROP POLICY IF EXISTS "menu_items_manage_own" ON public.menu_items;
 CREATE POLICY "menu_items_manage_own" ON public.menu_items
   FOR ALL USING (
     merchant_id IN (SELECT id FROM public.merchants WHERE user_id = auth.uid())
@@ -81,12 +83,14 @@ CREATE INDEX IF NOT EXISTS idx_store_facilities_merchant
 ALTER TABLE public.store_facilities ENABLE ROW LEVEL SECURITY;
 
 -- 用户端：已审批商家的设施公开可读
+DROP POLICY IF EXISTS "store_facilities_read_approved" ON public.store_facilities;
 CREATE POLICY "store_facilities_read_approved" ON public.store_facilities
   FOR SELECT USING (
     merchant_id IN (SELECT id FROM public.merchants WHERE status = 'approved')
   );
 
 -- 商家端：管理自己的设施
+DROP POLICY IF EXISTS "store_facilities_manage_own" ON public.store_facilities;
 CREATE POLICY "store_facilities_manage_own" ON public.store_facilities
   FOR ALL USING (
     merchant_id IN (SELECT id FROM public.merchants WHERE user_id = auth.uid())
@@ -109,10 +113,12 @@ CREATE INDEX IF NOT EXISTS idx_review_photos_review
 ALTER TABLE public.review_photos ENABLE ROW LEVEL SECURITY;
 
 -- 评价照片公开可读
+DROP POLICY IF EXISTS "review_photos_read_all" ON public.review_photos;
 CREATE POLICY "review_photos_read_all" ON public.review_photos
   FOR SELECT USING (true);
 
 -- 评价所有者可上传照片
+DROP POLICY IF EXISTS "review_photos_insert_own" ON public.review_photos;
 CREATE POLICY "review_photos_insert_own" ON public.review_photos
   FOR INSERT WITH CHECK (
     review_id IN (SELECT id FROM public.reviews WHERE user_id = auth.uid())
@@ -345,7 +351,7 @@ BEGIN
     (v_m2, 'Mushroom Platter', 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=400', 16.00, 'popular', 189, false, 4),
     (v_m2, 'Handmade Noodles', 'https://images.unsplash.com/photo-1552611052-33e04de1b100?w=400', 8.00, 'popular', 156, false, 5),
     -- Sakura Sushi Bar 招牌菜
-    (v_m3, 'Chef\'s Omakase', 'https://images.unsplash.com/photo-1579871494447-9811cf80d66c?w=400', 68.00, 'signature', 312, true, 0),
+    (v_m3, 'Chef''s Omakase', 'https://images.unsplash.com/photo-1579871494447-9811cf80d66c?w=400', 68.00, 'signature', 312, true, 0),
     (v_m3, 'Dragon Roll', 'https://images.unsplash.com/photo-1553621042-f6e147245754?w=400', 18.00, 'signature', 278, true, 1),
     (v_m3, 'Sashimi Deluxe', 'https://images.unsplash.com/photo-1534256958597-7fe685cbd745?w=400', 32.00, 'signature', 245, true, 2),
     -- Sakura Sushi Bar 热门
