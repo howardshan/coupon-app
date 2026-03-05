@@ -73,14 +73,14 @@ export default function MerchantReviewActions({
           <button
             onClick={handleApprove}
             disabled={isPending}
-            className="px-4 py-2 text-sm font-medium rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 transition-colors"
+            className="px-4 py-2 text-sm font-medium rounded-lg border border-green-600 bg-green-600 text-white shadow-sm hover:bg-green-700 disabled:opacity-50 transition-colors"
           >
             Approve
           </button>
           <button
             onClick={handleReject}
             disabled={isPending}
-            className="px-4 py-2 text-sm font-medium rounded-lg bg-red-100 text-red-700 hover:bg-red-200 disabled:opacity-50 transition-colors"
+            className="px-4 py-2 text-sm font-medium rounded-lg border border-red-200 bg-red-100 text-red-700 shadow-sm hover:bg-red-200 disabled:opacity-50 transition-colors"
           >
             Reject
           </button>
@@ -90,7 +90,7 @@ export default function MerchantReviewActions({
         <button
           onClick={handleRevoke}
           disabled={isPending}
-          className="px-4 py-2 text-sm font-medium rounded-lg bg-amber-100 text-amber-800 hover:bg-amber-200 disabled:opacity-50 transition-colors"
+          className="px-4 py-2 text-sm font-medium rounded-lg border border-amber-300 bg-amber-100 text-amber-800 shadow-sm hover:bg-amber-200 disabled:opacity-50 transition-colors"
         >
           Revoke approval
         </button>
@@ -99,7 +99,7 @@ export default function MerchantReviewActions({
         <button
           onClick={handleApprove}
           disabled={isPending}
-          className="px-4 py-2 text-sm font-medium rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 transition-colors"
+          className="px-4 py-2 text-sm font-medium rounded-lg border border-green-600 bg-green-600 text-white shadow-sm hover:bg-green-700 disabled:opacity-50 transition-colors"
         >
           Approve
         </button>
@@ -121,7 +121,7 @@ export default function MerchantReviewActions({
               <button
                 type="button"
                 onClick={() => setShowRejectModal(false)}
-                className="px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
+                className="px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 bg-white text-gray-700 shadow-sm hover:bg-gray-50 transition-colors"
               >
                 Cancel
               </button>
@@ -129,7 +129,7 @@ export default function MerchantReviewActions({
                 type="button"
                 onClick={confirmReject}
                 disabled={isPending}
-                className="px-4 py-2 text-sm font-medium rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+                className="px-4 py-2 text-sm font-medium rounded-lg border border-red-600 bg-red-600 text-white shadow-sm hover:bg-red-700 disabled:opacity-50 transition-colors"
               >
                 Reject
               </button>

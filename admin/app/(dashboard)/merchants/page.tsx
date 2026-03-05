@@ -43,7 +43,10 @@ export default async function MerchantsPage() {
             {merchants?.map(m => (
               <tr key={m.id} className={`hover:bg-gray-50 ${m.status === 'pending' ? 'bg-yellow-50/50' : ''}`}>
                 <td className="px-4 py-3 font-medium text-gray-900">
-                  <Link href={`/merchants/${m.id}`} className="text-blue-600 hover:underline">
+                  <Link
+                    href={`/merchants/${m.id}`}
+                    className="font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                  >
                     {m.name}
                   </Link>
                 </td>
@@ -61,7 +64,7 @@ export default async function MerchantsPage() {
                 <td className="px-4 py-3">
                   <Link
                     href={`/merchants/${m.id}`}
-                    className="text-sm text-blue-600 hover:underline"
+                    className="inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded-lg border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
                   >
                     {m.status === 'pending' ? 'Review' : 'View'}
                   </Link>

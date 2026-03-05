@@ -37,7 +37,12 @@ export default async function MerchantReviewPage({
     return (
       <div>
         <p className="text-gray-500">Merchant not found.</p>
-        <Link href="/merchants" className="text-blue-600 hover:underline mt-2 inline-block">← Back to Merchants</Link>
+        <Link
+          href="/merchants"
+          className="mt-3 inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 bg-white text-gray-700 shadow-sm hover:bg-gray-50 transition-colors"
+        >
+          ← Back to Merchants
+        </Link>
       </div>
     )
   }
@@ -52,7 +57,12 @@ export default async function MerchantReviewPage({
     <div>
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <Link href="/merchants" className="text-sm text-gray-500 hover:text-gray-700 mb-1 inline-block">← Back to Merchants</Link>
+          <Link
+            href="/merchants"
+            className="mb-3 inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 bg-white text-gray-700 shadow-sm hover:bg-gray-50 transition-colors"
+          >
+            ← Back to Merchants
+          </Link>
           <h1 className="text-2xl font-bold text-gray-900">Merchant Review</h1>
         </div>
         <MerchantReviewActions
@@ -105,8 +115,13 @@ export default async function MerchantReviewPage({
                     {DOCUMENT_TYPE_LABELS[doc.document_type] || doc.document_type}
                     {doc.file_name && <span className="text-gray-500 font-normal ml-2">({doc.file_name})</span>}
                   </span>
-                  <a href={doc.file_url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline">
-                    View / Download
+                  <a
+                    href={doc.file_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
+                  >
+                    View / Download ↗
                   </a>
                 </li>
               ))}
