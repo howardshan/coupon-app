@@ -6,6 +6,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/store_info.dart';
 import '../providers/store_provider.dart';
@@ -226,6 +227,7 @@ class _HomepageCoverUploaderState
     final store = ref.read(storeProvider).valueOrNull;
     if (store == null) return;
 
+    // 1. 选择图片
     final picked = await ImagePicker().pickImage(
       source: ImageSource.gallery,
       imageQuality: 85,
@@ -234,8 +236,33 @@ class _HomepageCoverUploaderState
     );
     if (picked == null) return;
 
-    // 检查文件大小（不超过 1MB）
-    final fileSize = await picked.length();
+    // 2. 裁剪图片（固定 5:7 比例，匹配客户端商家卡片）
+    final cropped = await ImageCropper().cropImage(
+      sourcePath: picked.path,
+      aspectRatio: const CropAspectRatio(ratioX: 5, ratioY: 7),
+      compressQuality: 85,
+      maxWidth: 800,
+      maxHeight: 1120,
+      uiSettings: [
+        AndroidUiSettings(
+          toolbarTitle: 'Crop Cover Photo',
+          toolbarColor: const Color(0xFFFF6B35),
+          toolbarWidgetColor: Colors.white,
+          lockAspectRatio: true,
+          hideBottomControls: false,
+        ),
+        IOSUiSettings(
+          title: 'Crop Cover Photo',
+          aspectRatioLockEnabled: true,
+          resetAspectRatioEnabled: false,
+        ),
+      ],
+    );
+    if (cropped == null) return;
+
+    // 3. 检查文件大小（不超过 1MB）
+    final croppedFile = XFile(cropped.path);
+    final fileSize = await croppedFile.length();
     if (fileSize > 1024 * 1024) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -248,11 +275,12 @@ class _HomepageCoverUploaderState
       return;
     }
 
+    // 4. 上传裁剪后的图片
     setState(() => _uploading = true);
     try {
       await ref.read(storeProvider.notifier).uploadHomepageCover(
             merchantId: store.id,
-            file: picked,
+            file: croppedFile,
           );
     } catch (e) {
       if (!mounted) return;
