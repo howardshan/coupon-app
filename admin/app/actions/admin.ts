@@ -85,3 +85,17 @@ export async function revokeMerchantApproval(merchantId: string) {
   revalidatePath('/merchants')
   revalidatePath(`/merchants/${merchantId}`)
 }
+
+// Deal 审核：上架/下架（设置 is_active）
+export async function setDealActive(dealId: string, active: boolean) {
+  const supabase = await requireAdmin()
+
+  const { error } = await supabase
+    .from('deals')
+    .update({ is_active: active })
+    .eq('id', dealId)
+
+  if (error) throw new Error(error.message)
+  revalidatePath('/deals')
+  revalidatePath(`/deals/${dealId}`)
+}
