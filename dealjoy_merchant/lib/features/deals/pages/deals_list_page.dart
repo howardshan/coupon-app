@@ -24,6 +24,16 @@ class DealsListPage extends ConsumerWidget {
         appBar: AppBar(
           backgroundColor: Colors.white,
           elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_rounded, color: Color(0xFF333333)),
+            onPressed: () {
+              if (Navigator.canPop(context)) {
+                Navigator.pop(context);
+              } else {
+                context.go('/dashboard');
+              }
+            },
+          ),
           title: const Text(
             'My Deals',
             style: TextStyle(

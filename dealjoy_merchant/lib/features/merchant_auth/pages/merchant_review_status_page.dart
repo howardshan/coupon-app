@@ -403,8 +403,8 @@ class _MerchantReviewStatusPageState
             height: 52,
             child: ElevatedButton(
               onPressed: () {
-                // 跳转到注册页（预填已有数据）
-                GoRouter.of(context).go('/auth/register');
+                // 跳转到注册页（重提模式，跳过账号注册，预填已有数据）
+                GoRouter.of(context).go('/auth/register', extra: true);
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: _primaryOrange,

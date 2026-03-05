@@ -323,15 +323,15 @@ class DashboardPage extends ConsumerWidget {
       case ShortcutAction.redeem:
         context.go('/scan');
       case ShortcutAction.deals:
-        context.go('/deals');
+        context.push('/deals');
       case ShortcutAction.orders:
         context.go('/orders');
       case ShortcutAction.reviews:
-        context.go('/reviews');
+        context.push('/reviews');
       case ShortcutAction.analytics:
-        context.go('/analytics');
-      case ShortcutAction.settings:
-        context.go('/me');
+        context.push('/analytics');
+      case ShortcutAction.store:
+        context.push('/store');
     }
   }
 

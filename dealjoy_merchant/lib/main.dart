@@ -8,6 +8,20 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'router/app_router.dart';
 
+// 全局禁用 overscroll 拉伸效果（Android 默认有 stretch/glow）
+class _NoOverscrollBehavior extends ScrollBehavior {
+  const _NoOverscrollBehavior();
+
+  @override
+  Widget buildOverscrollIndicator(
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) {
+    return child; // 不添加任何 overscroll 效果
+  }
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -36,6 +50,8 @@ class DealJoyMerchantApp extends StatelessWidget {
     return MaterialApp.router(
       title: 'DealJoy Merchant',
       debugShowCheckedModeBanner: false,
+      // 全局禁用 overscroll 拉伸/glow 效果
+      scrollBehavior: const _NoOverscrollBehavior(),
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFFFF6B35), // 品牌橙色

@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../models/store_info.dart';
 import '../providers/store_provider.dart';
-import '../widgets/photo_grid.dart';
 import '../widgets/tag_chip_list.dart';
 
 // ============================================================
@@ -44,9 +43,12 @@ class StoreProfilePage extends ConsumerWidget {
       ),
       body: storeAsync.when(
         loading: () => const _LoadingView(),
-        error: (e, _) => _ErrorView(error: e.toString(), onRetry: () {
-          ref.read(storeProvider.notifier).refresh();
-        }),
+        error: (e, _) => _ErrorView(
+          error: e.toString(),
+          onRetry: () {
+            ref.read(storeProvider.notifier).refresh();
+          },
+        ),
         data: (store) => RefreshIndicator(
           color: const Color(0xFFFF6B35),
           onRefresh: () => ref.read(storeProvider.notifier).refresh(),
@@ -75,6 +77,12 @@ class StoreProfilePage extends ConsumerWidget {
                   title: 'Store Photos',
                   onEdit: () => context.push('/store/photos'),
                   child: _PhotosContent(store: store),
+                ),
+                const SizedBox(height: 12),
+
+                // 区块 2.5: 菜品管理入口
+                _MenuEntryCard(
+                  onTap: () => context.push('/store/menu'),
                 ),
                 const SizedBox(height: 12),
 
@@ -163,10 +171,7 @@ class _SectionCard extends StatelessWidget {
             ),
           ),
           const Divider(height: 1, thickness: 0.5),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: child,
-          ),
+          Padding(padding: const EdgeInsets.all(16), child: child),
         ],
       ),
     );
@@ -283,17 +288,9 @@ class _PhotosContent extends StatelessWidget {
         // 环境照和菜品照计数
         Row(
           children: [
-            _PhotoCountBadge(
-              label: 'Environment',
-              count: envCount,
-              max: 10,
-            ),
+            _PhotoCountBadge(label: 'Environment', count: envCount, max: 10),
             const SizedBox(width: 12),
-            _PhotoCountBadge(
-              label: 'Products',
-              count: productCount,
-              max: 10,
-            ),
+            _PhotoCountBadge(label: 'Products', count: productCount, max: 10),
           ],
         ),
       ],
@@ -350,10 +347,7 @@ class _PhotoTypePreview extends StatelessWidget {
                   const SizedBox(width: 4),
                   const Text(
                     '*',
-                    style: TextStyle(
-                      color: Color(0xFFFF6B35),
-                      fontSize: 14,
-                    ),
+                    style: TextStyle(color: Color(0xFFFF6B35), fontSize: 14),
                   ),
                 ],
               ],
@@ -409,10 +403,7 @@ class _PhotoCountBadge extends StatelessWidget {
           ),
           Text(
             label,
-            style: const TextStyle(
-              fontSize: 11,
-              color: Color(0xFF999999),
-            ),
+            style: const TextStyle(fontSize: 11, color: Color(0xFF999999)),
           ),
         ],
       ),
@@ -491,8 +482,7 @@ class _HoursContent extends StatelessWidget {
                   color: h.isClosed
                       ? const Color(0xFFBBBBBB)
                       : const Color(0xFF333333),
-                  fontWeight:
-                      h.isClosed ? FontWeight.w400 : FontWeight.w500,
+                  fontWeight: h.isClosed ? FontWeight.w400 : FontWeight.w500,
                 ),
               ),
             ],
@@ -561,10 +551,7 @@ class _TagsContent extends StatelessWidget {
                 'No tags added yet',
                 style: TextStyle(fontSize: 14, color: Color(0xFFBBBBBB)),
               )
-            : TagChipList(
-                tags: store.tags,
-                readOnly: true,
-              ),
+            : TagChipList(tags: store.tags, readOnly: true),
       ],
     );
   }
@@ -584,14 +571,10 @@ class _StatusBanner extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
-        color: isPending
-            ? const Color(0xFFFFF8E1)
-            : const Color(0xFFFFEBEE),
+        color: isPending ? const Color(0xFFFFF8E1) : const Color(0xFFFFEBEE),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: isPending
-              ? const Color(0xFFFFCC02)
-              : const Color(0xFFEF9A9A),
+          color: isPending ? const Color(0xFFFFCC02) : const Color(0xFFEF9A9A),
         ),
       ),
       child: Row(
@@ -646,6 +629,91 @@ class _LoadingView extends StatelessWidget {
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(12),
               ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================
+// 错误视图（带重试按钮）
+// ============================================================
+// ============================================================
+// 菜品管理入口卡片
+// ============================================================
+class _MenuEntryCard extends StatelessWidget {
+  const _MenuEntryCard({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF3EE),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    Icons.restaurant_menu,
+                    size: 22,
+                    color: Color(0xFFFF6B35),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Menu Items',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1A1A1A),
+                        ),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        'Manage your dishes and products',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF999999),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  color: Color(0xFFCCCCCC),
+                ),
+              ],
             ),
           ),
         ),

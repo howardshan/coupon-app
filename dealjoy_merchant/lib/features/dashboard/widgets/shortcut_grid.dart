@@ -1,5 +1,5 @@
 // 工作台快捷入口网格组件
-// 6 个功能入口: Redeem / Deals / Orders / Reviews / Analytics / Settings
+// 6 个功能入口: Redeem / Deals / Orders / Reviews / Analytics / Store
 // 布局: 3 列 x 2 行，圆形图标背景 + 下方文字标签
 
 import 'package:flutter/material.dart';
@@ -13,7 +13,7 @@ enum ShortcutAction {
   orders,
   reviews,
   analytics,
-  settings,
+  store, // 替换原来的 settings，直接跳转店铺管理
 }
 
 // ============================================================
@@ -75,9 +75,9 @@ class ShortcutGrid extends StatelessWidget {
       color: Color(0xFF9C27B0), // 紫色
     ),
     _ShortcutItem(
-      action: ShortcutAction.settings,
-      icon: Icons.settings_outlined,
-      label: 'Settings',
+      action: ShortcutAction.store,
+      icon: Icons.storefront_outlined,
+      label: 'Store',
       color: Color(0xFF607D8B), // 蓝灰色
     ),
   ];
