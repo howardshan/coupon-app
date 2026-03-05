@@ -123,6 +123,8 @@ class StoreService {
     String? phone,
     String? address,
     List<String>? tags,
+    String? headerPhotoStyle,
+    List<String>? headerPhotos,
   }) async {
     // 构造只包含非空字段的更新体
     final body = <String, dynamic>{};
@@ -131,6 +133,8 @@ class StoreService {
     if (phone != null) body['phone'] = phone;
     if (address != null) body['address'] = address;
     if (tags != null) body['tags'] = tags;
+    if (headerPhotoStyle != null) body['header_photo_style'] = headerPhotoStyle;
+    if (headerPhotos != null) body['header_photos'] = headerPhotos;
 
     if (body.isEmpty) return; // 没有变更，直接返回
 

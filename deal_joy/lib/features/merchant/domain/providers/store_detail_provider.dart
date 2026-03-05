@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../shared/providers/supabase_provider.dart';
 import '../../../deals/data/models/deal_model.dart';
 import '../../../deals/data/models/review_model.dart';
+import '../../data/models/deal_category_model.dart';
 import '../../data/models/merchant_detail_model.dart';
 import '../../data/models/menu_item_model.dart';
 import '../../data/models/review_stats_model.dart';
@@ -27,6 +28,44 @@ final merchantActiveDealsProvider =
     FutureProvider.family<List<DealModel>, String>((ref, merchantId) async {
   return ref.watch(storeDetailRepositoryProvider).fetchActiveDeals(merchantId);
 });
+
+// ── Deal 分类列表 ─────────────────────────────────────────────
+
+final dealCategoriesProvider =
+    FutureProvider.family<List<DealCategoryModel>, String>((ref, merchantId) async {
+  return ref.watch(storeDetailRepositoryProvider).fetchDealCategories(merchantId);
+});
+
+// ── 当前选中的 Deal 分类（null = All）─────────────────────────
+
+final selectedDealCategoryProvider =
+    StateProvider.family<String?, String>((ref, merchantId) => null);
+
+// ── 按分类筛选后的 Deals（分 voucher 和 regular）──────────────
+
+final filteredDealsProvider = Provider.family<
+    ({List<DealModel> vouchers, List<DealModel> regulars}), String>(
+  (ref, merchantId) {
+    final dealsAsync = ref.watch(merchantActiveDealsProvider(merchantId));
+    final selectedCategory = ref.watch(selectedDealCategoryProvider(merchantId));
+
+    final allDeals = dealsAsync.valueOrNull ?? [];
+
+    final vouchers =
+        allDeals.where((d) => d.dealType == 'voucher').toList();
+    var regulars =
+        allDeals.where((d) => d.dealType != 'voucher').toList();
+
+    // 按选中分类过滤
+    if (selectedCategory != null) {
+      regulars = regulars
+          .where((d) => d.dealCategoryId == selectedCategory)
+          .toList();
+    }
+
+    return (vouchers: vouchers, regulars: regulars);
+  },
+);
 
 // ── 菜品列表（按 category 分组）─────────────────────────────
 

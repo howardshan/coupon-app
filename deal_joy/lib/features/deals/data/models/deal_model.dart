@@ -25,6 +25,10 @@ class DealModel {
   // 搜索结果附加字段
   final double? distanceMeters;
   final String? merchantCity;
+  // V2 新增字段
+  final String dealType; // 'voucher' | 'regular'
+  final String? dealCategoryId;
+  final String? badgeText; // 自定义角标，如 "Best Value"
 
   const DealModel({
     required this.id,
@@ -52,6 +56,9 @@ class DealModel {
     this.merchant,
     this.distanceMeters,
     this.merchantCity,
+    this.dealType = 'regular',
+    this.dealCategoryId,
+    this.badgeText,
   });
 
   factory DealModel.fromJson(Map<String, dynamic> json) => DealModel(
@@ -83,6 +90,9 @@ class DealModel {
             ? MerchantSummary.fromJson(
                 json['merchants'] as Map<String, dynamic>)
             : null,
+        dealType: json['deal_type'] as String? ?? 'regular',
+        dealCategoryId: json['deal_category_id'] as String?,
+        badgeText: json['badge_text'] as String?,
       );
 
   // RPC 搜索结果（search_deals_nearby / search_deals_by_city）解析
@@ -111,6 +121,9 @@ class DealModel {
         ),
         distanceMeters: (json['distance_meters'] as num?)?.toDouble(),
         merchantCity: json['merchant_city'] as String?,
+        dealType: json['deal_type'] as String? ?? 'regular',
+        dealCategoryId: json['deal_category_id'] as String?,
+        badgeText: json['badge_text'] as String?,
       );
 
   bool get isExpired => DateTime.now().isAfter(expiresAt);

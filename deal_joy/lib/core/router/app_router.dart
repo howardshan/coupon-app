@@ -21,6 +21,7 @@ import '../../features/profile/presentation/screens/profile_screen.dart';
 import '../../features/reviews/presentation/screens/write_review_screen.dart';
 import '../../features/merchant/presentation/screens/merchant_dashboard_screen.dart';
 import '../../features/merchant/presentation/screens/merchant_detail_screen.dart';
+import '../../features/merchant/presentation/screens/photo_gallery_screen.dart';
 import '../../features/merchant/presentation/screens/qr_scanner_screen.dart';
 import '../../features/chat/presentation/screens/chat_screen.dart';
 import '../../features/cart/presentation/screens/cart_screen.dart';
@@ -130,6 +131,13 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/merchant/:id',
         builder: (_, state) =>
             MerchantDetailScreen(merchantId: state.pathParameters['id']!),
+      ),
+
+      // 商家相册页
+      GoRoute(
+        path: '/merchant/:id/photos',
+        builder: (_, state) =>
+            PhotoGalleryScreen(merchantId: state.pathParameters['id']!),
       ),
 
       // Search

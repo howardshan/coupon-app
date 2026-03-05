@@ -91,6 +91,33 @@ class StoreNotifier extends AsyncNotifier<StoreInfo> {
   }
 
   // ----------------------------------------------------------
+  // 更新头图模式（single / triple）和选中的头图
+  // ----------------------------------------------------------
+  Future<void> updateHeaderStyle({
+    required String headerPhotoStyle,
+    required List<String> headerPhotos,
+  }) async {
+    final current = state.valueOrNull;
+    if (current == null) return;
+
+    // 乐观更新
+    state = AsyncValue.data(current.copyWith(
+      headerPhotoStyle: headerPhotoStyle,
+      headerPhotos: headerPhotos,
+    ));
+
+    try {
+      await _service.updateStoreInfo(
+        headerPhotoStyle: headerPhotoStyle,
+        headerPhotos: headerPhotos,
+      );
+    } catch (e, st) {
+      state = AsyncValue.data(current);
+      state = AsyncValue.error(e, st);
+    }
+  }
+
+  // ----------------------------------------------------------
   // 批量保存营业时间
   // ----------------------------------------------------------
   Future<void> updateBusinessHours(List<BusinessHours> hours) async {

@@ -8,8 +8,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../menu/providers/menu_provider.dart';
 import '../models/store_info.dart';
 import '../providers/store_provider.dart';
+import '../widgets/header_style_selector.dart';
 import '../widgets/photo_grid.dart';
 
 // ============================================================
@@ -76,6 +78,14 @@ class StorePhotosPage extends ConsumerWidget {
             ),
             const SizedBox(height: 16),
 
+            // 头图模式选择器（客户端店铺详情页头图展示方式）
+            _PhotoSection(
+              title: 'Header Display Style',
+              subtitle: 'How your store page header looks to customers',
+              child: const HeaderStyleSelector(),
+            ),
+            const SizedBox(height: 16),
+
             // 首页封面图区块（单张，用于客户端首页 deal 卡片）
             _PhotoSection(
               title: 'Homepage Cover',
@@ -115,6 +125,14 @@ class StorePhotosPage extends ConsumerWidget {
               title: 'Product Photos',
               subtitle: 'Up to 10 photos',
               child: const PhotoGrid(photoType: StorePhotoType.product),
+            ),
+            const SizedBox(height: 16),
+
+            // 菜单产品图片（自动从 menu 读取，只读展示）
+            _PhotoSection(
+              title: 'Menu Item Photos',
+              subtitle: 'Auto-synced from your menu',
+              child: const _MenuItemPhotos(),
             ),
             const SizedBox(height: 32),
           ],
@@ -336,22 +354,23 @@ class _HomepageCoverUploaderState
       // 已有图片 → 显示缩略图 + 替换/删除按钮
       return Column(
         children: [
+          // 5:7 比例匹配客户端商家卡片
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: CachedNetworkImage(
-              imageUrl: url,
-              height: 160,
-              width: double.infinity,
-              fit: BoxFit.cover,
-              placeholder: (_, __) => Container(
-                height: 160,
-                color: const Color(0xFFF0F0F0),
-                child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-              ),
-              errorWidget: (_, __, ___) => Container(
-                height: 160,
-                color: const Color(0xFFF0F0F0),
-                child: const Icon(Icons.broken_image, size: 40, color: Colors.grey),
+            child: AspectRatio(
+              aspectRatio: 5 / 7,
+              child: CachedNetworkImage(
+                imageUrl: url,
+                width: double.infinity,
+                fit: BoxFit.cover,
+                placeholder: (_, __) => Container(
+                  color: const Color(0xFFF0F0F0),
+                  child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                ),
+                errorWidget: (_, __, ___) => Container(
+                  color: const Color(0xFFF0F0F0),
+                  child: const Icon(Icons.broken_image, size: 40, color: Colors.grey),
+                ),
               ),
             ),
           ),
@@ -406,6 +425,109 @@ class _HomepageCoverUploaderState
           ),
         ),
       ),
+    );
+  }
+}
+
+// ============================================================
+// 菜单产品图片展示（只读，从 menuProvider 自动同步）
+// ============================================================
+class _MenuItemPhotos extends ConsumerWidget {
+  const _MenuItemPhotos();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final menuAsync = ref.watch(menuProvider);
+
+    return menuAsync.when(
+      loading: () => const SizedBox(
+        height: 60,
+        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+      ),
+      error: (e, _) => const Text(
+        'Failed to load menu photos',
+        style: TextStyle(color: Colors.red, fontSize: 13),
+      ),
+      data: (items) {
+        // 只显示有图片的菜品
+        final withPhotos = items.where((i) => i.imageUrl != null && i.imageUrl!.isNotEmpty).toList();
+
+        if (withPhotos.isEmpty) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Text(
+              'No menu items with photos yet. Add photos in Menu Management.',
+              style: TextStyle(fontSize: 13, color: Color(0xFF999999)),
+            ),
+          );
+        }
+
+        return Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: withPhotos.map((item) => _MenuPhotoCell(item: item)).toList(),
+        );
+      },
+    );
+  }
+}
+
+// ============================================================
+// 单个菜单产品图片格子（只读，显示名称标签）
+// ============================================================
+class _MenuPhotoCell extends StatelessWidget {
+  const _MenuPhotoCell({required this.item});
+
+  final dynamic item; // MenuItem
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        // 7:5 比例匹配客户端菜品卡片
+        ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: CachedNetworkImage(
+            imageUrl: item.imageUrl!,
+            width: 98,
+            height: 70,
+            fit: BoxFit.cover,
+            placeholder: (_, __) => Container(
+              width: 98,
+              height: 70,
+              color: const Color(0xFFF0F0F0),
+              child: const Center(
+                child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFFFF6B35)),
+              ),
+            ),
+            errorWidget: (_, __, ___) => Container(
+              width: 98,
+              height: 70,
+              color: const Color(0xFFF0F0F0),
+              child: const Icon(Icons.broken_image_outlined, color: Color(0xFFCCCCCC), size: 32),
+            ),
+          ),
+        ),
+        // 菜品名称标签（底部）
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.5),
+              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(8)),
+            ),
+            child: Text(
+              item.name,
+              style: const TextStyle(color: Colors.white, fontSize: 10),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
