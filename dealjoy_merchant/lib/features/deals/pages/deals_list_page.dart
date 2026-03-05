@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../models/merchant_deal.dart';
+import '../models/deal_category.dart';
 import '../providers/deals_provider.dart';
 import '../widgets/deal_card.dart';
 
@@ -14,6 +15,18 @@ import '../widgets/deal_card.dart';
 // ============================================================
 class DealsListPage extends ConsumerWidget {
   const DealsListPage({super.key});
+
+  // 打开分类管理 BottomSheet
+  void _showCategoryManager(BuildContext context, WidgetRef ref) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => _CategoryManagerSheet(ref: ref),
+    );
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -44,6 +57,12 @@ class DealsListPage extends ConsumerWidget {
           ),
           centerTitle: false,
           actions: [
+            // 分类管理按钮
+            IconButton(
+              icon: const Icon(Icons.category_outlined, color: Color(0xFF666666)),
+              tooltip: 'Manage Categories',
+              onPressed: () => _showCategoryManager(context, ref),
+            ),
             // 刷新按钮
             IconButton(
               icon: const Icon(Icons.refresh_rounded, color: Color(0xFF666666)),
@@ -78,6 +97,7 @@ class DealsListPage extends ConsumerWidget {
           ],
         ),
 
+        // FAB: 创建新 Deal
         // FAB: 创建新 Deal
         floatingActionButton: FloatingActionButton.extended(
           onPressed: () => context.push('/deals/create'),
@@ -353,6 +373,265 @@ class _ErrorView extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ============================================================
+// 分类管理 BottomSheet
+// ============================================================
+class _CategoryManagerSheet extends ConsumerStatefulWidget {
+  const _CategoryManagerSheet({required this.ref});
+
+  final WidgetRef ref;
+
+  @override
+  ConsumerState<_CategoryManagerSheet> createState() =>
+      _CategoryManagerSheetState();
+}
+
+class _CategoryManagerSheetState extends ConsumerState<_CategoryManagerSheet> {
+  static const _orange = Color(0xFFFF6B35);
+
+  @override
+  Widget build(BuildContext context) {
+    final categoriesAsync = ref.watch(dealCategoriesProvider);
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.5,
+      minChildSize: 0.3,
+      maxChildSize: 0.8,
+      expand: false,
+      builder: (context, scrollController) {
+        return Column(
+          children: [
+            // 拖拽把手 + 标题
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 8, 0),
+              child: Row(
+                children: [
+                  const Text(
+                    'Deal Categories',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1A1A1A),
+                    ),
+                  ),
+                  const Spacer(),
+                  // 添加按钮
+                  IconButton(
+                    icon: const Icon(Icons.add_circle_outline, color: _orange),
+                    onPressed: () => _showAddCategoryDialog(),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Color(0xFF999999)),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(),
+            // 分类列表
+            Expanded(
+              child: categoriesAsync.when(
+                loading: () =>
+                    const Center(child: CircularProgressIndicator()),
+                error: (e, _) => Center(
+                  child: Text('Failed to load: $e',
+                      style: const TextStyle(color: Colors.red)),
+                ),
+                data: (categories) {
+                  if (categories.isEmpty) {
+                    return const Center(
+                      child: Text(
+                        'No categories yet.\nTap + to create one.',
+                        textAlign: TextAlign.center,
+                        style:
+                            TextStyle(fontSize: 14, color: Color(0xFF999999)),
+                      ),
+                    );
+                  }
+                  return ListView.separated(
+                    controller: scrollController,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    itemCount: categories.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (context, index) {
+                      final cat = categories[index];
+                      return ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(
+                          cat.name,
+                          style: const TextStyle(
+                              fontSize: 15, color: Color(0xFF333333)),
+                        ),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // 编辑
+                            IconButton(
+                              icon: const Icon(Icons.edit_outlined,
+                                  size: 20, color: Color(0xFF666666)),
+                              onPressed: () =>
+                                  _showEditCategoryDialog(cat),
+                            ),
+                            // 删除
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline,
+                                  size: 20, color: Color(0xFFE53935)),
+                              onPressed: () =>
+                                  _confirmDeleteCategory(cat),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // 添加分类对话框
+  void _showAddCategoryDialog() {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('New Category'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: 'Category name',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: _orange),
+            onPressed: () async {
+              final name = controller.text.trim();
+              if (name.isEmpty) return;
+              Navigator.pop(ctx);
+              try {
+                final service = ref.read(dealsServiceProvider);
+                final categories =
+                    ref.read(dealCategoriesProvider).valueOrNull ?? [];
+                await service.createDealCategory(
+                  merchantId:
+                      ref.read(dealsProvider.notifier).merchantId,
+                  name: name,
+                  sortOrder: categories.length,
+                );
+                // 刷新分类列表
+                ref.invalidate(dealCategoriesProvider);
+              } catch (e) {
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Failed to create: $e')),
+                );
+              }
+            },
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 编辑分类对话框
+  void _showEditCategoryDialog(DealCategory cat) {
+    final controller = TextEditingController(text: cat.name);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Edit Category'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: 'Category name',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: _orange),
+            onPressed: () async {
+              final name = controller.text.trim();
+              if (name.isEmpty || name == cat.name) {
+                Navigator.pop(ctx);
+                return;
+              }
+              Navigator.pop(ctx);
+              try {
+                final service = ref.read(dealsServiceProvider);
+                await service.updateDealCategory(
+                  id: cat.id,
+                  name: name,
+                );
+                ref.invalidate(dealCategoriesProvider);
+              } catch (e) {
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Failed to update: $e')),
+                );
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 删除确认
+  void _confirmDeleteCategory(DealCategory cat) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Category'),
+        content: Text(
+            'Are you sure you want to delete "${cat.name}"?\nDeals in this category will become uncategorized.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFE53935)),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              try {
+                final service = ref.read(dealsServiceProvider);
+                await service.deleteDealCategory(cat.id);
+                ref.invalidate(dealCategoriesProvider);
+              } catch (e) {
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Failed to delete: $e')),
+                );
+              }
+            },
+            child: const Text('Delete'),
+          ),
+        ],
       ),
     );
   }

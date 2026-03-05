@@ -225,4 +225,55 @@ class DealsService {
 
     return Exception('DealsService error (${response.status}): $message');
   }
+
+  // ----------------------------------------------------------
+  // Deal Categories（直接查表，不走 Edge Function）
+  // ----------------------------------------------------------
+
+  /// 获取当前商家的 deal 分类列表
+  Future<List<Map<String, dynamic>>> fetchDealCategories(String merchantId) async {
+    final data = await _supabase
+        .from('deal_categories')
+        .select()
+        .eq('merchant_id', merchantId)
+        .order('sort_order');
+    return List<Map<String, dynamic>>.from(data);
+  }
+
+  /// 创建 deal 分类
+  Future<Map<String, dynamic>> createDealCategory({
+    required String merchantId,
+    required String name,
+    required int sortOrder,
+  }) async {
+    final data = await _supabase
+        .from('deal_categories')
+        .insert({
+          'merchant_id': merchantId,
+          'name': name,
+          'sort_order': sortOrder,
+        })
+        .select()
+        .single();
+    return data;
+  }
+
+  /// 更新 deal 分类名称
+  Future<void> updateDealCategory({
+    required String id,
+    required String name,
+  }) async {
+    await _supabase
+        .from('deal_categories')
+        .update({'name': name})
+        .eq('id', id);
+  }
+
+  /// 删除 deal 分类
+  Future<void> deleteDealCategory(String id) async {
+    await _supabase
+        .from('deal_categories')
+        .delete()
+        .eq('id', id);
+  }
 }

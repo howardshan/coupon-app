@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/merchant_deal.dart';
+import '../models/deal_category.dart';
 import '../services/deals_service.dart';
 
 // ============================================================
@@ -237,4 +238,23 @@ final filteredDealsProvider = Provider<AsyncValue<List<MerchantDeal>>>((ref) {
     if (filter == null) return deals;
     return deals.where((d) => d.dealStatus == filter).toList();
   });
+});
+
+// ============================================================
+// dealCategoriesProvider — 当前商家的 Deal 分类列表
+// ============================================================
+final dealCategoriesProvider =
+    FutureProvider<List<DealCategory>>((ref) async {
+  final service = ref.read(dealsServiceProvider);
+  // 获取商家 ID
+  final user = Supabase.instance.client.auth.currentUser;
+  if (user == null) return [];
+  final merchantData = await Supabase.instance.client
+      .from('merchants')
+      .select('id')
+      .eq('user_id', user.id)
+      .single();
+  final merchantId = merchantData['id'] as String;
+  final rawList = await service.fetchDealCategories(merchantId);
+  return rawList.map((e) => DealCategory.fromJson(e)).toList();
 });

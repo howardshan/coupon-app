@@ -36,9 +36,11 @@ class DealCard extends StatelessWidget {
                 ClipRRect(
                   borderRadius:
                       const BorderRadius.vertical(top: Radius.circular(16)),
-                  child: deal.imageUrls.isNotEmpty
+                  child: (deal.imageUrls.isNotEmpty || deal.merchant?.homepageCoverUrl != null)
                       ? CachedNetworkImage(
-                          imageUrl: deal.imageUrls.first,
+                          imageUrl: deal.imageUrls.isNotEmpty
+                              ? deal.imageUrls.first
+                              : deal.merchant!.homepageCoverUrl!,
                           height: 160,
                           width: double.infinity,
                           fit: BoxFit.cover,

@@ -332,6 +332,8 @@ class DashboardPage extends ConsumerWidget {
         context.push('/analytics');
       case ShortcutAction.store:
         context.push('/store');
+      case ShortcutAction.menu:
+        context.push('/store/menu');
     }
   }
 

@@ -235,6 +235,12 @@ class StoreInfo {
     this.ein,
     this.city,
     this.website,
+    // 首页封面图（存在 merchants 表，用于客户端首页 deal 卡片 fallback）
+    this.homepageCoverUrl,
+    // 头图模式: 'single'(轮播) 或 'triple'(三图并排)
+    this.headerPhotoStyle = 'single',
+    // triple 模式下选中的 3 张头图 URL
+    this.headerPhotos = const [],
     // 注册时上传的门头照（来自 merchant_documents 表）
     this.registrationStorefrontUrl,
     // 注册时上传的所有证件（来自 merchant_documents 表）
@@ -262,6 +268,15 @@ class StoreInfo {
   final String? ein;
   final String? city;
   final String? website;
+
+  // 首页封面图 URL（从 merchants 表获取）
+  final String? homepageCoverUrl;
+
+  // 头图模式: 'single'(轮播) 或 'triple'(三图并排)
+  final String headerPhotoStyle;
+
+  // triple 模式下选中的 3 张头图 URL
+  final List<String> headerPhotos;
 
   // 注册时上传的门头照 URL（从 merchant_documents 表获取）
   final String? registrationStorefrontUrl;
@@ -293,6 +308,9 @@ class StoreInfo {
           .toList(),
       latitude: (storeJson['lat'] as num?)?.toDouble(),
       longitude: (storeJson['lng'] as num?)?.toDouble(),
+      homepageCoverUrl: storeJson['homepage_cover_url'] as String?,
+      headerPhotoStyle: storeJson['header_photo_style'] as String? ?? 'single',
+      headerPhotos: List<String>.from(storeJson['header_photos'] as List<dynamic>? ?? []),
       // 专业资料从 storeJson 中读取（merchants 表字段）
       companyName: storeJson['company_name'] as String?,
       contactName: storeJson['contact_name'] as String?,
@@ -366,6 +384,9 @@ class StoreInfo {
     List<BusinessHours>? hours,
     double? latitude,
     double? longitude,
+    String? homepageCoverUrl,
+    String? headerPhotoStyle,
+    List<String>? headerPhotos,
     String? companyName,
     String? contactName,
     String? contactEmail,
@@ -389,6 +410,9 @@ class StoreInfo {
       hours: hours ?? this.hours,
       latitude: latitude ?? this.latitude,
       longitude: longitude ?? this.longitude,
+      homepageCoverUrl: homepageCoverUrl ?? this.homepageCoverUrl,
+      headerPhotoStyle: headerPhotoStyle ?? this.headerPhotoStyle,
+      headerPhotos: headerPhotos ?? this.headerPhotos,
       companyName: companyName ?? this.companyName,
       contactName: contactName ?? this.contactName,
       contactEmail: contactEmail ?? this.contactEmail,

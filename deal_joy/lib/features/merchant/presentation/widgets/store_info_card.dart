@@ -1,0 +1,316 @@
+import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../../../../core/theme/app_colors.dart';
+import '../../data/models/merchant_detail_model.dart';
+import '../../data/models/review_stats_model.dart';
+import '../../data/models/store_facility_model.dart';
+
+/// 商家基本信息整合卡片
+/// 包含：名称、评分、标签、营业状态、便利设施、地址+操作按钮
+class StoreInfoCard extends StatelessWidget {
+  final MerchantDetailModel merchant;
+  final ReviewStatsModel? reviewStats;
+  final List<StoreFacilityModel> facilities;
+
+  const StoreInfoCard({
+    super.key,
+    required this.merchant,
+    this.reviewStats,
+    this.facilities = const [],
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final avgRating = reviewStats?.avgRating ?? 0.0;
+    final reviewCount = reviewStats?.totalCount ?? 0;
+
+    return Container(
+      color: AppColors.surface,
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 第一行：商家名称
+          Text(
+            merchant.name,
+            style: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: AppColors.textPrimary,
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+
+          const SizedBox(height: 6),
+
+          // 第二行：评分 + 评论数 + 人均 + 经营年数
+          _buildRatingRow(avgRating, reviewCount),
+
+          // 第三行：标签 chips
+          if (merchant.tags.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            _buildTagChips(),
+          ],
+
+          const SizedBox(height: 10),
+
+          // 第四行：营业状态
+          _buildHoursRow(),
+
+          // 第五行：便利标签
+          if (facilities.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            _buildFacilityChips(),
+          ],
+
+          // 第六行：地址 + 操作按钮
+          if (merchant.address != null && merchant.address!.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            _buildAddressRow(),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRatingRow(double avgRating, int reviewCount) {
+    return Row(
+      children: [
+        const Icon(Icons.star_rounded, size: 16, color: AppColors.secondary),
+        const SizedBox(width: 3),
+        Text(
+          avgRating.toStringAsFixed(1),
+          style: const TextStyle(
+            color: AppColors.secondary,
+            fontWeight: FontWeight.bold,
+            fontSize: 14,
+          ),
+        ),
+        const SizedBox(width: 4),
+        Text(
+          '$reviewCount reviews',
+          style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+        ),
+        if (merchant.pricePerPerson != null) ...[
+          const Text(' · ',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+          Text(
+            '\$${merchant.pricePerPerson!.toStringAsFixed(0)}/person',
+            style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+          ),
+        ],
+        if (merchant.yearsInBusiness != null &&
+            merchant.yearsInBusiness! > 0) ...[
+          const Text(' · ',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+          Text(
+            'Est. ${merchant.establishedYear}',
+            style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildTagChips() {
+    return SizedBox(
+      height: 28,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: merchant.tags.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (_, i) => Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: AppColors.secondary.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Text(
+            merchant.tags[i],
+            style: const TextStyle(
+              fontSize: 12,
+              color: AppColors.secondary,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHoursRow() {
+    final isOpen = merchant.isOpenNow;
+    return Row(
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(
+            color: isOpen ? AppColors.success : AppColors.error,
+            shape: BoxShape.circle,
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          isOpen ? 'Open Now' : 'Closed',
+          style: TextStyle(
+            color: isOpen ? AppColors.success : AppColors.error,
+            fontWeight: FontWeight.w600,
+            fontSize: 13,
+          ),
+        ),
+        if (merchant.todayHoursText.isNotEmpty) ...[
+          const Text('  ·  ',
+              style: TextStyle(color: AppColors.textHint, fontSize: 13)),
+          Expanded(
+            child: Text(
+              merchant.todayHoursText,
+              style: const TextStyle(
+                  color: AppColors.textSecondary, fontSize: 13),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildFacilityChips() {
+    // 只显示前 6 个设施
+    final shown = facilities.take(6).toList();
+    return Wrap(
+      spacing: 8,
+      runSpacing: 6,
+      children: shown.map((f) {
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: AppColors.surfaceVariant,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(_facilityIcon(f.facilityType),
+                  size: 13, color: AppColors.textSecondary),
+              const SizedBox(width: 4),
+              Text(
+                f.name,
+                style: const TextStyle(
+                    fontSize: 11, color: AppColors.textSecondary),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildAddressRow() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceVariant.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.location_on_outlined,
+              size: 16, color: AppColors.textSecondary),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              merchant.address!,
+              style: const TextStyle(
+                fontSize: 13,
+                color: AppColors.textPrimary,
+                height: 1.4,
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 8),
+          // 导航按钮
+          _CircleButton(
+            icon: Icons.directions_car_outlined,
+            onTap: () => _openNavigation(),
+          ),
+          const SizedBox(width: 8),
+          // 电话按钮
+          _CircleButton(
+            icon: Icons.phone_outlined,
+            onTap: merchant.phone != null ? () => _callPhone() : null,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openNavigation() async {
+    final Uri uri;
+    if (merchant.lat != null && merchant.lng != null) {
+      uri = Uri.parse(
+          'https://maps.google.com/?q=${merchant.lat},${merchant.lng}');
+    } else {
+      final encoded = Uri.encodeComponent(merchant.address ?? '');
+      uri = Uri.parse('https://maps.google.com/?q=$encoded');
+    }
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  Future<void> _callPhone() async {
+    if (merchant.phone == null) return;
+    final uri = Uri(scheme: 'tel', path: merchant.phone);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    }
+  }
+
+  IconData _facilityIcon(String type) {
+    return switch (type) {
+      'parking' => Icons.local_parking,
+      'wifi' => Icons.wifi,
+      'private_room' => Icons.meeting_room,
+      'large_table' => Icons.table_restaurant,
+      'reservation' => Icons.event_available,
+      'baby_chair' => Icons.child_care,
+      'no_smoking' => Icons.smoke_free,
+      _ => Icons.check_circle_outline,
+    };
+  }
+}
+
+/// 圆形操作按钮（导航/电话）
+class _CircleButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback? onTap;
+
+  const _CircleButton({required this.icon, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final disabled = onTap == null;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(
+          color: disabled
+              ? AppColors.surfaceVariant
+              : AppColors.secondary.withValues(alpha: 0.1),
+          shape: BoxShape.circle,
+        ),
+        child: Icon(
+          icon,
+          size: 18,
+          color: disabled ? AppColors.textHint : AppColors.secondary,
+        ),
+      ),
+    );
+  }
+}

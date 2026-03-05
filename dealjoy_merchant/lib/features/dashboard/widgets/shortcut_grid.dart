@@ -14,6 +14,7 @@ enum ShortcutAction {
   reviews,
   analytics,
   store, // 替换原来的 settings，直接跳转店铺管理
+  menu, // 菜品/菜单管理
 }
 
 // ============================================================
@@ -80,15 +81,21 @@ class ShortcutGrid extends StatelessWidget {
       label: 'Store',
       color: Color(0xFF607D8B), // 蓝灰色
     ),
+    _ShortcutItem(
+      action: ShortcutAction.menu,
+      icon: Icons.restaurant_menu_outlined,
+      label: 'Menu',
+      color: Color(0xFFE91E63), // 粉红色
+    ),
   ];
 
   @override
   Widget build(BuildContext context) {
     return GridView.count(
-      crossAxisCount: 3,
+      crossAxisCount: 4,
       shrinkWrap: true, // 内嵌在 ScrollView 中需要
       physics: const NeverScrollableScrollPhysics(), // 禁用自身滚动
-      childAspectRatio: 1.1, // 宽高比，使卡片略宽
+      childAspectRatio: 0.9, // 4 列稍窄，调整比例
       crossAxisSpacing: 12,
       mainAxisSpacing: 12,
       children: _items.map((item) => _ShortcutCell(
