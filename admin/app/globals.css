@@ -8,6 +8,16 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  /* 按钮用色：Deactivate/Revoke 红，Activate/Approve 绿，Revoke 琥珀 */
+  --color-red-600: #dc2626;
+  --color-red-700: #b91c1c;
+  --color-green-600: #16a34a;
+  --color-green-700: #15803d;
+  --color-amber-100: #fef3c7;
+  --color-amber-200: #fde68a;
+  --color-amber-300: #fcd34d;
+  --color-amber-800: #92400e;
+  --color-white: #ffffff;
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
