@@ -86,13 +86,17 @@ export async function revokeMerchantApproval(merchantId: string) {
   revalidatePath(`/merchants/${merchantId}`)
 }
 
-// Deal 审核：上架/下架（设置 is_active）
+// Deal 审核：上架/下架（同时设置 is_active 与 deal_status，商家端按 deal_status 显示）
 export async function setDealActive(dealId: string, active: boolean) {
   const supabase = await requireAdmin()
 
   const { error } = await supabase
     .from('deals')
-    .update({ is_active: active })
+    .update({
+      is_active: active,
+      deal_status: active ? 'active' : 'inactive',
+      ...(active ? { published_at: new Date().toISOString() } : {}),
+    })
     .eq('id', dealId)
 
   if (error) throw new Error(error.message)
