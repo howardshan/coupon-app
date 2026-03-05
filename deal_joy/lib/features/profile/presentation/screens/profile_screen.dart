@@ -27,6 +27,7 @@ class ProfileScreen extends ConsumerWidget {
           name: user?.fullName ?? 'User',
           email: user?.email ?? '',
           avatarUrl: user?.avatarUrl,
+          showMerchantDashboard: user?.role == 'merchant',
           onSignOut: () => ref.read(authNotifierProvider.notifier).signOut(),
         ),
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -40,12 +41,14 @@ class _ProfileBody extends StatelessWidget {
   final String name;
   final String email;
   final String? avatarUrl;
+  final bool showMerchantDashboard;
   final VoidCallback onSignOut;
 
   const _ProfileBody({
     required this.name,
     required this.email,
     this.avatarUrl,
+    this.showMerchantDashboard = false,
     required this.onSignOut,
   });
 
@@ -388,35 +391,36 @@ class _ProfileBody extends StatelessWidget {
             ),
           ),
 
-          const SizedBox(height: 12),
-
-          // ── Merchant dashboard link ──────────────────────────
-          _SectionCard(
-            child: ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceVariant,
-                  borderRadius: BorderRadius.circular(10),
+          if (showMerchantDashboard) ...[
+            const SizedBox(height: 12),
+            // ── Merchant dashboard link（仅 merchant 角色可见）──
+            _SectionCard(
+              child: ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceVariant,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    Icons.store_outlined,
+                    color: AppColors.textSecondary,
+                    size: 20,
+                  ),
                 ),
-                child: const Icon(
-                  Icons.store_outlined,
-                  color: AppColors.textSecondary,
-                  size: 20,
+                title: const Text(
+                  'Merchant Dashboard',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
                 ),
+                trailing: const Icon(
+                  Icons.chevron_right,
+                  color: AppColors.textHint,
+                ),
+                onTap: () => context.push('/merchant/dashboard'),
               ),
-              title: const Text(
-                'Merchant Dashboard',
-                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-              ),
-              trailing: const Icon(
-                Icons.chevron_right,
-                color: AppColors.textHint,
-              ),
-              onTap: () => context.push('/merchant/dashboard'),
             ),
-          ),
+          ],
 
           const SizedBox(height: 12),
 
