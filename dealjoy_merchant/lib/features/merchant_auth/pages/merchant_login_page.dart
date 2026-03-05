@@ -62,9 +62,11 @@ class _MerchantLoginPageState extends State<MerchantLoginPage> {
       if (!mounted) return;
 
       if (data == null) {
-        // 无 merchant 记录 → 缓存状态并去注册
-        MerchantStatusCache.setStatus('none', user.id);
-        context.go('/auth/register');
+        // 无 merchant 记录 → 登出并提示错误
+        await Supabase.instance.client.auth.signOut();
+        if (!mounted) return;
+        setState(() => _error = 'No merchant account found for this email.');
+        return;
       } else if (data['status'] == 'approved') {
         // 已审核通过 → 缓存状态并进 dashboard
         MerchantStatusCache.setStatus('approved', user.id);

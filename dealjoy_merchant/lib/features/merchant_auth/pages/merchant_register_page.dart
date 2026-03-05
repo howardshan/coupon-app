@@ -4,6 +4,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/merchant_application.dart';
 import '../providers/merchant_auth_provider.dart';
 import '../widgets/category_selector.dart';
@@ -294,7 +295,9 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
                 style: TextStyle(color: Color(0xFF757575)),
               ),
               GestureDetector(
-                onTap: () {
+                onTap: () async {
+                  await Supabase.instance.client.auth.signOut();
+                  if (!context.mounted) return;
                   context.go('/auth/login');
                 },
                 child: const Text(
@@ -906,7 +909,6 @@ class _AppTextField extends StatelessWidget {
     this.obscureText = false,
     this.suffixIcon,
     this.validator,
-    this.maxLines = 1,
   });
 
   final TextEditingController controller;
@@ -916,7 +918,7 @@ class _AppTextField extends StatelessWidget {
   final bool obscureText;
   final Widget? suffixIcon;
   final String? Function(String?)? validator;
-  final int maxLines;
+  final int maxLines = 1;
 
   @override
   Widget build(BuildContext context) {

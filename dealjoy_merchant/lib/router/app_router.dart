@@ -177,7 +177,9 @@ final appRouter = GoRouter(
         case 'rejected':
           return '/auth/review';
         default:
-          return '/auth/register';
+          // 无商家记录 → 登出并留在登录页
+          await Supabase.instance.client.auth.signOut();
+          return '/auth/login';
       }
     }
 
@@ -188,7 +190,9 @@ final appRouter = GoRouter(
         case 'rejected':
           return '/auth/review';
         default:
-          return '/auth/register';
+          // 无商家记录 → 登出并跳登录页
+          await Supabase.instance.client.auth.signOut();
+          return '/auth/login';
       }
     }
 

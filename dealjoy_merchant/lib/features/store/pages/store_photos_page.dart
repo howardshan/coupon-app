@@ -60,7 +60,7 @@ class StorePhotosPage extends ConsumerWidget {
                   SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Storefront photo is required (1 max). Environment and product photos help attract customers (10 max each).',
+                      'Cover photos are displayed on your store page carousel (5 max, first is the main cover). Storefront photos show your store exterior (3 max).',
                       style: TextStyle(
                         fontSize: 12,
                         color: Color(0xFFFF6B35),
@@ -72,11 +72,19 @@ class StorePhotosPage extends ConsumerWidget {
             ),
             const SizedBox(height: 16),
 
+            // 封面照区块
+            _PhotoSection(
+              title: 'Cover Photos',
+              subtitle: 'Up to 5 · First is main cover · Drag to reorder',
+              required: true,
+              child: const PhotoGrid(photoType: StorePhotoType.cover),
+            ),
+            const SizedBox(height: 16),
+
             // 门头照区块
             _PhotoSection(
-              title: 'Storefront Photo',
-              subtitle: 'Required · 1 photo max',
-              required: true,
+              title: 'Storefront Photos',
+              subtitle: 'Up to 3 photos',
               child: const PhotoGrid(photoType: StorePhotoType.storefront),
             ),
             const SizedBox(height: 16),

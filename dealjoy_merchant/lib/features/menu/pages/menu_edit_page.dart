@@ -229,7 +229,7 @@ class _MenuEditPageState extends ConsumerState<MenuEditPage> {
                   style: TextStyle(fontSize: 12, color: Color(0xFF999999)),
                 ),
                 value: _isSignature,
-                activeColor: _primaryOrange,
+                activeThumbColor: _primaryOrange,
                 contentPadding: EdgeInsets.zero,
                 onChanged: (val) => setState(() => _isSignature = val),
               ),
@@ -280,7 +280,7 @@ class _MenuEditPageState extends ConsumerState<MenuEditPage> {
         padding: EdgeInsets.symmetric(vertical: 8),
         child: LinearProgressIndicator(color: _primaryOrange),
       ),
-      error: (err, __) {
+      error: (err, _) {
         // 加载失败时降级为只显示 Uncategorized
         debugPrint('Category load error: $err');
         return Wrap(
@@ -370,7 +370,7 @@ class _MenuEditPageState extends ConsumerState<MenuEditPage> {
         fit: BoxFit.cover,
         width: double.infinity,
         height: 180,
-        errorBuilder: (_, __, ___) => _buildPlaceholder(),
+        errorBuilder: (_, _, _) => _buildPlaceholder(),
       );
     } else {
       imageWidget = _buildPlaceholder();

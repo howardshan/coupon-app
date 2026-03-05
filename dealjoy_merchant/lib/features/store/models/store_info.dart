@@ -6,6 +6,7 @@
 /// environment: 环境照（最多10张）
 /// product: 菜品/商品照（最多10张）
 enum StorePhotoType {
+  cover,
   storefront,
   environment,
   product;
@@ -24,6 +25,8 @@ enum StorePhotoType {
   /// 用户友好的显示标签
   String get displayLabel {
     switch (this) {
+      case StorePhotoType.cover:
+        return 'Cover';
       case StorePhotoType.storefront:
         return 'Storefront';
       case StorePhotoType.environment:
@@ -164,8 +167,52 @@ class BusinessHours {
   }
 }
 
+/// 商家证件文档（来自 merchant_documents 表）
+class MerchantDoc {
+  const MerchantDoc({
+    required this.documentType,
+    required this.fileUrl,
+  });
+
+  final String documentType;
+  final String fileUrl;
+
+  factory MerchantDoc.fromJson(Map<String, dynamic> json) {
+    return MerchantDoc(
+      documentType: json['document_type'] as String,
+      fileUrl: json['file_url'] as String,
+    );
+  }
+
+  /// 用户友好的显示标签
+  String get displayLabel {
+    switch (documentType) {
+      case 'business_license':
+        return 'Business License';
+      case 'health_permit':
+        return 'Health Permit';
+      case 'food_service_license':
+        return 'Food Service License';
+      case 'cosmetology_license':
+        return 'Cosmetology License';
+      case 'massage_therapy_license':
+        return 'Massage Therapy License';
+      case 'facility_license':
+        return 'Facility License';
+      case 'general_business_permit':
+        return 'General Business Permit';
+      case 'storefront_photo':
+        return 'Storefront Photo';
+      case 'owner_id':
+        return 'Owner ID';
+      default:
+        return documentType;
+    }
+  }
+}
+
 /// 完整门店信息
-/// 聚合了基本信息、照片列表和营业时间
+/// 聚合了基本信息、照片列表、营业时间和专业资料
 class StoreInfo {
   const StoreInfo({
     required this.id,
@@ -181,6 +228,17 @@ class StoreInfo {
     required this.hours,
     this.latitude,
     this.longitude,
+    // 专业资料（来自 merchants 表注册信息）
+    this.companyName,
+    this.contactName,
+    this.contactEmail,
+    this.ein,
+    this.city,
+    this.website,
+    // 注册时上传的门头照（来自 merchant_documents 表）
+    this.registrationStorefrontUrl,
+    // 注册时上传的所有证件（来自 merchant_documents 表）
+    this.documents = const [],
   });
 
   final String id;
@@ -196,6 +254,20 @@ class StoreInfo {
   final List<BusinessHours> hours;
   final double? latitude;
   final double? longitude;
+
+  // 专业资料字段
+  final String? companyName;
+  final String? contactName;
+  final String? contactEmail;
+  final String? ein;
+  final String? city;
+  final String? website;
+
+  // 注册时上传的门头照 URL（从 merchant_documents 表获取）
+  final String? registrationStorefrontUrl;
+
+  // 注册时上传的所有证件
+  final List<MerchantDoc> documents;
 
   /// 从 Edge Function 返回的完整 JSON 构造
   factory StoreInfo.fromJson(Map<String, dynamic> json) {
@@ -221,14 +293,25 @@ class StoreInfo {
           .toList(),
       latitude: (storeJson['lat'] as num?)?.toDouble(),
       longitude: (storeJson['lng'] as num?)?.toDouble(),
+      // 专业资料从 storeJson 中读取（merchants 表字段）
+      companyName: storeJson['company_name'] as String?,
+      contactName: storeJson['contact_name'] as String?,
+      contactEmail: storeJson['contact_email'] as String?,
+      ein: storeJson['ein'] as String?,
+      city: storeJson['city'] as String?,
+      website: storeJson['website'] as String?,
     );
   }
 
-  /// 门头照（storefront type，最多1张）
-  StorePhoto? get storefrontPhoto {
-    final storefront = photos.where((p) => p.type == StorePhotoType.storefront).toList();
-    return storefront.isEmpty ? null : storefront.first;
-  }
+  /// 封面照列表（cover type，最多5张，按 sortOrder 排序）
+  List<StorePhoto> get coverPhotos =>
+      photos.where((p) => p.type == StorePhotoType.cover).toList()
+        ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+
+  /// 门头照列表（storefront type，最多3张，按 sortOrder 排序）
+  List<StorePhoto> get storefrontPhotos =>
+      photos.where((p) => p.type == StorePhotoType.storefront).toList()
+        ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
 
   /// 环境照列表
   List<StorePhoto> get environmentPhotos =>
@@ -261,6 +344,13 @@ class StoreInfo {
     return currentMinutes >= openMinutes && currentMinutes < closeMinutes;
   }
 
+  /// 获取最佳门头照 URL（优先 merchant_photos，其次 merchant_documents 的注册照）
+  String? get bestStorefrontUrl {
+    final fromPhotos = storefrontPhotos.firstOrNull?.url;
+    if (fromPhotos != null) return fromPhotos;
+    return registrationStorefrontUrl;
+  }
+
   /// 复制并修改部分字段
   StoreInfo copyWith({
     String? id,
@@ -276,6 +366,14 @@ class StoreInfo {
     List<BusinessHours>? hours,
     double? latitude,
     double? longitude,
+    String? companyName,
+    String? contactName,
+    String? contactEmail,
+    String? ein,
+    String? city,
+    String? website,
+    String? registrationStorefrontUrl,
+    List<MerchantDoc>? documents,
   }) {
     return StoreInfo(
       id: id ?? this.id,
@@ -291,6 +389,14 @@ class StoreInfo {
       hours: hours ?? this.hours,
       latitude: latitude ?? this.latitude,
       longitude: longitude ?? this.longitude,
+      companyName: companyName ?? this.companyName,
+      contactName: contactName ?? this.contactName,
+      contactEmail: contactEmail ?? this.contactEmail,
+      ein: ein ?? this.ein,
+      city: city ?? this.city,
+      website: website ?? this.website,
+      registrationStorefrontUrl: registrationStorefrontUrl ?? this.registrationStorefrontUrl,
+      documents: documents ?? this.documents,
     );
   }
 }

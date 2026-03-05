@@ -186,4 +186,56 @@ class DealsRepository {
           code: e.code);
     }
   }
+
+  // Near Me 模式：按 GPS 坐标 + 半径搜索
+  Future<List<DealModel>> searchDealsNearby({
+    required double lat,
+    required double lng,
+    double radiusMeters = 24140,
+    String? category,
+    int page = 0,
+  }) async {
+    try {
+      final data = await _client.rpc('search_deals_nearby', params: {
+        'p_lat': lat,
+        'p_lng': lng,
+        'p_radius_m': radiusMeters,
+        'p_category': (category == null || category == 'All') ? null : category,
+        'p_limit': AppConstants.pageSize,
+        'p_offset': page * AppConstants.pageSize,
+      });
+      return (data as List)
+          .map((e) => DealModel.fromSearchJson(e as Map<String, dynamic>))
+          .toList();
+    } on PostgrestException catch (e) {
+      throw AppException('Failed to search nearby deals: ${e.message}',
+          code: e.code);
+    }
+  }
+
+  // 城市模式：按 merchants.city 精确匹配
+  Future<List<DealModel>> searchDealsByCity({
+    required String city,
+    double? userLat,
+    double? userLng,
+    String? category,
+    int page = 0,
+  }) async {
+    try {
+      final data = await _client.rpc('search_deals_by_city', params: {
+        'p_city': city,
+        'p_user_lat': userLat,
+        'p_user_lng': userLng,
+        'p_category': (category == null || category == 'All') ? null : category,
+        'p_limit': AppConstants.pageSize,
+        'p_offset': page * AppConstants.pageSize,
+      });
+      return (data as List)
+          .map((e) => DealModel.fromSearchJson(e as Map<String, dynamic>))
+          .toList();
+    } on PostgrestException catch (e) {
+      throw AppException('Failed to search deals by city: ${e.message}',
+          code: e.code);
+    }
+  }
 }

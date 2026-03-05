@@ -367,7 +367,7 @@ class _MenuListPageState extends ConsumerState<MenuListPage> {
     return ListView.separated(
       padding: const EdgeInsets.all(16),
       itemCount: items.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 8),
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
       itemBuilder: (context, index) {
         return _MenuItemCard(item: items[index]);
       },
@@ -536,7 +536,7 @@ class _MenuItemCard extends ConsumerWidget {
                 // 状态开关
                 Switch(
                   value: item.isActive,
-                  activeColor: const Color(0xFFFF6B35),
+                  activeThumbColor: const Color(0xFFFF6B35),
                   onChanged: (_) {
                     ref.read(menuProvider.notifier).toggleStatus(item.id);
                   },

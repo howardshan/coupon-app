@@ -80,8 +80,14 @@ class MerchantDetailModel {
     );
   }
 
-  /// 所有照片 URL 列表（用于轮播，logo 作为兜底）
+  /// 轮播照片 URL 列表（优先展示 cover 类型，无 cover 时兜底所有照片/logo）
   List<String> get allPhotoUrls {
+    final coverUrls = photos
+        .where((p) => p.photoType == 'cover')
+        .map((p) => p.photoUrl)
+        .toList();
+    if (coverUrls.isNotEmpty) return coverUrls;
+    // 兜底：无 cover 时展示所有照片
     final urls = photos.map((p) => p.photoUrl).toList();
     if (urls.isEmpty && logoUrl != null) urls.add(logoUrl!);
     return urls;

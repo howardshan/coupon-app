@@ -1,6 +1,7 @@
 // 门店信息主页面（只读展示，各区块右上角有 Edit 按钮）
-// 分段展示: 基本信息 / 门店照片 / 营业时间 / 标签
+// 分段展示: 门头照横幅 / 基本信息 / 专业资料 / 门店照片 / 营业时间 / 标签
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -21,90 +22,265 @@ class StoreProfilePage extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        title: const Text(
-          'Store Profile',
-          style: TextStyle(
-            color: Color(0xFF1A1A1A),
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        centerTitle: false,
-        actions: [
-          // 刷新按钮
-          IconButton(
-            icon: const Icon(Icons.refresh_rounded, color: Color(0xFF666666)),
-            onPressed: () => ref.read(storeProvider.notifier).refresh(),
-          ),
-        ],
-      ),
       body: storeAsync.when(
         loading: () => const _LoadingView(),
-        error: (e, _) => _ErrorView(
-          error: e.toString(),
-          onRetry: () {
-            ref.read(storeProvider.notifier).refresh();
-          },
-        ),
+        error: (e, _) => _ErrorView(error: e.toString(), onRetry: () {
+          ref.read(storeProvider.notifier).refresh();
+        }),
         data: (store) => RefreshIndicator(
           color: const Color(0xFFFF6B35),
           onRefresh: () => ref.read(storeProvider.notifier).refresh(),
-          child: SingleChildScrollView(
+          child: CustomScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 门店状态横幅（审核中 / 已下线时显示）
-                if (store.status != 'approved') ...[
-                  _StatusBanner(status: store.status),
-                  const SizedBox(height: 12),
-                ],
+            slivers: [
+              // 门头照 + 店名 SliverAppBar
+              _StorefrontHeader(store: store),
 
-                // 区块 1: 基本信息
-                _SectionCard(
-                  title: 'Basic Info',
-                  onEdit: () => context.push('/store/edit'),
-                  child: _BasicInfoContent(store: store),
-                ),
-                const SizedBox(height: 12),
+              // 内容区
+              SliverPadding(
+                padding: const EdgeInsets.all(16),
+                sliver: SliverList(
+                  delegate: SliverChildListDelegate([
+                    // 审核状态横幅
+                    if (store.status != 'approved') ...[
+                      _StatusBanner(status: store.status),
+                      const SizedBox(height: 12),
+                    ],
 
-                // 区块 2: 门店照片
-                _SectionCard(
-                  title: 'Store Photos',
-                  onEdit: () => context.push('/store/photos'),
-                  child: _PhotosContent(store: store),
-                ),
-                const SizedBox(height: 12),
+                    // 修改需审核提示
+                    _ReviewNoticeBanner(),
+                    const SizedBox(height: 12),
 
-                // 区块 2.5: 菜品管理入口
-                _MenuEntryCard(
-                  onTap: () => context.push('/store/menu'),
-                ),
-                const SizedBox(height: 12),
+                    // 区块 1: 基本信息
+                    _SectionCard(
+                      title: 'Basic Info',
+                      onEdit: () => context.push('/store/edit'),
+                      child: _BasicInfoContent(store: store),
+                    ),
+                    const SizedBox(height: 12),
 
-                // 区块 3: 营业时间
-                _SectionCard(
-                  title: 'Business Hours',
-                  onEdit: () => context.push('/store/hours'),
-                  child: _HoursContent(hours: store.hours),
-                ),
-                const SizedBox(height: 12),
+                    // 区块 2: 专业资料（注册时填写的商业信息）
+                    _SectionCard(
+                      title: 'Professional Info',
+                      onEdit: () => context.push('/store/edit'),
+                      child: _ProfessionalInfoContent(store: store),
+                    ),
+                    const SizedBox(height: 12),
 
-                // 区块 4: 类别和标签
-                _SectionCard(
-                  title: 'Category & Tags',
-                  onEdit: () => context.push('/store/tags'),
-                  child: _TagsContent(store: store),
+                    // 区块 3: 证件执照
+                    if (store.documents.isNotEmpty) ...[
+                      _SectionCard(
+                        title: 'Licenses & Documents',
+                        onEdit: () {}, // 证件不允许在此编辑，需重新提交审核
+                        child: _DocumentsContent(documents: store.documents),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+
+                    // 区块 4: 门店照片
+                    _SectionCard(
+                      title: 'Store Photos',
+                      onEdit: () => context.push('/store/photos'),
+                      child: _PhotosContent(store: store),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // 区块 4: 营业时间
+                    _SectionCard(
+                      title: 'Business Hours',
+                      onEdit: () => context.push('/store/hours'),
+                      child: _HoursContent(hours: store.hours),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // 区块 5: 类别和标签
+                    _SectionCard(
+                      title: 'Category & Tags',
+                      onEdit: () => context.push('/store/tags'),
+                      child: _TagsContent(store: store),
+                    ),
+                    const SizedBox(height: 24),
+                  ]),
                 ),
-                const SizedBox(height: 24),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ============================================================
+// 门头照 Hero 区域 + 店名叠加（SliverAppBar）
+// ============================================================
+class _StorefrontHeader extends StatelessWidget {
+  const _StorefrontHeader({required this.store});
+
+  final StoreInfo store;
+
+  @override
+  Widget build(BuildContext context) {
+    final storefrontUrl = store.bestStorefrontUrl;
+    final hasPhoto = storefrontUrl != null && storefrontUrl.isNotEmpty;
+
+    return SliverAppBar(
+      expandedHeight: hasPhoto ? 220 : 120,
+      pinned: true,
+      backgroundColor: const Color(0xFFFF6B35),
+      elevation: 0,
+      flexibleSpace: FlexibleSpaceBar(
+        background: hasPhoto
+            ? Stack(
+                fit: StackFit.expand,
+                children: [
+                  // 门头照
+                  CachedNetworkImage(
+                    imageUrl: storefrontUrl,
+                    fit: BoxFit.cover,
+                    placeholder: (_, _) => Container(
+                      color: const Color(0xFFEEEEEE),
+                      child: const Center(
+                        child: CircularProgressIndicator(
+                          color: Color(0xFFFF6B35),
+                          strokeWidth: 2,
+                        ),
+                      ),
+                    ),
+                    errorWidget: (_, _, _) => Container(
+                      color: const Color(0xFFFF6B35),
+                      child: const Icon(Icons.store, size: 48, color: Colors.white54),
+                    ),
+                  ),
+                  // 渐变遮罩（让底部文字清晰）
+                  const DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Colors.transparent, Colors.black54],
+                      ),
+                    ),
+                  ),
+                  // 店名和状态
+                  Positioned(
+                    left: 16,
+                    right: 16,
+                    bottom: 16,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          store.name,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 22,
+                            fontWeight: FontWeight.w700,
+                            shadows: [Shadow(blurRadius: 4, color: Colors.black38)],
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            if (store.category != null) ...[
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.2),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  store.category!,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                            ],
+                            Icon(
+                              store.isOpenNow ? Icons.circle : Icons.circle_outlined,
+                              size: 8,
+                              color: store.isOpenNow ? Colors.greenAccent : Colors.white54,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              store.isOpenNow ? 'Open Now' : 'Closed',
+                              style: TextStyle(
+                                color: store.isOpenNow ? Colors.greenAccent : Colors.white54,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              )
+            : Container(
+                color: const Color(0xFFFF6B35),
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const SizedBox(height: 40),
+                      const Icon(Icons.store, size: 36, color: Colors.white70),
+                      const SizedBox(height: 8),
+                      Text(
+                        store.name,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+      ),
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.refresh_rounded, color: Colors.white),
+          onPressed: () {
+            // 通过 context 找到 WidgetRef 不太方便，用 ProviderScope 外的方式
+            // 这里留空，用下拉刷新代替
+          },
+        ),
+      ],
+    );
+  }
+}
+
+// ============================================================
+// 修改需审核提示横幅
+// ============================================================
+class _ReviewNoticeBanner extends StatelessWidget {
+  const _ReviewNoticeBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE3F2FD),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFF90CAF9)),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.verified_user_outlined, size: 18, color: Color(0xFF1976D2)),
+          SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'All profile changes require admin review before being visible to customers.',
+              style: TextStyle(fontSize: 12, color: Color(0xFF1565C0)),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -171,7 +347,10 @@ class _SectionCard extends StatelessWidget {
             ),
           ),
           const Divider(height: 1, thickness: 0.5),
-          Padding(padding: const EdgeInsets.all(16), child: child),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: child,
+          ),
         ],
       ),
     );
@@ -218,6 +397,71 @@ class _BasicInfoContent extends StatelessWidget {
 }
 
 // ============================================================
+// 专业资料内容区（注册时填写的商业信息）
+// ============================================================
+class _ProfessionalInfoContent extends StatelessWidget {
+  const _ProfessionalInfoContent({required this.store});
+
+  final StoreInfo store;
+
+  @override
+  Widget build(BuildContext context) {
+    // 检查是否有任何专业资料
+    final hasData = (store.companyName?.isNotEmpty ?? false) ||
+        (store.contactName?.isNotEmpty ?? false) ||
+        (store.ein?.isNotEmpty ?? false);
+
+    if (!hasData) {
+      return const Text(
+        'No professional info available. This information is filled during registration.',
+        style: TextStyle(fontSize: 13, color: Color(0xFFBBBBBB)),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (store.companyName?.isNotEmpty == true) ...[
+          _InfoRow(label: 'Company Name', value: store.companyName!),
+          const SizedBox(height: 10),
+        ],
+        if (store.contactName?.isNotEmpty == true) ...[
+          _InfoRow(label: 'Contact Person', value: store.contactName!),
+          const SizedBox(height: 10),
+        ],
+        if (store.contactEmail?.isNotEmpty == true) ...[
+          _InfoRow(label: 'Contact Email', value: store.contactEmail!),
+          const SizedBox(height: 10),
+        ],
+        if (store.ein?.isNotEmpty == true) ...[
+          _InfoRow(
+            label: 'EIN / Tax ID',
+            value: _maskEin(store.ein!),
+          ),
+          const SizedBox(height: 10),
+        ],
+        if (store.category?.isNotEmpty == true)
+          _InfoRow(label: 'Category', value: store.category!),
+        if (store.city?.isNotEmpty == true) ...[
+          const SizedBox(height: 10),
+          _InfoRow(label: 'City', value: store.city!),
+        ],
+        if (store.website?.isNotEmpty == true) ...[
+          const SizedBox(height: 10),
+          _InfoRow(label: 'Website', value: store.website!),
+        ],
+      ],
+    );
+  }
+
+  // 部分遮盖 EIN（安全考虑，只显示前两位和后两位）
+  String _maskEin(String ein) {
+    if (ein.length < 4) return '***';
+    return '${ein.substring(0, 2)}-*****${ein.substring(ein.length - 2)}';
+  }
+}
+
+// ============================================================
 // 单行信息展示（标签 + 值）
 // ============================================================
 class _InfoRow extends StatelessWidget {
@@ -260,6 +504,107 @@ class _InfoRow extends StatelessWidget {
 // ============================================================
 // 照片内容区（只读缩略图预览）
 // ============================================================
+// ============================================================
+// 证件执照内容区（注册时上传的证件图片）
+// ============================================================
+class _DocumentsContent extends StatelessWidget {
+  const _DocumentsContent({required this.documents});
+
+  final List<MerchantDoc> documents;
+
+  @override
+  Widget build(BuildContext context) {
+    // 过滤掉门头照（已在顶部 Hero 区展示）
+    final licenseDocs = documents
+        .where((d) => d.documentType != 'storefront_photo')
+        .toList();
+
+    if (licenseDocs.isEmpty) {
+      return const Text(
+        'No documents uploaded',
+        style: TextStyle(fontSize: 13, color: Color(0xFFBBBBBB)),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: licenseDocs.map((doc) {
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 证件缩略图
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: CachedNetworkImage(
+                  imageUrl: doc.fileUrl,
+                  width: 72,
+                  height: 72,
+                  fit: BoxFit.cover,
+                  placeholder: (_, _) => Container(
+                    width: 72,
+                    height: 72,
+                    color: const Color(0xFFF0F0F0),
+                    child: const Center(
+                      child: SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Color(0xFFFF6B35),
+                        ),
+                      ),
+                    ),
+                  ),
+                  errorWidget: (_, _, _) => Container(
+                    width: 72,
+                    height: 72,
+                    color: const Color(0xFFF0F0F0),
+                    child: const Icon(Icons.description_outlined,
+                        color: Color(0xFFCCCCCC), size: 28),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              // 证件名称和状态
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      doc.displayLabel,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: Color(0xFF333333),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        const Icon(Icons.check_circle, size: 14, color: Color(0xFF4CAF50)),
+                        const SizedBox(width: 4),
+                        const Text(
+                          'Uploaded',
+                          style: TextStyle(fontSize: 12, color: Color(0xFF4CAF50)),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+}
+
+// ============================================================
+// 照片内容区（只读缩略图预览）
+// ============================================================
 class _PhotosContent extends StatelessWidget {
   const _PhotosContent({required this.store});
 
@@ -267,7 +612,7 @@ class _PhotosContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final storefrontPhoto = store.storefrontPhoto;
+    final storefrontUrl = store.bestStorefrontUrl;
     final envCount = store.environmentPhotos.length;
     final productCount = store.productPhotos.length;
 
@@ -277,10 +622,50 @@ class _PhotosContent extends StatelessWidget {
         // 门头照预览
         Row(
           children: [
-            _PhotoTypePreview(
-              label: 'Storefront',
-              photo: storefrontPhoto,
-              isRequired: true,
+            // 缩略图
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: storefrontUrl != null
+                  ? CachedNetworkImage(
+                      imageUrl: storefrontUrl,
+                      width: 64,
+                      height: 64,
+                      fit: BoxFit.cover,
+                      errorWidget: (_, _, _) => _PhotoPlaceholder(size: 64),
+                    )
+                  : _PhotoPlaceholder(size: 64),
+            ),
+            const SizedBox(width: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Text(
+                      'Storefront',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: Color(0xFF333333),
+                      ),
+                    ),
+                    SizedBox(width: 4),
+                    Text(
+                      '*',
+                      style: TextStyle(color: Color(0xFFFF6B35), fontSize: 14),
+                    ),
+                  ],
+                ),
+                Text(
+                  storefrontUrl != null ? 'Uploaded' : 'Not uploaded',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: storefrontUrl != null
+                        ? const Color(0xFF4CAF50)
+                        : const Color(0xFFFF6B35),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -288,78 +673,16 @@ class _PhotosContent extends StatelessWidget {
         // 环境照和菜品照计数
         Row(
           children: [
-            _PhotoCountBadge(label: 'Environment', count: envCount, max: 10),
-            const SizedBox(width: 12),
-            _PhotoCountBadge(label: 'Products', count: productCount, max: 10),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
-// ============================================================
-// 照片类型预览（门头照）
-// ============================================================
-class _PhotoTypePreview extends StatelessWidget {
-  const _PhotoTypePreview({
-    required this.label,
-    required this.photo,
-    this.isRequired = false,
-  });
-
-  final String label;
-  final StorePhoto? photo;
-  final bool isRequired;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        // 缩略图
-        ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: photo != null
-              ? Image.network(
-                  photo!.url,
-                  width: 64,
-                  height: 64,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => _PhotoPlaceholder(size: 64),
-                )
-              : _PhotoPlaceholder(size: 64),
-        ),
-        const SizedBox(width: 12),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Text(
-                  label,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color: Color(0xFF333333),
-                  ),
-                ),
-                if (isRequired) ...[
-                  const SizedBox(width: 4),
-                  const Text(
-                    '*',
-                    style: TextStyle(color: Color(0xFFFF6B35), fontSize: 14),
-                  ),
-                ],
-              ],
+            _PhotoCountBadge(
+              label: 'Environment',
+              count: envCount,
+              max: 10,
             ),
-            Text(
-              photo != null ? 'Uploaded' : 'Not uploaded',
-              style: TextStyle(
-                fontSize: 12,
-                color: photo != null
-                    ? const Color(0xFF4CAF50)
-                    : const Color(0xFFFF6B35),
-              ),
+            const SizedBox(width: 12),
+            _PhotoCountBadge(
+              label: 'Products',
+              count: productCount,
+              max: 10,
             ),
           ],
         ),
@@ -403,7 +726,10 @@ class _PhotoCountBadge extends StatelessWidget {
           ),
           Text(
             label,
-            style: const TextStyle(fontSize: 11, color: Color(0xFF999999)),
+            style: const TextStyle(
+              fontSize: 11,
+              color: Color(0xFF999999),
+            ),
           ),
         ],
       ),
@@ -482,7 +808,8 @@ class _HoursContent extends StatelessWidget {
                   color: h.isClosed
                       ? const Color(0xFFBBBBBB)
                       : const Color(0xFF333333),
-                  fontWeight: h.isClosed ? FontWeight.w400 : FontWeight.w500,
+                  fontWeight:
+                      h.isClosed ? FontWeight.w400 : FontWeight.w500,
                 ),
               ),
             ],
@@ -551,7 +878,10 @@ class _TagsContent extends StatelessWidget {
                 'No tags added yet',
                 style: TextStyle(fontSize: 14, color: Color(0xFFBBBBBB)),
               )
-            : TagChipList(tags: store.tags, readOnly: true),
+            : TagChipList(
+                tags: store.tags,
+                readOnly: true,
+              ),
       ],
     );
   }
@@ -571,10 +901,14 @@ class _StatusBanner extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
-        color: isPending ? const Color(0xFFFFF8E1) : const Color(0xFFFFEBEE),
+        color: isPending
+            ? const Color(0xFFFFF8E1)
+            : const Color(0xFFFFEBEE),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: isPending ? const Color(0xFFFFCC02) : const Color(0xFFEF9A9A),
+          color: isPending
+              ? const Color(0xFFFFCC02)
+              : const Color(0xFFEF9A9A),
         ),
       ),
       child: Row(
@@ -629,91 +963,6 @@ class _LoadingView extends StatelessWidget {
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(12),
               ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ============================================================
-// 错误视图（带重试按钮）
-// ============================================================
-// ============================================================
-// 菜品管理入口卡片
-// ============================================================
-class _MenuEntryCard extends StatelessWidget {
-  const _MenuEntryCard({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFF3EE),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(
-                    Icons.restaurant_menu,
-                    size: 22,
-                    color: Color(0xFFFF6B35),
-                  ),
-                ),
-                const SizedBox(width: 14),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Menu Items',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF1A1A1A),
-                        ),
-                      ),
-                      SizedBox(height: 2),
-                      Text(
-                        'Manage your dishes and products',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFF999999),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const Icon(
-                  Icons.chevron_right_rounded,
-                  color: Color(0xFFCCCCCC),
-                ),
-              ],
             ),
           ),
         ),

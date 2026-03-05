@@ -22,6 +22,9 @@ class DealModel {
   final String? address;
   final String? merchantHours;
   final MerchantSummary? merchant;
+  // 搜索结果附加字段
+  final double? distanceMeters;
+  final String? merchantCity;
 
   const DealModel({
     required this.id,
@@ -47,6 +50,8 @@ class DealModel {
     this.address,
     this.merchantHours,
     this.merchant,
+    this.distanceMeters,
+    this.merchantCity,
   });
 
   factory DealModel.fromJson(Map<String, dynamic> json) => DealModel(
@@ -78,6 +83,33 @@ class DealModel {
             ? MerchantSummary.fromJson(
                 json['merchants'] as Map<String, dynamic>)
             : null,
+      );
+
+  // RPC 搜索结果（search_deals_nearby / search_deals_by_city）解析
+  factory DealModel.fromSearchJson(Map<String, dynamic> json) => DealModel(
+        id: json['id'] as String,
+        merchantId: json['merchant_id'] as String,
+        title: json['title'] as String,
+        description: json['description'] as String? ?? '',
+        category: json['category'] as String,
+        originalPrice: (json['original_price'] as num).toDouble(),
+        discountPrice: (json['discount_price'] as num).toDouble(),
+        discountPercent: json['discount_percent'] as int? ?? 0,
+        discountLabel: json['discount_label'] as String? ?? '',
+        imageUrls: List<String>.from(json['image_urls'] as List? ?? []),
+        isFeatured: json['is_featured'] as bool? ?? false,
+        rating: (json['rating'] as num?)?.toDouble() ?? 0.0,
+        reviewCount: json['review_count'] as int? ?? 0,
+        totalSold: json['total_sold'] as int? ?? 0,
+        stockLimit: 100,
+        expiresAt: DateTime.parse(json['expires_at'] as String),
+        merchant: MerchantSummary(
+          id: json['merchant_id'] as String,
+          name: json['merchant_name'] as String? ?? '',
+          logoUrl: json['merchant_logo_url'] as String?,
+        ),
+        distanceMeters: (json['distance_meters'] as num?)?.toDouble(),
+        merchantCity: json['merchant_city'] as String?,
       );
 
   bool get isExpired => DateTime.now().isAfter(expiresAt);

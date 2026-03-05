@@ -974,7 +974,7 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
                     width: 80,
                     height: 80,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
+                    errorBuilder: (_, _, _) => Container(
                       width: 80,
                       height: 80,
                       color: const Color(0xFFEEEEEE),
@@ -1037,7 +1037,7 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
                           width: 88,
                           height: 88,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Container(
+                          errorBuilder: (_, _, _) => Container(
                             width: 88,
                             height: 88,
                             color: const Color(0xFFEEEEEE),
