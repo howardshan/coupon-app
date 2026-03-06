@@ -14,6 +14,7 @@ const adminNav = [
   { href: '/users', label: 'Users', icon: '👥' },
   { href: '/merchants', label: 'Merchants', icon: '🏪' },
   { href: '/deals', label: 'Deals', icon: '🏷️' },
+  { href: '/orders', label: 'Orders', icon: '📦' },
 ]
 
 const merchantNav = [
