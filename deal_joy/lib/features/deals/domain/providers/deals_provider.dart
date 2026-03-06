@@ -26,22 +26,10 @@ final selectedCategoryProvider = StateProvider<String>((ref) => 'All');
 // 搜索关键词
 final searchQueryProvider = StateProvider<String>((ref) => '');
 
-// 精选 Deals
+// 首页展示券：sort_order 不为空的 active deal，按 sort_order 升序
 final featuredDealsProvider = FutureProvider<List<DealModel>>((ref) async {
-  final isNearMe = ref.watch(isNearMeProvider);
-  final category = ref.watch(selectedCategoryProvider);
   final repo = ref.watch(dealsRepositoryProvider);
-
-  if (isNearMe) {
-    final loc = await ref.watch(userLocationProvider.future);
-    return repo.searchDealsNearby(
-      lat: loc.lat,
-      lng: loc.lng,
-      category: category,
-    );
-  }
-  final city = ref.watch(selectedLocationProvider).city;
-  return repo.fetchFeaturedDeals(city: city);
+  return repo.fetchFeaturedDeals();
 });
 
 // Deals 列表（Near Me 用 GPS 搜索；城市模式用精确 city 匹配）

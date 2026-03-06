@@ -86,6 +86,19 @@ export async function revokeMerchantApproval(merchantId: string) {
   revalidatePath(`/merchants/${merchantId}`)
 }
 
+// 更新 Deal 首页展示排序（null = 不在首页展示）
+export async function updateDealSortOrder(dealId: string, sortOrder: number | null) {
+  const supabase = await requireAdmin()
+
+  const { error } = await supabase
+    .from('deals')
+    .update({ sort_order: sortOrder })
+    .eq('id', dealId)
+
+  if (error) throw new Error(error.message)
+  revalidatePath('/deals')
+}
+
 // Deal 审核：上架/下架（同时设置 is_active 与 deal_status，商家端按 deal_status 显示）
 export async function setDealActive(dealId: string, active: boolean) {
   const supabase = await requireAdmin()
