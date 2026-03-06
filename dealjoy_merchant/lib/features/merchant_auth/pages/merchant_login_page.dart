@@ -46,10 +46,24 @@ class _MerchantLoginPageState extends State<MerchantLoginPage> {
       );
       if (!mounted) return;
 
-      // 登录成功后查询 merchant 状态，决定跳转目标
+      // 登录成功后校验角色并查询 merchant 状态，决定跳转目标
       final user = Supabase.instance.client.auth.currentUser;
       if (user == null) {
         context.go('/dashboard');
+        return;
+      }
+
+      // 校验 users.role：非 merchant 不允许登录商家端
+      final roleRow = await Supabase.instance.client
+          .from('users')
+          .select('role')
+          .eq('id', user.id)
+          .maybeSingle();
+      final role = roleRow?['role'] as String?;
+      if (role != 'merchant') {
+        await Supabase.instance.client.auth.signOut();
+        if (!mounted) return;
+        setState(() => _error = 'Your account is not a merchant account.');
         return;
       }
 
@@ -62,17 +76,14 @@ class _MerchantLoginPageState extends State<MerchantLoginPage> {
       if (!mounted) return;
 
       if (data == null) {
-        // 无 merchant 记录 → 登出并提示错误
-        await Supabase.instance.client.auth.signOut();
-        if (!mounted) return;
-        setState(() => _error = 'No merchant account found for this email.');
+        // 角色已是 merchant 但无 merchants 记录 → 去补填资料（与注册流程一致）
+        context.go('/auth/register');
         return;
-      } else if (data['status'] == 'approved') {
-        // 已审核通过 → 缓存状态并进 dashboard
+      }
+      if (data['status'] == 'approved') {
         MerchantStatusCache.setStatus('approved', user.id);
         context.go('/dashboard');
       } else {
-        // pending / rejected → 缓存状态并去审核状态页
         MerchantStatusCache.setStatus(
           data['status'] as String? ?? 'pending', user.id);
         context.go('/auth/review');

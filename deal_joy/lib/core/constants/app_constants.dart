@@ -69,4 +69,8 @@ class AppConstants {
   static const double dallasLat = 32.7767;
   static const double dallasLng = -96.7970;
   static const double defaultRadiusKm = 10.0;
+
+  /// 成为商家 / 商户合作联系方式（方案 A：用户致电或邮件后后台手动开通）
+  static const String merchantPartnerPhone = '1-800-XXX-XXXX';
+  static const String merchantPartnerEmail = 'merchant@dealjoy.com';
 }

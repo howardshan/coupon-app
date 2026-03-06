@@ -80,7 +80,8 @@ class MerchantAuthNotifier extends AsyncNotifier<MerchantApplication?> {
   }
 
   // ----------------------------------------------------------
-  // 最终提交: 注册账号 → 上传证件 → 提交申请（一次性完成）
+  // 最终提交: 注册账号（或已有账号则登录）→ 上传证件 → 提交申请
+  // 若邮箱已存在：先登录，若已有 merchants 记录则仅返回状态不重复提交
   // ----------------------------------------------------------
   Future<void> registerAndSubmit() async {
     final current = state.value;
@@ -88,25 +89,43 @@ class MerchantAuthNotifier extends AsyncNotifier<MerchantApplication?> {
 
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
-      // 1. 注册 Supabase Auth 账号
-      final response = await _service.registerWithEmail(
-        email: _regEmail!,
-        password: _regPassword!,
-      );
-      if (response.user == null) {
-        throw Exception('Registration failed. Please try again.');
-      }
-
-      // signUp 可能不会自动建立 session，尝试补登录
-      if (_service.currentUser == null) {
+      String? userId;
+      try {
+        // 1. 尝试注册 Supabase Auth 账号
+        final response = await _service.registerWithEmail(
+          email: _regEmail!,
+          password: _regPassword!,
+        );
+        if (response.user == null) {
+          throw Exception('Registration failed. Please try again.');
+        }
+        if (_service.currentUser == null) {
+          await _service.signInWithEmail(
+            email: _regEmail!,
+            password: _regPassword!,
+          );
+        }
+        _regPassword = null;
+        userId = _service.currentUser!.id;
+      } on AuthException catch (e) {
+        // 邮箱已注册：改为登录，再判断是否已有申请
+        final msg = (e.message ?? e.toString()).toLowerCase();
+        final isAlreadyRegistered = msg.contains('already') && msg.contains('registered') ||
+            msg.contains('user_already_exists');
+        if (!isAlreadyRegistered) rethrow;
         await _service.signInWithEmail(
           email: _regEmail!,
           password: _regPassword!,
         );
+        _regPassword = null;
+        userId = _service.currentUser!.id;
+        final existing = await _service.getApplicationStatus();
+        if (existing != null) {
+          return existing; // 已有申请，不重复提交，由 UI 跳转 /auth/review
+        }
       }
-      _regPassword = null; // 注册成功后立即清除密码
-
-      final userId = _service.currentUser!.id;
+      _regPassword = null;
+      userId ??= _service.currentUser!.id;
 
       // 2. 上传所有本地暂存的证件文件
       final uploadedDocs = <MerchantDocument>[];
@@ -115,7 +134,7 @@ class MerchantAuthNotifier extends AsyncNotifier<MerchantApplication?> {
           final fileUrl = await _service.uploadDocument(
             localFilePath: doc.localPath!,
             documentType: doc.documentType,
-            userId: userId,
+            userId: userId!,
             customFileName: doc.fileName,
           );
           uploadedDocs.add(doc.copyWith(fileUrl: fileUrl));

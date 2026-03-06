@@ -78,8 +78,12 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
         // 重提模式：从 DB 加载已有申请数据
         ref.read(merchantAuthProvider.notifier).refreshStatus();
       } else {
-        // 普通注册：重置状态
+        // 普通注册：重置状态；若已登录（从登录页跳来补填资料）则预填邮箱
         ref.read(merchantAuthProvider.notifier).resetState();
+        final user = Supabase.instance.client.auth.currentUser;
+        if (user?.email != null && user!.email!.isNotEmpty) {
+          _emailCtrl.text = user.email!;
+        }
       }
     });
   }
@@ -241,6 +245,7 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
             label: 'Business Email',
             hint: 'you@business.com',
             keyboardType: TextInputType.emailAddress,
+            readOnly: Supabase.instance.client.auth.currentUser != null,
             validator: (v) {
               if (v == null || v.trim().isEmpty) return 'Email is required';
               final emailReg = RegExp(r'^[^@]+@[^@]+\.[^@]+$');
@@ -909,6 +914,7 @@ class _AppTextField extends StatelessWidget {
     this.obscureText = false,
     this.suffixIcon,
     this.validator,
+    this.readOnly = false,
   });
 
   final TextEditingController controller;
@@ -918,6 +924,7 @@ class _AppTextField extends StatelessWidget {
   final bool obscureText;
   final Widget? suffixIcon;
   final String? Function(String?)? validator;
+  final bool readOnly;
   final int maxLines = 1;
 
   @override
@@ -926,6 +933,7 @@ class _AppTextField extends StatelessWidget {
       controller: controller,
       keyboardType: keyboardType,
       obscureText: obscureText,
+      readOnly: readOnly,
       maxLines: maxLines,
       validator: validator,
       decoration: InputDecoration(
