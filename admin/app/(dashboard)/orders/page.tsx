@@ -20,28 +20,29 @@ export default async function OrdersPage({
 
   if (profile?.role !== 'admin') redirect('/dashboard')
 
-  let query = supabase
-    .from('orders')
-    .select(`
-      id,
-      order_number,
-      total_amount,
-      quantity,
-      status,
-      refund_reason,
-      created_at,
-      users ( email ),
-      deals ( title, merchants ( name ) )
-    `)
-    .order('created_at', { ascending: false })
-    .limit(100)
+  let orders: any[] | null
 
   if (q != null && q.trim() !== '') {
-    const term = `%${q.trim()}%`
-    query = query.or(`order_number.ilike.${term},users.email.ilike.${term},deals.title.ilike.${term}`)
+    const { data } = await supabase.rpc('get_admin_orders_search', { search_q: q.trim() })
+    orders = data ?? null
+  } else {
+    const { data } = await supabase
+      .from('orders')
+      .select(`
+        id,
+        order_number,
+        total_amount,
+        quantity,
+        status,
+        refund_reason,
+        created_at,
+        users ( email ),
+        deals ( title, merchants ( name ) )
+      `)
+      .order('created_at', { ascending: false })
+      .limit(100)
+    orders = data
   }
-
-  const { data: orders } = await query
 
   const refundCount = orders?.filter((o: { status: string }) => o.status === 'refund_requested').length ?? 0
 
