@@ -28,6 +28,7 @@ export async function approveRefund(orderId: string) {
 
   if (error) throw new Error(error.message)
   revalidatePath('/orders')
+  revalidatePath(`/orders/${orderId}`)
 }
 
 export async function rejectRefund(orderId: string) {
@@ -40,4 +41,5 @@ export async function rejectRefund(orderId: string) {
 
   if (error) throw new Error(error.message)
   revalidatePath('/orders')
+  revalidatePath(`/orders/${orderId}`)
 }
