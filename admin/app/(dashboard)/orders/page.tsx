@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import Link from 'next/link'
 import OrderRefundButtons from '@/components/order-refund-buttons'
 
 export default async function OrdersPage() {
@@ -59,7 +60,11 @@ export default async function OrdersPage() {
                 key={o.id}
                 className={o.status === 'refund_requested' ? 'bg-orange-50/60' : 'hover:bg-gray-50'}
               >
-                <td className="px-4 py-3 font-medium text-gray-900">{o.deals?.title ?? '—'}</td>
+                <td className="px-4 py-3 font-medium text-gray-900">
+                  <Link href={`/orders/${o.id}`} className="text-blue-600 hover:underline">
+                    {o.deals?.title ?? '—'}
+                  </Link>
+                </td>
                 <td className="px-4 py-3 text-gray-600">{o.deals?.merchants?.name ?? '—'}</td>
                 <td className="px-4 py-3 text-gray-600">{o.users?.email ?? '—'}</td>
                 <td className="px-4 py-3 text-gray-900">
