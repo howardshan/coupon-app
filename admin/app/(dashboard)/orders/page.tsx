@@ -5,6 +5,7 @@ import OrderRefundButtons from '@/components/order-refund-buttons'
 import OrderSearchForm from '@/components/order-search-form'
 import OrdersTableContainer from '@/components/orders-table-container'
 import { OrdersSearchProvider } from '@/contexts/orders-search-context'
+import { getOrderDisplayStatus } from '@/lib/order-display-status'
 
 export default async function OrdersPage({
   searchParams,
@@ -39,7 +40,7 @@ export default async function OrdersPage({
         refund_reason,
         created_at,
         users ( email ),
-        deals ( title, merchants ( name ) )
+        deals ( title, expires_at, merchants ( name ) )
       `)
       .order('created_at', { ascending: false })
       .limit(100)
@@ -78,7 +79,9 @@ export default async function OrdersPage({
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {(orders as any[])?.map((o: any) => (
+            {(orders as any[])?.map((o: any) => {
+              const displayStatus = getOrderDisplayStatus(o)
+              return (
               <tr
                 key={o.id}
                 className={o.status === 'refund_requested' ? 'bg-orange-50/60' : 'hover:bg-gray-50'}
@@ -102,13 +105,13 @@ export default async function OrdersPage({
                   )}
                 </td>
                 <td className="px-4 py-3">
-                  <OrderRefundButtons orderId={o.id} initialStatus={o.status} />
+                  <OrderRefundButtons orderId={o.id} initialStatus={o.status} displayStatus={displayStatus} />
                 </td>
                 <td className="px-4 py-3 text-gray-500">
                   {new Date(o.created_at).toLocaleDateString()}
                 </td>
               </tr>
-            ))}
+            )})}
           </tbody>
         </table>
         {(!orders || orders.length === 0) && (

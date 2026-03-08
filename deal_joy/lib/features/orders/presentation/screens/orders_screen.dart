@@ -60,12 +60,21 @@ class _OrderCard extends StatelessWidget {
     'used' => AppColors.success,
     'refunded' => AppColors.textSecondary,
     'refund_requested' => AppColors.warning,
+    'expired' => AppColors.textHint,
     _ => AppColors.textHint,
   };
+
+  /// 展示用状态：未使用但券已按时间过期时显示为 expired
+  String get _displayStatus {
+    if (order.isExpired) return 'expired';
+    if (order.isUnused && order.isExpiredByDate) return 'expired';
+    return order.status;
+  }
 
   @override
   Widget build(BuildContext context) {
     final deal = order.deal;
+    final displayStatus = _displayStatus;
     return Card(
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
@@ -141,19 +150,19 @@ class _OrderCard extends StatelessWidget {
                       vertical: 4,
                     ),
                     decoration: BoxDecoration(
-                      color: _statusColor(order.status).withValues(alpha: 0.1),
+                      color: _statusColor(displayStatus).withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
-                      order.status.replaceAll('_', ' ').toUpperCase(),
+                      displayStatus.replaceAll('_', ' ').toUpperCase(),
                       style: TextStyle(
-                        color: _statusColor(order.status),
+                        color: _statusColor(displayStatus),
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
                   ),
-                  if (order.isUnused) ...[
+                  if (order.isUnused && !order.isExpiredByDate) ...[
                     const SizedBox(height: 6),
                     Row(
                       mainAxisSize: MainAxisSize.min,

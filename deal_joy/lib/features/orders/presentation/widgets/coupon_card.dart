@@ -40,7 +40,12 @@ class CouponCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = _statusColor(coupon.status);
+    // 按时间已过期时在列表中统一显示为 Expired
+    final displayExpired = coupon.isExpired;
+    final color = displayExpired
+        ? _statusColor('expired')
+        : _statusColor(coupon.status);
+    final label = displayExpired ? 'Expired' : _statusLabel(coupon.status);
 
     return Card(
       margin: EdgeInsets.zero,
@@ -101,7 +106,7 @@ class CouponCard extends StatelessWidget {
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
-                          _statusLabel(coupon.status),
+                          label,
                           style: TextStyle(
                             color: color,
                             fontSize: 11,
@@ -109,7 +114,7 @@ class CouponCard extends StatelessWidget {
                           ),
                         ),
                       ),
-                      if (coupon.isUnused) ...[
+                      if (coupon.isUnused && !coupon.isExpired) ...[
                         const SizedBox(height: 6),
                         const Icon(
                           Icons.qr_code_2,

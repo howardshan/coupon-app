@@ -139,21 +139,28 @@ class _StatusBanner extends StatelessWidget {
 
   const _StatusBanner({required this.coupon});
 
-  Color get _color => switch (coupon.status) {
-        'unused' => AppColors.primary,
-        'used' => AppColors.success,
-        'expired' => AppColors.textSecondary,
-        'refunded' => AppColors.warning,
-        _ => AppColors.textHint,
-      };
+  /// 按时间已过期时统一按 EXPIRED 展示
+  Color get _color {
+    if (coupon.isExpired) return AppColors.textSecondary;
+    return switch (coupon.status) {
+      'unused' => AppColors.primary,
+      'used' => AppColors.success,
+      'expired' => AppColors.textSecondary,
+      'refunded' => AppColors.warning,
+      _ => AppColors.textHint,
+    };
+  }
 
-  String get _label => switch (coupon.status) {
-        'unused' => 'READY TO USE',
-        'used' => 'USED',
-        'expired' => 'EXPIRED',
-        'refunded' => 'REFUNDED',
-        _ => coupon.status.toUpperCase(),
-      };
+  String get _label {
+    if (coupon.isExpired) return 'EXPIRED';
+    return switch (coupon.status) {
+      'unused' => 'READY TO USE',
+      'used' => 'USED',
+      'expired' => 'EXPIRED',
+      'refunded' => 'REFUNDED',
+      _ => coupon.status.toUpperCase(),
+    };
+  }
 
   @override
   Widget build(BuildContext context) {
