@@ -80,10 +80,12 @@ serve(async (req: Request) => {
 
   const merchantId = auth.merchantId;
 
-  // 解析路径
+  // 解析路径（Supabase 实际 pathname 为 /functions/v1/merchant-orders 或 /functions/v1/merchant-orders/export 或 /functions/v1/merchant-orders/:id）
   const url = new URL(req.url);
-  // 路径示例：/merchant-orders、/merchant-orders/export、/merchant-orders/:id
-  const pathParts = url.pathname.replace(/^\/merchant-orders\/?/, '').split('/').filter(Boolean);
+  const pathname = url.pathname;
+  const match = pathname.match(/\/merchant-orders\/?(.*)$/);
+  const suffix = match ? match[1].replace(/^\/|\/$/g, '') : '';
+  const pathParts = suffix ? suffix.split('/') : [];
   const subPath = pathParts[0] ?? '';
 
   // ----------------------------------------------------------------
@@ -95,7 +97,13 @@ serve(async (req: Request) => {
     return await handleExport(serviceClient, merchantId, url.searchParams);
   }
 
-  // 订单详情（subPath 是 UUID）
+  // 订单详情：优先用 query 参数 ?id= 兜底（避免 path 被截断导致 404）
+  const orderIdFromQuery = url.searchParams.get('id');
+  if (orderIdFromQuery?.trim()) {
+    return await handleDetail(serviceClient, merchantId, orderIdFromQuery.trim());
+  }
+
+  // 订单详情（subPath 是 UUID，path 形式）
   if (subPath && subPath !== '') {
     return await handleDetail(serviceClient, merchantId, subPath);
   }
@@ -159,6 +167,7 @@ async function handleDetail(
   merchantId: string,
   orderId: string,
 ): Promise<Response> {
+  console.log('[merchant-orders] handleDetail', { orderId, merchantId });
   // 查询订单（通过 deal → merchant 确认归属权）
   const { data: order, error: orderError } = await client
     .from('orders')
@@ -189,7 +198,7 @@ async function handleDetail(
         full_name,
         email
       ),
-      coupons (
+      coupons!coupons_order_id_fkey (
         id,
         qr_code,
         status,
@@ -202,6 +211,15 @@ async function handleDetail(
     .single();
 
   if (orderError || !order) {
+    // 将真实错误写入 Edge Function 日志，便于排查 404 原因
+    if (orderError) {
+      console.error('[merchant-orders] handleDetail order fetch failed', {
+        orderId,
+        code: orderError.code,
+        message: orderError.message,
+        details: orderError.details,
+      });
+    }
     return errorResponse('Order not found', 'not_found', 404);
   }
 

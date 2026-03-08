@@ -127,8 +127,10 @@ class OrdersService {
   /// 抛出 [OrdersException] 如果请求失败或订单不存在
   Future<MerchantOrderDetail> fetchOrderDetail(String orderId) async {
     try {
+      // 使用 query 参数 ?id= 调用，避免 path 被平台截断导致 404
+      final pathWithQuery = '$_functionName?id=${Uri.encodeComponent(orderId)}';
       final response = await _supabase.functions.invoke(
-        '$_functionName/$orderId',
+        pathWithQuery,
         method: HttpMethod.get,
       );
 
