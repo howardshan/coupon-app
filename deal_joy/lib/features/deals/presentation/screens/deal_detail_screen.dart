@@ -1469,17 +1469,28 @@ class _BottomBar extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     if (deal.isExpired) {
       return SafeArea(
-        child: Container(
-          color: AppColors.surfaceVariant,
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          child: const Center(
-            child: Text(
-              'Deal Expired',
-              style: TextStyle(
-                color: AppColors.textSecondary,
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-              ),
+        child: Center(
+          child: Container(
+            color: AppColors.surfaceVariant,
+            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Deal Expired',
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextButton.icon(
+                  onPressed: () => context.pop(),
+                  icon: const Icon(Icons.arrow_back, size: 20),
+                  label: const Text('Back'),
+                ),
+              ],
             ),
           ),
         ),

@@ -139,7 +139,7 @@ class _DealDetailView extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      DealStatusBadge(status: deal.dealStatus),
+                      DealStatusBadge(status: deal.isExpiredByDate ? DealStatus.expired : deal.dealStatus),
                     ],
                   ),
                   const SizedBox(height: 6),

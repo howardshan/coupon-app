@@ -20,13 +20,18 @@ final userCouponsProvider = FutureProvider<List<CouponModel>>((ref) async {
 });
 
 /// 按状态过滤的团购券列表（derived provider）
-/// 使用 .family 让状态字符串作为参数
+/// Expired 按「按时间已过期」算（status=='expired' 或 expiresAt 已过）；Unused 排除已过期的券
 final couponsByStatusProvider =
     Provider.family<AsyncValue<List<CouponModel>>, String>((ref, status) {
-  return ref.watch(userCouponsProvider).whenData(
-        (coupons) =>
-            coupons.where((c) => c.status == status).toList(),
-      );
+  return ref.watch(userCouponsProvider).whenData((coupons) {
+    if (status == 'expired') {
+      return coupons.where((c) => c.isExpired).toList();
+    }
+    if (status == 'unused') {
+      return coupons.where((c) => c.status == 'unused' && !c.isExpired).toList();
+    }
+    return coupons.where((c) => c.status == status).toList();
+  });
 });
 
 /// 单张团购券详情 Provider（通过 couponId 查询）
