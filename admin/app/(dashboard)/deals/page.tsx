@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
+import DealSortOrder from '@/components/deal-sort-order'
 
 export default async function DealsPage() {
   const supabase = await createClient()
@@ -11,7 +12,7 @@ export default async function DealsPage() {
   if (profile?.role === 'admin') {
     const { data } = await supabase
       .from('deals')
-      .select('id, title, discount_price, original_price, is_active, expires_at, created_at, merchants(name)')
+      .select('id, title, discount_price, original_price, is_active, expires_at, created_at, sort_order, merchants(name)')
       .order('created_at', { ascending: false })
       .limit(50)
     deals = data
@@ -25,7 +26,7 @@ export default async function DealsPage() {
     if (merchant) {
       const { data } = await supabase
         .from('deals')
-        .select('id, title, discount_price, original_price, is_active, expires_at, created_at')
+        .select('id, title, discount_price, original_price, is_active, expires_at, created_at, sort_order')
         .eq('merchant_id', merchant.id)
         .order('created_at', { ascending: false })
       deals = data
@@ -49,6 +50,9 @@ export default async function DealsPage() {
               <th className="text-left px-4 py-3 font-medium text-gray-600">Sale Price</th>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Created</th>
+              {profile?.role === 'admin' && (
+                <th className="text-left px-4 py-3 font-medium text-gray-600">Sort Order</th>
+              )}
               <th className="text-left px-4 py-3 font-medium text-gray-600"></th>
             </tr>
           </thead>
@@ -78,6 +82,11 @@ export default async function DealsPage() {
                 <td className="px-4 py-3 text-gray-500">
                   {new Date(d.created_at).toLocaleDateString()}
                 </td>
+                {profile?.role === 'admin' && (
+                  <td className="px-4 py-3">
+                    <DealSortOrder dealId={d.id} sortOrder={d.sort_order ?? null} />
+                  </td>
+                )}
                 <td className="px-4 py-3">
                   <Link
                     href={`/deals/${d.id}`}

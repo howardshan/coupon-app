@@ -29,6 +29,7 @@ class DealModel {
   final String dealType; // 'voucher' | 'regular'
   final String? dealCategoryId;
   final String? badgeText; // 自定义角标，如 "Best Value"
+  final int? sortOrder; // 首页展示排序，NULL 表示不展示
 
   const DealModel({
     required this.id,
@@ -59,6 +60,7 @@ class DealModel {
     this.dealType = 'regular',
     this.dealCategoryId,
     this.badgeText,
+    this.sortOrder,
   });
 
   factory DealModel.fromJson(Map<String, dynamic> json) => DealModel(
@@ -93,6 +95,7 @@ class DealModel {
         dealType: json['deal_type'] as String? ?? 'regular',
         dealCategoryId: json['deal_category_id'] as String?,
         badgeText: json['badge_text'] as String?,
+        sortOrder: json['sort_order'] as int?,
       );
 
   // RPC 搜索结果（search_deals_nearby / search_deals_by_city）解析
@@ -124,6 +127,7 @@ class DealModel {
         dealType: json['deal_type'] as String? ?? 'regular',
         dealCategoryId: json['deal_category_id'] as String?,
         badgeText: json['badge_text'] as String?,
+        sortOrder: json['sort_order'] as int?,
       );
 
   /// 解析菜品列表：优先读 dishes 数组，为空时从 package_contents 文本按行解析
