@@ -1,15 +1,9 @@
 // auto-refund-expired: 过期订单自动退款 Edge Function
 // 由 Supabase Cron Job 定期触发（建议每小时一次）
 // 需求 7.1.2：团购券过期 24 小时后自动退全额
+// 使用 fetch 直连 Stripe API，避免 Stripe SDK 在 Supabase Edge 中触发 runMicrotasks 报错
 
-import Stripe from 'https://esm.sh/stripe@11.2.0?target=deno';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2?target=deno';
-
-// Stripe 客户端初始化（与 create-refund 保持一致）
-const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {
-  apiVersion: '2024-04-10',
-  httpClient: Stripe.createFetchHttpClient(),
-});
 
 // CORS 响应头（与其他 Edge Functions 保持一致）
 const corsHeaders = {
@@ -111,17 +105,27 @@ Deno.serve(async (req) => {
       const orderId = order.id;
 
       try {
-        // 1. 向 Stripe 发起退款
-        //    reason: 'expired_uncaptured_charge' 是 Stripe 内置枚举中最接近的值；
-        //    实际为"团购券过期"场景，通过 metadata 额外说明。
-        const refund = await stripe.refunds.create({
+        // 1. 向 Stripe 发起退款（使用 fetch 直连 API，避免 Stripe SDK 的 Node 兼容层触发 runMicrotasks 报错）
+        const stripeKey = Deno.env.get('STRIPE_SECRET_KEY') ?? '';
+        const form = new URLSearchParams({
           payment_intent: order.payment_intent_id,
-          reason: 'requested_by_customer', // Stripe 允许的枚举：duplicate | fraudulent | requested_by_customer
-          metadata: {
-            source: 'auto-refund-expired',
-            order_id: orderId,
-          },
+          reason: 'requested_by_customer',
+          'metadata[source]': 'auto-refund-expired',
+          'metadata[order_id]': orderId,
         });
+        const stripeRes = await fetch('https://api.stripe.com/v1/refunds', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${stripeKey}`,
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: form.toString(),
+        });
+        if (!stripeRes.ok) {
+          const errText = await stripeRes.text();
+          throw new Error(`Stripe refund failed: ${stripeRes.status} ${errText}`);
+        }
+        const refund = await stripeRes.json() as { id?: string };
 
         const now = new Date().toISOString();
 
@@ -169,7 +173,7 @@ Deno.serve(async (req) => {
           console.warn(`auto-refund-expired: 订单 ${orderId} 的 payments 状态更新失败`, paymentUpdateErr);
         }
 
-        console.log(`auto-refund-expired: 订单 ${orderId} 退款成功，refund_id=${refund.id}`);
+        console.log(`auto-refund-expired: 订单 ${orderId} 退款成功，refund_id=${refund?.id ?? 'n/a'}`);
         summary.succeeded += 1;
       } catch (refundErr) {
         // 单笔退款失败：记录错误并继续处理下一笔
