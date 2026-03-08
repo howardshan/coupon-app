@@ -3,6 +3,8 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import OrderRefundButtons from '@/components/order-refund-buttons'
 import OrderSearchForm from '@/components/order-search-form'
+import OrdersTableContainer from '@/components/orders-table-container'
+import { OrdersSearchProvider } from '@/contexts/orders-search-context'
 
 export default async function OrdersPage({
   searchParams,
@@ -47,21 +49,23 @@ export default async function OrdersPage({
   const refundCount = orders?.filter((o: { status: string }) => o.status === 'refund_requested').length ?? 0
 
   return (
-    <div>
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-        <div className="flex items-center gap-3 flex-wrap">
-          <h1 className="text-2xl font-bold text-gray-900">Orders</h1>
-          {refundCount > 0 && (
-            <span className="text-sm bg-orange-100 text-orange-700 px-3 py-1 rounded-full font-medium">
-              {refundCount} refund {refundCount === 1 ? 'request' : 'requests'}
-            </span>
-          )}
+    <OrdersSearchProvider>
+      <div>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-2xl font-bold text-gray-900">Orders</h1>
+            {refundCount > 0 && (
+              <span className="text-sm bg-orange-100 text-orange-700 px-3 py-1 rounded-full font-medium">
+                {refundCount} refund {refundCount === 1 ? 'request' : 'requests'}
+              </span>
+            )}
+          </div>
+          <OrderSearchForm initialValue={q ?? ''} />
         </div>
-        <OrderSearchForm initialValue={q ?? ''} />
-      </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <table className="w-full text-sm">
+        <OrdersTableContainer>
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Order #</th>
@@ -112,7 +116,9 @@ export default async function OrdersPage({
             {q != null && q.trim() !== '' ? 'No orders match your search.' : 'No orders yet'}
           </p>
         )}
+          </div>
+        </OrdersTableContainer>
       </div>
-    </div>
+    </OrdersSearchProvider>
   )
 }
