@@ -7,7 +7,7 @@ import 'package:flutter/material.dart';
 // OrderStatus — 订单状态枚举
 // =============================================================
 
-/// 订单状态（与数据库 order_status enum 映射）
+/// 订单状态（与数据库 order_status enum 映射 + 展示用 expired / pendingRefund）
 enum OrderStatus {
   /// 已支付，未核销
   paid,
@@ -17,8 +17,12 @@ enum OrderStatus {
   refundRequested,
   /// 已退款
   refunded,
-  /// 已取消 / 过期
-  cancelled;
+  /// 已取消 / 过期（DB 或展示）
+  cancelled,
+  /// 展示用：券已过期、未满 24h
+  expired,
+  /// 展示用：过期 ≥24h、待自动退款
+  pendingRefund;
 
   /// 从数据库字符串值映射
   factory OrderStatus.fromString(String value) {
@@ -54,7 +58,22 @@ enum OrderStatus {
         return 'Refunded';
       case OrderStatus.cancelled:
         return 'Cancelled';
+      case OrderStatus.expired:
+        return 'Expired';
+      case OrderStatus.pendingRefund:
+        return 'Pending Refund';
     }
+  }
+
+  /// 根据原始状态 + 券过期时间计算展示用状态（未使用且已过期 → Expired / Pending Refund）
+  static OrderStatus displayStatus(OrderStatus raw, DateTime? couponExpiresAt) {
+    if (raw != OrderStatus.paid) return raw;
+    if (couponExpiresAt == null) return OrderStatus.paid;
+    final now = DateTime.now();
+    if (now.isBefore(couponExpiresAt)) return OrderStatus.paid;
+    final elapsed = now.difference(couponExpiresAt);
+    if (elapsed >= const Duration(hours: 24)) return OrderStatus.pendingRefund;
+    return OrderStatus.expired;
   }
 
   /// Tab 标签文本（All 单独处理）
@@ -76,6 +95,10 @@ enum OrderStatus {
         return const Color(0xFFF59E0B); // 橙色
       case OrderStatus.cancelled:
         return const Color(0xFF9CA3AF); // 灰色
+      case OrderStatus.expired:
+        return const Color(0xFFDC2626); // 红
+      case OrderStatus.pendingRefund:
+        return const Color(0xFFD97706); // 琥珀
     }
   }
 
@@ -92,6 +115,10 @@ enum OrderStatus {
         return const Color(0xFFFFFBEB);
       case OrderStatus.cancelled:
         return const Color(0xFFF3F4F6);
+      case OrderStatus.expired:
+        return const Color(0xFFFEF2F2);
+      case OrderStatus.pendingRefund:
+        return const Color(0xFFFFFBEB);
     }
   }
 }
@@ -253,6 +280,9 @@ class MerchantOrder {
   /// 核销时间
   final DateTime? couponRedeemedAt;
 
+  /// 券过期时间（列表接口返回，用于展示 Expired / Pending Refund）
+  final DateTime? couponExpiresAt;
+
   /// 退款原因
   final String? refundReason;
 
@@ -278,11 +308,16 @@ class MerchantOrder {
     this.couponCode,
     this.couponStatus,
     this.couponRedeemedAt,
+    this.couponExpiresAt,
     this.refundReason,
     required this.createdAt,
     this.refundRequestedAt,
     this.refundedAt,
   });
+
+  /// 展示用状态（未使用且已过期时显示 Expired / Pending Refund）
+  OrderStatus get displayStatus =>
+      OrderStatus.displayStatus(status, couponExpiresAt);
 
   /// 从 Edge Function / 数据库函数返回的 JSON 构造
   factory MerchantOrder.fromJson(Map<String, dynamic> json) {
@@ -300,6 +335,9 @@ class MerchantOrder {
       couponStatus: json['coupon_status'] as String?,
       couponRedeemedAt: json['coupon_redeemed_at'] != null
           ? DateTime.parse(json['coupon_redeemed_at'] as String)
+          : null,
+      couponExpiresAt: json['coupon_expires_at'] != null
+          ? DateTime.parse(json['coupon_expires_at'] as String)
           : null,
       refundReason: json['refund_reason'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
@@ -334,9 +372,6 @@ class MerchantOrderDetail extends MerchantOrder {
   /// 退款金额（如有）
   final double? refundAmount;
 
-  /// 优惠券过期时间
-  final DateTime? couponExpiresAt;
-
   /// 完整时间线
   final OrderTimeline timeline;
 
@@ -353,6 +388,7 @@ class MerchantOrderDetail extends MerchantOrder {
     super.couponCode,
     super.couponStatus,
     super.couponRedeemedAt,
+    super.couponExpiresAt,
     super.refundReason,
     required super.createdAt,
     super.refundRequestedAt,
@@ -362,7 +398,6 @@ class MerchantOrderDetail extends MerchantOrder {
     this.paymentIntentIdMasked,
     this.paymentStatus,
     this.refundAmount,
-    this.couponExpiresAt,
     required this.timeline,
   });
 
@@ -483,6 +518,10 @@ class OrderFilter {
         return 'refunded';
       case OrderStatus.cancelled:
         return 'expired';
+      case OrderStatus.expired:
+      case OrderStatus.pendingRefund:
+        // 展示用状态，筛选用 DB 的 unused
+        return 'unused';
     }
   }
 
