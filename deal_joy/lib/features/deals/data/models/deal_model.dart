@@ -29,6 +29,7 @@ class DealModel {
   final String dealType; // 'voucher' | 'regular'
   final String? dealCategoryId;
   final String? badgeText; // 自定义角标，如 "Best Value"
+  final int? sortOrder; // 首页展示排序，NULL 表示不展示
 
   const DealModel({
     required this.id,
@@ -59,6 +60,7 @@ class DealModel {
     this.dealType = 'regular',
     this.dealCategoryId,
     this.badgeText,
+    this.sortOrder,
   });
 
   factory DealModel.fromJson(Map<String, dynamic> json) => DealModel(
@@ -93,6 +95,7 @@ class DealModel {
         dealType: json['deal_type'] as String? ?? 'regular',
         dealCategoryId: json['deal_category_id'] as String?,
         badgeText: json['badge_text'] as String?,
+        sortOrder: json['sort_order'] as int?,
       );
 
   // RPC 搜索结果（search_deals_nearby / search_deals_by_city）解析
@@ -118,12 +121,14 @@ class DealModel {
           name: json['merchant_name'] as String? ?? '',
           logoUrl: json['merchant_logo_url'] as String?,
           homepageCoverUrl: json['merchant_homepage_cover_url'] as String?,
+          brandName: json['merchant_brand_name'] as String?,
         ),
         distanceMeters: (json['distance_meters'] as num?)?.toDouble(),
         merchantCity: json['merchant_city'] as String?,
         dealType: json['deal_type'] as String? ?? 'regular',
         dealCategoryId: json['deal_category_id'] as String?,
         badgeText: json['badge_text'] as String?,
+        sortOrder: json['sort_order'] as int?,
       );
 
   /// 解析菜品列表：优先读 dishes 数组，为空时从 package_contents 文本按行解析
@@ -180,6 +185,9 @@ class MerchantSummary {
   final String? homepageCoverUrl;
   final double rating;
   final int reviewCount;
+  // 品牌信息（连锁店才有）
+  final String? brandName;
+  final String? brandLogoUrl;
 
   const MerchantSummary({
     required this.id,
@@ -191,7 +199,12 @@ class MerchantSummary {
     this.homepageCoverUrl,
     this.rating = 0.0,
     this.reviewCount = 0,
+    this.brandName,
+    this.brandLogoUrl,
   });
+
+  /// 是否为连锁店品牌
+  bool get isChainStore => brandName != null && brandName!.isNotEmpty;
 
   factory MerchantSummary.fromJson(Map<String, dynamic> json) =>
       MerchantSummary(
@@ -204,5 +217,8 @@ class MerchantSummary {
         homepageCoverUrl: json['homepage_cover_url'] as String?,
         rating: (json['rating'] as num?)?.toDouble() ?? 0.0,
         reviewCount: json['review_count'] as int? ?? 0,
+        // 品牌信息从 brands join 获取
+        brandName: (json['brands'] as Map<String, dynamic>?)?['name'] as String?,
+        brandLogoUrl: (json['brands'] as Map<String, dynamic>?)?['logo_url'] as String?,
       );
 }

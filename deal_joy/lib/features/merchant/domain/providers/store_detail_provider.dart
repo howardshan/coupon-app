@@ -136,6 +136,18 @@ class MerchantReviewsNotifier
   }
 }
 
+// ── 同品牌其他门店 ──────────────────────────────────────────
+
+final sameBrandStoresProvider = FutureProvider.family<
+    List<Map<String, dynamic>>, ({String brandId, String merchantId})>(
+  (ref, params) async {
+    return ref.watch(storeDetailRepositoryProvider).fetchSameBrandStores(
+          brandId: params.brandId,
+          excludeMerchantId: params.merchantId,
+        );
+  },
+);
+
 // ── 附近推荐商家 ────────────────────────────────────────────
 
 final nearbyMerchantsProvider = FutureProvider.family<

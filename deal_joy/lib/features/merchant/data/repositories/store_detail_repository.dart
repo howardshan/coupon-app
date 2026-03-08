@@ -19,7 +19,7 @@ class StoreDetailRepository {
     try {
       final data = await _client
           .from('merchants')
-          .select('*, merchant_photos(*), merchant_hours(*)')
+          .select('*, merchant_photos(*), merchant_hours(*), brands(id, name, logo_url)')
           .eq('id', merchantId)
           .single();
       return MerchantDetailModel.fromJson(data);
@@ -56,7 +56,7 @@ class StoreDetailRepository {
     try {
       final data = await _client
           .from('deals')
-          .select('*, merchants(id, name, logo_url, phone)')
+          .select('*, merchants(id, name, logo_url, phone, brand_id, brands(name, logo_url))')
           .eq('merchant_id', merchantId)
           .eq('is_active', true)
           .order('is_featured', ascending: false)
@@ -156,6 +156,28 @@ class StoreDetailRepository {
     } on PostgrestException catch (e) {
       throw AppException(
         'Failed to load review stats: ${e.message}',
+        code: e.code,
+      );
+    }
+  }
+
+  /// 获取同品牌其他门店
+  Future<List<Map<String, dynamic>>> fetchSameBrandStores({
+    required String brandId,
+    required String excludeMerchantId,
+  }) async {
+    try {
+      final data = await _client
+          .from('merchants')
+          .select('id, name, address, logo_url, lat, lng')
+          .eq('brand_id', brandId)
+          .neq('id', excludeMerchantId)
+          .eq('status', 'approved')
+          .order('name');
+      return (data as List).cast<Map<String, dynamic>>();
+    } on PostgrestException catch (e) {
+      throw AppException(
+        'Failed to load brand stores: ${e.message}',
         code: e.code,
       );
     }

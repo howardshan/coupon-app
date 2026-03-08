@@ -11,11 +11,12 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { resolveAuth, requirePermission } from "../_shared/auth.ts";
 
 // CORS headers
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-merchant-id',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
 };
 
@@ -87,12 +88,21 @@ serve(async (req: Request) => {
     return errorResponse('Invalid or expired token', 'unauthorized', 401);
   }
 
-  // 查询对应 merchant（已 approved 状态）
+  // 统一鉴权
   const serviceClient = createClient(supabaseUrl, serviceRoleKey);
+  let auth;
+  try {
+    auth = await resolveAuth(serviceClient, user.id, req.headers);
+  } catch (e) {
+    return errorResponse((e as Error).message, 'unauthorized', 403);
+  }
+  requirePermission(auth, 'finance');
+
+  // 查询商家详细信息（含 Stripe 账户信息）
   const { data: merchant, error: merchantError } = await serviceClient
     .from('merchants')
     .select('id, status, stripe_account_id, stripe_account_email, stripe_account_status')
-    .eq('user_id', user.id)
+    .eq('id', auth.merchantId)
     .single();
 
   if (merchantError || !merchant) {

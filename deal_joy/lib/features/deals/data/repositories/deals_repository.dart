@@ -18,7 +18,7 @@ class DealsRepository {
     try {
       var query = _client
           .from('deals')
-          .select('*, merchants(id, name, logo_url, phone, homepage_cover_url)')
+          .select('*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, brands(name, logo_url))')
           .eq('is_active', true)
           .gt('expires_at', DateTime.now().toIso8601String());
 
@@ -54,22 +54,17 @@ class DealsRepository {
     }
   }
 
-  Future<List<DealModel>> fetchFeaturedDeals({String? city}) async {
+  // 获取首页展示券：sort_order 不为空的 active deal，按 sort_order 升序
+  Future<List<DealModel>> fetchFeaturedDeals() async {
     try {
-      var query = _client
+      final data = await _client
           .from('deals')
-          .select('*, merchants(id, name, logo_url, phone, homepage_cover_url)')
+          .select('*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, brands(name, logo_url))')
           .eq('is_active', true)
-          .eq('is_featured', true)
-          .gt('expires_at', DateTime.now().toIso8601String());
-
-      if (city != null && city.isNotEmpty) {
-        query = query.ilike('address', '%$city%');
-      }
-
-      final data = await query
-          .order('created_at', ascending: false)
-          .limit(10);
+          .not('sort_order', 'is', null)
+          .gt('expires_at', DateTime.now().toIso8601String())
+          .order('sort_order', ascending: true)
+          .limit(20);
       return (data as List).map((e) => DealModel.fromJson(e)).toList();
     } on PostgrestException catch (e) {
       throw AppException('Failed to load featured deals: ${e.message}',
@@ -81,7 +76,7 @@ class DealsRepository {
     try {
       final data = await _client
           .from('deals')
-          .select('*, merchants(id, name, logo_url, phone, homepage_cover_url)')
+          .select('*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, brands(name, logo_url))')
           .eq('id', dealId)
           .single();
       return DealModel.fromJson(data);
@@ -120,7 +115,7 @@ class DealsRepository {
     try {
       var query = _client
           .from('deals')
-          .select('*, merchants(id, name, logo_url, phone, homepage_cover_url)')
+          .select('*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, brands(name, logo_url))')
           .eq('merchant_id', merchantId)
           .eq('is_active', true)
           .gt('expires_at', DateTime.now().toIso8601String());
@@ -159,7 +154,7 @@ class DealsRepository {
     try {
       final data = await _client
           .from('deals')
-          .select('*, merchants(id, name, logo_url, phone, homepage_cover_url)')
+          .select('*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, brands(name, logo_url))')
           .inFilter('id', ids);
       final map = {
         for (final d in data as List)
@@ -175,7 +170,7 @@ class DealsRepository {
     try {
       final data = await _client
           .from('saved_deals')
-          .select('deals(*, merchants(id, name, logo_url, phone, homepage_cover_url))')
+          .select('deals(*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, brands(name, logo_url)))')
           .eq('user_id', userId);
       return (data as List)
           .map(

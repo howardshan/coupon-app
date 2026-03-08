@@ -59,6 +59,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final searchQuery = ref.watch(searchQueryProvider);
     final isSearching = searchQuery.isNotEmpty;
     final deals = ref.watch(dealsListProvider(0));
+    final featuredDeals = ref.watch(featuredDealsProvider);
     final merchantResults =
         isSearching ? ref.watch(merchantSearchProvider) : null;
     final merchantList = ref.watch(merchantListProvider);
@@ -69,6 +70,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         children: [
           RefreshIndicator(
             onRefresh: () async {
+              ref.invalidate(featuredDealsProvider);
               ref.invalidate(dealsListProvider);
               ref.invalidate(merchantListProvider);
               if (isSearching) ref.invalidate(merchantSearchProvider);
@@ -383,36 +385,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     ),
                   ),
 
-                  // Deals 一行3个（取前3个）
-                  deals.when(
+                  // 首页展示券（水平滚动）
+                  featuredDeals.when(
                     data: (list) => list.isEmpty
                         ? const SliverToBoxAdapter(
                             child: SizedBox.shrink())
                         : SliverToBoxAdapter(
-                            child: Padding(
-                              padding: const EdgeInsets.fromLTRB(
-                                  16, 8, 16, 0),
-                              child: SizedBox(
-                                height: 180,
-                                child: Row(
-                                  children: List.generate(
-                                    list.length > 3
-                                        ? 3
-                                        : list.length,
-                                    (i) => Expanded(
-                                      child: Padding(
-                                        padding: EdgeInsets.only(
-                                          left: i == 0 ? 0 : 4,
-                                          right: i == 2 ||
-                                                  i == list.length - 1
-                                              ? 0
-                                              : 4,
-                                        ),
-                                        child: _SmallDealCard(
-                                            deal: list[i]),
-                                      ),
-                                    ),
-                                  ),
+                            child: SizedBox(
+                              height: 190,
+                              child: ListView.separated(
+                                scrollDirection: Axis.horizontal,
+                                padding: const EdgeInsets.fromLTRB(
+                                    16, 8, 16, 0),
+                                itemCount: list.length,
+                                separatorBuilder: (_, __) =>
+                                    const SizedBox(width: 8),
+                                itemBuilder: (_, i) => SizedBox(
+                                  width: 160,
+                                  child: _SmallDealCard(deal: list[i]),
                                 ),
                               ),
                             ),

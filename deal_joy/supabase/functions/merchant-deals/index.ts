@@ -12,12 +12,13 @@
 // =============================================================
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { resolveAuth, requirePermission } from "../_shared/auth.ts";
 
 // CORS 响应头
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
+    "authorization, x-client-info, apikey, content-type, x-merchant-id",
   "Access-Control-Allow-Methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
 };
 
@@ -75,18 +76,16 @@ Deno.serve(async (req: Request) => {
     return errorResponse("Unauthorized", 401);
   }
 
-  // 查询当前用户的 merchant_id
-  const { data: merchant, error: merchantError } = await supabaseAdmin
-    .from("merchants")
-    .select("id")
-    .eq("user_id", user.id)
-    .single();
-
-  if (merchantError || !merchant) {
-    return errorResponse("Merchant not found for this user", 404);
+  // 统一鉴权：支持门店 owner / 品牌管理员 / manager
+  let auth;
+  try {
+    auth = await resolveAuth(supabaseAdmin, user.id, req.headers);
+  } catch (e) {
+    return errorResponse((e as Error).message, 403);
   }
+  requirePermission(auth, "deals");
 
-  const merchantId: string = merchant.id;
+  const merchantId: string = auth.merchantId;
 
   // 解析 URL 路径，提取 deal_id 和子路径
   const url = new URL(req.url);

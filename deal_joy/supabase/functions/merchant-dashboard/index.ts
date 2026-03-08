@@ -5,11 +5,12 @@
 // ============================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { resolveAuth, requirePermission } from "../_shared/auth.ts";
 
 // CORS 响应头（允许商家端 App 跨域调用）
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-merchant-id',
   'Access-Control-Allow-Methods': 'GET, PATCH, OPTIONS',
 };
 
@@ -65,21 +66,28 @@ Deno.serve(async (req: Request) => {
     }
 
     // --------------------------------------------------------
-    // 2. 查询当前用户对应的 merchant 记录
+    // 2. 统一鉴权
     // --------------------------------------------------------
-    const { data: merchant, error: merchantError } = await supabase
+    let auth;
+    try {
+      auth = await resolveAuth(serviceClient, user.id, req.headers);
+    } catch (e) {
+      return errorResponse((e as Error).message, 403);
+    }
+    requirePermission(auth, 'orders');
+
+    const merchantId: string = auth.merchantId;
+
+    // 查询商家详细信息（dashboard 展示需要）
+    const { data: merchant, error: merchantError } = await serviceClient
       .from('merchants')
       .select('id, name, is_online, status')
-      .eq('user_id', user.id)
+      .eq('id', merchantId)
       .single();
 
     if (merchantError || !merchant) {
       return errorResponse('Merchant profile not found', 404);
     }
-
-    // 只有 approved 状态的商家才能使用工作台
-    // （pending/rejected 状态仍可读取数据，但不能切换状态）
-    const merchantId: string = merchant.id;
 
     // --------------------------------------------------------
     // 3. 根据 HTTP method 路由

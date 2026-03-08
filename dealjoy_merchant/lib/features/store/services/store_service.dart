@@ -4,6 +4,8 @@
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/store_info.dart';
+import '../models/store_summary.dart';
+import '../models/staff_member.dart';
 
 // ============================================================
 // StoreService — 所有门店信息相关的 Supabase 操作
@@ -16,6 +18,27 @@ class StoreService {
 
   // Edge Function 基础 URL 路径
   static const String _functionName = 'merchant-store';
+  static const String _staffFunctionName = 'merchant-staff-mgmt';
+  static const String _brandFunctionName = 'merchant-brand';
+
+  // 品牌管理员当前操作的门店 ID（非品牌管理员为 null）
+  String? _activeMerchantId;
+
+  /// 设置当前操作的门店 ID（品牌管理员切换门店时调用）
+  void setActiveMerchantId(String? merchantId) {
+    _activeMerchantId = merchantId;
+  }
+
+  /// 获取当前操作的门店 ID
+  String? get activeMerchantId => _activeMerchantId;
+
+  /// 构建带 X-Merchant-Id 的 headers（品牌管理员需要）
+  Map<String, String> get _merchantHeaders {
+    if (_activeMerchantId != null) {
+      return {'x-merchant-id': _activeMerchantId!};
+    }
+    return {};
+  }
 
   // ----------------------------------------------------------
   // 确保 access token 有效（functions.invoke 不会自动刷新）
@@ -38,6 +61,7 @@ class StoreService {
     final response = await _supabase.functions.invoke(
       _functionName,
       method: HttpMethod.get,
+      headers: _merchantHeaders,
     );
 
     if (response.status != 200) {
@@ -143,6 +167,7 @@ class StoreService {
       _functionName,
       method: HttpMethod.patch,
       body: body,
+      headers: _merchantHeaders,
     );
 
     if (response.status != 200) {
@@ -179,6 +204,7 @@ class StoreService {
       _functionName,
       method: HttpMethod.patch,
       body: {'homepage_cover_url': publicUrl},
+      headers: _merchantHeaders,
     );
 
     if (response.status != 200) {
@@ -214,6 +240,7 @@ class StoreService {
       _functionName,
       method: HttpMethod.patch,
       body: {'homepage_cover_url': null},
+      headers: _merchantHeaders,
     );
 
     if (response.status != 200) {
@@ -235,12 +262,9 @@ class StoreService {
       body: {
         'hours': hours.map((h) => h.toJson()).toList(),
       },
-      // Edge Function 路由: PUT /merchant-store/hours
-      // supabase_flutter invoke 方法需要在 function name 后加子路径
+      headers: _merchantHeaders,
     );
 
-    // 注意：supabase_flutter 的 invoke 暂不支持子路径，改用 HTTP 客户端直接调用
-    // 此处通过 _invokeWithPath 辅助方法实现
     if (response.status != 200) {
       throw _handleError(response);
     }
@@ -291,6 +315,7 @@ class StoreService {
         'photo_type': type.value,
         'sort_order': sortOrder,
       },
+      headers: _merchantHeaders,
     );
 
     if (response.status != 200 && response.status != 201) {
@@ -316,6 +341,7 @@ class StoreService {
     final response = await _supabase.functions.invoke(
       '$_functionName/photos/$photoId',
       method: HttpMethod.delete,
+      headers: _merchantHeaders,
     );
 
     if (response.status != 200) {
@@ -334,6 +360,132 @@ class StoreService {
       '$_functionName/photos/reorder',
       method: HttpMethod.patch,
       body: {'ordered_ids': orderedIds},
+      headers: _merchantHeaders,
+    );
+
+    if (response.status != 200) {
+      throw _handleError(response);
+    }
+  }
+
+  // ==========================================================
+  // 品牌管理相关方法（调 merchant-brand Edge Function）
+  // ==========================================================
+
+  // ----------------------------------------------------------
+  // 获取品牌管理员旗下所有门店列表
+  // ----------------------------------------------------------
+  Future<List<StoreSummary>> fetchBrandStores() async {
+    await _ensureFreshSession();
+    final response = await _supabase.functions.invoke(
+      '$_functionName/stores-list',
+      method: HttpMethod.get,
+      headers: _merchantHeaders,
+    );
+
+    if (response.status != 200) {
+      throw _handleError(response);
+    }
+
+    final data = response.data as Map<String, dynamic>;
+    final stores = data['stores'] as List<dynamic>? ?? [];
+    return stores
+        .map((e) => StoreSummary.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  // ==========================================================
+  // 员工管理相关方法（调 merchant-staff-mgmt Edge Function）
+  // ==========================================================
+
+  // ----------------------------------------------------------
+  // 获取员工列表 + 待处理邀请
+  // ----------------------------------------------------------
+  Future<({List<StaffMember> staff, List<StaffInvitation> invitations})>
+      fetchStaff() async {
+    await _ensureFreshSession();
+    final response = await _supabase.functions.invoke(
+      _staffFunctionName,
+      method: HttpMethod.get,
+      headers: _merchantHeaders,
+    );
+
+    if (response.status != 200) {
+      throw _handleError(response);
+    }
+
+    final data = response.data as Map<String, dynamic>;
+    final staffList = (data['staff'] as List<dynamic>? ?? [])
+        .map((e) => StaffMember.fromJson(e as Map<String, dynamic>))
+        .toList();
+    final invitationList = (data['invitations'] as List<dynamic>? ?? [])
+        .map((e) => StaffInvitation.fromJson(e as Map<String, dynamic>))
+        .toList();
+
+    return (staff: staffList, invitations: invitationList);
+  }
+
+  // ----------------------------------------------------------
+  // 邀请员工
+  // ----------------------------------------------------------
+  Future<void> inviteStaff({
+    required String email,
+    required String role,
+  }) async {
+    await _ensureFreshSession();
+    final response = await _supabase.functions.invoke(
+      '$_staffFunctionName/invite',
+      method: HttpMethod.post,
+      body: {
+        'email': email,
+        'role': role,
+      },
+      headers: _merchantHeaders,
+    );
+
+    if (response.status != 200 && response.status != 201) {
+      throw _handleError(response);
+    }
+  }
+
+  // ----------------------------------------------------------
+  // 修改员工角色/昵称/启用状态
+  // ----------------------------------------------------------
+  Future<void> updateStaff({
+    required String staffId,
+    String? role,
+    String? nickname,
+    bool? isActive,
+  }) async {
+    final body = <String, dynamic>{};
+    if (role != null) body['role'] = role;
+    if (nickname != null) body['nickname'] = nickname;
+    if (isActive != null) body['is_active'] = isActive;
+
+    if (body.isEmpty) return;
+
+    await _ensureFreshSession();
+    final response = await _supabase.functions.invoke(
+      '$_staffFunctionName/$staffId',
+      method: HttpMethod.patch,
+      body: body,
+      headers: _merchantHeaders,
+    );
+
+    if (response.status != 200) {
+      throw _handleError(response);
+    }
+  }
+
+  // ----------------------------------------------------------
+  // 移除员工
+  // ----------------------------------------------------------
+  Future<void> removeStaff(String staffId) async {
+    await _ensureFreshSession();
+    final response = await _supabase.functions.invoke(
+      '$_staffFunctionName/$staffId',
+      method: HttpMethod.delete,
+      headers: _merchantHeaders,
     );
 
     if (response.status != 200) {

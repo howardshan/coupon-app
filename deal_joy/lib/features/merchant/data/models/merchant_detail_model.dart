@@ -21,6 +21,9 @@ class MerchantDetailModel {
   final List<MerchantHourModel> hours;
   final String headerPhotoStyle; // 'single' 或 'triple'
   final List<String> headerPhotos; // triple 模式 3 张 URL
+  final String? brandId;
+  final String? brandName;
+  final String? brandLogoUrl;
 
   const MerchantDetailModel({
     required this.id,
@@ -41,6 +44,9 @@ class MerchantDetailModel {
     this.hours = const [],
     this.headerPhotoStyle = 'single',
     this.headerPhotos = const [],
+    this.brandId,
+    this.brandName,
+    this.brandLogoUrl,
   });
 
   factory MerchantDetailModel.fromJson(Map<String, dynamic> json) {
@@ -64,6 +70,9 @@ class MerchantDetailModel {
         ? tagsRaw.map((t) => t.toString()).toList()
         : <String>[];
 
+    // 解析品牌信息（LEFT JOIN brands）
+    final brandJson = json['brands'] as Map<String, dynamic>?;
+
     return MerchantDetailModel(
       id: json['id'] as String,
       name: json['name'] as String? ?? '',
@@ -86,8 +95,14 @@ class MerchantDetailModel {
               ?.map((e) => e.toString())
               .toList() ??
           [],
+      brandId: json['brand_id'] as String?,
+      brandName: brandJson?['name'] as String?,
+      brandLogoUrl: brandJson?['logo_url'] as String?,
     );
   }
+
+  /// 是否连锁店
+  bool get isChainStore => brandId != null;
 
   /// 是否使用三图并排头图模式
   bool get useTripleHeader =>

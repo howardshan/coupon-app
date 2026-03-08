@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/store_info.dart';
+import '../models/store_summary.dart';
+import '../models/staff_member.dart';
 import '../services/store_service.dart';
 
 // ============================================================
@@ -280,6 +282,14 @@ class StoreNotifier extends AsyncNotifier<StoreInfo> {
       state = AsyncValue.error(e, st);
     }
   }
+
+  // ----------------------------------------------------------
+  // 切换当前操作的门店（品牌管理员专用）
+  // ----------------------------------------------------------
+  Future<void> switchStore(String merchantId) async {
+    _service.setActiveMerchantId(merchantId);
+    await refresh();
+  }
 }
 
 // ============================================================
@@ -287,3 +297,71 @@ class StoreNotifier extends AsyncNotifier<StoreInfo> {
 // ============================================================
 final storeProvider =
     AsyncNotifierProvider<StoreNotifier, StoreInfo>(StoreNotifier.new);
+
+// ============================================================
+// brandStoresProvider — 品牌管理员旗下门店列表
+// ============================================================
+final brandStoresProvider = FutureProvider<List<StoreSummary>>((ref) async {
+  final service = ref.read(storeServiceProvider);
+  return service.fetchBrandStores();
+});
+
+// ============================================================
+// StaffNotifier — 员工列表 + 邀请管理
+// ============================================================
+class StaffNotifier
+    extends AsyncNotifier<({List<StaffMember> staff, List<StaffInvitation> invitations})> {
+  late StoreService _service;
+
+  @override
+  Future<({List<StaffMember> staff, List<StaffInvitation> invitations})> build() async {
+    _service = ref.read(storeServiceProvider);
+    return _service.fetchStaff();
+  }
+
+  /// 刷新员工列表
+  Future<void> refresh() async {
+    state = const AsyncValue.loading();
+    state = await AsyncValue.guard(() => _service.fetchStaff());
+  }
+
+  /// 邀请员工
+  Future<void> inviteStaff({
+    required String email,
+    required String role,
+  }) async {
+    await _service.inviteStaff(email: email, role: role);
+    await refresh();
+  }
+
+  /// 修改员工角色/昵称/启用状态
+  Future<void> updateStaff({
+    required String staffId,
+    String? role,
+    String? nickname,
+    bool? isActive,
+  }) async {
+    await _service.updateStaff(
+      staffId: staffId,
+      role: role,
+      nickname: nickname,
+      isActive: isActive,
+    );
+    await refresh();
+  }
+
+  /// 移除员工
+  Future<void> removeStaff(String staffId) async {
+    await _service.removeStaff(staffId);
+    await refresh();
+  }
+}
+
+// ============================================================
+// staffProvider — 员工列表 provider
+// ============================================================
+final staffProvider = AsyncNotifierProvider<
+    StaffNotifier,
+    ({List<StaffMember> staff, List<StaffInvitation> invitations})>(
+  StaffNotifier.new,
+);

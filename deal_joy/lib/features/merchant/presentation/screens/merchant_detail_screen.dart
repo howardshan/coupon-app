@@ -167,6 +167,7 @@ class _MerchantDetailScreenState extends ConsumerState<MerchantDetailScreen>
                   merchantId: widget.merchantId,
                   lat: merchant.lat,
                   lng: merchant.lng,
+                  brandId: merchant.brandId,
                 ),
               ],
             ),

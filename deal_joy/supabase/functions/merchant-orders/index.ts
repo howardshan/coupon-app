@@ -9,11 +9,12 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { resolveAuth, requirePermission } from "../_shared/auth.ts";
 
 // CORS headers
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-merchant-id',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
 };
 
@@ -67,22 +68,17 @@ serve(async (req: Request) => {
     return errorResponse('Invalid or expired token', 'unauthorized', 401);
   }
 
-  // 查询当前用户对应的 merchant（必须是已 approved 的）
+  // 统一鉴权
   const serviceClient = createClient(supabaseUrl, serviceRoleKey);
-  const { data: merchant, error: merchantError } = await serviceClient
-    .from('merchants')
-    .select('id, status')
-    .eq('user_id', user.id)
-    .single();
-
-  if (merchantError || !merchant) {
-    return errorResponse('Merchant account not found', 'merchant_not_found', 404);
+  let auth;
+  try {
+    auth = await resolveAuth(serviceClient, user.id, req.headers);
+  } catch (e) {
+    return errorResponse((e as Error).message, 'unauthorized', 403);
   }
-  if (merchant.status !== 'approved') {
-    return errorResponse('Merchant account is not approved', 'merchant_not_approved', 403);
-  }
+  requirePermission(auth, 'orders');
 
-  const merchantId = merchant.id as string;
+  const merchantId = auth.merchantId;
 
   // 解析路径（Supabase 实际 pathname 为 /functions/v1/merchant-orders 或 /functions/v1/merchant-orders/export 或 /functions/v1/merchant-orders/:id）
   const url = new URL(req.url);
