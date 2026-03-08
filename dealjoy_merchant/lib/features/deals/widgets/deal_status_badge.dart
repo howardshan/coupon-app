@@ -100,5 +100,11 @@ _BadgeConfig _badgeConfig(DealStatus status) {
         textColor:       Color(0xFFC62828),
         dotColor:        Color(0xFFEF5350),
       );
+    case DealStatus.expired:
+      return const _BadgeConfig(
+        backgroundColor: Color(0xFFEEEEEE),
+        textColor:       Color(0xFF616161),
+        dotColor:        Color(0xFF757575),
+      );
   }
 }

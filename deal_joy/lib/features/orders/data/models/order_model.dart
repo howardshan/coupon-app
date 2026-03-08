@@ -12,6 +12,8 @@ class OrderModel {
   final DateTime? refundRequestedAt;
   final DateTime? refundedAt;
   final DealSummary? deal;
+  /// 券过期时间（来自 coupons.expires_at，用于列表展示「按时间已过期」）
+  final DateTime? couponExpiresAt;
 
   const OrderModel({
     required this.id,
@@ -27,9 +29,16 @@ class OrderModel {
     this.refundRequestedAt,
     this.refundedAt,
     this.deal,
+    this.couponExpiresAt,
   });
 
-  factory OrderModel.fromJson(Map<String, dynamic> json) => OrderModel(
+  factory OrderModel.fromJson(Map<String, dynamic> json) {
+    DateTime? couponExpiresAt;
+    final coupons = json['coupons'];
+    if (coupons is Map<String, dynamic> && coupons['expires_at'] != null) {
+      couponExpiresAt = DateTime.parse(coupons['expires_at'] as String);
+    }
+    return OrderModel(
         id: json['id'] as String,
         userId: json['user_id'] as String,
         dealId: json['deal_id'] as String,
@@ -49,13 +58,18 @@ class OrderModel {
         deal: json['deals'] != null
             ? DealSummary.fromJson(json['deals'] as Map<String, dynamic>)
             : null,
+        couponExpiresAt: couponExpiresAt,
       );
+  }
 
   bool get isUnused => status == 'unused';
   bool get isUsed => status == 'used';
   bool get isRefunded => status == 'refunded';
   bool get isRefundRequested => status == 'refund_requested';
   bool get isExpired => status == 'expired';
+  /// 未使用订单的券已按时间过期（用于列表展示）
+  bool get isExpiredByDate =>
+      couponExpiresAt != null && DateTime.now().isAfter(couponExpiresAt!);
 
   /// 仅未使用的订单可以退款（已使用/过期/已退款/已申请退款 均不可）
   bool get canRefund => isUnused;
