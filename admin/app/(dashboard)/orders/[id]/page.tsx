@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import OrderRefundButtons from '@/components/order-refund-buttons'
-import { getOrderDisplayStatus } from '@/lib/order-display-status'
+import { getOrderDetailStatusTags } from '@/lib/order-display-status'
 
 const STATUS_STYLES: Record<string, string> = {
   unused: 'bg-blue-100 text-blue-700',
@@ -66,7 +66,7 @@ export default async function OrderDetailPage({
   const deal = order.deals as { id: string; title: string; discount_price?: number; expires_at?: string | null; merchants?: { id: string; name: string } | null } | null
   const merchant = deal?.merchants
   const customer = order.users as { id: string; email: string } | null
-  const displayStatus = getOrderDisplayStatus(order)
+  const statusTags = getOrderDetailStatusTags(order)
 
   return (
     <div>
@@ -87,16 +87,21 @@ export default async function OrderDetailPage({
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Status</h2>
           <div className="flex items-center gap-3 flex-wrap">
-            <span className={`px-3 py-1 rounded-full text-sm font-medium ${STATUS_STYLES[displayStatus] ?? STATUS_STYLES.used}`}>
-              {STATUS_LABELS[displayStatus] ?? displayStatus}
-            </span>
+            {statusTags.map((tag) => (
+              <span
+                key={tag}
+                className={`px-3 py-1 rounded-full text-sm font-medium ${STATUS_STYLES[tag] ?? STATUS_STYLES.used}`}
+              >
+                {STATUS_LABELS[tag] ?? tag}
+              </span>
+            ))}
             {order.status === 'refund_requested' && (
               <OrderRefundButtons orderId={order.id} initialStatus={order.status} />
             )}
           </div>
-          {(displayStatus === 'expired' || displayStatus === 'pending_refund') && order.status === 'unused' && (
+          {(statusTags.includes('expired') || statusTags.includes('pending_refund')) && order.status === 'unused' && (
             <p className="text-sm text-gray-500 mt-2">
-              {displayStatus === 'expired' ? 'Coupon expired; will be auto-refunded 24h after expiry.' : 'Auto-refund in progress (runs hourly).'}
+              {statusTags.includes('expired') ? 'Coupon expired; will be auto-refunded 24h after expiry.' : 'Auto-refund in progress (runs hourly).'}
             </p>
           )}
         </div>
