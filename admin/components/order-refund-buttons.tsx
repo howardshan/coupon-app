@@ -11,6 +11,8 @@ const STATUS_STYLES: Record<string, string> = {
   refunded: 'bg-purple-100 text-purple-700',
   refund_requested: 'bg-orange-100 text-orange-700',
   expired: 'bg-red-100 text-red-700',
+  pending_refund: 'bg-amber-100 text-amber-700',
+  refund_failed: 'bg-red-100 text-red-700',
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -19,23 +21,29 @@ const STATUS_LABELS: Record<string, string> = {
   refunded: 'Refunded',
   refund_requested: 'Refund Requested',
   expired: 'Expired',
+  pending_refund: 'Pending Refund',
+  refund_failed: 'Refund Failed',
 }
 
 export default function OrderRefundButtons({
   orderId,
   initialStatus,
+  displayStatus,
 }: {
   orderId: string
   initialStatus: string
+  /** 展示用状态（如 expired / pending_refund），不传则用 initialStatus */
+  displayStatus?: string
 }) {
   const router = useRouter()
   const [status, setStatus] = useState(initialStatus)
   const [isPending, startTransition] = useTransition()
+  const label = displayStatus ?? status
 
   if (status !== 'refund_requested') {
     return (
-      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_STYLES[status] ?? STATUS_STYLES.used}`}>
-        {STATUS_LABELS[status] ?? status}
+      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_STYLES[label] ?? STATUS_STYLES.used}`}>
+        {STATUS_LABELS[label] ?? label}
       </span>
     )
   }

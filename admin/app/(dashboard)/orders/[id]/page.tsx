@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import OrderRefundButtons from '@/components/order-refund-buttons'
+import { getOrderDisplayStatus } from '@/lib/order-display-status'
 
 const STATUS_STYLES: Record<string, string> = {
   unused: 'bg-blue-100 text-blue-700',
@@ -9,6 +10,8 @@ const STATUS_STYLES: Record<string, string> = {
   refunded: 'bg-purple-100 text-purple-700',
   refund_requested: 'bg-orange-100 text-orange-700',
   expired: 'bg-red-100 text-red-700',
+  pending_refund: 'bg-amber-100 text-amber-700',
+  refund_failed: 'bg-red-100 text-red-700',
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -17,6 +20,8 @@ const STATUS_LABELS: Record<string, string> = {
   refunded: 'Refunded',
   refund_requested: 'Refund Requested',
   expired: 'Expired',
+  pending_refund: 'Pending Refund',
+  refund_failed: 'Refund Failed',
 }
 
 export default async function OrderDetailPage({
@@ -51,16 +56,17 @@ export default async function OrderDetailPage({
       refund_requested_at,
       refunded_at,
       users ( id, email ),
-      deals ( id, title, discount_price, merchants ( id, name ) )
+      deals ( id, title, discount_price, expires_at, merchants ( id, name ) )
     `)
     .eq('id', id)
     .single()
 
   if (!order) notFound()
 
-  const deal = order.deals as { id: string; title: string; discount_price?: number; merchants?: { id: string; name: string } | null } | null
+  const deal = order.deals as { id: string; title: string; discount_price?: number; expires_at?: string | null; merchants?: { id: string; name: string } | null } | null
   const merchant = deal?.merchants
   const customer = order.users as { id: string; email: string } | null
+  const displayStatus = getOrderDisplayStatus(order)
 
   return (
     <div>
@@ -81,13 +87,18 @@ export default async function OrderDetailPage({
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Status</h2>
           <div className="flex items-center gap-3 flex-wrap">
-            <span className={`px-3 py-1 rounded-full text-sm font-medium ${STATUS_STYLES[order.status as string] ?? STATUS_STYLES.used}`}>
-              {STATUS_LABELS[order.status as string] ?? order.status}
+            <span className={`px-3 py-1 rounded-full text-sm font-medium ${STATUS_STYLES[displayStatus] ?? STATUS_STYLES.used}`}>
+              {STATUS_LABELS[displayStatus] ?? displayStatus}
             </span>
             {order.status === 'refund_requested' && (
               <OrderRefundButtons orderId={order.id} initialStatus={order.status} />
             )}
           </div>
+          {(displayStatus === 'expired' || displayStatus === 'pending_refund') && order.status === 'unused' && (
+            <p className="text-sm text-gray-500 mt-2">
+              {displayStatus === 'expired' ? 'Coupon expired; will be auto-refunded 24h after expiry.' : 'Auto-refund in progress (runs hourly).'}
+            </p>
+          )}
         </div>
 
         {/* Order & deal info */}
