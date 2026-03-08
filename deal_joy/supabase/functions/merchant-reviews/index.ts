@@ -9,12 +9,13 @@
 // =============================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { resolveAuth, requirePermission } from "../_shared/auth.ts";
 
 // CORS 响应头（支持 Flutter app 跨域调用）
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers':
-    'authorization, x-client-info, apikey, content-type',
+    'authorization, x-client-info, apikey, content-type, x-merchant-id',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 };
 
@@ -56,6 +57,22 @@ Deno.serve(async (req: Request) => {
   // 服务端客户端：绕过 RLS（仅用于写 merchant_reply）
   const serviceClient = createClient(supabaseUrl, serviceKey);
 
+  // 统一鉴权
+  const { data: { user }, error: userError } = await userClient.auth.getUser();
+  if (userError || !user) {
+    return errorResponse('unauthorized', 'Invalid or expired token', 401);
+  }
+
+  let auth;
+  try {
+    auth = await resolveAuth(serviceClient, user.id, req.headers);
+  } catch (e) {
+    return errorResponse('unauthorized', (e as Error).message, 403);
+  }
+  requirePermission(auth, 'reviews');
+
+  const merchantId = auth.merchantId;
+
   // 解析 URL 路径
   const url     = new URL(req.url);
   const pathRaw = url.pathname;
@@ -73,19 +90,19 @@ Deno.serve(async (req: Request) => {
 
   // GET /merchant-reviews/stats — 评价统计
   if (req.method === 'GET' && subPath === '/stats') {
-    return await handleGetStats(userClient);
+    return await handleGetStats(userClient, merchantId);
   }
 
   // GET /merchant-reviews — 评价列表
   if (req.method === 'GET' && (subPath === '/' || subPath === '')) {
-    return await handleListReviews(userClient, url.searchParams);
+    return await handleListReviews(userClient, url.searchParams, merchantId);
   }
 
   // POST /merchant-reviews/:id/reply — 提交回复
   const replyMatch = subPath.match(/^\/([^/]+)\/reply$/);
   if (req.method === 'POST' && replyMatch) {
     const reviewId = replyMatch[1];
-    return await handlePostReply(userClient, serviceClient, reviewId, req);
+    return await handlePostReply(userClient, serviceClient, reviewId, req, merchantId);
   }
 
   return errorResponse('not_found', 'Route not found', 404);
@@ -101,14 +118,9 @@ Deno.serve(async (req: Request) => {
 async function handleListReviews(
   client: ReturnType<typeof createClient>,
   params: URLSearchParams,
+  merchantId: string,
 ): Promise<Response> {
   try {
-    // 获取当前登录商家 ID
-    const merchantId = await getCurrentMerchantId(client);
-    if (!merchantId) {
-      return errorResponse('merchant_not_found', 'Merchant account not found', 404);
-    }
-
     // 解析查询参数
     const ratingFilter = params.get('rating') ? parseInt(params.get('rating')!, 10) : null;
     const page         = Math.max(1, parseInt(params.get('page') ?? '1', 10));
@@ -192,6 +204,7 @@ async function handlePostReply(
   serviceClient: ReturnType<typeof createClient>,
   reviewId:      string,
   req:           Request,
+  merchantId:    string,
 ): Promise<Response> {
   try {
     // 解析请求体
@@ -208,12 +221,6 @@ async function handlePostReply(
     }
     if (reply.length > 300) {
       return errorResponse('validation_error', 'Reply must be 300 characters or less', 400);
-    }
-
-    // 获取当前商家 ID
-    const merchantId = await getCurrentMerchantId(userClient);
-    if (!merchantId) {
-      return errorResponse('merchant_not_found', 'Merchant account not found', 404);
     }
 
     // 查询该评价，验证:
@@ -275,14 +282,9 @@ async function handlePostReply(
 // =============================================================
 async function handleGetStats(
   client: ReturnType<typeof createClient>,
+  merchantId: string,
 ): Promise<Response> {
   try {
-    // 获取当前商家 ID
-    const merchantId = await getCurrentMerchantId(client);
-    if (!merchantId) {
-      return errorResponse('merchant_not_found', 'Merchant account not found', 404);
-    }
-
     // 调用 DB 函数
     const { data, error } = await client.rpc('get_review_stats', {
       p_merchant_id: merchantId,
@@ -320,22 +322,3 @@ async function handleGetStats(
   }
 }
 
-// =============================================================
-// 工具函数: getCurrentMerchantId
-// 从 auth.uid() 查询 merchants 表获取 merchant ID
-// =============================================================
-async function getCurrentMerchantId(
-  client: ReturnType<typeof createClient>,
-): Promise<string | null> {
-  const { data: { user } } = await client.auth.getUser();
-  if (!user) return null;
-
-  const { data, error } = await client
-    .from('merchants')
-    .select('id')
-    .eq('user_id', user.id)
-    .maybeSingle();
-
-  if (error || !data) return null;
-  return (data as Record<string, unknown>).id as string;
-}

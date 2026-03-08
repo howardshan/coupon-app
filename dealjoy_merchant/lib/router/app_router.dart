@@ -24,7 +24,7 @@ import '../features/settings/pages/settings_page.dart';
 import '../features/settings/pages/notification_preferences_page.dart';
 import '../features/settings/pages/help_center_page.dart';
 import '../features/settings/pages/account_security_page.dart';
-import '../features/settings/pages/staff_accounts_page.dart';
+import '../features/store/pages/staff_manage_page.dart';
 
 // ── 认证 ─────────────────────────────────────────────────────
 import '../features/merchant_auth/pages/merchant_login_page.dart';
@@ -101,19 +101,54 @@ class MerchantStatusCache {
       return _cachedStatus!;
     }
 
-    // 查询数据库
+    // 查询数据库：依次检查 门店 owner → 品牌管理员 → 门店员工
     try {
-      final data = await Supabase.instance.client
+      final supabase = Supabase.instance.client;
+
+      // 1. 检查是否为门店 owner
+      final merchantData = await supabase
           .from('merchants')
           .select('status')
           .eq('user_id', user.id)
           .maybeSingle();
 
-      if (data == null) {
-        _cachedStatus = 'none';
-      } else {
-        _cachedStatus = data['status'] as String? ?? 'pending';
+      if (merchantData != null) {
+        _cachedStatus = merchantData['status'] as String? ?? 'pending';
+        _cachedUserId = user.id;
+        return _cachedStatus!;
       }
+
+      // 2. 检查是否为品牌管理员（brand_admins 表）
+      final brandAdmin = await supabase
+          .from('brand_admins')
+          .select('id')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+      if (brandAdmin != null) {
+        // 品牌管理员视为 approved（旗下门店已存在）
+        _cachedStatus = 'approved';
+        _cachedUserId = user.id;
+        return _cachedStatus!;
+      }
+
+      // 3. 检查是否为门店员工（merchant_staff 表）
+      final staffData = await supabase
+          .from('merchant_staff')
+          .select('merchant_id, is_active')
+          .eq('user_id', user.id)
+          .eq('is_active', true)
+          .maybeSingle();
+
+      if (staffData != null) {
+        // 员工视为 approved（关联门店已存在）
+        _cachedStatus = 'approved';
+        _cachedUserId = user.id;
+        return _cachedStatus!;
+      }
+
+      // 4. 检查是否有待审核的商家申请（merchant_applications 等场景）
+      _cachedStatus = 'none';
       _cachedUserId = user.id;
     } catch (_) {
       // 查询失败时不缓存，下次重试
@@ -275,7 +310,7 @@ final appRouter = GoRouter(
             ),
             GoRoute(
               path: 'staff',
-              builder: (context, state) => const StaffAccountsPage(),
+              builder: (context, state) => const StaffManagePage(),
             ),
           ],
         ),

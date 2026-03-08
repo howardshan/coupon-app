@@ -4,12 +4,13 @@
 // =============================================================
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { resolveAuth, requirePermission } from "../_shared/auth.ts";
 
 // CORS 响应头（允许跨域调用）
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
+    "authorization, x-client-info, apikey, content-type, x-merchant-id",
   "Access-Control-Allow-Methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
 };
 
@@ -67,19 +68,6 @@ Deno.serve(async (req: Request) => {
     return errorResponse("Unauthorized", 401);
   }
 
-  // 查询当前用户关联的 merchant_id
-  const { data: merchant, error: merchantError } = await supabaseAdmin
-    .from("merchants")
-    .select("id")
-    .eq("user_id", user.id)
-    .single();
-
-  if (merchantError || !merchant) {
-    return errorResponse("Merchant not found for this user", 404);
-  }
-
-  const merchantId = merchant.id;
-
   // 解析 URL 路径
   const url = new URL(req.url);
   const pathSegments = url.pathname
@@ -87,17 +75,42 @@ Deno.serve(async (req: Request) => {
     .split("/")
     .filter(Boolean);
 
+  // 统一鉴权：支持门店 owner / 品牌管理员 / manager / 员工
+  let auth;
+  try {
+    auth = await resolveAuth(supabaseAdmin, user.id, req.headers);
+  } catch (e) {
+    return errorResponse((e as Error).message, 403);
+  }
+
+  const merchantId = auth.merchantId;
+
   // 路由分发
   try {
     // --- GET /merchant-store ---
-    // 获取完整门店信息：基本信息 + 照片列表 + 营业时间 + 标签
+    // 获取完整门店信息：基本信息 + 照片列表 + 营业时间 + 品牌信息
     if (req.method === "GET" && pathSegments.length === 0) {
-      return await handleGetStore(supabaseAdmin, merchantId);
+      return await handleGetStore(supabaseAdmin, merchantId, auth);
+    }
+
+    // --- GET /merchant-store/stores-list ---
+    // 品牌管理员获取旗下所有门店列表
+    if (req.method === "GET" && pathSegments[0] === "stores-list") {
+      if (!auth.isBrandAdmin || !auth.brandId) {
+        return errorResponse("Only brand admins can list stores", 403);
+      }
+      const { data: stores } = await supabaseAdmin
+        .from("merchants")
+        .select("id, name, address, city, status, logo_url, phone")
+        .eq("brand_id", auth.brandId)
+        .order("created_at");
+      return jsonResponse({ stores: stores ?? [] });
     }
 
     // --- PATCH /merchant-store ---
     // 更新基本信息（店名、简介、电话、地址、标签）
     if (req.method === "PATCH" && pathSegments.length === 0) {
+      requirePermission(auth, "store");
       const body = await req.json();
       return await handlePatchStore(supabaseAdmin, merchantId, body);
     }
@@ -160,13 +173,14 @@ Deno.serve(async (req: Request) => {
 // =============================================================
 async function handleGetStore(
   supabase: ReturnType<typeof createClient>,
-  merchantId: string
+  merchantId: string,
+  auth: { role: string; isBrandAdmin: boolean; brandId: string | null; permissions: string[] }
 ): Promise<Response> {
-  // 获取基本信息
+  // 获取基本信息 + 品牌信息（如果有）
   const { data: storeData, error: storeError } = await supabase
     .from("merchants")
     .select(
-      "id, name, description, phone, address, lat, lng, category, tags, is_online, status, homepage_cover_url, header_photo_style, header_photos"
+      "id, name, description, phone, address, lat, lng, category, tags, is_online, status, homepage_cover_url, header_photo_style, header_photos, brand_id, brands(id, name, logo_url, description)"
     )
     .eq("id", merchantId)
     .single();
@@ -202,6 +216,10 @@ async function handleGetStore(
     store: storeData,
     photos: photos ?? [],
     hours: hours ?? [],
+    // 权限信息：前端据此控制 UI 显隐
+    role: auth.role,
+    is_brand_admin: auth.isBrandAdmin,
+    permissions: auth.permissions,
   });
 }
 

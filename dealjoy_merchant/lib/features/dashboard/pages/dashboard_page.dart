@@ -10,6 +10,7 @@ import '../models/dashboard_stats.dart';
 import '../providers/dashboard_provider.dart';
 import '../widgets/stats_card.dart';
 import '../widgets/shortcut_grid.dart';
+import '../../store/widgets/store_selector.dart';
 
 // ============================================================
 // DashboardPage — 工作台主页（ConsumerWidget）
@@ -76,8 +77,11 @@ class DashboardPage extends ConsumerWidget {
           ),
         ],
       ),
-      // 右侧：在线/下线开关
+      // 右侧：门店切换（品牌管理员）+ 在线/下线开关
       actions: [
+        // 品牌管理员门店切换器
+        const StoreSelector(),
+        const SizedBox(width: 4),
         Padding(
           padding: const EdgeInsets.only(right: 16),
           child: Row(

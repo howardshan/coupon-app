@@ -10,11 +10,12 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { resolveAuth, requirePermission } from "../_shared/auth.ts";
 
 // CORS 响应头（允许商家端 App 调用）
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-merchant-id',
   'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
 };
 
@@ -80,20 +81,24 @@ serve(async (req: Request) => {
     return errorResponse('unauthorized', 'Invalid or expired token', undefined, 401);
   }
 
-  // 获取当前用户关联的商家信息
-  const { data: merchant, error: merchantError } = await supabaseAdmin
+  // 统一鉴权
+  let auth;
+  try {
+    auth = await resolveAuth(supabaseAdmin, user.id, req.headers);
+  } catch (e) {
+    return errorResponse('unauthorized', (e as Error).message, undefined, 403);
+  }
+  requirePermission(auth, 'scan');
+
+  // 获取商家名称（核销记录需要）
+  const { data: merchant } = await supabaseAdmin
     .from('merchants')
     .select('id, name, status')
-    .eq('user_id', user.id)
+    .eq('id', auth.merchantId)
     .single();
 
-  if (merchantError || !merchant) {
+  if (!merchant) {
     return errorResponse('forbidden', 'No merchant account found for this user', undefined, 403);
-  }
-
-  // 只允许已审核通过的商家操作
-  if (merchant.status !== 'approved') {
-    return errorResponse('forbidden', 'Merchant account is not approved', undefined, 403);
   }
 
   const merchantId = merchant.id;
