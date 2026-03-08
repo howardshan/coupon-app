@@ -1,6 +1,8 @@
 // 门店信息相关数据模型
 // 包含 StoreInfo、StorePhoto、StorePhotoType、BusinessHours
 
+import 'brand_info.dart';
+
 /// 照片类型枚举
 /// storefront: 门头照（必传，限1张）
 /// environment: 环境照（最多10张）
@@ -245,6 +247,14 @@ class StoreInfo {
     this.registrationStorefrontUrl,
     // 注册时上传的所有证件（来自 merchant_documents 表）
     this.documents = const [],
+    // 品牌信息（连锁店才有，独立门店为 null）
+    this.brand,
+    // 当前用户在此门店的角色
+    this.currentRole = 'store_owner',
+    // 是否为品牌管理员
+    this.isBrandAdmin = false,
+    // 当前角色拥有的权限列表
+    this.permissions = const [],
   });
 
   final String id;
@@ -284,11 +294,30 @@ class StoreInfo {
   // 注册时上传的所有证件
   final List<MerchantDoc> documents;
 
+  // 品牌信息（连锁店才有，独立门店为 null）
+  final BrandInfo? brand;
+
+  // 当前用户在此门店的角色
+  final String currentRole;
+
+  // 是否为品牌管理员
+  final bool isBrandAdmin;
+
+  // 当前角色拥有的权限列表
+  final List<String> permissions;
+
   /// 从 Edge Function 返回的完整 JSON 构造
   factory StoreInfo.fromJson(Map<String, dynamic> json) {
     final storeJson = json['store'] as Map<String, dynamic>;
     final photosJson = json['photos'] as List<dynamic>? ?? [];
     final hoursJson = json['hours'] as List<dynamic>? ?? [];
+
+    // 解析品牌信息（来自 store join brands）
+    BrandInfo? brand;
+    final brandJson = storeJson['brands'] as Map<String, dynamic>?;
+    if (brandJson != null && brandJson['id'] != null) {
+      brand = BrandInfo.fromJson(brandJson);
+    }
 
     return StoreInfo(
       id: storeJson['id'] as String,
@@ -318,8 +347,46 @@ class StoreInfo {
       ein: storeJson['ein'] as String?,
       city: storeJson['city'] as String?,
       website: storeJson['website'] as String?,
+      // 品牌/角色/权限（从 Edge Function 顶层返回）
+      brand: brand,
+      currentRole: json['role'] as String? ?? 'store_owner',
+      isBrandAdmin: json['is_brand_admin'] as bool? ?? false,
+      permissions: (json['permissions'] as List<dynamic>?)
+          ?.map((e) => e.toString())
+          .toList() ?? [],
     );
   }
+
+  // ----------------------------------------------------------
+  // 权限检查便捷方法
+  // ----------------------------------------------------------
+
+  /// 是否有某项权限
+  bool hasPermission(String permission) => permissions.contains(permission);
+
+  /// 是否可以管理 Deal
+  bool get canManageDeals => hasPermission('deals');
+
+  /// 是否可以管理门店信息
+  bool get canManageStore => hasPermission('store');
+
+  /// 是否可以查看财务
+  bool get canViewFinance => hasPermission('finance');
+
+  /// 是否可以管理员工
+  bool get canManageStaff => hasPermission('staff');
+
+  /// 是否可以回复评价
+  bool get canManageReviews => hasPermission('reviews');
+
+  /// 是否可以扫码核销
+  bool get canScan => hasPermission('scan');
+
+  /// 是否可以查看订单
+  bool get canViewOrders => hasPermission('orders');
+
+  /// 是否为连锁店（有品牌关联）
+  bool get isChainStore => brand != null;
 
   /// 封面照列表（cover type，最多5张，按 sortOrder 排序）
   List<StorePhoto> get coverPhotos =>
@@ -395,6 +462,10 @@ class StoreInfo {
     String? website,
     String? registrationStorefrontUrl,
     List<MerchantDoc>? documents,
+    BrandInfo? brand,
+    String? currentRole,
+    bool? isBrandAdmin,
+    List<String>? permissions,
   }) {
     return StoreInfo(
       id: id ?? this.id,
@@ -421,6 +492,10 @@ class StoreInfo {
       website: website ?? this.website,
       registrationStorefrontUrl: registrationStorefrontUrl ?? this.registrationStorefrontUrl,
       documents: documents ?? this.documents,
+      brand: brand ?? this.brand,
+      currentRole: currentRole ?? this.currentRole,
+      isBrandAdmin: isBrandAdmin ?? this.isBrandAdmin,
+      permissions: permissions ?? this.permissions,
     );
   }
 }

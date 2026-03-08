@@ -42,6 +42,12 @@ class StoreInfoCard extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
           ),
 
+          // 品牌标识（连锁店显示）
+          if (merchant.isChainStore) ...[
+            const SizedBox(height: 6),
+            _buildBrandBadge(),
+          ],
+
           const SizedBox(height: 6),
 
           // 第二行：评分 + 评论数 + 人均 + 经营年数
@@ -71,6 +77,54 @@ class StoreInfoCard extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+
+  Widget _buildBrandBadge() {
+    return Row(
+      children: [
+        if (merchant.brandLogoUrl != null) ...[
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: Image.network(
+              merchant.brandLogoUrl!,
+              width: 18,
+              height: 18,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => const Icon(
+                Icons.business,
+                size: 16,
+                color: AppColors.secondary,
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+        ],
+        Text(
+          merchant.brandName ?? '',
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+            color: AppColors.secondary,
+          ),
+        ),
+        const SizedBox(width: 6),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: AppColors.secondary.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: const Text(
+            'Chain',
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: AppColors.secondary,
+            ),
+          ),
+        ),
+      ],
     );
   }
 

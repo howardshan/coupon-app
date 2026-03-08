@@ -18,7 +18,7 @@ class DealsRepository {
     try {
       var query = _client
           .from('deals')
-          .select('*, merchants(id, name, logo_url, phone, homepage_cover_url)')
+          .select('*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, brands(name, logo_url))')
           .eq('is_active', true)
           .gt('expires_at', DateTime.now().toIso8601String());
 
@@ -59,7 +59,7 @@ class DealsRepository {
     try {
       final data = await _client
           .from('deals')
-          .select('*, merchants(id, name, logo_url, phone, homepage_cover_url)')
+          .select('*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, brands(name, logo_url))')
           .eq('is_active', true)
           .not('sort_order', 'is', null)
           .gt('expires_at', DateTime.now().toIso8601String())
@@ -76,7 +76,7 @@ class DealsRepository {
     try {
       final data = await _client
           .from('deals')
-          .select('*, merchants(id, name, logo_url, phone, homepage_cover_url)')
+          .select('*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, brands(name, logo_url))')
           .eq('id', dealId)
           .single();
       return DealModel.fromJson(data);
@@ -115,7 +115,7 @@ class DealsRepository {
     try {
       var query = _client
           .from('deals')
-          .select('*, merchants(id, name, logo_url, phone, homepage_cover_url)')
+          .select('*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, brands(name, logo_url))')
           .eq('merchant_id', merchantId)
           .eq('is_active', true)
           .gt('expires_at', DateTime.now().toIso8601String());
@@ -154,7 +154,7 @@ class DealsRepository {
     try {
       final data = await _client
           .from('deals')
-          .select('*, merchants(id, name, logo_url, phone, homepage_cover_url)')
+          .select('*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, brands(name, logo_url))')
           .inFilter('id', ids);
       final map = {
         for (final d in data as List)
@@ -170,7 +170,7 @@ class DealsRepository {
     try {
       final data = await _client
           .from('saved_deals')
-          .select('deals(*, merchants(id, name, logo_url, phone, homepage_cover_url))')
+          .select('deals(*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, brands(name, logo_url)))')
           .eq('user_id', userId);
       return (data as List)
           .map(

@@ -8,10 +8,11 @@ final merchantRepositoryProvider = Provider<MerchantRepository>((ref) {
   return MerchantRepository(ref.watch(supabaseClientProvider));
 });
 
-/// 首页商家列表 — 按城市筛选
+/// 首页商家列表 — 按城市 + 分类筛选
 final merchantListProvider = FutureProvider<List<MerchantModel>>((ref) async {
   final city = ref.watch(selectedLocationProvider).city;
-  return ref.watch(merchantRepositoryProvider).fetchMerchants(city: city);
+  final category = ref.watch(selectedCategoryProvider);
+  return ref.watch(merchantRepositoryProvider).fetchMerchants(city: city, category: category);
 });
 
 /// 搜索商家 — 由 searchQueryProvider 驱动

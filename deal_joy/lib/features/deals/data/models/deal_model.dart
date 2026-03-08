@@ -121,6 +121,7 @@ class DealModel {
           name: json['merchant_name'] as String? ?? '',
           logoUrl: json['merchant_logo_url'] as String?,
           homepageCoverUrl: json['merchant_homepage_cover_url'] as String?,
+          brandName: json['merchant_brand_name'] as String?,
         ),
         distanceMeters: (json['distance_meters'] as num?)?.toDouble(),
         merchantCity: json['merchant_city'] as String?,
@@ -184,6 +185,9 @@ class MerchantSummary {
   final String? homepageCoverUrl;
   final double rating;
   final int reviewCount;
+  // 品牌信息（连锁店才有）
+  final String? brandName;
+  final String? brandLogoUrl;
 
   const MerchantSummary({
     required this.id,
@@ -195,7 +199,12 @@ class MerchantSummary {
     this.homepageCoverUrl,
     this.rating = 0.0,
     this.reviewCount = 0,
+    this.brandName,
+    this.brandLogoUrl,
   });
+
+  /// 是否为连锁店品牌
+  bool get isChainStore => brandName != null && brandName!.isNotEmpty;
 
   factory MerchantSummary.fromJson(Map<String, dynamic> json) =>
       MerchantSummary(
@@ -208,5 +217,8 @@ class MerchantSummary {
         homepageCoverUrl: json['homepage_cover_url'] as String?,
         rating: (json['rating'] as num?)?.toDouble() ?? 0.0,
         reviewCount: json['review_count'] as int? ?? 0,
+        // 品牌信息从 brands join 获取
+        brandName: (json['brands'] as Map<String, dynamic>?)?['name'] as String?,
+        brandLogoUrl: (json['brands'] as Map<String, dynamic>?)?['logo_url'] as String?,
       );
 }

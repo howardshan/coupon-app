@@ -7,16 +7,26 @@ class MerchantRepository {
 
   MerchantRepository(this._client);
 
-  /// 获取商家列表（按城市筛选，含 deals 聚合数据）
-  Future<List<MerchantModel>> fetchMerchants({String? city}) async {
+  /// 获取商家列表（按城市 + 分类筛选，含 deals 聚合数据）
+  Future<List<MerchantModel>> fetchMerchants({String? city, String? category}) async {
     try {
+      // 当选择了具体分类时，通过 inner join deals 过滤只返回有该分类 deal 的商家
+      final hasCategory = category != null && category.isNotEmpty && category != 'All';
+      final dealFilter = hasCategory
+          ? 'deals!inner(rating, review_count, discount_price, is_active, category)'
+          : 'deals(rating, review_count, discount_price, is_active)';
+
       var query = _client
           .from('merchants')
-          .select('*, deals(rating, review_count, discount_price, is_active)')
+          .select('*, $dealFilter')
           .eq('status', 'approved');
 
       if (city != null && city.isNotEmpty) {
         query = query.ilike('address', '%$city%');
+      }
+
+      if (hasCategory) {
+        query = query.eq('deals.category', category!);
       }
 
       final data = await query.order('name').limit(30);

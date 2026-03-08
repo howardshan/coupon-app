@@ -101,6 +101,19 @@ merchant_photos, merchant_hours, merchant_documents, deal_images
 4. **PostgreSQL 函数改返回类型**: 不能 CREATE OR REPLACE，必须先 DROP FUNCTION 再 CREATE
 5. **Edge Function 本地改了没部署**: 需要 `supabase functions deploy <name>` 或在 Dashboard 更新
 
+## 禁止修改的模块（除非用户明确命令）
+### Deal Category 分类系统
+以下文件的 Deal Category 相关逻辑**禁止修改**，除非用户明确命令要求：
+- `dealjoy_merchant/lib/features/deals/models/deal_category.dart`
+- `dealjoy_merchant/lib/features/deals/services/deals_service.dart` — fetchDealCategories, createDealCategory, updateDealCategory, deleteDealCategory
+- `dealjoy_merchant/lib/features/deals/providers/deals_provider.dart` — dealCategoriesProvider, dealsServiceProvider
+- `dealjoy_merchant/lib/features/deals/pages/deal_create_page.dart` — _buildDealCategoryDropdown()
+- `dealjoy_merchant/lib/features/deals/pages/deal_edit_page.dart` — _buildDealCategoryDropdown()
+- `dealjoy_merchant/lib/features/deals/pages/deals_list_page.dart` — _CategoryManagerSheet
+- `dealjoy_merchant/lib/features/deals/models/merchant_deal.dart` — dealCategoryId 字段
+- `deal_joy/supabase/functions/merchant-deals/index.ts` — deal_category_id, deal_type, badge_text 相关逻辑
+- DB 表 `deal_categories`
+
 ## 开发命令
 ```bash
 # Flutter
