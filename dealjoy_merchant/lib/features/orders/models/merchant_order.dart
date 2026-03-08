@@ -319,6 +319,22 @@ class MerchantOrder {
   OrderStatus get displayStatus =>
       OrderStatus.displayStatus(status, couponExpiresAt);
 
+  /// 订单详情页：多个状态标签列表（如 [Paid, Expired]，与后台 Admin 一致）
+  List<OrderStatus> get detailStatusTags {
+    if (status != OrderStatus.paid) return [status];
+    final tags = <OrderStatus>[OrderStatus.paid]; // Unused
+    if (couponExpiresAt == null) return tags;
+    final now = DateTime.now();
+    if (now.isBefore(couponExpiresAt!)) return tags;
+    final elapsed = now.difference(couponExpiresAt!);
+    if (elapsed >= const Duration(hours: 24)) {
+      tags.add(OrderStatus.pendingRefund);
+    } else {
+      tags.add(OrderStatus.expired);
+    }
+    return tags;
+  }
+
   /// 从 Edge Function / 数据库函数返回的 JSON 构造
   factory MerchantOrder.fromJson(Map<String, dynamic> json) {
     return MerchantOrder(
