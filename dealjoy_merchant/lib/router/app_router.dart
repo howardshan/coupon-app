@@ -37,6 +37,9 @@ import '../features/store/pages/store_edit_page.dart';
 import '../features/store/pages/business_hours_page.dart';
 import '../features/store/pages/store_photos_page.dart';
 import '../features/store/pages/store_tags_page.dart';
+import '../features/store/pages/store_selector_page.dart';
+import '../features/store/pages/brand_manage_page.dart';
+import '../features/dashboard/pages/brand_overview_page.dart';
 
 // ── 菜品管理 ─────────────────────────────────────────────────
 import '../features/menu/pages/menu_list_page.dart';
@@ -48,6 +51,7 @@ import '../features/menu/models/menu_item.dart' as menu_model;
 import '../features/deals/pages/deals_list_page.dart';
 import '../features/deals/pages/deal_create_page.dart';
 import '../features/deals/pages/deal_detail_page.dart';
+import '../features/deals/pages/deal_templates_page.dart';
 
 // ── 评价 / 分析 / 财务 / 通知 / 营销 ───────────────────────────
 import '../features/reviews/pages/reviews_page.dart';
@@ -56,6 +60,7 @@ import '../features/earnings/pages/earnings_page.dart';
 import '../features/earnings/pages/transactions_page.dart';
 import '../features/earnings/pages/earnings_report_page.dart';
 import '../features/earnings/pages/payment_account_page.dart';
+import '../features/earnings/pages/withdrawal_page.dart';
 import '../features/notifications/pages/notifications_page.dart';
 import '../features/marketing/pages/marketing_page.dart';
 import '../features/marketing/pages/flash_deals_page.dart';
@@ -90,6 +95,12 @@ class _AuthChangeNotifier extends ChangeNotifier {
 class MerchantStatusCache {
   static String? _cachedStatus; // 'approved', 'pending', 'rejected', 'none'
   static String? _cachedUserId;
+  // 角色类型：用于登录后路由分流
+  // 'store_owner' | 'brand_admin' | 'staff_cashier' | 'staff_service' | 'staff_manager'
+  static String? _cachedRoleType;
+
+  /// 获取角色类型（用于登录后路由分流）
+  static String? get roleType => _cachedRoleType;
 
   /// 获取商家状态（有缓存直接返回，否则查 DB）
   static Future<String> getStatus() async {
@@ -115,43 +126,45 @@ class MerchantStatusCache {
       if (merchantData != null) {
         _cachedStatus = merchantData['status'] as String? ?? 'pending';
         _cachedUserId = user.id;
+        _cachedRoleType = 'store_owner';
         return _cachedStatus!;
       }
 
       // 2. 检查是否为品牌管理员（brand_admins 表）
       final brandAdmin = await supabase
           .from('brand_admins')
-          .select('id')
+          .select('id, role')
           .eq('user_id', user.id)
           .maybeSingle();
 
       if (brandAdmin != null) {
-        // 品牌管理员视为 approved（旗下门店已存在）
         _cachedStatus = 'approved';
         _cachedUserId = user.id;
+        _cachedRoleType = 'brand_admin';
         return _cachedStatus!;
       }
 
       // 3. 检查是否为门店员工（merchant_staff 表）
       final staffData = await supabase
           .from('merchant_staff')
-          .select('merchant_id, is_active')
+          .select('merchant_id, is_active, role')
           .eq('user_id', user.id)
           .eq('is_active', true)
           .maybeSingle();
 
       if (staffData != null) {
-        // 员工视为 approved（关联门店已存在）
         _cachedStatus = 'approved';
         _cachedUserId = user.id;
+        final staffRole = staffData['role'] as String? ?? 'cashier';
+        // V2.3: 区域经理按品牌管理员路由，财务进 earnings，实习生进 scan
+        _cachedRoleType = 'staff_$staffRole';
         return _cachedStatus!;
       }
 
-      // 4. 检查是否有待审核的商家申请（merchant_applications 等场景）
       _cachedStatus = 'none';
       _cachedUserId = user.id;
+      _cachedRoleType = null;
     } catch (_) {
-      // 查询失败时不缓存，下次重试
       return 'none';
     }
 
@@ -162,6 +175,7 @@ class MerchantStatusCache {
   static void clear() {
     _cachedStatus = null;
     _cachedUserId = null;
+    _cachedRoleType = null;
   }
 
   /// 手动设置状态（登录后已知状态时直接缓存，避免多余查询）
@@ -174,7 +188,7 @@ class MerchantStatusCache {
 final _authNotifier = _AuthChangeNotifier();
 
 // 不需要登录的公开路由前缀
-const _publicRoutes = ['/auth/login', '/auth/register', '/auth/review'];
+const _publicRoutes = ['/auth/login', '/auth/register', '/auth/review', '/store-selector'];
 
 final appRouter = GoRouter(
   initialLocation: '/dashboard',
@@ -204,9 +218,19 @@ final appRouter = GoRouter(
     final merchantStatus = await MerchantStatusCache.getStatus();
 
     if (loc.startsWith('/auth/login')) {
-      // 已登录在登录页 → 根据状态跳转
+      // 已登录在登录页 → 根据角色和状态跳转
       switch (merchantStatus) {
         case 'approved':
+          final roleType = MerchantStatusCache.roleType;
+          // 品牌管理员 → 门店选择页
+          if (roleType == 'brand_admin') return '/store-selector';
+          // V2.3 区域经理 → 门店选择页（管理多店）
+          if (roleType == 'staff_regional_manager') return '/store-selector';
+          // 核销员 / 实习生 → 直接进扫码页
+          if (roleType == 'staff_cashier' || roleType == 'staff_trainee') return '/scan';
+          // V2.3 财务 → 直接进财务页
+          if (roleType == 'staff_finance') return '/earnings';
+          // 其他（store_owner, manager, service）→ Dashboard
           return '/dashboard';
         case 'pending':
         case 'rejected':
@@ -338,6 +362,24 @@ final appRouter = GoRouter(
       builder: (context, state) => const MerchantReviewStatusPage(),
     ),
 
+    // 品牌管理员门店选择页
+    GoRoute(
+      path: '/store-selector',
+      builder: (context, state) => const StoreSelectorPage(),
+    ),
+
+    // 品牌管理页
+    GoRoute(
+      path: '/brand-manage',
+      builder: (context, state) => const BrandManagePage(),
+    ),
+
+    // V2.1 品牌总览 Dashboard
+    GoRoute(
+      path: '/brand-overview',
+      builder: (context, state) => const BrandOverviewPage(),
+    ),
+
     // 门店信息管理
     GoRoute(
       path: '/store',
@@ -394,6 +436,11 @@ final appRouter = GoRouter(
           path: 'create',
           builder: (context, state) => const DealCreatePage(),
         ),
+        // V2.2 Deal 模板管理
+        GoRoute(
+          path: 'templates',
+          builder: (context, state) => const DealTemplatesPage(),
+        ),
         GoRoute(
           path: ':dealId',
           builder: (context, state) {
@@ -432,6 +479,10 @@ final appRouter = GoRouter(
         GoRoute(
           path: 'payment-account',
           builder: (context, state) => const PaymentAccountPage(),
+        ),
+        GoRoute(
+          path: 'withdrawal',
+          builder: (context, state) => const WithdrawalPage(),
         ),
       ],
     ),

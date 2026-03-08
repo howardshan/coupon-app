@@ -186,6 +186,7 @@ class MerchantDeal {
     this.reviewNotes,
     this.publishedAt,
     this.dealCategoryId,
+    this.applicableMerchantIds,
   });
 
   /// Deal ID
@@ -262,6 +263,9 @@ class MerchantDeal {
 
   /// Deal 分类 ID（关联 deal_categories 表）
   final String? dealCategoryId;
+
+  /// 适用门店 ID 列表（null = 仅本店，非空 = 多店通用）
+  final List<String>? applicableMerchantIds;
 
   /// 图片列表（含主图）
   final List<DealImage> images;
@@ -356,6 +360,10 @@ class MerchantDeal {
           ? DateTime.parse(json['published_at'] as String)
           : null,
       dealCategoryId:  json['deal_category_id'] as String?,
+      applicableMerchantIds: (json['applicable_merchant_ids'] as List<dynamic>?)
+          ?.map((e) => e?.toString() ?? '')
+          .where((s) => s.isNotEmpty)
+          .toList(),
       images:          imagesSorted,
       createdAt:       json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
@@ -384,6 +392,8 @@ class MerchantDeal {
         'max_per_person':   maxPerPerson,
         'is_stackable':     isStackable,
         'deal_category_id': dealCategoryId,
+        if (applicableMerchantIds != null)
+          'applicable_merchant_ids': applicableMerchantIds,
       };
 
   /// 复制并修改部分字段
@@ -413,6 +423,7 @@ class MerchantDeal {
     String? reviewNotes,
     DateTime? publishedAt,
     String? dealCategoryId,
+    List<String>? applicableMerchantIds,
     List<DealImage>? images,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -443,6 +454,7 @@ class MerchantDeal {
       reviewNotes:     reviewNotes ?? this.reviewNotes,
       publishedAt:     publishedAt ?? this.publishedAt,
       dealCategoryId:  dealCategoryId ?? this.dealCategoryId,
+      applicableMerchantIds: applicableMerchantIds ?? this.applicableMerchantIds,
       images:          images ?? this.images,
       createdAt:       createdAt ?? this.createdAt,
       updatedAt:       updatedAt ?? this.updatedAt,

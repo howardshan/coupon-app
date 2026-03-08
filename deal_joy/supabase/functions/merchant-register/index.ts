@@ -15,6 +15,12 @@ interface RegisterRequest {
   category: string;
   ein: string;
   address: string;
+  // 注册类型: single（独立门店）/ multiple（连锁品牌）
+  registration_type?: 'single' | 'multiple';
+  // 连锁注册时的品牌信息
+  brand_name?: string;
+  brand_logo_url?: string;
+  brand_description?: string;
   // 已上传到 Storage 的文件 URL 列表
   documents: Array<{
     document_type: string;
@@ -30,6 +36,8 @@ interface RegisterResponse {
   merchant_id: string;
   status: "pending";
   message: string;
+  registration_type?: string;
+  brand_id?: string;
 }
 
 Deno.serve(async (req: Request) => {
@@ -179,6 +187,44 @@ Deno.serve(async (req: Request) => {
     merchantId = newMerchant.id;
   }
 
+  // 连锁注册：创建品牌并关联门店
+  const registrationType = body.registration_type ?? 'single';
+  if (registrationType === 'multiple' && !existingMerchant) {
+    const brandName = body.brand_name?.trim() || body.company_name;
+
+    // 创建品牌
+    const { data: newBrand, error: brandError } = await adminSupabase
+      .from('brands')
+      .insert({
+        name: brandName,
+        logo_url: body.brand_logo_url ?? null,
+        description: body.brand_description ?? null,
+        owner_user_id: user.id,
+      })
+      .select('id')
+      .single();
+
+    if (brandError || !newBrand) {
+      console.error('[merchant-register] create brand error:', brandError);
+      // 品牌创建失败不阻断注册，但记录错误
+    } else {
+      // 关联门店到品牌
+      await adminSupabase
+        .from('merchants')
+        .update({ brand_id: newBrand.id })
+        .eq('id', merchantId);
+
+      // 创建品牌管理员记录（owner）
+      await adminSupabase
+        .from('brand_admins')
+        .insert({
+          brand_id: newBrand.id,
+          user_id: user.id,
+          role: 'brand_owner',
+        });
+    }
+  }
+
   // 批量插入 merchant_documents 记录
   if (body.documents && body.documents.length > 0) {
     const docRows = body.documents.map((doc) => ({
@@ -204,12 +250,25 @@ Deno.serve(async (req: Request) => {
     }
   }
 
+  // 查询是否关联了品牌
+  let brandId: string | undefined;
+  if (registrationType === 'multiple') {
+    const { data: merchantData } = await adminSupabase
+      .from('merchants')
+      .select('brand_id')
+      .eq('id', merchantId)
+      .single();
+    brandId = merchantData?.brand_id ?? undefined;
+  }
+
   // 成功返回
   const response: RegisterResponse = {
     merchant_id: merchantId,
     status: "pending",
     message:
       "Application submitted successfully. Review takes 24-48 hours.",
+    registration_type: registrationType,
+    brand_id: brandId,
   };
 
   return jsonResponse(response, 200);

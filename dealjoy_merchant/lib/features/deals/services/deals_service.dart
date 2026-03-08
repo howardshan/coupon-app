@@ -4,6 +4,7 @@
 
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../models/deal_template.dart';
 import '../models/merchant_deal.dart';
 
 // ============================================================
@@ -275,5 +276,107 @@ class DealsService {
         .from('deal_categories')
         .delete()
         .eq('id', id);
+  }
+
+  // ----------------------------------------------------------
+  // V2.2 Deal 模板管理（品牌级一键多店发布）
+  // 通过 merchant-deals Edge Function 的 /templates 子路由
+  // ----------------------------------------------------------
+
+  /// 获取品牌下所有 Deal 模板
+  Future<List<DealTemplate>> fetchTemplates() async {
+    final response = await _supabase.functions.invoke(
+      '$_functionName/templates',
+      method: HttpMethod.get,
+    );
+
+    if (response.status != 200) {
+      throw _handleError(response);
+    }
+
+    final data = response.data as Map<String, dynamic>;
+    final list = data['templates'] as List<dynamic>? ?? [];
+    return list
+        .map((e) => DealTemplate.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// 创建 Deal 模板
+  Future<DealTemplate> createTemplate(DealTemplate template) async {
+    final response = await _supabase.functions.invoke(
+      '$_functionName/templates',
+      method: HttpMethod.post,
+      body: template.toJson(),
+    );
+
+    if (response.status != 200 && response.status != 201) {
+      throw _handleError(response);
+    }
+
+    final data = response.data as Map<String, dynamic>;
+    return DealTemplate.fromJson(data['template'] as Map<String, dynamic>);
+  }
+
+  /// 更新 Deal 模板
+  Future<DealTemplate> updateTemplate(String templateId, Map<String, dynamic> updates) async {
+    final response = await _supabase.functions.invoke(
+      '$_functionName/templates/$templateId',
+      method: HttpMethod.patch,
+      body: updates,
+    );
+
+    if (response.status != 200) {
+      throw _handleError(response);
+    }
+
+    final data = response.data as Map<String, dynamic>;
+    return DealTemplate.fromJson(data['template'] as Map<String, dynamic>);
+  }
+
+  /// 发布模板到指定门店（为每个门店创建独立 Deal）
+  Future<Map<String, dynamic>> publishTemplate(
+    String templateId,
+    List<String> merchantIds,
+  ) async {
+    final response = await _supabase.functions.invoke(
+      '$_functionName/templates/$templateId/publish',
+      method: HttpMethod.post,
+      body: {'merchant_ids': merchantIds},
+    );
+
+    if (response.status != 200) {
+      throw _handleError(response);
+    }
+
+    // 返回 { published: int, errors: [...] }
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// 同步模板更新到所有未自定义的关联门店
+  Future<Map<String, dynamic>> syncTemplate(String templateId) async {
+    final response = await _supabase.functions.invoke(
+      '$_functionName/templates/$templateId/sync',
+      method: HttpMethod.post,
+      body: {},
+    );
+
+    if (response.status != 200) {
+      throw _handleError(response);
+    }
+
+    // 返回 { synced: int }
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// 删除 Deal 模板
+  Future<void> deleteTemplate(String templateId) async {
+    final response = await _supabase.functions.invoke(
+      '$_functionName/templates/$templateId',
+      method: HttpMethod.delete,
+    );
+
+    if (response.status != 200) {
+      throw _handleError(response);
+    }
   }
 }

@@ -90,11 +90,24 @@ class MerchantAuthService {
   //    所有文件需先上传完毕，documents 中包含 Supabase Storage URL
   // ----------------------------------------------------------
   Future<Map<String, dynamic>> submitApplication(
-    MerchantApplication application,
-  ) async {
+    MerchantApplication application, {
+    String registrationType = 'single',
+    String? brandName,
+    String? brandDescription,
+  }) async {
+    final body = application.toJson();
+    // 附加注册类型和品牌信息
+    body['registration_type'] = registrationType;
+    if (brandName != null && brandName.isNotEmpty) {
+      body['brand_name'] = brandName;
+    }
+    if (brandDescription != null && brandDescription.isNotEmpty) {
+      body['brand_description'] = brandDescription;
+    }
+
     final response = await _supabase.functions.invoke(
       'merchant-register',
-      body: application.toJson(),
+      body: body,
     );
 
     // Edge Function 返回非 2xx 时 invoke 会抛出异常

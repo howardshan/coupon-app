@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
@@ -875,6 +876,12 @@ class _ApplicableStores extends StatelessWidget {
     final merchant = deal.merchant;
     if (merchant == null) return const SizedBox.shrink();
 
+    // 计算适用门店数量
+    final storeIds = deal.applicableMerchantIds;
+    final storeCount = (storeIds != null && storeIds.isNotEmpty)
+        ? storeIds.length
+        : 1;
+
     return Container(
       color: Colors.white,
       padding: const EdgeInsets.all(16),
@@ -890,7 +897,7 @@ class _ApplicableStores extends StatelessWidget {
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
               ),
               Text(
-                '1 Store',
+                '$storeCount ${storeCount == 1 ? 'Store' : 'Stores'}',
                 style: TextStyle(
                   fontSize: 13,
                   color: AppColors.textSecondary,
@@ -900,117 +907,197 @@ class _ApplicableStores extends StatelessWidget {
           ),
           const SizedBox(height: 14),
 
-          // Store card
-          GestureDetector(
-            onTap: () => context.push('/merchant/${merchant.id}'),
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.surfaceVariant),
-              ),
-              child: Row(
+          // 创建门店卡片（主门店始终显示）
+          _buildStoreCard(context, merchant),
+
+          // 多店时加载并显示其他门店
+          if (storeIds != null && storeIds.length > 1)
+            _MultiStoreList(
+              storeIds: storeIds.where((id) => id != merchant.id).toList(),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStoreCard(BuildContext context, MerchantSummary merchant) {
+    return GestureDetector(
+      onTap: () => context.push('/merchant/${merchant.id}'),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.surfaceVariant),
+        ),
+        child: Row(
+          children: [
+            // Logo
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child:
+                  merchant.logoUrl != null && merchant.logoUrl!.isNotEmpty
+                      ? CachedNetworkImage(
+                          imageUrl: merchant.logoUrl!,
+                          width: 52,
+                          height: 52,
+                          fit: BoxFit.cover,
+                        )
+                      : Container(
+                          width: 52,
+                          height: 52,
+                          color: AppColors.surfaceVariant,
+                          child: const Icon(Icons.restaurant,
+                              color: AppColors.textHint),
+                        ),
+            ),
+            const SizedBox(width: 12),
+            // Info
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Logo
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child:
-                        merchant.logoUrl != null && merchant.logoUrl!.isNotEmpty
-                            ? CachedNetworkImage(
-                                imageUrl: merchant.logoUrl!,
-                                width: 52,
-                                height: 52,
-                                fit: BoxFit.cover,
-                              )
-                            : Container(
-                                width: 52,
-                                height: 52,
-                                color: AppColors.surfaceVariant,
-                                child: const Icon(Icons.restaurant,
-                                    color: AppColors.textHint),
-                              ),
-                  ),
-                  const SizedBox(width: 12),
-                  // Info
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          merchant.name,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 3),
-                        Row(
-                          children: [
-                            const Icon(Icons.star,
-                                size: 13, color: Colors.amber),
-                            const SizedBox(width: 3),
-                            Text(
-                              deal.rating.toStringAsFixed(1),
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            if (deal.address != null ||
-                                merchant.address != null)
-                              Expanded(
-                                child: Text(
-                                  deal.address ?? merchant.address ?? '',
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    color: AppColors.textSecondary,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                          ],
-                        ),
-                        if (deal.merchantHours != null) ...[
-                          const SizedBox(height: 3),
-                          Text(
-                            deal.merchantHours!,
-                            style: const TextStyle(
-                              fontSize: 11,
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                        ],
-                      ],
+                  Text(
+                    merchant.name,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
                     ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  // Phone
-                  if (merchant.phone != null && merchant.phone!.isNotEmpty)
-                    GestureDetector(
-                      onTap: () => launchUrl(
-                        Uri.parse('tel:${merchant.phone}'),
-                        mode: LaunchMode.externalApplication,
+                  const SizedBox(height: 3),
+                  if (merchant.address != null &&
+                      merchant.address!.isNotEmpty)
+                    Text(
+                      merchant.address!,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: AppColors.textSecondary,
                       ),
-                      child: Container(
-                        width: 36,
-                        height: 36,
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withValues(alpha: 0.1),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(Icons.phone,
-                            size: 18, color: AppColors.primary),
-                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                 ],
               ),
             ),
-          ),
-        ],
+            // Phone
+            if (merchant.phone != null && merchant.phone!.isNotEmpty)
+              GestureDetector(
+                onTap: () => launchUrl(
+                  Uri.parse('tel:${merchant.phone}'),
+                  mode: LaunchMode.externalApplication,
+                ),
+                child: Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.phone,
+                      size: 18, color: AppColors.primary),
+                ),
+              ),
+          ],
+        ),
       ),
+    );
+  }
+}
+
+// 多店列表：异步加载其他适用门店的基本信息
+class _MultiStoreList extends StatelessWidget {
+  final List<String> storeIds;
+
+  const _MultiStoreList({required this.storeIds});
+
+  @override
+  Widget build(BuildContext context) {
+    if (storeIds.isEmpty) return const SizedBox.shrink();
+
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: Supabase.instance.client
+          .from('merchants')
+          .select('id, name, address, logo_url, phone')
+          .inFilter('id', storeIds),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData || snapshot.data!.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        final stores = snapshot.data!;
+        return Column(
+          children: stores.map((store) {
+            return Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: GestureDetector(
+                onTap: () => context.push('/merchant/${store['id']}'),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.surfaceVariant),
+                  ),
+                  child: Row(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: store['logo_url'] != null &&
+                                (store['logo_url'] as String).isNotEmpty
+                            ? CachedNetworkImage(
+                                imageUrl: store['logo_url'] as String,
+                                width: 44,
+                                height: 44,
+                                fit: BoxFit.cover,
+                              )
+                            : Container(
+                                width: 44,
+                                height: 44,
+                                color: AppColors.surfaceVariant,
+                                child: const Icon(Icons.storefront,
+                                    size: 20, color: AppColors.textHint),
+                              ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              store['name'] as String? ?? '',
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            if (store['address'] != null &&
+                                (store['address'] as String).isNotEmpty) ...[
+                              const SizedBox(height: 2),
+                              Text(
+                                store['address'] as String,
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: AppColors.textSecondary,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.chevron_right,
+                          size: 20, color: AppColors.textHint),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+        );
+      },
     );
   }
 }

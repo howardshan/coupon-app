@@ -176,12 +176,35 @@ async function handleVerify(
     return errorResponse('not_found', 'Invalid voucher code');
   }
 
-  // 检查是否属于当前商家
+  // 检查是否属于当前商家（支持多店通用 Deal）
   if (coupon.merchant_id !== merchantId) {
-    return errorResponse(
-      'wrong_merchant',
-      'This voucher is not valid for your store',
-    );
+    // 查询 Deal 的 applicable_merchant_ids，判断是否支持跨店核销
+    const { data: dealInfo } = await supabase
+      .from('deals')
+      .select('applicable_merchant_ids')
+      .eq('id', coupon.deal_id)
+      .single();
+
+    const applicableIds = dealInfo?.applicable_merchant_ids as string[] | null;
+    // 如果 applicable_merchant_ids 为 NULL，仅限创建门店
+    // 如果非空，检查当前门店是否在列表中
+    if (!applicableIds || !applicableIds.includes(merchantId)) {
+      // 获取适用门店名称列表，给出友好提示
+      let validStoreNames = '';
+      if (applicableIds && applicableIds.length > 0) {
+        const { data: stores } = await supabase
+          .from('merchants')
+          .select('name')
+          .in('id', applicableIds);
+        validStoreNames = (stores ?? []).map((s: { name: string }) => s.name).join(', ');
+      }
+      return errorResponse(
+        'wrong_merchant',
+        validStoreNames
+          ? `This voucher is not valid at this location. Valid at: ${validStoreNames}`
+          : 'This voucher is not valid for your store',
+      );
+    }
   }
 
   // 检查各种状态异常
@@ -283,9 +306,18 @@ async function handleRedeem(
     return errorResponse('not_found', 'Voucher not found', undefined, 404);
   }
 
-  // 安全检查：只能核销自己门店的券
+  // 安全检查：只能核销自己门店的券（支持多店通用 Deal）
   if (coupon.merchant_id !== merchantId) {
-    return errorResponse('wrong_merchant', 'This voucher is not valid for your store', undefined, 403);
+    const { data: dealInfo } = await supabase
+      .from('deals')
+      .select('applicable_merchant_ids')
+      .eq('id', coupon.deal_id)
+      .single();
+
+    const applicableIds = dealInfo?.applicable_merchant_ids as string[] | null;
+    if (!applicableIds || !applicableIds.includes(merchantId)) {
+      return errorResponse('wrong_merchant', 'This voucher is not valid for your store', undefined, 403);
+    }
   }
 
   // 状态检查
@@ -310,13 +342,14 @@ async function handleRedeem(
 
   const now = new Date().toISOString();
 
-  // 更新 coupons 表：标记为已使用
+  // 更新 coupons 表：标记为已使用，记录实际核销门店
   const { error: updateError } = await supabase
     .from('coupons')
     .update({
       status: 'used',
       redeemed_at: now,
       redeemed_by_merchant_id: merchantId,
+      redeemed_at_merchant_id: merchantId, // 实际核销门店，用于按店结算
       used_at: now,
     })
     .eq('id', couponId);
@@ -369,7 +402,7 @@ async function handleRevert(
   // 查询券状态
   const { data: coupon, error: queryError } = await supabase
     .from('coupons')
-    .select('id, status, merchant_id, redeemed_at, redeemed_by_merchant_id')
+    .select('id, status, merchant_id, redeemed_at, redeemed_by_merchant_id, redeemed_at_merchant_id')
     .eq('id', couponId)
     .single();
 
@@ -377,8 +410,10 @@ async function handleRevert(
     return errorResponse('not_found', 'Voucher not found', undefined, 404);
   }
 
-  // 只能撤销自己门店的核销
-  if (coupon.merchant_id !== merchantId) {
+  // 允许撤销的门店：原始售卖门店 或 实际核销门店
+  const isOriginalMerchant = coupon.merchant_id === merchantId;
+  const isRedeemingMerchant = coupon.redeemed_by_merchant_id === merchantId || coupon.redeemed_at_merchant_id === merchantId;
+  if (!isOriginalMerchant && !isRedeemingMerchant) {
     return errorResponse('wrong_merchant', 'This voucher does not belong to your store', undefined, 403);
   }
 
@@ -407,6 +442,7 @@ async function handleRevert(
       status: 'active',
       redeemed_at: null,
       redeemed_by_merchant_id: null,
+      redeemed_at_merchant_id: null, // 清除实际核销门店
       reverted_at: now,
       used_at: null,
     })

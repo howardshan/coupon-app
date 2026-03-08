@@ -82,7 +82,56 @@ class EarningsPage extends ConsumerWidget {
               const SizedBox(height: 24),
 
               // ------------------------------------------------
-              // 区块 5: 收款账户状态条
+              // 区块 5: 提现入口
+              // ------------------------------------------------
+              _SectionHeader(title: 'Withdrawal'),
+              const SizedBox(height: 12),
+              // 提现快速入口卡片
+              InkWell(
+                onTap: () => context.push('/earnings/withdrawal'),
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFE0E0E0)),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.account_balance_wallet_outlined,
+                          color: Color(0xFFFF6B35), size: 24),
+                      SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Withdraw Funds',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF1A1A1A),
+                              ),
+                            ),
+                            SizedBox(height: 2),
+                            Text(
+                              'Transfer available balance to your bank',
+                              style: TextStyle(
+                                  fontSize: 12, color: Color(0xFF999999)),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Icon(Icons.chevron_right, color: Color(0xFFBDBDBD)),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              // ------------------------------------------------
+              // 区块 6: 收款账户状态条
               // ------------------------------------------------
               _SectionHeader(title: 'Payment Account'),
               const SizedBox(height: 12),

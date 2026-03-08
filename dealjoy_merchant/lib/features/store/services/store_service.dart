@@ -369,8 +369,76 @@ class StoreService {
   }
 
   // ==========================================================
+  // 闭店 + 解除品牌
+  // ==========================================================
+
+  // ----------------------------------------------------------
+  // 闭店（标记 closed + 下架所有 deal）
+  // ----------------------------------------------------------
+  Future<int> closeStore() async {
+    await _ensureFreshSession();
+    final response = await _supabase.functions.invoke(
+      '$_functionName/close',
+      method: HttpMethod.post,
+      body: {},
+      headers: _merchantHeaders,
+    );
+
+    if (response.status != 200) {
+      throw _handleError(response);
+    }
+
+    final data = response.data as Map<String, dynamic>;
+    return data['pending_refund_count'] as int? ?? 0;
+  }
+
+  // ----------------------------------------------------------
+  // 解除品牌合作
+  // ----------------------------------------------------------
+  Future<void> leaveBrand() async {
+    await _ensureFreshSession();
+    final response = await _supabase.functions.invoke(
+      '$_functionName/leave-brand',
+      method: HttpMethod.post,
+      body: {},
+      headers: _merchantHeaders,
+    );
+
+    if (response.status != 200) {
+      throw _handleError(response);
+    }
+  }
+
+  // ==========================================================
   // 品牌管理相关方法（调 merchant-brand Edge Function）
   // ==========================================================
+
+  // ----------------------------------------------------------
+  // 创建品牌（独立门店升级为连锁时调用）
+  // ----------------------------------------------------------
+  Future<void> createBrand({
+    required String name,
+    String? description,
+  }) async {
+    await _ensureFreshSession();
+    final body = <String, dynamic>{
+      'name': name,
+    };
+    if (description != null && description.isNotEmpty) {
+      body['description'] = description;
+    }
+
+    final response = await _supabase.functions.invoke(
+      _brandFunctionName,
+      method: HttpMethod.post,
+      body: body,
+      headers: _merchantHeaders,
+    );
+
+    if (response.status != 200 && response.status != 201) {
+      throw _handleError(response);
+    }
+  }
 
   // ----------------------------------------------------------
   // 获取品牌管理员旗下所有门店列表

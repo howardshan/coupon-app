@@ -10,8 +10,10 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
+import '../../store/providers/store_provider.dart';
 import '../models/analytics_data.dart';
 import '../providers/analytics_provider.dart';
 import '../services/analytics_service.dart';
@@ -95,6 +97,12 @@ class AnalyticsPage extends ConsumerWidget {
             ),
             const SizedBox(height: 12),
             const _CustomerSection(),
+            const SizedBox(height: 24),
+
+            // ─────────────────────────────────────────────────
+            // V2.6 高级分析入口
+            // ─────────────────────────────────────────────────
+            _AdvancedAnalyticsSection(),
             const SizedBox(height: 32),
           ],
         ),
@@ -458,6 +466,133 @@ class _CustomerSection extends ConsumerWidget {
         ),
 
         data: (analysis) => CustomerPieWidget(data: analysis),
+      ),
+    );
+  }
+}
+
+// =============================================================
+// V2.6 高级分析入口区域
+// =============================================================
+class _AdvancedAnalyticsSection extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isChain = ref.watch(storeProvider).valueOrNull?.isChainStore ?? false;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _SectionHeader(
+          title: 'Advanced Analytics',
+          subtitle: 'Deep insights & predictions',
+        ),
+        const SizedBox(height: 12),
+        // AI 诊断 + 趋势（所有商家可用）
+        Row(
+          children: [
+            Expanded(
+              child: _AdvancedCard(
+                icon: Icons.psychology,
+                iconColor: Colors.purple,
+                title: 'AI Diagnostics',
+                subtitle: 'Business health check',
+                onTap: () => context.push('/analytics/diagnostics'),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _AdvancedCard(
+                icon: Icons.trending_up,
+                iconColor: Colors.teal,
+                title: 'Trends',
+                subtitle: 'Revenue forecast',
+                onTap: () => context.push('/analytics/trends'),
+              ),
+            ),
+          ],
+        ),
+        // 跨店对比（仅品牌管理员可见）
+        if (isChain) ...[
+          const SizedBox(height: 12),
+          _AdvancedCard(
+            icon: Icons.compare_arrows,
+            iconColor: Colors.indigo,
+            title: 'Cross-Store Analysis',
+            subtitle: 'Compare performance across all your locations',
+            onTap: () => context.push('/analytics/cross-store'),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _AdvancedCard extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _AdvancedCard({
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: iconColor.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, color: iconColor, size: 22),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF1A1A1A),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey[500],
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right, size: 18, color: Colors.grey[400]),
+            ],
+          ),
+        ),
       ),
     );
   }

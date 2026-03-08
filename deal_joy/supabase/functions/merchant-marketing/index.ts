@@ -17,6 +17,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { resolveAuth } from "../_shared/auth.ts";
 
 // ---------- 通用 CORS 响应头 ----------
 const corsHeaders = {
@@ -77,6 +78,13 @@ serve(async (req: Request) => {
       return handleNewCustomerOffers(req, supabaseClient, resourceId);
     case "promotions":
       return handlePromotions(req, supabaseClient, resourceId);
+    // V2.5 品牌级营销
+    case "brand-campaigns":
+      return handleBrandCampaigns(req, supabaseClient, resourceId);
+    case "brand-promo-codes":
+      return handleBrandPromoCodes(req, supabaseClient, resourceId);
+    case "brand-loyalty":
+      return handleBrandLoyalty(req, supabaseClient, resourceId);
     default:
       return errorResponse(`Unknown resource: ${resource}`, 404);
   }
@@ -361,4 +369,249 @@ async function deletePromotion(
     data: { id },
     message: "TODO: V2 — implement deactivate promotion",
   });
+}
+
+// ============================================================
+// V2.5 品牌级营销活动
+// ============================================================
+
+// deno-lint-ignore no-explicit-any
+async function handleBrandCampaigns(req: Request, supabase: any, id?: string): Promise<Response> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return errorResponse("Unauthorized", 401);
+
+  const auth = await resolveAuth(supabase, user.id, req.headers);
+  if (!auth.isBrandAdmin || !auth.brandId) {
+    return errorResponse("Brand admin access required", 403);
+  }
+
+  switch (req.method) {
+    case "GET": {
+      const { data, error } = await supabase
+        .from("brand_campaigns")
+        .select("*")
+        .eq("brand_id", auth.brandId)
+        .order("created_at", { ascending: false });
+      if (error) return errorResponse(error.message, 500);
+      return jsonResponse({ campaigns: data ?? [] });
+    }
+    case "POST": {
+      const body = await req.json().catch(() => ({}));
+      const { data, error } = await supabase
+        .from("brand_campaigns")
+        .insert({
+          brand_id: auth.brandId,
+          title: body.title,
+          description: body.description ?? "",
+          campaign_type: body.campaign_type ?? "discount",
+          discount_type: body.discount_type ?? "percentage",
+          discount_value: body.discount_value ?? 0,
+          min_spend: body.min_spend ?? 0,
+          applicable_store_ids: body.applicable_store_ids ?? null,
+          start_date: body.start_date ?? new Date().toISOString(),
+          end_date: body.end_date ?? null,
+          max_uses: body.max_uses ?? null,
+          created_by: user.id,
+        })
+        .select()
+        .single();
+      if (error) return errorResponse(error.message, 500);
+      return jsonResponse({ campaign: data }, 201);
+    }
+    case "PATCH": {
+      if (!id) return errorResponse("Missing campaign id", 400);
+      const body = await req.json().catch(() => ({}));
+      const allowed = ["title", "description", "discount_type", "discount_value",
+        "min_spend", "applicable_store_ids", "start_date", "end_date",
+        "max_uses", "is_active"];
+      const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+      for (const key of allowed) {
+        if (body[key] !== undefined) updates[key] = body[key];
+      }
+      const { data, error } = await supabase
+        .from("brand_campaigns")
+        .update(updates)
+        .eq("id", id)
+        .eq("brand_id", auth.brandId)
+        .select()
+        .single();
+      if (error) return errorResponse(error.message, 500);
+      return jsonResponse({ campaign: data });
+    }
+    case "DELETE": {
+      if (!id) return errorResponse("Missing campaign id", 400);
+      const { error } = await supabase
+        .from("brand_campaigns")
+        .update({ is_active: false })
+        .eq("id", id)
+        .eq("brand_id", auth.brandId);
+      if (error) return errorResponse(error.message, 500);
+      return jsonResponse({ success: true });
+    }
+    default:
+      return errorResponse(`Method ${req.method} not allowed`, 405);
+  }
+}
+
+// ============================================================
+// V2.5 品牌优惠码
+// ============================================================
+
+// deno-lint-ignore no-explicit-any
+async function handleBrandPromoCodes(req: Request, supabase: any, id?: string): Promise<Response> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return errorResponse("Unauthorized", 401);
+
+  const auth = await resolveAuth(supabase, user.id, req.headers);
+  if (!auth.isBrandAdmin || !auth.brandId) {
+    return errorResponse("Brand admin access required", 403);
+  }
+
+  switch (req.method) {
+    case "GET": {
+      const { data, error } = await supabase
+        .from("brand_promo_codes")
+        .select("*")
+        .eq("brand_id", auth.brandId)
+        .order("created_at", { ascending: false });
+      if (error) return errorResponse(error.message, 500);
+      return jsonResponse({ promo_codes: data ?? [] });
+    }
+    case "POST": {
+      const body = await req.json().catch(() => ({}));
+      if (!body.code) return errorResponse("Promo code is required", 400);
+      const { data, error } = await supabase
+        .from("brand_promo_codes")
+        .insert({
+          brand_id: auth.brandId,
+          campaign_id: body.campaign_id ?? null,
+          code: body.code.toUpperCase(),
+          discount_type: body.discount_type ?? "percentage",
+          discount_value: body.discount_value ?? 0,
+          min_spend: body.min_spend ?? 0,
+          max_uses: body.max_uses ?? null,
+          applicable_store_ids: body.applicable_store_ids ?? null,
+          start_date: body.start_date ?? new Date().toISOString(),
+          end_date: body.end_date ?? null,
+        })
+        .select()
+        .single();
+      if (error) return errorResponse(error.message, 500);
+      return jsonResponse({ promo_code: data }, 201);
+    }
+    case "DELETE": {
+      if (!id) return errorResponse("Missing promo code id", 400);
+      const { error } = await supabase
+        .from("brand_promo_codes")
+        .update({ is_active: false })
+        .eq("id", id)
+        .eq("brand_id", auth.brandId);
+      if (error) return errorResponse(error.message, 500);
+      return jsonResponse({ success: true });
+    }
+    default:
+      return errorResponse(`Method ${req.method} not allowed`, 405);
+  }
+}
+
+// ============================================================
+// V2.5 品牌忠诚度
+// ============================================================
+
+// deno-lint-ignore no-explicit-any
+async function handleBrandLoyalty(req: Request, supabase: any, id?: string): Promise<Response> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return errorResponse("Unauthorized", 401);
+
+  const auth = await resolveAuth(supabase, user.id, req.headers);
+  if (!auth.isBrandAdmin || !auth.brandId) {
+    return errorResponse("Brand admin access required", 403);
+  }
+
+  switch (req.method) {
+    case "GET": {
+      // 获取品牌忠诚度统计
+      const { data: members, error: membersErr } = await supabase
+        .from("brand_loyalty_points")
+        .select("*")
+        .eq("brand_id", auth.brandId)
+        .order("lifetime_points", { ascending: false })
+        .limit(100);
+      if (membersErr) return errorResponse(membersErr.message, 500);
+
+      // 统计
+      const totalMembers = members?.length ?? 0;
+      const totalPoints = (members ?? []).reduce(
+        (sum: number, m: { points: number }) => sum + m.points, 0
+      );
+      const tierCounts: Record<string, number> = {};
+      for (const m of (members ?? [])) {
+        tierCounts[m.tier] = (tierCounts[m.tier] ?? 0) + 1;
+      }
+
+      return jsonResponse({
+        stats: { totalMembers, totalPoints, tierCounts },
+        members: members ?? [],
+      });
+    }
+    case "POST": {
+      // 手动调整积分（奖励/扣除）
+      const body = await req.json().catch(() => ({}));
+      if (!body.user_id || !body.points) {
+        return errorResponse("user_id and points are required", 400);
+      }
+
+      // 记录交易
+      const { error: txErr } = await supabase
+        .from("loyalty_transactions")
+        .insert({
+          brand_id: auth.brandId,
+          user_id: body.user_id,
+          points: body.points,
+          transaction_type: body.points > 0 ? "bonus" : "redeem",
+          description: body.description ?? "Manual adjustment",
+        });
+      if (txErr) return errorResponse(txErr.message, 500);
+
+      // 更新总积分
+      const { data: current } = await supabase
+        .from("brand_loyalty_points")
+        .select("points, lifetime_points")
+        .eq("brand_id", auth.brandId)
+        .eq("user_id", body.user_id)
+        .maybeSingle();
+
+      if (current) {
+        const newPoints = current.points + body.points;
+        const newLifetime = body.points > 0
+          ? current.lifetime_points + body.points
+          : current.lifetime_points;
+        // 自动升级 tier
+        let tier = "bronze";
+        if (newLifetime >= 5000) tier = "platinum";
+        else if (newLifetime >= 2000) tier = "gold";
+        else if (newLifetime >= 500) tier = "silver";
+
+        await supabase
+          .from("brand_loyalty_points")
+          .update({ points: newPoints, lifetime_points: newLifetime, tier })
+          .eq("brand_id", auth.brandId)
+          .eq("user_id", body.user_id);
+      } else {
+        // 新用户
+        await supabase
+          .from("brand_loyalty_points")
+          .insert({
+            brand_id: auth.brandId,
+            user_id: body.user_id,
+            points: Math.max(0, body.points),
+            lifetime_points: Math.max(0, body.points),
+          });
+      }
+
+      return jsonResponse({ success: true }, 201);
+    }
+    default:
+      return errorResponse(`Method ${req.method} not allowed`, 405);
+  }
 }

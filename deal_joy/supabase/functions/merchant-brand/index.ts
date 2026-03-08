@@ -102,6 +102,66 @@ Deno.serve(async (req: Request) => {
       } as any;
     }
 
+    // -------------------------------------------------------
+    // POST /merchant-brand — 创建品牌（独立门店升级为连锁）
+    // 此端点不要求已有 brandId，仅要求 store_owner
+    // -------------------------------------------------------
+    if (req.method === "POST" && pathSegments.length === 0) {
+      if (auth.role !== "store_owner") {
+        return errorResponse("Only store owner can create a brand", 403);
+      }
+
+      const body = await req.json();
+      const { name, description, logo_url } = body;
+      if (!name) {
+        return errorResponse("Brand name is required");
+      }
+
+      // 检查门店是否已关联品牌
+      const { data: currentMerchant } = await supabaseAdmin
+        .from("merchants")
+        .select("brand_id")
+        .eq("id", auth.merchantId)
+        .single();
+
+      if (currentMerchant?.brand_id) {
+        return errorResponse("This store is already associated with a brand");
+      }
+
+      // 1. 创建品牌
+      const { data: brand, error: brandError } = await supabaseAdmin
+        .from("brands")
+        .insert({
+          name,
+          description: description ?? null,
+          logo_url: logo_url ?? null,
+          owner_id: user.id,
+        })
+        .select()
+        .single();
+
+      if (brandError) {
+        return errorResponse(`Failed to create brand: ${brandError.message}`);
+      }
+
+      // 2. 关联门店到品牌
+      await supabaseAdmin
+        .from("merchants")
+        .update({ brand_id: brand.id })
+        .eq("id", auth.merchantId);
+
+      // 3. 创建 brand_admins 记录（brand_owner）
+      await supabaseAdmin
+        .from("brand_admins")
+        .insert({
+          brand_id: brand.id,
+          user_id: user.id,
+          role: "owner",
+        });
+
+      return jsonResponse({ brand }, 201);
+    }
+
     // 品牌管理权限检查
     requirePermission(auth, "brand");
 

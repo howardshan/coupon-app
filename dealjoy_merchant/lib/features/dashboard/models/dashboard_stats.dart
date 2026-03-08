@@ -188,3 +188,157 @@ class DashboardData {
     );
   }
 }
+
+// ============================================================
+// V2.1 品牌总览数据模型
+// ============================================================
+
+/// 品牌基本信息
+class BrandOverviewInfo {
+  final String id;
+  final String name;
+  final String? logoUrl;
+  final String? description;
+
+  const BrandOverviewInfo({
+    required this.id,
+    required this.name,
+    this.logoUrl,
+    this.description,
+  });
+
+  factory BrandOverviewInfo.fromJson(Map<String, dynamic> json) {
+    return BrandOverviewInfo(
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      logoUrl: json['logoUrl'] as String?,
+      description: json['description'] as String?,
+    );
+  }
+}
+
+/// 品牌级汇总统计
+class BrandDailyStats {
+  final int totalStores;
+  final int onlineStores;
+  final int todayOrders;
+  final int todayRedemptions;
+  final double todayRevenue;
+  final int pendingCoupons;
+
+  const BrandDailyStats({
+    required this.totalStores,
+    required this.onlineStores,
+    required this.todayOrders,
+    required this.todayRedemptions,
+    required this.todayRevenue,
+    required this.pendingCoupons,
+  });
+
+  factory BrandDailyStats.fromJson(Map<String, dynamic> json) {
+    return BrandDailyStats(
+      totalStores: (json['totalStores'] as num?)?.toInt() ?? 0,
+      onlineStores: (json['onlineStores'] as num?)?.toInt() ?? 0,
+      todayOrders: (json['todayOrders'] as num?)?.toInt() ?? 0,
+      todayRedemptions: (json['todayRedemptions'] as num?)?.toInt() ?? 0,
+      todayRevenue: (json['todayRevenue'] as num?)?.toDouble() ?? 0.0,
+      pendingCoupons: (json['pendingCoupons'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+/// 品牌总览完整数据（汇总 + 趋势）
+class BrandOverviewData {
+  final BrandOverviewInfo brand;
+  final BrandDailyStats stats;
+  final List<WeeklyTrendEntry> weeklyTrend;
+
+  const BrandOverviewData({
+    required this.brand,
+    required this.stats,
+    required this.weeklyTrend,
+  });
+
+  factory BrandOverviewData.fromJson(Map<String, dynamic> json) {
+    final brandJson = json['brand'] as Map<String, dynamic>? ?? {};
+    final statsJson = json['stats'] as Map<String, dynamic>? ?? {};
+    final trendList = (json['weeklyTrend'] as List<dynamic>? ?? [])
+        .map((e) => WeeklyTrendEntry.fromJson(e as Map<String, dynamic>))
+        .toList();
+
+    return BrandOverviewData(
+      brand: BrandOverviewInfo.fromJson(brandJson),
+      stats: BrandDailyStats.fromJson(statsJson),
+      weeklyTrend: trendList,
+    );
+  }
+}
+
+/// 门店排行数据
+class StoreRanking {
+  final String storeId;
+  final String storeName;
+  final String storeAddress;
+  final bool isOnline;
+  final int totalOrders;
+  final double totalRevenue;
+  final int totalRedeemed;
+  final double avgRating;
+  final int reviewCount;
+  final double refundRate;
+
+  const StoreRanking({
+    required this.storeId,
+    required this.storeName,
+    required this.storeAddress,
+    required this.isOnline,
+    required this.totalOrders,
+    required this.totalRevenue,
+    required this.totalRedeemed,
+    required this.avgRating,
+    required this.reviewCount,
+    required this.refundRate,
+  });
+
+  factory StoreRanking.fromJson(Map<String, dynamic> json) {
+    return StoreRanking(
+      storeId: json['storeId'] as String? ?? '',
+      storeName: json['storeName'] as String? ?? '',
+      storeAddress: json['storeAddress'] as String? ?? '',
+      isOnline: json['isOnline'] as bool? ?? false,
+      totalOrders: (json['totalOrders'] as num?)?.toInt() ?? 0,
+      totalRevenue: (json['totalRevenue'] as num?)?.toDouble() ?? 0.0,
+      totalRedeemed: (json['totalRedeemed'] as num?)?.toInt() ?? 0,
+      avgRating: (json['avgRating'] as num?)?.toDouble() ?? 0.0,
+      reviewCount: (json['reviewCount'] as num?)?.toInt() ?? 0,
+      refundRate: (json['refundRate'] as num?)?.toDouble() ?? 0.0,
+    );
+  }
+}
+
+/// 门店健康警报
+class StoreHealthAlert {
+  final String storeId;
+  final String storeName;
+  final String alertType; // 'high_refund' | 'low_rating' | 'no_orders' | 'offline'
+  final String alertMessage;
+  final double alertValue;
+
+  const StoreHealthAlert({
+    required this.storeId,
+    required this.storeName,
+    required this.alertType,
+    required this.alertMessage,
+    required this.alertValue,
+  });
+
+  factory StoreHealthAlert.fromJson(Map<String, dynamic> json) {
+    return StoreHealthAlert(
+      storeId: json['storeId'] as String? ?? '',
+      storeName: json['storeName'] as String? ?? '',
+      alertType: json['alertType'] as String? ?? '',
+      alertMessage: json['alertMessage'] as String? ?? '',
+      alertValue: (json['alertValue'] as num?)?.toDouble() ?? 0.0,
+    );
+  }
+}

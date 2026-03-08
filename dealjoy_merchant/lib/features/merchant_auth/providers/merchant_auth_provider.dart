@@ -83,7 +83,11 @@ class MerchantAuthNotifier extends AsyncNotifier<MerchantApplication?> {
   // 最终提交: 注册账号（或已有账号则登录）→ 上传证件 → 提交申请
   // 若邮箱已存在：先登录，若已有 merchants 记录则仅返回状态不重复提交
   // ----------------------------------------------------------
-  Future<void> registerAndSubmit() async {
+  Future<void> registerAndSubmit({
+    String registrationType = 'single',
+    String? brandName,
+    String? brandDescription,
+  }) async {
     final current = state.value;
     if (current == null) throw Exception('No application data');
 
@@ -145,8 +149,13 @@ class MerchantAuthNotifier extends AsyncNotifier<MerchantApplication?> {
 
       final updatedApp = current.copyWith(documents: uploadedDocs);
 
-      // 3. 提交商家申请
-      final result = await _service.submitApplication(updatedApp);
+      // 3. 提交商家申请（含注册类型和品牌信息）
+      final result = await _service.submitApplication(
+        updatedApp,
+        registrationType: registrationType,
+        brandName: brandName,
+        brandDescription: brandDescription,
+      );
       final merchantId = result['merchant_id'] as String?;
       return updatedApp.copyWith(
         merchantId: merchantId,

@@ -15,7 +15,7 @@ import { resolveAuth, requirePermission } from "../_shared/auth.ts";
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-merchant-id',
-  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, PATCH, OPTIONS',
 };
 
 // 统一 JSON 响应
@@ -40,8 +40,8 @@ serve(async (req: Request) => {
     return new Response('ok', { headers: corsHeaders });
   }
 
-  // 仅支持 GET
-  if (req.method !== 'GET') {
+  // 支持 GET / POST / PATCH
+  if (!['GET', 'POST', 'PATCH'].includes(req.method)) {
     return errorResponse('Method not allowed', 'method_not_allowed', 405);
   }
 
@@ -93,6 +93,12 @@ serve(async (req: Request) => {
   // 导出 CSV（必须在 :id 路由前检查，避免 "export" 被当作 uuid）
   if (subPath === 'export') {
     return await handleExport(serviceClient, merchantId, url.searchParams);
+  }
+
+  // V2.7 订单转移
+  if (subPath === 'transfers') {
+    const transferId = pathParts[1] ?? '';
+    return await handleOrderTransfers(req, serviceClient, auth, transferId);
   }
 
   // 订单详情（subPath 是 UUID）
@@ -398,5 +404,137 @@ function formatDate(isoString: string): string {
     return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
   } catch {
     return isoString;
+  }
+}
+
+// =============================================================
+// V2.7 订单转移
+// GET  /merchant-orders/transfers — 获取转移记录
+// POST /merchant-orders/transfers — 发起订单转移
+// PATCH /merchant-orders/transfers/:id — 接受/拒绝转移
+// =============================================================
+async function handleOrderTransfers(
+  req: Request,
+  // deno-lint-ignore no-explicit-any
+  client: any,
+  // deno-lint-ignore no-explicit-any
+  auth: any,
+  transferId: string,
+): Promise<Response> {
+  const merchantId = auth.merchantId;
+
+  switch (req.method) {
+    case 'GET': {
+      // 获取与当前门店相关的所有转移记录
+      const { data, error } = await client
+        .from('order_transfers')
+        .select('*, orders(id, order_number, total_amount, status)')
+        .or(`from_merchant_id.eq.${merchantId},to_merchant_id.eq.${merchantId}`)
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (error) return errorResponse(error.message, 'db_error', 500);
+      return jsonResponse({ transfers: data ?? [] });
+    }
+
+    case 'POST': {
+      // 发起订单转移
+      const body = await req.json().catch(() => ({}));
+      if (!body.order_id || !body.to_merchant_id) {
+        return errorResponse('order_id and to_merchant_id are required', 'validation_error', 400);
+      }
+
+      // 校验订单属于当前门店
+      const { data: order } = await client
+        .from('orders')
+        .select('id, merchant_id, status')
+        .eq('id', body.order_id)
+        .eq('merchant_id', merchantId)
+        .single();
+
+      if (!order) {
+        return errorResponse('Order not found or not yours', 'not_found', 404);
+      }
+
+      // 校验目标门店在同一品牌
+      if (auth.brandId) {
+        const { data: targetStore } = await client
+          .from('merchants')
+          .select('id, brand_id')
+          .eq('id', body.to_merchant_id)
+          .single();
+        if (!targetStore || targetStore.brand_id !== auth.brandId) {
+          return errorResponse('Target store not in your brand', 'forbidden', 403);
+        }
+      } else {
+        return errorResponse('Order transfers require brand stores', 'forbidden', 403);
+      }
+
+      const { data: transfer, error } = await client
+        .from('order_transfers')
+        .insert({
+          order_id: body.order_id,
+          from_merchant_id: merchantId,
+          to_merchant_id: body.to_merchant_id,
+          reason: body.reason ?? '',
+          transferred_by: auth.userId,
+        })
+        .select()
+        .single();
+
+      if (error) return errorResponse(error.message, 'db_error', 500);
+      return jsonResponse({ transfer }, 201);
+    }
+
+    case 'PATCH': {
+      // 接受或拒绝转移
+      if (!transferId) return errorResponse('Missing transfer id', 'validation_error', 400);
+
+      const body = await req.json().catch(() => ({}));
+      const action = body.action; // 'accept' | 'reject'
+
+      if (!['accept', 'reject'].includes(action)) {
+        return errorResponse('action must be accept or reject', 'validation_error', 400);
+      }
+
+      // 校验转移记录存在且目标是当前门店
+      const { data: existing } = await client
+        .from('order_transfers')
+        .select('id, order_id, to_merchant_id, status')
+        .eq('id', transferId)
+        .eq('to_merchant_id', merchantId)
+        .eq('status', 'pending')
+        .single();
+
+      if (!existing) {
+        return errorResponse('Transfer not found or already processed', 'not_found', 404);
+      }
+
+      const newStatus = action === 'accept' ? 'accepted' : 'rejected';
+
+      // 更新转移记录
+      const { error: updateErr } = await client
+        .from('order_transfers')
+        .update({
+          status: newStatus,
+          responded_by: auth.userId,
+          responded_at: new Date().toISOString(),
+        })
+        .eq('id', transferId);
+
+      if (updateErr) return errorResponse(updateErr.message, 'db_error', 500);
+
+      // 如果接受，更新订单的 merchant_id
+      if (action === 'accept') {
+        await client
+          .from('orders')
+          .update({ merchant_id: merchantId })
+          .eq('id', existing.order_id);
+      }
+
+      return jsonResponse({ success: true, status: newStatus });
+    }
+
+    default:
+      return errorResponse('Method not allowed', 'method_not_allowed', 405);
   }
 }

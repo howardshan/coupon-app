@@ -9,6 +9,7 @@
 // =============================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { resolveAuth } from '../_shared/auth.ts';
 
 // CORS 响应头（支持 Flutter App 跨域调用）
 const corsHeaders = {
@@ -84,6 +85,21 @@ Deno.serve(async (req: Request) => {
   // GET /merchant-analytics/customers — 客群分析
   if (subPath === '/customers' || subPath === '/customers/') {
     return await handleGetCustomers(userClient);
+  }
+
+  // V2.6 高级分析 — 跨店对比（品牌管理员专用）
+  if (subPath === '/cross-store' || subPath === '/cross-store/') {
+    return await handleCrossStoreAnalysis(userClient, req.headers, url.searchParams);
+  }
+
+  // V2.6 AI 诊断建议
+  if (subPath === '/diagnostics' || subPath === '/diagnostics/') {
+    return await handleDiagnostics(userClient);
+  }
+
+  // V2.6 趋势预测
+  if (subPath === '/trends' || subPath === '/trends/') {
+    return await handleTrends(userClient, url.searchParams);
   }
 
   return errorResponse('not_found', 'Route not found', 404);
@@ -254,4 +270,312 @@ async function getCurrentMerchantId(
 
   if (error || !data) return null;
   return (data as Record<string, unknown>).id as string;
+}
+
+// =============================================================
+// V2.6 跨店对比分析（品牌管理员专用）
+// GET /merchant-analytics/cross-store?days=30&metric=revenue
+// =============================================================
+async function handleCrossStoreAnalysis(
+  client: ReturnType<typeof createClient>,
+  headers: Headers,
+  params: URLSearchParams,
+): Promise<Response> {
+  try {
+    const { data: { user } } = await client.auth.getUser();
+    if (!user) return errorResponse('unauthorized', 'Not authenticated', 401);
+
+    const auth = await resolveAuth(client, user.id, headers);
+    if (!auth.isBrandAdmin || !auth.brandId) {
+      return errorResponse('forbidden', 'Brand admin access required', 403);
+    }
+
+    const days = parseInt(params.get('days') ?? '30', 10);
+    const sinceDate = new Date();
+    sinceDate.setDate(sinceDate.getDate() - days);
+
+    // 获取品牌下所有门店
+    const { data: stores } = await client
+      .from('merchants')
+      .select('id, name, address')
+      .eq('brand_id', auth.brandId)
+      .eq('status', 'approved');
+
+    if (!stores || stores.length === 0) {
+      return jsonResponse({ stores: [] });
+    }
+
+    const storeIds = stores.map((s: { id: string }) => s.id);
+
+    // 获取各门店在时间范围内的订单数据
+    const { data: orders } = await client
+      .from('orders')
+      .select('merchant_id, total_amount, status, created_at')
+      .in('merchant_id', storeIds)
+      .gte('created_at', sinceDate.toISOString());
+
+    // 获取各门店的评价数据
+    const { data: reviews } = await client
+      .from('reviews')
+      .select('merchant_id, rating, created_at')
+      .in('merchant_id', storeIds)
+      .gte('created_at', sinceDate.toISOString());
+
+    // 按门店聚合
+    const storeStats = stores.map((store: { id: string; name: string; address: string }) => {
+      const storeOrders = (orders ?? []).filter(
+        (o: { merchant_id: string }) => o.merchant_id === store.id
+      );
+      const storeReviews = (reviews ?? []).filter(
+        (r: { merchant_id: string }) => r.merchant_id === store.id
+      );
+      const completedOrders = storeOrders.filter(
+        (o: { status: string }) => o.status === 'completed' || o.status === 'redeemed'
+      );
+
+      const revenue = completedOrders.reduce(
+        (sum: number, o: { total_amount: number }) => sum + (o.total_amount ?? 0), 0
+      );
+      const avgRating = storeReviews.length > 0
+        ? storeReviews.reduce((sum: number, r: { rating: number }) => sum + r.rating, 0) / storeReviews.length
+        : 0;
+
+      return {
+        store_id: store.id,
+        store_name: store.name,
+        address: store.address,
+        total_orders: storeOrders.length,
+        completed_orders: completedOrders.length,
+        revenue,
+        review_count: storeReviews.length,
+        avg_rating: Math.round(avgRating * 10) / 10,
+        refund_count: storeOrders.filter(
+          (o: { status: string }) => o.status === 'refunded'
+        ).length,
+      };
+    });
+
+    return jsonResponse({ stores: storeStats, days });
+  } catch (err) {
+    console.error('[handleCrossStoreAnalysis] Error:', err);
+    return errorResponse('internal_error', 'Internal server error', 500);
+  }
+}
+
+// =============================================================
+// V2.6 AI 诊断建议
+// GET /merchant-analytics/diagnostics
+// 基于规则的经营建议（非 LLM，基于阈值判断）
+// =============================================================
+async function handleDiagnostics(
+  client: ReturnType<typeof createClient>,
+): Promise<Response> {
+  try {
+    const merchantId = await getCurrentMerchantId(client);
+    if (!merchantId) {
+      return errorResponse('merchant_not_found', 'Merchant account not found', 404);
+    }
+
+    const suggestions: { type: string; severity: string; title: string; description: string }[] = [];
+
+    // 检查最近 30 天数据
+    const since30d = new Date();
+    since30d.setDate(since30d.getDate() - 30);
+
+    // 获取订单和退款数据
+    const { data: orders } = await client
+      .from('orders')
+      .select('status, total_amount, created_at')
+      .eq('merchant_id', merchantId)
+      .gte('created_at', since30d.toISOString());
+
+    const totalOrders = orders?.length ?? 0;
+    const refunds = (orders ?? []).filter((o: { status: string }) => o.status === 'refunded');
+    const refundRate = totalOrders > 0 ? refunds.length / totalOrders : 0;
+
+    // 获取评价数据
+    const { data: reviews } = await client
+      .from('reviews')
+      .select('rating')
+      .eq('merchant_id', merchantId)
+      .gte('created_at', since30d.toISOString());
+
+    const avgRating = (reviews ?? []).length > 0
+      ? (reviews ?? []).reduce((s: number, r: { rating: number }) => s + r.rating, 0) / reviews!.length
+      : 0;
+
+    // 获取活跃 deal 数
+    const { count: activeDeals } = await client
+      .from('deals')
+      .select('id', { count: 'exact', head: true })
+      .eq('merchant_id', merchantId)
+      .eq('is_active', true);
+
+    // 规则引擎：生成建议
+    if (refundRate > 0.15) {
+      suggestions.push({
+        type: 'refund',
+        severity: 'high',
+        title: 'High Refund Rate',
+        description: `Your refund rate is ${(refundRate * 100).toFixed(1)}% (${refunds.length}/${totalOrders}). Consider improving deal descriptions and photos to set accurate customer expectations.`,
+      });
+    }
+
+    if (avgRating > 0 && avgRating < 3.5) {
+      suggestions.push({
+        type: 'rating',
+        severity: 'high',
+        title: 'Low Customer Rating',
+        description: `Average rating is ${avgRating.toFixed(1)}/5. Review negative feedback and address common complaints to improve satisfaction.`,
+      });
+    }
+
+    if (totalOrders < 5) {
+      suggestions.push({
+        type: 'traffic',
+        severity: 'medium',
+        title: 'Low Order Volume',
+        description: `Only ${totalOrders} orders in the last 30 days. Consider creating promotions or adjusting pricing to attract more customers.`,
+      });
+    }
+
+    if ((activeDeals ?? 0) < 2) {
+      suggestions.push({
+        type: 'deals',
+        severity: 'medium',
+        title: 'Few Active Deals',
+        description: `You have ${activeDeals ?? 0} active deals. Adding more variety can increase discoverability and sales.`,
+      });
+    }
+
+    if ((reviews ?? []).length < 3) {
+      suggestions.push({
+        type: 'reviews',
+        severity: 'low',
+        title: 'Few Reviews',
+        description: 'Encourage customers to leave reviews. Stores with more reviews rank higher in search results.',
+      });
+    }
+
+    if (suggestions.length === 0) {
+      suggestions.push({
+        type: 'success',
+        severity: 'low',
+        title: 'Looking Good!',
+        description: 'No issues detected. Keep up the great work!',
+      });
+    }
+
+    return jsonResponse({
+      diagnostics: suggestions,
+      stats: {
+        total_orders: totalOrders,
+        refund_rate: Math.round(refundRate * 1000) / 10,
+        avg_rating: Math.round(avgRating * 10) / 10,
+        active_deals: activeDeals ?? 0,
+        review_count: (reviews ?? []).length,
+      },
+    });
+  } catch (err) {
+    console.error('[handleDiagnostics] Error:', err);
+    return errorResponse('internal_error', 'Internal server error', 500);
+  }
+}
+
+// =============================================================
+// V2.6 趋势预测
+// GET /merchant-analytics/trends?days=90
+// 计算收入/订单/评分的趋势线 + 简单预测
+// =============================================================
+async function handleTrends(
+  client: ReturnType<typeof createClient>,
+  params: URLSearchParams,
+): Promise<Response> {
+  try {
+    const merchantId = await getCurrentMerchantId(client);
+    if (!merchantId) {
+      return errorResponse('merchant_not_found', 'Merchant account not found', 404);
+    }
+
+    const days = parseInt(params.get('days') ?? '90', 10);
+    const sinceDate = new Date();
+    sinceDate.setDate(sinceDate.getDate() - days);
+
+    // 获取历史订单数据
+    const { data: orders } = await client
+      .from('orders')
+      .select('total_amount, status, created_at')
+      .eq('merchant_id', merchantId)
+      .gte('created_at', sinceDate.toISOString())
+      .order('created_at');
+
+    // 按周聚合
+    const weeklyData: Record<string, { revenue: number; orders: number; refunds: number }> = {};
+    for (const order of (orders ?? [])) {
+      const date = new Date(order.created_at);
+      // 周一为一周开始
+      const weekStart = new Date(date);
+      weekStart.setDate(date.getDate() - date.getDay() + 1);
+      const weekKey = weekStart.toISOString().split('T')[0];
+
+      if (!weeklyData[weekKey]) {
+        weeklyData[weekKey] = { revenue: 0, orders: 0, refunds: 0 };
+      }
+      weeklyData[weekKey].orders++;
+      if (order.status === 'completed' || order.status === 'redeemed') {
+        weeklyData[weekKey].revenue += order.total_amount ?? 0;
+      }
+      if (order.status === 'refunded') {
+        weeklyData[weekKey].refunds++;
+      }
+    }
+
+    // 转为排序数组
+    const weeks = Object.entries(weeklyData)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([week, data]) => ({ week, ...data }));
+
+    // 简单线性趋势（最近3周 vs 前3周对比）
+    const recentWeeks = weeks.slice(-3);
+    const earlierWeeks = weeks.slice(-6, -3);
+
+    const recentAvgRevenue = recentWeeks.length > 0
+      ? recentWeeks.reduce((s, w) => s + w.revenue, 0) / recentWeeks.length
+      : 0;
+    const earlierAvgRevenue = earlierWeeks.length > 0
+      ? earlierWeeks.reduce((s, w) => s + w.revenue, 0) / earlierWeeks.length
+      : 0;
+
+    const revenueTrend = earlierAvgRevenue > 0
+      ? ((recentAvgRevenue - earlierAvgRevenue) / earlierAvgRevenue) * 100
+      : 0;
+
+    const recentAvgOrders = recentWeeks.length > 0
+      ? recentWeeks.reduce((s, w) => s + w.orders, 0) / recentWeeks.length
+      : 0;
+    const earlierAvgOrders = earlierWeeks.length > 0
+      ? earlierWeeks.reduce((s, w) => s + w.orders, 0) / earlierWeeks.length
+      : 0;
+
+    const ordersTrend = earlierAvgOrders > 0
+      ? ((recentAvgOrders - earlierAvgOrders) / earlierAvgOrders) * 100
+      : 0;
+
+    return jsonResponse({
+      weekly_data: weeks,
+      trends: {
+        revenue_change_pct: Math.round(revenueTrend * 10) / 10,
+        orders_change_pct: Math.round(ordersTrend * 10) / 10,
+        revenue_direction: revenueTrend > 5 ? 'up' : revenueTrend < -5 ? 'down' : 'stable',
+        orders_direction: ordersTrend > 5 ? 'up' : ordersTrend < -5 ? 'down' : 'stable',
+      },
+      forecast: {
+        next_week_revenue_est: Math.round(recentAvgRevenue * 1.0),
+        next_week_orders_est: Math.round(recentAvgOrders),
+      },
+    });
+  } catch (err) {
+    console.error('[handleTrends] Error:', err);
+    return errorResponse('internal_error', 'Internal server error', 500);
+  }
 }

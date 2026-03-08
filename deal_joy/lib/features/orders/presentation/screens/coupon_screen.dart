@@ -430,6 +430,36 @@ class _MerchantInfoSection extends StatelessWidget {
               ],
             ),
           ],
+          // 多店通用提示
+          if (coupon.applicableMerchantIds != null &&
+              coupon.applicableMerchantIds!.length > 1) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withAlpha(15),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: AppColors.primary.withAlpha(40),
+                ),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.storefront,
+                      size: 16, color: AppColors.primary),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Valid at ${coupon.applicableMerchantIds!.length} locations',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
