@@ -946,7 +946,7 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
                 const SizedBox(width: 10),
                 Text(
                   _endDate != null
-                      ? 'Expires: ${_endDate!.day}/${_endDate!.month}/${_endDate!.year}'
+                      ? 'Expires: ${_endDate!.month}/${_endDate!.day}/${_endDate!.year}'
                       : 'Select expiry date',
                   style: TextStyle(
                     fontSize: 14,

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { getServiceRoleClient } from '@/lib/supabase/service'
 
 async function requireAdmin() {
   const supabase = await createClient()
@@ -100,9 +101,11 @@ export async function updateDealSortOrder(dealId: string, sortOrder: number | nu
 }
 
 // Deal 审核：上架/下架（同时设置 is_active 与 deal_status，商家端按 deal_status 显示）
+// 使用 service_role 客户端执行更新，避免 RLS 中 merchants ↔ merchant_staff 递归
 export async function setDealActive(dealId: string, active: boolean) {
-  const supabase = await requireAdmin()
+  await requireAdmin()
 
+  const supabase = getServiceRoleClient()
   const { error } = await supabase
     .from('deals')
     .update({

@@ -98,8 +98,9 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
 
   /// 发起支付
   Future<void> _pay(double total) async {
-    // P0 fix: 严格校验 userId，空串会导致订单写入无效用户
-    final userId = ref.read(currentUserProvider).valueOrNull?.id;
+    // 等待 currentUserProvider 完成（重启后 session 恢复是异步的，避免首次点击误判为未登录）
+    final user = await ref.read(currentUserProvider.future);
+    final userId = user?.id;
     if (userId == null || userId.isEmpty) {
       _showPaymentFailedDialog('Please sign in to complete your purchase.');
       return;
