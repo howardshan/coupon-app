@@ -32,9 +32,11 @@ export async function updateUserRole(userId: string, role: 'user' | 'merchant' |
   revalidatePath('/users')
 }
 
-// 审核商家：通过
+// 审核商家：通过（使用 service_role 写库，避免 merchant_staff RLS 无限递归）
 export async function approveMerchant(merchantId: string, merchantUserId: string) {
-  const supabase = await requireAdmin()
+  await requireAdmin()
+
+  const supabase = getServiceRoleClient()
 
   // 更新商家状态
   const { error: merchantError } = await supabase
@@ -53,10 +55,11 @@ export async function approveMerchant(merchantId: string, merchantUserId: string
   revalidatePath('/merchants')
 }
 
-// 审核商家：拒绝（可选填写拒绝原因）
+// 审核商家：拒绝（使用 service_role 写库，避免 merchant_staff RLS 无限递归）
 export async function rejectMerchant(merchantId: string, rejectionReason?: string | null) {
-  const supabase = await requireAdmin()
+  await requireAdmin()
 
+  const supabase = getServiceRoleClient()
   const { error } = await supabase
     .from('merchants')
     .update({
@@ -70,10 +73,11 @@ export async function rejectMerchant(merchantId: string, rejectionReason?: strin
   revalidatePath(`/merchants/${merchantId}`)
 }
 
-// 撤销审批：将已通过的商家改回待审核，便于重新审核
+// 撤销审批：将已通过的商家改回待审核（使用 service_role 写库，避免 RLS 递归）
 export async function revokeMerchantApproval(merchantId: string) {
-  const supabase = await requireAdmin()
+  await requireAdmin()
 
+  const supabase = getServiceRoleClient()
   const { error } = await supabase
     .from('merchants')
     .update({

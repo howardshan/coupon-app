@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/widgets/app_button.dart';
+import '../../../orders/domain/providers/coupons_provider.dart';
 import '../../../orders/domain/providers/orders_provider.dart';
 
 class OrderSuccessScreen extends ConsumerWidget {
@@ -19,10 +20,14 @@ class OrderSuccessScreen extends ConsumerWidget {
         child: Padding(
           padding: const EdgeInsets.all(32),
           child: orderAsync.when(
-            data: (order) => Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.check_circle,
+            data: (order) {
+              // 支付成功后刷新券列表和订单列表，进入 My Coupons / My Orders 时能看到新数据
+              ref.invalidate(userCouponsProvider);
+              ref.invalidate(userOrdersProvider);
+              return Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.check_circle,
                     size: 100, color: AppColors.success),
                 const SizedBox(height: 24),
                 const Text(
@@ -99,7 +104,8 @@ class OrderSuccessScreen extends ConsumerWidget {
                   onPressed: () => context.go('/home'),
                 ),
               ],
-            ),
+            );
+            },
             // 加载订单详情时显示简单确认
             loading: () => Column(
               mainAxisAlignment: MainAxisAlignment.center,
