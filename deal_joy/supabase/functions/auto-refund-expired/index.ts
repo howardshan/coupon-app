@@ -3,7 +3,7 @@
 // 需求 7.1.2：团购券过期 24 小时后自动退全额
 // 使用 fetch 直连 Stripe API，避免 Stripe SDK 在 Supabase Edge 中触发 runMicrotasks 报错
 
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2?target=deno';
+import { createClient } from 'npm:@supabase/supabase-js@2';
 
 // CORS 响应头（与其他 Edge Functions 保持一致）
 const corsHeaders = {
