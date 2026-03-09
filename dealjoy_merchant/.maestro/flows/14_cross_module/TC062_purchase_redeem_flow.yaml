@@ -1,0 +1,66 @@
+# TC062: 完整购买→核销流程（商家端视角）
+# 测试步骤：登录 → Scan → 输入有效券码 → 确认核销 → 查看 Orders → 查看 Earnings
+# 注意：需要预设有效券码数据
+# 预期结果：核销成功后能在 Orders 和 Earnings 中看到对应记录
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+- launchApp:
+    clearState: true
+
+# 登录
+- runFlow: ../../shared/login.yaml
+
+# 等待 Dashboard 加载
+- extendedWaitUntil:
+    visible: "Dashboard"
+    timeout: 10000
+
+# 点击底部 Scan tab
+- tapOn: "Scan"
+
+- extendedWaitUntil:
+    visible: "Scan"
+    timeout: 10000
+
+- takeScreenshot: TC062_scan_page
+
+# 点击手动输入按钮
+- tapOn:
+    text: "Enter Code"
+    optional: true
+- tapOn:
+    text: "Manual Entry"
+    optional: true
+
+# 输入券码（需要预设有效券码）
+- takeScreenshot: TC062_manual_entry
+
+# 注意：以下步骤依赖有效券码，可能 BLOCKED
+# 核销确认后查看 Orders
+- tapOn: "Orders"
+
+- extendedWaitUntil:
+    visible: "All"
+    timeout: 10000
+
+- takeScreenshot: TC062_orders_after_redeem
+
+# 返回 Me tab 查看 Earnings
+- tapOn: "Me"
+
+- extendedWaitUntil:
+    visible: "Me"
+    timeout: 10000
+
+- tapOn: "Earnings"
+
+- extendedWaitUntil:
+    visible: "Earnings"
+    timeout: 10000
+
+- takeScreenshot: TC062_earnings_after_redeem
+
+# 最终截图
+- takeScreenshot: TC062_purchase_redeem_flow_result

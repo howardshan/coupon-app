@@ -1,0 +1,36 @@
+# TC055: 新订单推送通知
+# 状态：BLOCKED — 模拟器上无法测试推送通知，仅验证通知页面可达
+# 测试步骤：登录 → 导航到 Notifications 页 → 验证页面可达
+# 预期结果：通知页面正常加载
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+# 登录
+- runFlow: ../../shared/login.yaml
+
+# 导航到 Notifications 页
+- tapOn: "Me"
+- extendedWaitUntil:
+    visible: "Me"
+    timeout: 10000
+
+- tapOn:
+    text: "Notifications"
+    optional: true
+
+# 验证 Notifications 页面可达
+- extendedWaitUntil:
+    visible: "Notifications"
+    timeout: 10000
+
+- assertVisible: "Notifications"
+
+# BLOCKED: 推送通知测试需要真机环境
+# 以下步骤在模拟器上无法执行：
+# - 触发新订单推送
+# - 验证推送通知内容
+# - 点击推送跳转到订单详情
+
+# 截图确认页面可达
+- takeScreenshot: TC055_notification_page_reachable

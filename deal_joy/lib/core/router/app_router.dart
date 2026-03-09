@@ -23,6 +23,7 @@ import '../../features/merchant/presentation/screens/merchant_dashboard_screen.d
 import '../../features/merchant/presentation/screens/merchant_detail_screen.dart';
 import '../../features/merchant/presentation/screens/photo_gallery_screen.dart';
 import '../../features/merchant/presentation/screens/qr_scanner_screen.dart';
+import '../../features/merchant/presentation/screens/brand_detail_screen.dart';
 import '../../features/chat/presentation/screens/chat_screen.dart';
 import '../../features/cart/presentation/screens/cart_screen.dart';
 import '../widgets/main_scaffold.dart';
@@ -124,6 +125,13 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/merchant/scan',
         builder: (_, _) => const QrScannerScreen(),
+      ),
+
+      // V2.4 品牌聚合页
+      GoRoute(
+        path: '/brand/:brandId',
+        builder: (_, state) =>
+            BrandDetailScreen(brandId: state.pathParameters['brandId']!),
       ),
 
       // Merchant detail (parameterized — must be after static merchant routes)

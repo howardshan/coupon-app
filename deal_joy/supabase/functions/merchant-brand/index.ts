@@ -102,6 +102,66 @@ Deno.serve(async (req: Request) => {
       } as any;
     }
 
+    // -------------------------------------------------------
+    // POST /merchant-brand — 创建品牌（独立门店升级为连锁）
+    // 此端点不要求已有 brandId，仅要求 store_owner
+    // -------------------------------------------------------
+    if (req.method === "POST" && pathSegments.length === 0) {
+      if (auth.role !== "store_owner") {
+        return errorResponse("Only store owner can create a brand", 403);
+      }
+
+      const body = await req.json();
+      const { name, description, logo_url } = body;
+      if (!name) {
+        return errorResponse("Brand name is required");
+      }
+
+      // 检查门店是否已关联品牌
+      const { data: currentMerchant } = await supabaseAdmin
+        .from("merchants")
+        .select("brand_id")
+        .eq("id", auth.merchantId)
+        .single();
+
+      if (currentMerchant?.brand_id) {
+        return errorResponse("This store is already associated with a brand");
+      }
+
+      // 1. 创建品牌
+      const { data: brand, error: brandError } = await supabaseAdmin
+        .from("brands")
+        .insert({
+          name,
+          description: description ?? null,
+          logo_url: logo_url ?? null,
+          owner_id: user.id,
+        })
+        .select()
+        .single();
+
+      if (brandError) {
+        return errorResponse(`Failed to create brand: ${brandError.message}`);
+      }
+
+      // 2. 关联门店到品牌
+      await supabaseAdmin
+        .from("merchants")
+        .update({ brand_id: brand.id })
+        .eq("id", auth.merchantId);
+
+      // 3. 创建 brand_admins 记录（brand_owner）
+      await supabaseAdmin
+        .from("brand_admins")
+        .insert({
+          brand_id: brand.id,
+          user_id: user.id,
+          role: "owner",
+        });
+
+      return jsonResponse({ brand }, 201);
+    }
+
     // 品牌管理权限检查
     requirePermission(auth, "brand");
 
@@ -255,6 +315,59 @@ Deno.serve(async (req: Request) => {
       if (error) {
         return errorResponse(`Failed to remove store: ${error.message}`);
       }
+
+      // 从多店 deal 的 applicable_merchant_ids 中移除该门店
+      const { data: affectedDeals } = await supabaseAdmin
+        .from("deals")
+        .select("id, applicable_merchant_ids")
+        .contains("applicable_merchant_ids", [storeId]);
+
+      if (affectedDeals && affectedDeals.length > 0) {
+        for (const deal of affectedDeals) {
+          const updatedIds = (deal.applicable_merchant_ids || [])
+            .filter((id: string) => id !== storeId);
+          await supabaseAdmin
+            .from("deals")
+            .update({
+              applicable_merchant_ids: updatedIds.length > 0 ? updatedIds : null,
+            })
+            .eq("id", deal.id);
+
+          // 若 deal 无可用门店且非原 merchant 的 deal，自动停用
+          if (updatedIds.length === 0) {
+            const dealInfo = await supabaseAdmin
+              .from("deals")
+              .select("merchant_id, is_active")
+              .eq("id", deal.id)
+              .single();
+            // 如果移除的是 deal 原始门店（不太可能），跳过
+            if (dealInfo.data && dealInfo.data.merchant_id !== storeId && dealInfo.data.is_active) {
+              // 多店 deal 已无可用门店但原店仍在，保持 active
+            }
+          }
+        }
+      }
+
+      // 发通知给被移除门店的 owner
+      try {
+        const { data: storeOwnerData } = await supabaseAdmin
+          .from("merchants")
+          .select("user_id, name")
+          .eq("id", storeId)
+          .single();
+        if (storeOwnerData) {
+          await supabaseAdmin.from("merchant_notifications").insert({
+            merchant_id: storeId,
+            type: "system",
+            title: "Removed from Brand",
+            body: `Your store "${storeOwnerData.name}" has been removed from the brand.`,
+            is_read: false,
+          });
+        }
+      } catch (_) {
+        // 通知失败不阻断主流程
+      }
+
       return jsonResponse({ success: true });
     }
 

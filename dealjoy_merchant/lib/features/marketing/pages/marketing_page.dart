@@ -4,6 +4,8 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import '../../store/providers/store_provider.dart';
 import 'flash_deals_page.dart';
 import 'new_customer_offer_page.dart';
 import 'promotions_page.dart';
@@ -33,6 +35,9 @@ class MarketingPage extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          // V2.5 品牌级营销入口（仅品牌管理员可见）
+          if (ref.watch(storeProvider).valueOrNull?.isChainStore == true)
+            _BrandMarketingSection(),
           // 顶部说明横幅
           _ComingSoonBanner(),
           const SizedBox(height: 20),
@@ -279,6 +284,114 @@ class _ComingInV2Badge extends StatelessWidget {
           fontSize: 10,
           fontWeight: FontWeight.w600,
           color: Color(0xFFE65100),
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================
+// V2.5 品牌级营销入口区域
+// ============================================================
+class _BrandMarketingSection extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.purple[600]!, Colors.deepPurple[400]!],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.campaign, color: Colors.white, size: 24),
+              SizedBox(width: 8),
+              Text(
+                'Brand Marketing',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _BrandToolChip(
+                  icon: Icons.local_activity,
+                  label: 'Campaigns',
+                  onTap: () => context.push('/marketing/brand-campaigns'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _BrandToolChip(
+                  icon: Icons.confirmation_number,
+                  label: 'Promo Codes',
+                  onTap: () => context.push('/marketing/brand-promo-codes'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _BrandToolChip(
+                  icon: Icons.loyalty,
+                  label: 'Loyalty',
+                  onTap: () => context.push('/marketing/brand-loyalty'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BrandToolChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  const _BrandToolChip({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white.withValues(alpha: 0.15),
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Column(
+            children: [
+              Icon(icon, color: Colors.white, size: 20),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

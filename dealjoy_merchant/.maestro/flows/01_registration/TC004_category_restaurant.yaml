@@ -1,0 +1,68 @@
+# TC004: 分类选择 — Restaurant
+# 测试步骤：查看分类网格 → 点击 Restaurant → 观察文档上传区
+# 预期结果：Restaurant 选中（橙色边框），显示 Health Permit + Food Service License
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+- launchApp:
+    clearState: true
+
+# 快速过注册前几步
+- assertVisible: "Welcome back"
+- tapOn: "Register"
+- extendedWaitUntil:
+    visible: "Create Account"
+    timeout: 10000
+- tapOn: "Business Email"
+- inputText: "testmerchant_tc004@test.com"
+- tapOn: "Password"
+- inputText: "Test1234!"
+- tapOn:
+    text: "Confirm Password"
+    optional: true
+- inputText: "Test1234!"
+- hideKeyboard
+- tapOn: "Next"
+
+# Step 1: Store Type
+- extendedWaitUntil:
+    visible: "Store Type"
+    timeout: 10000
+- tapOn:
+    text: "Single Location.*"
+    retryTapIfNoChange: false
+- tapOn: "Next"
+
+# Step 2: Business Info
+- extendedWaitUntil:
+    visible: "Company Name"
+    timeout: 10000
+- tapOn: "Company Name"
+- inputText: "TC004 Restaurant"
+- tapOn: "Contact Person Name"
+- inputText: "Test Owner"
+- tapOn: "Contact Phone"
+- inputText: "2145551234"
+- hideKeyboard
+- tapOn: "Next"
+
+# 等待分类选择页
+- extendedWaitUntil:
+    visible: "Select Category"
+    timeout: 10000
+
+# 点击 Restaurant
+- tapOn: "Restaurant"
+
+- takeScreenshot: TC004_restaurant_selected
+
+# 点击 Next 进入文档上传
+- tapOn: "Next"
+
+# 验证出现 Health Permit 和 Food Service License 上传区域
+- extendedWaitUntil:
+    visible: "Health Permit"
+    timeout: 10000
+
+- takeScreenshot: TC004_restaurant_documents

@@ -1,0 +1,27 @@
+# TC033: QR 扫码页面 UI 验证
+# 测试步骤：登录 → 点击底部 Scan tab → 验证相机/扫码 UI 元素
+# 预期结果：扫码页面正确显示，Scan QR tab 可见
+# 注意：模拟器无真实相机，此用例仅验证 UI 元素
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+# 登录
+- runFlow: ../../shared/login.yaml
+
+# 点击底部 Scan tab
+- tapOn: "Scan"
+
+# 等待扫码页面加载
+- extendedWaitUntil:
+    visible: "Scan QR"
+    timeout: 10000
+
+# 验证 Scan QR tab 可见
+- assertVisible: "Scan QR"
+
+# 验证 Enter Code tab 也存在
+- assertVisible: "Enter Code"
+
+# 截图保存
+- takeScreenshot: TC033_qr_scan_page

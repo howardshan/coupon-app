@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../providers/settings_provider.dart';
 import '../widgets/settings_section.dart';
 import '../widgets/settings_tile.dart';
+import '../../store/providers/store_provider.dart';
 
 // ============================================================
 // SettingsPage — 商家设置主入口（ConsumerWidget）
@@ -16,10 +17,14 @@ class SettingsPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // 通过 SettingsService 获取当前邮箱，避免直接访问 Supabase.instance
-    // 测试环境中 Supabase 未初始化时仍可正常渲染
     final service = ref.watch(settingsServiceProvider);
     final email = service.currentUserEmail;
+
+    // 获取门店信息，判断是否为连锁店、是否有品牌管理权限
+    final storeInfo = ref.watch(storeProvider).valueOrNull;
+    final isChainStore = storeInfo?.isChainStore ?? false;
+    final isStoreOwner = storeInfo?.currentRole == 'store_owner';
+    final hasBrandPermission = storeInfo?.hasPermission('brand') ?? false;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
@@ -62,6 +67,45 @@ class SettingsPage extends ConsumerWidget {
           ),
 
           // --------------------------------------------------
+          // Store & Brand 分组（根据角色动态显示）
+          // --------------------------------------------------
+          if (isChainStore && hasBrandPermission)
+            SettingsSection(
+              title: 'Brand',
+              children: [
+                SettingsTile(
+                  key: const ValueKey('settings_brand_management_btn'),
+                  icon: Icons.business,
+                  title: 'Brand Management',
+                  subtitle: 'Manage your brand and stores',
+                  onTap: () => context.push('/brand-manage'),
+                ),
+                SettingsTile(
+                  icon: Icons.swap_horiz,
+                  title: 'Switch Store',
+                  subtitle: 'Select a different location',
+                  showDivider: false,
+                  onTap: () => context.go('/store-selector'),
+                ),
+              ],
+            ),
+          // 独立门店 + store_owner → 显示"升级为连锁"入口
+          if (!isChainStore && isStoreOwner)
+            SettingsSection(
+              title: 'Growth',
+              children: [
+                SettingsTile(
+                  key: const ValueKey('settings_upgrade_chain_btn'),
+                  icon: Icons.trending_up,
+                  title: 'Upgrade to Chain',
+                  subtitle: 'Expand your business to multiple locations',
+                  showDivider: false,
+                  onTap: () => _showUpgradeDialog(context, ref),
+                ),
+              ],
+            ),
+
+          // --------------------------------------------------
           // Notifications 分组
           // --------------------------------------------------
           SettingsSection(
@@ -98,6 +142,32 @@ class SettingsPage extends ConsumerWidget {
               ),
             ],
           ),
+
+          // --------------------------------------------------
+          // Danger Zone（仅 store_owner 显示）
+          // --------------------------------------------------
+          if (isStoreOwner)
+            SettingsSection(
+              title: 'Danger Zone',
+              children: [
+                if (isChainStore)
+                  SettingsTile(
+                    key: const ValueKey('settings_leave_brand_btn'),
+                    icon: Icons.link_off,
+                    title: 'Leave Brand',
+                    subtitle: 'Disconnect from brand, become independent',
+                    onTap: () => _confirmLeaveBrand(context, ref),
+                  ),
+                SettingsTile(
+                  key: const ValueKey('settings_close_store_btn'),
+                  icon: Icons.store_outlined,
+                  title: 'Close Store',
+                  subtitle: 'Permanently close and refund all vouchers',
+                  showDivider: false,
+                  onTap: () => _confirmCloseStore(context, ref),
+                ),
+              ],
+            ),
 
           // --------------------------------------------------
           // Sign Out 按钮（红色，独立区块）
@@ -232,6 +302,206 @@ class SettingsPage extends ConsumerWidget {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Sign out failed: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  // ----------------------------------------------------------
+  // 升级为连锁确认弹窗
+  // ----------------------------------------------------------
+  Future<void> _showUpgradeDialog(BuildContext context, WidgetRef ref) async {
+    // 预填品牌名为当前门店的公司名（#11）
+    final storeInfo = ref.read(storeProvider).valueOrNull;
+    final brandNameCtrl = TextEditingController(
+      text: storeInfo?.companyName ?? storeInfo?.name ?? '',
+    );
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Upgrade to Chain'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Create a brand to manage multiple store locations. Your current store will be the first location.',
+              style: TextStyle(fontSize: 14, color: Color(0xFF757575)),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: brandNameCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Brand Name',
+                hintText: 'Enter your brand name',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFFF6B35),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Create Brand'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && context.mounted) {
+      final brandName = brandNameCtrl.text.trim();
+      if (brandName.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Brand name is required'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      try {
+        final storeService = ref.read(storeServiceProvider);
+        await storeService.createBrand(name: brandName);
+        // 刷新门店信息以反映品牌关联
+        ref.invalidate(storeProvider);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Brand created successfully!'),
+              backgroundColor: Color(0xFF2E7D32),
+            ),
+          );
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to create brand: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+    brandNameCtrl.dispose();
+  }
+
+  // ----------------------------------------------------------
+  // 闭店确认弹窗
+  // ----------------------------------------------------------
+  Future<void> _confirmCloseStore(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Close Store'),
+        content: const Text(
+          'This will:\n'
+          '• Set your store status to Closed\n'
+          '• Deactivate all active deals\n'
+          '• Trigger refunds for unused vouchers\n\n'
+          'This action cannot be easily undone. Are you sure?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Close Store'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && context.mounted) {
+      try {
+        final storeService = ref.read(storeServiceProvider);
+        final pendingRefunds = await storeService.closeStore();
+        ref.invalidate(storeProvider);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Store closed. $pendingRefunds vouchers pending refund.',
+              ),
+              backgroundColor: const Color(0xFF2E7D32),
+            ),
+          );
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to close store: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  // ----------------------------------------------------------
+  // 解除品牌合作确认弹窗
+  // ----------------------------------------------------------
+  Future<void> _confirmLeaveBrand(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Leave Brand'),
+        content: const Text(
+          'This will disconnect your store from the brand.\n\n'
+          '• Your store will become independent\n'
+          '• Multi-store deals will no longer apply here\n'
+          '• You can rejoin a brand later\n\n'
+          'Are you sure?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Leave Brand'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && context.mounted) {
+      try {
+        final storeService = ref.read(storeServiceProvider);
+        await storeService.leaveBrand();
+        ref.invalidate(storeProvider);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Successfully left the brand.'),
+              backgroundColor: Color(0xFF2E7D32),
+            ),
+          );
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to leave brand: $e'),
               backgroundColor: Colors.red,
             ),
           );

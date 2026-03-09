@@ -1,0 +1,32 @@
+# TC058: 审批 Influencer 申请
+# 测试步骤：进入 Influencer 页面 → 查看申请列表
+# 状态：BLOCKED — 需要有 influencer 申请数据才能测试
+# 预期结果：能看到申请列表（如有数据）
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+# 登录
+- runFlow: ../../shared/login.yaml
+
+# 点击底部 Me tab
+- tapOn: "Me"
+
+- extendedWaitUntil:
+    visible: "Me"
+    timeout: 10000
+
+# 进入 Influencer 页面
+- tapOn:
+    text: "Influencer"
+    optional: true
+
+- extendedWaitUntil:
+    visible: "Influencer"
+    timeout: 10000
+
+- takeScreenshot: TC058_influencer_page
+
+# BLOCKED: 需要有 influencer 申请数据
+# 以下步骤依赖真实数据，暂时仅验证页面可达
+- takeScreenshot: TC058_approve_influencer_blocked

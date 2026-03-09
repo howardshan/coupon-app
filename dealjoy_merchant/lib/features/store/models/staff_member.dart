@@ -3,14 +3,24 @@
 
 /// 员工角色枚举
 enum StaffRole {
+  /// V2.3 区域经理 — 管理多店，含品牌权限
+  // ignore: constant_identifier_names
+  regional_manager,
+
   /// 店长 — 管理该店全部功能（不含门店设置/删除）
   manager,
+
+  /// V2.3 财务 — 只看财务 + 订单 + 数据分析
+  finance,
 
   /// 核销员/收银 — 只能扫码 + 看订单列表
   cashier,
 
   /// 客服 — 核销 + 订单 + 回复评价
-  service;
+  service,
+
+  /// V2.3 实习生 — 只读扫码（不能核销）
+  trainee;
 
   /// 转换为 API 字符串
   String get value => name;
@@ -26,24 +36,36 @@ enum StaffRole {
   /// 用户友好的显示标签
   String get displayLabel {
     switch (this) {
+      case StaffRole.regional_manager:
+        return 'Regional Manager';
       case StaffRole.manager:
         return 'Manager';
+      case StaffRole.finance:
+        return 'Finance';
       case StaffRole.cashier:
         return 'Cashier';
       case StaffRole.service:
         return 'Service';
+      case StaffRole.trainee:
+        return 'Trainee';
     }
   }
 
   /// 角色描述
   String get description {
     switch (this) {
+      case StaffRole.regional_manager:
+        return 'Manage multiple stores with brand access';
       case StaffRole.manager:
         return 'Full store management except settings';
+      case StaffRole.finance:
+        return 'View financials, orders, and analytics';
       case StaffRole.cashier:
         return 'Scan vouchers and view orders';
       case StaffRole.service:
         return 'Scan, orders, and reply to reviews';
+      case StaffRole.trainee:
+        return 'View-only scan access for training';
     }
   }
 }

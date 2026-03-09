@@ -1,0 +1,39 @@
+# TC052: 分析概览指标
+# 测试步骤：登录 → Analytics 页 → 切换 7 days / 30 days → 验证指标显示
+# 预期结果：指标数据正确显示，时间范围切换正常
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+# 登录
+- runFlow: ../../shared/login.yaml
+
+# 点击底部 Me tab
+- tapOn: "Me"
+- extendedWaitUntil:
+    visible: "Me"
+    timeout: 10000
+
+# 点击 Analytics 入口
+- tapOn: "Analytics"
+
+# 等待 Analytics 页加载
+- extendedWaitUntil:
+    visible: "Analytics"
+    timeout: 10000
+
+# 切换到 7 days
+- tapOn:
+    text: "7 days"
+    optional: true
+
+# 截图保存 7 天数据
+- takeScreenshot: TC052_overview_7days
+
+# 切换到 30 days
+- tapOn:
+    text: "30 days"
+    optional: true
+
+# 截图保存 30 天数据
+- takeScreenshot: TC052_overview_30days

@@ -1,0 +1,68 @@
+# TC024: Create Deal - Basic Info & Pricing
+# 测试步骤：登录 → Manage Deals → Create Deal → 输入基本信息和价格 → 验证折扣自动计算
+# 预期结果：Deal 标题、描述填写成功，原价 $50 售价 $35，自动计算 30% OFF
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+- launchApp:
+    clearState: true
+
+# 引用共享登录
+- runFlow: ../../shared/login.yaml
+
+# 等待 Dashboard 加载完成
+- extendedWaitUntil:
+    visible: "Dashboard"
+    timeout: 10000
+
+# 点击 Manage Deals 快捷入口
+- tapOn: "Manage Deals"
+
+# 等待 Deal 列表页加载
+- extendedWaitUntil:
+    visible: "My Deals"
+    timeout: 8000
+- takeScreenshot: TC024_deals_list_page
+
+# 点击 Create Deal FAB
+- tapOn: "Create Deal"
+
+# 等待 Create Deal 页面加载（5步 Stepper）
+- extendedWaitUntil:
+    visible: "Create Deal"
+    timeout: 5000
+- assertVisible: "Basic Info"
+- takeScreenshot: TC024_step1_basic_info
+
+# Step 1: 填写基本信息
+- tapOn: "Deal Title"
+- inputText: "Test Deal - 2 Person BBQ Set"
+- hideKeyboard
+
+- tapOn: "Description"
+- inputText: "Delicious BBQ set for two, includes appetizer, main course and dessert."
+- hideKeyboard
+- takeScreenshot: TC024_step1_filled
+
+# 注意：需要选择菜品来设置原价，这里跳过菜品选择（可能 BLOCKED）
+# 点击 Continue 进入 Step 2
+- tapOn: "Continue"
+
+# Step 2: 设置价格
+- extendedWaitUntil:
+    visible: "Pricing"
+    timeout: 5000
+
+# 输入 Deal Price（售价 $35）
+- tapOn: "Deal Price"
+- inputText: "35"
+- hideKeyboard
+- takeScreenshot: TC024_step2_pricing
+
+# 验证折扣百分比显示（30% OFF）
+# 注意：折扣计算依赖原价（由菜品决定），如果菜品选择被跳过则可能不显示
+- takeScreenshot: TC024_step2_discount_calc
+
+# 最终截图
+- takeScreenshot: TC024_create_deal_basic_result

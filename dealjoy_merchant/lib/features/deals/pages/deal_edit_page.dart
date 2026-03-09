@@ -55,6 +55,10 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
   final Set<String> _selectedDays = {};
   bool _isStackable = true;
 
+  // 多店适用（仅连锁店显示）
+  bool _isMultiStore = false;
+  final Set<String> _selectedStoreIds = {};
+
   // Step 5: 图片
   final List<XFile> _newImages = [];
 
@@ -109,6 +113,12 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
     _isStackable = deal.isStackable;
     if (deal.usageDays.isNotEmpty) {
       _selectedDays.addAll(deal.usageDays);
+    }
+    // 多店适用回填
+    if (deal.applicableMerchantIds != null &&
+        deal.applicableMerchantIds!.isNotEmpty) {
+      _isMultiStore = true;
+      _selectedStoreIds.addAll(deal.applicableMerchantIds!);
     }
   }
 
@@ -173,6 +183,9 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
             : null,
         isStackable: _isStackable,
         dealCategoryId: _selectedDealCategoryId,
+        applicableMerchantIds: _isMultiStore && _selectedStoreIds.isNotEmpty
+            ? _selectedStoreIds.toList()
+            : null,
         images: widget.deal.images,
         createdAt: widget.deal.createdAt,
         updatedAt: DateTime.now(),
@@ -863,6 +876,8 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
               : 'No Limit',
         ),
         _summaryRow('Stacking', _isStackable ? 'Allowed' : 'Not Allowed'),
+        if (_isMultiStore && _selectedStoreIds.isNotEmpty)
+          _summaryRow('Locations', '${_selectedStoreIds.length} stores'),
       ],
     );
   }
@@ -947,6 +962,155 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
                 activeThumbColor: _orange,
                 onChanged: (v) => setState(() => _isStackable = v),
               ),
+            ],
+          ),
+        ),
+        // 多店适用选择（仅连锁店显示）
+        _buildMultiStoreSection(),
+      ],
+    );
+  }
+
+  // ============================================================
+  // 多店适用选择（仅连锁店品牌管理员显示）
+  // ============================================================
+  Widget _buildMultiStoreSection() {
+    final storeInfo = ref.watch(storeProvider).valueOrNull;
+    final isChain = storeInfo?.isChainStore ?? false;
+    if (!isChain) return const SizedBox.shrink();
+
+    final storesAsync = ref.watch(brandStoresProvider);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 16),
+        _sectionLabel('Applicable Stores'),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: const Color(0xFFE0E0E0)),
+          ),
+          child: Column(
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Multiple Locations',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: Color(0xFF333333),
+                        ),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        'Available at other store locations',
+                        style: TextStyle(fontSize: 12, color: Color(0xFF999999)),
+                      ),
+                    ],
+                  ),
+                  Switch(
+                    value: _isMultiStore,
+                    activeThumbColor: _orange,
+                    onChanged: (v) => setState(() {
+                      _isMultiStore = v;
+                      if (!v) _selectedStoreIds.clear();
+                    }),
+                  ),
+                ],
+              ),
+              if (_isMultiStore)
+                storesAsync.when(
+                  loading: () => const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: Center(
+                      child: SizedBox(
+                        width: 20, height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ),
+                  ),
+                  error: (e, _) => Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: Text('Failed to load stores',
+                        style: TextStyle(color: Colors.red[400], fontSize: 13)),
+                  ),
+                  data: (stores) {
+                    if (stores.isEmpty) {
+                      return const Padding(
+                        padding: EdgeInsets.all(8),
+                        child: Text('No other stores found',
+                            style: TextStyle(fontSize: 13, color: Color(0xFF999999))),
+                      );
+                    }
+                    return Column(
+                      children: [
+                        const Divider(height: 16),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            TextButton(
+                              onPressed: () {
+                                setState(() {
+                                  if (_selectedStoreIds.length == stores.length) {
+                                    _selectedStoreIds.clear();
+                                  } else {
+                                    _selectedStoreIds.addAll(
+                                      stores.map((s) => s.id),
+                                    );
+                                  }
+                                });
+                              },
+                              child: Text(
+                                _selectedStoreIds.length == stores.length
+                                    ? 'Deselect All'
+                                    : 'Select All',
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: Color(0xFFFF6B35),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        ...stores.map((store) => CheckboxListTile(
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              activeColor: _orange,
+                              title: Text(store.name,
+                                  style: const TextStyle(fontSize: 14)),
+                              subtitle: store.address != null &&
+                                      store.address!.isNotEmpty
+                                  ? Text(store.address!,
+                                      style: const TextStyle(
+                                          fontSize: 12,
+                                          color: Color(0xFF999999)),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis)
+                                  : null,
+                              value: _selectedStoreIds.contains(store.id),
+                              onChanged: (v) {
+                                setState(() {
+                                  if (v == true) {
+                                    _selectedStoreIds.add(store.id);
+                                  } else {
+                                    _selectedStoreIds.remove(store.id);
+                                  }
+                                });
+                              },
+                            )),
+                      ],
+                    );
+                  },
+                ),
             ],
           ),
         ),

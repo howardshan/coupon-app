@@ -307,6 +307,14 @@ final brandStoresProvider = FutureProvider<List<StoreSummary>>((ref) async {
 });
 
 // ============================================================
+// brandDetailsProvider — 品牌完整信息（品牌+门店+管理员）
+// ============================================================
+final brandDetailsProvider = FutureProvider<Map<String, dynamic>>((ref) async {
+  final service = ref.read(storeServiceProvider);
+  return service.fetchBrandDetails();
+});
+
+// ============================================================
 // StaffNotifier — 员工列表 + 邀请管理
 // ============================================================
 class StaffNotifier

@@ -1,0 +1,43 @@
+# Phase 2 TC01: 门店老板看到全部 4 个 Tab
+# 功能点 #21: 门店老板看到全部页面
+appId: com.dealjoy.dealjoy_merchant
+---
+- launchApp:
+    clearState: true
+
+# 登录门店老板账号
+- extendedWaitUntil:
+    visible: "Welcome back"
+    timeout: 30000
+- tapOn: "Email"
+- inputText: "testmerchant@dealjoy.com"
+- tapOn: "Password"
+- inputText: "Test123456"
+- hideKeyboard
+- tapOn: "Sign In"
+
+# 等待进入 Dashboard
+- extendedWaitUntil:
+    visible: "Today's Stats"
+    timeout: 15000
+
+# 验证 Dashboard 页面内容可见
+- assertVisible: "Today's Stats"
+- assertVisible: "Quick Actions"
+
+# 验证底部 tab 可切换
+# Scan tab（底部第 2 个 tab）
+- tapOn:
+    point: "30%,97%"
+- extendedWaitUntil:
+    visible: "Scan Voucher"
+    timeout: 10000
+
+# Orders tab（底部第 3 个 tab）
+- tapOn:
+    point: "50%,97%"
+- extendedWaitUntil:
+    visible: "All Deals"
+    timeout: 10000
+
+- takeScreenshot: P2_TC01_owner_all_tabs

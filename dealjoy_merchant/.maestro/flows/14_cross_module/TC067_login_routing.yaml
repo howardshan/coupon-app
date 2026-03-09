@@ -1,0 +1,28 @@
+# TC067: 登录路由测试
+# 测试步骤：用已审核通过的账号登录 → 验证跳转到 Dashboard
+# 注意：用 pending 账号登录验证跳转到 Under Review 需要额外测试账号
+# 预期结果：已审核通过账号登录后跳转 Dashboard
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+- launchApp:
+    clearState: true
+
+# 用已审核通过的账号登录
+- runFlow: ../../shared/login.yaml
+
+# 验证跳转到 Dashboard（已审核通过的账号）
+- extendedWaitUntil:
+    visible: "Dashboard"
+    timeout: 15000
+
+# 验证 Dashboard 核心元素可见
+- assertVisible: "Dashboard"
+
+- takeScreenshot: TC067_approved_login_dashboard
+
+# 注意：以下 pending 账号测试需要额外测试账号
+# 如果有 pending 测试账号，可以新建 flow 单独测试
+# pending 账号登录后应跳转到 Under Review 页面
+- takeScreenshot: TC067_login_routing_result

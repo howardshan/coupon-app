@@ -5,6 +5,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../store/providers/store_provider.dart';
 import '../models/merchant_deal.dart';
 import '../models/deal_category.dart';
 import '../providers/deals_provider.dart';
@@ -57,6 +58,13 @@ class DealsListPage extends ConsumerWidget {
           ),
           centerTitle: false,
           actions: [
+            // V2.2 模板管理按钮（仅品牌管理员可见）
+            if (ref.watch(storeProvider).valueOrNull?.isChainStore == true)
+              IconButton(
+                icon: const Icon(Icons.copy_all_outlined, color: Color(0xFF666666)),
+                tooltip: 'Deal Templates',
+                onPressed: () => context.push('/deals/templates'),
+              ),
             // 分类管理按钮
             IconButton(
               icon: const Icon(Icons.category_outlined, color: Color(0xFF666666)),

@@ -242,3 +242,25 @@ int _weekOfYear(DateTime date) {
   final dayOfYear       = date.difference(firstDayOfYear).inDays;
   return (dayOfYear / 7).ceil() + 1;
 }
+
+// =============================================================
+// 提现相关 Providers
+// =============================================================
+
+/// 可提现余额
+final withdrawalBalanceProvider = FutureProvider<WithdrawalBalance>((ref) async {
+  final service = ref.read(earningsServiceProvider);
+  return service.fetchWithdrawalBalance();
+});
+
+/// 提现记录
+final withdrawalHistoryProvider = FutureProvider<List<WithdrawalRecord>>((ref) async {
+  final service = ref.read(earningsServiceProvider);
+  return service.fetchWithdrawalHistory();
+});
+
+/// 提现设置
+final withdrawalSettingsProvider = FutureProvider<WithdrawalSettings>((ref) async {
+  final service = ref.read(earningsServiceProvider);
+  return service.fetchWithdrawalSettings();
+});

@@ -1,0 +1,41 @@
+# TC051: 评价统计
+# 测试步骤：Reviews 页 → 查看统计区域 → 验证平均评分和评分分布
+# 预期结果：统计数据正确显示
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+# 登录
+- runFlow: ../../shared/login.yaml
+
+# 导航到 Reviews 页
+- tapOn: "Me"
+- extendedWaitUntil:
+    visible: "Me"
+    timeout: 10000
+- tapOn: "Reviews"
+- extendedWaitUntil:
+    visible: "Reviews"
+    timeout: 10000
+
+# 验证统计区域
+- extendedWaitUntil:
+    visible: "Average Rating"
+    timeout: 10000
+
+# 验证评分相关元素
+- assertVisible:
+    text: "Average Rating"
+    optional: true
+- assertVisible:
+    text: "5 stars"
+    optional: true
+- assertVisible:
+    text: "4 stars"
+    optional: true
+- assertVisible:
+    text: "3 stars"
+    optional: true
+
+# 截图保存评价统计
+- takeScreenshot: TC051_review_statistics

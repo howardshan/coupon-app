@@ -1,0 +1,32 @@
+# Phase 4 TC01: 品牌管理页面可访问
+# 功能点 #30: 品牌管理页
+appId: com.dealjoy.dealjoy_merchant
+---
+- launchApp:
+    clearState: true
+
+# 登录
+- extendedWaitUntil:
+    visible: "Welcome back"
+    timeout: 30000
+- tapOn: "Email"
+- inputText: "testmerchant@dealjoy.com"
+- tapOn: "Password"
+- inputText: "Test123456"
+- hideKeyboard
+- tapOn: "Sign In"
+
+# 进入 Dashboard
+- extendedWaitUntil:
+    visible: "Today's Stats"
+    timeout: 15000
+
+# 导航到 Me tab
+- tapOn: "Me"
+- extendedWaitUntil:
+    visible: "Settings"
+    timeout: 15000
+    optional: true
+
+# 查找 Brand Management 入口（如果是连锁店）
+- takeScreenshot: P4_TC01_settings_page

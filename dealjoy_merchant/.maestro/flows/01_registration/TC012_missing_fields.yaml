@@ -1,0 +1,66 @@
+# TC012: 缺少必填字段时提交
+# 测试步骤：注册到 Business Info → 留空 Company Name → 点击 Next
+# 预期结果：显示错误提示 "Company Name is required" 或类似，不能继续到下一步
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+- launchApp:
+    clearState: true
+
+# 快速过注册前几步
+- assertVisible: "Welcome back"
+- tapOn: "Register"
+- extendedWaitUntil:
+    visible: "Create Account"
+    timeout: 10000
+- tapOn: "Business Email"
+- inputText: "testmerchant_tc012@test.com"
+- tapOn: "Password"
+- inputText: "Test1234!"
+- tapOn:
+    text: "Confirm Password"
+    optional: true
+- inputText: "Test1234!"
+- hideKeyboard
+- tapOn: "Next"
+
+# Step 1: Store Type
+- extendedWaitUntil:
+    visible: "Store Type"
+    timeout: 10000
+- tapOn:
+    text: "Single Location.*"
+    retryTapIfNoChange: false
+- tapOn: "Next"
+
+# Step 2: Business Info — 等待页面加载
+- extendedWaitUntil:
+    visible: "Company Name"
+    timeout: 10000
+
+# 不填写 Company Name，只填其他字段
+- tapOn: "Contact Person Name"
+- inputText: "Test Owner"
+- tapOn: "Contact Phone"
+- inputText: "2145551234"
+- hideKeyboard
+
+- takeScreenshot: TC012_missing_company_name
+
+# 点击 Next — 应该被阻止，显示错误
+- tapOn: "Next"
+
+# 等一下让验证触发
+- extendedWaitUntil:
+    visible: "Business Info"
+    timeout: 3000
+
+- takeScreenshot: TC012_validation_error
+
+# 验证仍然在 Business Info 页面（没有进入 Select Category）
+- assertVisible: "Company Name"
+- assertNotVisible:
+    text: "Select Category"
+
+- takeScreenshot: TC012_still_on_business_info

@@ -1,0 +1,92 @@
+# TC010: Store Address 填写
+# 测试步骤：注册到 Step 5（Store Address）→ 填写地址字段
+# 预期结果：地址字段可正常填写
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+- launchApp:
+    clearState: true
+
+# Step 0: Create Account
+- assertVisible: "Welcome back"
+- tapOn: "Register"
+- extendedWaitUntil:
+    visible: "Create Account"
+    timeout: 10000
+- tapOn: "Business Email"
+- inputText: "testmerchant_tc010@test.com"
+- tapOn: "Password"
+- inputText: "Test1234!"
+- tapOn:
+    text: "Confirm Password"
+    optional: true
+- inputText: "Test1234!"
+- hideKeyboard
+- tapOn: "Next"
+
+# Step 1: Store Type
+- extendedWaitUntil:
+    visible: "Store Type"
+    timeout: 10000
+- tapOn:
+    text: "Single Location.*"
+    retryTapIfNoChange: false
+- tapOn: "Next"
+
+# Step 2: Business Info
+- extendedWaitUntil:
+    visible: "Company Name"
+    timeout: 10000
+- tapOn: "Company Name"
+- inputText: "TC010 Address Test"
+- tapOn: "Contact Person Name"
+- inputText: "Test Owner"
+- tapOn: "Contact Phone"
+- inputText: "2145551234"
+- hideKeyboard
+- tapOn: "Next"
+
+# Step 3: Select Category — Fun & Games（最少证件）
+- extendedWaitUntil:
+    visible: "Select Category"
+    timeout: 10000
+- tapOn: "Fun & Games"
+- tapOn: "Next"
+
+# Step 4: EIN + 上传证件
+- extendedWaitUntil:
+    visible: "EIN / Tax ID"
+    timeout: 10000
+- tapOn: "EIN / Tax ID"
+- inputText: "12-3456789"
+- hideKeyboard
+
+# 上传3个基础证件
+- runFlow: ../../shared/upload_base_docs.yaml
+
+- tapOn: "Next"
+
+# Step 5: Store Address
+- extendedWaitUntil:
+    visible: "Store Address"
+    timeout: 10000
+
+- takeScreenshot: TC010_address_step
+
+# 填写地址
+- tapOn: "Address Line 1"
+- inputText: "1234 Main St"
+
+- tapOn: "City"
+- inputText: "Dallas"
+
+- tapOn: "State"
+- inputText: "Texas"
+
+- tapOn: "Zip Code"
+- inputText: "75201"
+
+- hideKeyboard
+
+- takeScreenshot: TC010_address_filled

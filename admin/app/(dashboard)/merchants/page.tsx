@@ -3,29 +3,54 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import MerchantActionButtons from '@/components/merchant-action-buttons'
 
-export default async function MerchantsPage() {
+export default async function MerchantsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ brand?: string }>
+}) {
+  const { brand: brandFilter } = await searchParams
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   const { data: profile } = await supabase.from('users').select('role').eq('id', user!.id).single()
 
   if (profile?.role !== 'admin') redirect('/dashboard')
 
-  const { data: merchants } = await supabase
+  // 查询商家列表，JOIN brands 获取品牌信息
+  let query = supabase
     .from('merchants')
-    .select('id, name, category, status, user_id, created_at')
+    .select('id, name, category, status, user_id, brand_id, created_at, brands(id, name)')
     .order('created_at', { ascending: false })
+
+  if (brandFilter) {
+    query = query.eq('brand_id', brandFilter)
+  }
+
+  const { data: merchants } = await query
+
+  // 获取所有品牌，用于筛选下拉
+  const { data: allBrands } = await supabase
+    .from('brands')
+    .select('id, name')
+    .order('name')
 
   const pendingCount = merchants?.filter(m => m.status === 'pending').length ?? 0
 
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Merchants</h1>
-        {pendingCount > 0 && (
-          <span className="text-sm bg-yellow-100 text-yellow-700 px-3 py-1 rounded-full font-medium">
-            {pendingCount} pending review
-          </span>
-        )}
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold text-gray-900">Merchants</h1>
+          {pendingCount > 0 && (
+            <span className="text-sm bg-yellow-100 text-yellow-700 px-3 py-1 rounded-full font-medium">
+              {pendingCount} pending review
+            </span>
+          )}
+        </div>
+        {/* 品牌筛选 */}
+        <div className="flex items-center gap-2">
+          <label className="text-sm text-gray-500">Brand:</label>
+          <BrandFilter brands={allBrands ?? []} currentBrand={brandFilter} />
+        </div>
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -33,6 +58,7 @@ export default async function MerchantsPage() {
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Name</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600">Brand</th>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Category</th>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Status / Action</th>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Applied</th>
@@ -40,7 +66,7 @@ export default async function MerchantsPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {merchants?.map(m => (
+            {merchants?.map((m: any) => (
               <tr key={m.id} className={`hover:bg-gray-50 ${m.status === 'pending' ? 'bg-yellow-50/50' : ''}`}>
                 <td className="px-4 py-3 font-medium text-gray-900">
                   <Link
@@ -49,6 +75,18 @@ export default async function MerchantsPage() {
                   >
                     {m.name}
                   </Link>
+                </td>
+                <td className="px-4 py-3 text-gray-600">
+                  {m.brands ? (
+                    <Link
+                      href={`/brands/${m.brands.id}`}
+                      className="text-blue-600 hover:underline text-xs"
+                    >
+                      {m.brands.name}
+                    </Link>
+                  ) : (
+                    <span className="text-gray-400">—</span>
+                  )}
                 </td>
                 <td className="px-4 py-3 text-gray-600">{m.category || '—'}</td>
                 <td className="px-4 py-3">
@@ -77,6 +115,33 @@ export default async function MerchantsPage() {
           <p className="text-center text-gray-400 py-8">No merchants found</p>
         )}
       </div>
+    </div>
+  )
+}
+
+// 品牌筛选下拉（客户端组件用 <a> 实现简单筛选）
+function BrandFilter({ brands, currentBrand }: { brands: { id: string; name: string }[]; currentBrand?: string }) {
+  return (
+    <div className="flex items-center gap-1 flex-wrap">
+      <a
+        href="/merchants"
+        className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
+          !currentBrand ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+        }`}
+      >
+        All
+      </a>
+      {brands.map(b => (
+        <a
+          key={b.id}
+          href={`/merchants?brand=${b.id}`}
+          className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
+            currentBrand === b.id ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+          }`}
+        >
+          {b.name}
+        </a>
+      ))}
     </div>
   )
 }

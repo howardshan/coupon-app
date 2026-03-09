@@ -1,0 +1,12 @@
+# TC070: 照片画廊
+# 状态：SKIP — 此用例属于用户端验证
+# 需在用户端（deal_joy）测试
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+# SKIP: 此用例是用户端验证
+# 仅占位，不执行任何操作
+- runFlow: ../../shared/login.yaml
+
+- takeScreenshot: TC070_photo_gallery_skip

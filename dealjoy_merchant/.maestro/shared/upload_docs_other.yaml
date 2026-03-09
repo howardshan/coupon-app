@@ -1,0 +1,14 @@
+# Other 分类：上传4个证件
+appId: com.dealjoy.dealjoy_merchant
+---
+- runFlow: upload_base_docs.yaml
+
+# General Business Permit
+- scrollUntilVisible:
+    element: "General Business Permit"
+    direction: DOWN
+    timeout: 5000
+- tapOn:
+    text: "Upload"
+    below: "General Business Permit"
+- runFlow: upload_photo.yaml

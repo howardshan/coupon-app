@@ -1,0 +1,50 @@
+# TC034: 确认核销流程
+# 测试步骤：登录 → Scan tab → Enter Code → 输入有效券码 → Verify → Confirm Redemption
+# 预期结果：核销确认页面出现，点击确认后核销成功
+# 注意：需要有效券码，可能 BLOCKED
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+# 登录
+- runFlow: ../../shared/login.yaml
+
+# 点击底部 Scan tab
+- tapOn: "Scan"
+
+# 等待扫码页面加载
+- extendedWaitUntil:
+    visible: "Scan QR"
+    timeout: 10000
+
+# 切换到 Enter Code tab
+- tapOn: "Enter Code"
+
+# 输入有效券码
+- tapOn: "e.g. DJ-XXXXXXXXXXXX"
+- inputText: "DJ-TESTVALID001"
+
+# 隐藏键盘
+- hideKeyboard
+
+# 点击 Verify
+- tapOn: "Verify"
+
+# 等待确认页面出现
+- extendedWaitUntil:
+    visible: "Confirm Redemption"
+    timeout: 10000
+
+# 截图保存确认页面
+- takeScreenshot: TC034_confirm_redemption_page
+
+# 点击确认核销
+- tapOn: "Confirm Redemption"
+
+# 等待核销结果
+- extendedWaitUntil:
+    visible: "Success"
+    timeout: 10000
+
+# 截图保存核销结果
+- takeScreenshot: TC034_confirm_redemption_success

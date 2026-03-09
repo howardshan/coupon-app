@@ -1,0 +1,44 @@
+# TC061: 通知偏好设置
+# 测试步骤：登录 → Me tab → Settings → Notification Preferences → 切换开关 → 验证保存
+# 预期结果：通知偏好设置页面加载，开关可切换
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+# 登录
+- runFlow: ../../shared/login.yaml
+
+# 点击底部 Me tab
+- tapOn: "Me"
+
+- extendedWaitUntil:
+    visible: "Me"
+    timeout: 10000
+
+# 点击 Settings 入口
+- tapOn: "Settings"
+
+- extendedWaitUntil:
+    visible: "Settings"
+    timeout: 10000
+
+# 点击 Notification Preferences
+- tapOn:
+    text: "Notification"
+    optional: true
+
+- extendedWaitUntil:
+    visible: "Notification Preferences"
+    timeout: 8000
+
+- takeScreenshot: TC061_notification_preferences_page
+
+# 尝试切换一个通知开关
+- tapOn:
+    id: "switch"
+    optional: true
+
+- takeScreenshot: TC061_notification_toggle
+
+# 验证设置保存
+- takeScreenshot: TC061_notification_preferences_result

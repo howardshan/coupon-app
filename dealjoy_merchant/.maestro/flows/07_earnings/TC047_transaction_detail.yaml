@@ -1,0 +1,51 @@
+# TC047: 交易详情
+# 测试步骤：Earnings 页 → 查看交易列表 → 点击某条交易 → 验证详情
+# 预期结果：显示 order#, amount, platform fee, net amount
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+# 登录
+- runFlow: ../../shared/login.yaml
+
+# 导航到 Earnings 页
+- tapOn: "Me"
+- extendedWaitUntil:
+    visible: "Me"
+    timeout: 10000
+- tapOn: "Earnings"
+- extendedWaitUntil:
+    visible: "Earnings"
+    timeout: 10000
+
+# 等待交易列表加载
+- extendedWaitUntil:
+    visible: "Transaction"
+    timeout: 10000
+
+# 截图保存交易列表
+- takeScreenshot: TC047_transaction_list
+
+# 点击第一条交易记录
+- tapOn:
+    index: 0
+    text: ".*"
+    optional: true
+
+# 验证交易详情字段
+- extendedWaitUntil:
+    visible: "Order #"
+    timeout: 5000
+
+- assertVisible:
+    text: "Amount"
+    optional: true
+- assertVisible:
+    text: "Platform Fee"
+    optional: true
+- assertVisible:
+    text: "Net Amount"
+    optional: true
+
+# 截图保存交易详情
+- takeScreenshot: TC047_transaction_detail

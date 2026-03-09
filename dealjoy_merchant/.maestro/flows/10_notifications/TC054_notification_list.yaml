@@ -1,0 +1,31 @@
+# TC054: 通知列表
+# 测试步骤：登录 → Notifications 页 → 验证通知列表按时间排序
+# 预期结果：通知列表正确显示
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+# 登录
+- runFlow: ../../shared/login.yaml
+
+# 导航到 Notifications 页（通过 Me tab 或 Dashboard 铃铛图标）
+- tapOn: "Me"
+- extendedWaitUntil:
+    visible: "Me"
+    timeout: 10000
+
+# 点击 Notifications 入口
+- tapOn:
+    text: "Notifications"
+    optional: true
+
+# 等待 Notifications 页加载
+- extendedWaitUntil:
+    visible: "Notifications"
+    timeout: 10000
+
+# 验证页面标题
+- assertVisible: "Notifications"
+
+# 截图保存通知列表
+- takeScreenshot: TC054_notification_list

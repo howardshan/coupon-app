@@ -1,0 +1,67 @@
+# TC003: 基本信息表单
+# 测试步骤：输入公司名、联系人、电话 → 点击 Next
+# 预期结果：所有字段验证通过，进入分类选择
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+- launchApp:
+    clearState: true
+
+# 登录页 → 注册
+- assertVisible: "Welcome back"
+- tapOn: "Register"
+
+# Step 0: 创建账号
+- extendedWaitUntil:
+    visible: "Create Account"
+    timeout: 10000
+- tapOn: "Business Email"
+- inputText: "testmerchant_tc003@test.com"
+- tapOn: "Password"
+- inputText: "Test1234!"
+- tapOn:
+    text: "Confirm Password"
+    optional: true
+- inputText: "Test1234!"
+- hideKeyboard
+- tapOn: "Next"
+
+# Step 1: Store Type — 选择 Single Location
+- extendedWaitUntil:
+    visible: "Store Type"
+    timeout: 10000
+- tapOn:
+    text: "Single Location.*"
+    retryTapIfNoChange: false
+- tapOn: "Next"
+
+# Step 2: Business Info — 填写公司信息
+- extendedWaitUntil:
+    visible: "Business Info"
+    timeout: 10000
+
+- tapOn: "Company Name"
+- inputText: "TC003 Test Restaurant"
+
+- tapOn: "Contact Person Name"
+- inputText: "Test Owner"
+
+# Contact Email 已从注册邮箱预填，跳过
+
+- tapOn: "Contact Phone"
+- inputText: "2145551234"
+
+- hideKeyboard
+
+- takeScreenshot: TC003_basic_info_filled
+
+# 点击 Next
+- tapOn: "Next"
+
+# 验证进入分类选择
+- extendedWaitUntil:
+    visible: "Select Category"
+    timeout: 10000
+
+- takeScreenshot: TC003_basic_info_next

@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/merchant_deal.dart';
 import '../models/deal_category.dart';
+import '../models/deal_template.dart';
 import '../services/deals_service.dart';
 
 // ============================================================
@@ -258,3 +259,82 @@ final dealCategoriesProvider =
   final rawList = await service.fetchDealCategories(merchantId);
   return rawList.map((e) => DealCategory.fromJson(e)).toList();
 });
+
+// ============================================================
+// V2.2 Deal 模板 Provider
+// ============================================================
+
+/// 模板列表 Notifier — 品牌级 Deal 模板 CRUD
+class DealTemplatesNotifier extends AsyncNotifier<List<DealTemplate>> {
+  @override
+  Future<List<DealTemplate>> build() async {
+    final service = ref.read(dealsServiceProvider);
+    return service.fetchTemplates();
+  }
+
+  /// 刷新模板列表
+  Future<void> refresh() async {
+    state = const AsyncValue.loading();
+    state = await AsyncValue.guard(
+      () => ref.read(dealsServiceProvider).fetchTemplates(),
+    );
+  }
+
+  /// 创建模板
+  Future<DealTemplate> createTemplate(DealTemplate template) async {
+    final service = ref.read(dealsServiceProvider);
+    final created = await service.createTemplate(template);
+    final current = state.valueOrNull ?? [];
+    state = AsyncValue.data([created, ...current]);
+    return created;
+  }
+
+  /// 更新模板
+  Future<void> updateTemplate(String templateId, Map<String, dynamic> updates) async {
+    final service = ref.read(dealsServiceProvider);
+    final updated = await service.updateTemplate(templateId, updates);
+    final current = state.valueOrNull ?? [];
+    state = AsyncValue.data(
+      current.map((t) => t.id == templateId ? updated : t).toList(),
+    );
+  }
+
+  /// 发布模板到指定门店
+  Future<Map<String, dynamic>> publishTemplate(
+    String templateId,
+    List<String> merchantIds,
+  ) async {
+    final service = ref.read(dealsServiceProvider);
+    final result = await service.publishTemplate(templateId, merchantIds);
+    // 发布后刷新模板列表（更新 linkedStores）
+    await refresh();
+    return result;
+  }
+
+  /// 同步模板到所有关联门店
+  Future<Map<String, dynamic>> syncTemplate(String templateId) async {
+    final service = ref.read(dealsServiceProvider);
+    return service.syncTemplate(templateId);
+  }
+
+  /// 删除模板
+  Future<void> deleteTemplate(String templateId) async {
+    final service = ref.read(dealsServiceProvider);
+    final current = state.valueOrNull ?? [];
+    // 乐观删除
+    state = AsyncValue.data(current.where((t) => t.id != templateId).toList());
+    try {
+      await service.deleteTemplate(templateId);
+    } catch (e, st) {
+      state = AsyncValue.data(current);
+      state = AsyncValue.error(e, st);
+      rethrow;
+    }
+  }
+}
+
+/// 模板列表 Provider
+final dealTemplatesProvider =
+    AsyncNotifierProvider<DealTemplatesNotifier, List<DealTemplate>>(
+  DealTemplatesNotifier.new,
+);

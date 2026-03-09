@@ -1,0 +1,14 @@
+# Fitness 分类：上传4个证件
+appId: com.dealjoy.dealjoy_merchant
+---
+- runFlow: upload_base_docs.yaml
+
+# Facility License
+- scrollUntilVisible:
+    element: "Facility License"
+    direction: DOWN
+    timeout: 5000
+- tapOn:
+    text: "Upload"
+    below: "Facility License"
+- runFlow: upload_photo.yaml

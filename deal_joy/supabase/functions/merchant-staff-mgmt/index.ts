@@ -279,6 +279,39 @@ Deno.serve(async (req: Request) => {
       const staffId = pathSegments[0];
       const body = await req.json();
 
+      // 角色优先级：用于"只能修改比自己低的角色"校验
+      const rolePriority: Record<string, number> = {
+        brand_owner: 6, brand_admin: 5, store_owner: 4,
+        manager: 3, service: 2, cashier: 1,
+      };
+
+      // 查询目标员工当前角色
+      const { data: targetStaff } = await supabaseAdmin
+        .from("merchant_staff")
+        .select("user_id, role")
+        .eq("id", staffId)
+        .eq("merchant_id", auth.merchantId)
+        .single();
+
+      if (!targetStaff) {
+        return errorResponse("Staff member not found", 404);
+      }
+
+      // 不能修改自己
+      if (targetStaff.user_id === user.id) {
+        return errorResponse("Cannot modify your own role");
+      }
+
+      // 不能修改比自己高或平级的角色
+      const myPriority = rolePriority[auth.role] ?? 0;
+      const targetPriority = rolePriority[targetStaff.role] ?? 0;
+      if (targetPriority >= myPriority) {
+        return errorResponse(
+          "Cannot modify a staff member with equal or higher role",
+          403
+        );
+      }
+
       const updateData: Record<string, unknown> = {};
 
       // 修改角色
@@ -290,10 +323,11 @@ Deno.serve(async (req: Request) => {
           );
         }
 
-        // manager 不能把别人改成 manager
-        if (body.role === "manager" && auth.role === "manager") {
+        // 不能把别人提升到和自己一样或更高的角色
+        const newRolePriority = rolePriority[body.role] ?? 0;
+        if (newRolePriority >= myPriority) {
           return errorResponse(
-            "Managers cannot promote others to manager",
+            "Cannot assign a role equal to or higher than your own",
             403
           );
         }
@@ -333,34 +367,52 @@ Deno.serve(async (req: Request) => {
     }
 
     // -------------------------------------------------------
-    // DELETE /merchant-staff-mgmt/:id — 移除员工
+    // DELETE /merchant-staff-mgmt/:id — 移除员工（软删除，is_active=false）
     // -------------------------------------------------------
     if (req.method === "DELETE" && pathSegments[0]) {
       requirePermission(auth, "staff");
 
       const staffId = pathSegments[0];
 
-      // 不能移除自己
+      // 角色优先级
+      const rolePriority: Record<string, number> = {
+        brand_owner: 6, brand_admin: 5, store_owner: 4,
+        manager: 3, service: 2, cashier: 1,
+      };
+
+      // 查询目标员工
       const { data: targetStaff } = await supabaseAdmin
         .from("merchant_staff")
         .select("user_id, role")
         .eq("id", staffId)
+        .eq("merchant_id", auth.merchantId)
         .single();
 
-      if (targetStaff?.user_id === user.id) {
+      if (!targetStaff) {
+        return errorResponse("Staff member not found", 404);
+      }
+
+      // 不能移除自己
+      if (targetStaff.user_id === user.id) {
         return errorResponse("Cannot remove yourself");
       }
 
-      // manager 不能移除其他 manager
-      if (targetStaff?.role === "manager" && auth.role === "manager") {
-        return errorResponse("Managers cannot remove other managers", 403);
+      // 不能移除比自己高或平级的角色
+      const myPriority = rolePriority[auth.role] ?? 0;
+      const targetPriority = rolePriority[targetStaff.role] ?? 0;
+      if (targetPriority >= myPriority) {
+        return errorResponse(
+          "Cannot remove a staff member with equal or higher role",
+          403
+        );
       }
 
+      // 软删除：设为 is_active=false，保留记录
       const { error } = await supabaseAdmin
         .from("merchant_staff")
-        .delete()
+        .update({ is_active: false, updated_at: new Date().toISOString() })
         .eq("id", staffId)
-        .eq("merchant_id", auth.merchantId); // 安全校验
+        .eq("merchant_id", auth.merchantId);
 
       if (error) {
         return errorResponse(`Failed to remove staff: ${error.message}`);

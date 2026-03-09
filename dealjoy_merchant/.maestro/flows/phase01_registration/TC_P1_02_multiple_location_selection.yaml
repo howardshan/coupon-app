@@ -1,0 +1,51 @@
+# Phase 1 TC02: 注册页 Multiple Locations 选择
+# 验证选择 Multiple Locations 后显示品牌信息字段
+appId: com.dealjoy.dealjoy_merchant
+---
+- launchApp:
+    clearState: true
+
+# Step 0: 创建账号
+- extendedWaitUntil:
+    visible: "Welcome back"
+    timeout: 30000
+- tapOn: "Register"
+- extendedWaitUntil:
+    visible: "Create Account"
+    timeout: 15000
+- tapOn: "Business Email"
+- inputText: "test_p1_02@test.com"
+- tapOn: "Password"
+- inputText: "Test1234!"
+- tapOn:
+    text: "Confirm Password"
+    optional: true
+- inputText: "Test1234!"
+- hideKeyboard
+- tapOn: "Next"
+
+# Step 1: Store Type — 选择 Multiple Locations
+- extendedWaitUntil:
+    visible: "Store Type"
+    timeout: 15000
+- tapOn:
+    text: "Multiple Locations"
+    retryTapIfNoChange: false
+- takeScreenshot: P1_TC02_multiple_selected
+- tapOn: "Next"
+
+# Step 2: Business Info — 验证有品牌字段
+- extendedWaitUntil:
+    visible: "Business Info"
+    timeout: 15000
+- assertVisible: "Company Name"
+
+# 滚动找品牌字段
+- scrollUntilVisible:
+    element: "Brand Information"
+    direction: DOWN
+    timeout: 5000
+- assertVisible: "Brand Information"
+- assertVisible: "Brand Name"
+
+- takeScreenshot: P1_TC02_business_info_with_brand

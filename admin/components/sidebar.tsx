@@ -13,8 +13,11 @@ const adminNav = [
   { href: '/dashboard', label: 'Overview', icon: '📊' },
   { href: '/users', label: 'Users', icon: '👥' },
   { href: '/merchants', label: 'Merchants', icon: '🏪' },
+  { href: '/brands', label: 'Brands', icon: '🏢' },
   { href: '/deals', label: 'Deals', icon: '🏷️' },
   { href: '/orders', label: 'Orders', icon: '📦' },
+  { href: '/finance', label: 'Finance', icon: '💰' },
+  { href: '/closures', label: 'Closures', icon: '🔒' },
 ]
 
 const merchantNav = [

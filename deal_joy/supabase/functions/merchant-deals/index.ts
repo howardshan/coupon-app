@@ -146,6 +146,67 @@ Deno.serve(async (req: Request) => {
       return await handleAddImage(supabaseAdmin, merchantId, dealId, body);
     }
 
+    // ==========================================================
+    // V2.2 Deal 模板路由
+    // ==========================================================
+
+    // GET /merchant-deals/templates — 获取品牌模板列表
+    if (req.method === "GET" && dealId === "templates" && !subPath) {
+      if (!auth.isBrandAdmin || !auth.brandId) {
+        return errorResponse("Brand admin access required", 403);
+      }
+      return await handleGetTemplates(supabaseAdmin, auth.brandId);
+    }
+
+    // POST /merchant-deals/templates — 创建品牌模板
+    if (req.method === "POST" && dealId === "templates" && !subPath) {
+      if (!auth.isBrandAdmin || !auth.brandId) {
+        return errorResponse("Brand admin access required", 403);
+      }
+      const body = await req.json();
+      return await handleCreateTemplate(supabaseAdmin, auth.brandId, user.id, body);
+    }
+
+    // PATCH /merchant-deals/templates/:templateId — 更新模板
+    if (req.method === "PATCH" && dealId === "templates" && subPath) {
+      if (!auth.isBrandAdmin || !auth.brandId) {
+        return errorResponse("Brand admin access required", 403);
+      }
+      const body = await req.json();
+      return await handleUpdateTemplate(supabaseAdmin, auth.brandId, subPath, body);
+    }
+
+    // POST /merchant-deals/templates/:templateId/publish — 发布到选中门店
+    if (req.method === "POST" && dealId === "templates" && subPath) {
+      // subPath 可能是 "templateId/publish" — 需要进一步解析
+      // 实际上 pathParts 已经拆分好了
+      // 重新解析：pathParts = ["templates", templateId, "publish"]
+      const tplPathParts = url.pathname.replace(/^\/merchant-deals\/?/, "").split("/").filter(Boolean);
+      const tplId = tplPathParts[1] ?? null;
+      const tplAction = tplPathParts[2] ?? null;
+
+      if (!auth.isBrandAdmin || !auth.brandId) {
+        return errorResponse("Brand admin access required", 403);
+      }
+
+      if (tplAction === "publish" && tplId) {
+        const body = await req.json();
+        return await handlePublishTemplate(supabaseAdmin, auth.brandId, tplId, body, auth.merchantIds);
+      }
+
+      if (tplAction === "sync" && tplId) {
+        return await handleSyncTemplate(supabaseAdmin, auth.brandId, tplId);
+      }
+    }
+
+    // DELETE /merchant-deals/templates/:templateId — 删除模板
+    if (req.method === "DELETE" && dealId === "templates" && subPath) {
+      if (!auth.isBrandAdmin || !auth.brandId) {
+        return errorResponse("Brand admin access required", 403);
+      }
+      return await handleDeleteTemplate(supabaseAdmin, auth.brandId, subPath);
+    }
+
     return errorResponse("Not Found", 404);
   } catch (err) {
     console.error("merchant-deals error:", err);
@@ -195,6 +256,7 @@ async function handleGetDeals(
       published_at,
       created_at,
       updated_at,
+      applicable_merchant_ids,
       deal_images (
         id,
         image_url,
@@ -302,6 +364,8 @@ async function handleCreateDeal(
     deal_category_id: body.deal_category_id ?? null,
     deal_type:        body.deal_type ? String(body.deal_type) : "regular",
     badge_text:       body.badge_text ? String(body.badge_text) : null,
+    // 多店通用：适用门店 ID 列表，NULL = 仅本店
+    applicable_merchant_ids: body.applicable_merchant_ids ?? null,
   };
 
   const { data: deal, error } = await admin
@@ -369,6 +433,7 @@ async function handleUpdateDeal(
     "usage_days", "max_per_person", "is_stackable", "validity_type",
     "validity_days", "discount_label", "refund_policy", "image_urls", "dishes",
     "deal_category_id", "deal_type", "badge_text",
+    "applicable_merchant_ids",
   ];
 
   for (const field of updatableFields) {
@@ -591,4 +656,352 @@ async function syncDealImageUrls(
     .from("deals")
     .update({ image_urls: urls })
     .eq("id", dealId);
+}
+
+// =============================================================
+// V2.2 Deal 模板处理函数
+// =============================================================
+
+// 模板字段列表（从请求体提取）
+const TEMPLATE_FIELDS = [
+  "title", "description", "category", "original_price", "discount_price",
+  "discount_label", "stock_limit", "package_contents", "usage_notes",
+  "usage_days", "max_per_person", "is_stackable", "validity_type",
+  "validity_days", "refund_policy", "image_urls", "dishes",
+  "deal_type", "badge_text", "deal_category_id",
+];
+
+// 从模板数据构建 Deal 插入数据
+function templateToDealPayload(
+  template: Record<string, unknown>,
+  merchantId: string,
+  templateId: string,
+): Record<string, unknown> {
+  // 过期时间：根据 validity_type 计算
+  let expiresAt: string;
+  if (template.validity_type === "days_after_purchase") {
+    // 购买后 N 天有效 — 设置一个远期日期
+    const future = new Date();
+    future.setFullYear(future.getFullYear() + 2);
+    expiresAt = future.toISOString();
+  } else {
+    // 固定日期 — 默认30天后过期
+    const defaultExpiry = new Date();
+    defaultExpiry.setDate(defaultExpiry.getDate() + 30);
+    expiresAt = (template.expires_at as string) ?? defaultExpiry.toISOString();
+  }
+
+  return {
+    merchant_id: merchantId,
+    deal_template_id: templateId,
+    title: template.title ?? "",
+    description: template.description ?? "",
+    category: template.category ?? "",
+    original_price: template.original_price ?? 0,
+    discount_price: template.discount_price ?? 0,
+    discount_label: template.discount_label ?? "",
+    stock_limit: template.stock_limit ?? 100,
+    package_contents: template.package_contents ?? "",
+    usage_notes: template.usage_notes ?? "",
+    usage_days: template.usage_days ?? [],
+    max_per_person: template.max_per_person ?? null,
+    is_stackable: template.is_stackable ?? true,
+    validity_type: template.validity_type ?? "fixed_date",
+    validity_days: template.validity_days ?? 30,
+    refund_policy: template.refund_policy ?? "Risk-Free Refund within 7 days",
+    image_urls: template.image_urls ?? [],
+    dishes: template.dishes ?? [],
+    deal_type: template.deal_type ?? "regular",
+    badge_text: template.badge_text ?? null,
+    deal_category_id: template.deal_category_id ?? null,
+    expires_at: expiresAt,
+    is_active: false,
+    deal_status: "pending",
+  };
+}
+
+// GET /merchant-deals/templates — 获取品牌模板列表
+async function handleGetTemplates(
+  admin: ReturnType<typeof createClient>,
+  brandId: string,
+): Promise<Response> {
+  const { data: templates, error } = await admin
+    .from("deal_templates")
+    .select("*, deal_template_stores(id, merchant_id, deal_id, is_customized)")
+    .eq("brand_id", brandId)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    return errorResponse(error.message, 500);
+  }
+
+  return jsonResponse({ templates: templates ?? [] });
+}
+
+// POST /merchant-deals/templates — 创建品牌模板
+async function handleCreateTemplate(
+  admin: ReturnType<typeof createClient>,
+  brandId: string,
+  userId: string,
+  body: Record<string, unknown>,
+): Promise<Response> {
+  if (!body.title) {
+    return errorResponse("Missing required field: title", 400);
+  }
+
+  // 提取模板字段
+  const payload: Record<string, unknown> = {
+    brand_id: brandId,
+    created_by: userId,
+  };
+  for (const field of TEMPLATE_FIELDS) {
+    if (body[field] !== undefined) {
+      payload[field] = body[field];
+    }
+  }
+
+  const { data: template, error } = await admin
+    .from("deal_templates")
+    .insert(payload)
+    .select()
+    .single();
+
+  if (error) {
+    return errorResponse(error.message, 500);
+  }
+
+  return jsonResponse({ template }, 201);
+}
+
+// PATCH /merchant-deals/templates/:templateId — 更新模板
+async function handleUpdateTemplate(
+  admin: ReturnType<typeof createClient>,
+  brandId: string,
+  templateId: string,
+  body: Record<string, unknown>,
+): Promise<Response> {
+  // 校验模板属于该品牌
+  const { data: existing, error: fetchError } = await admin
+    .from("deal_templates")
+    .select("id, brand_id")
+    .eq("id", templateId)
+    .single();
+
+  if (fetchError || !existing) {
+    return errorResponse("Template not found", 404);
+  }
+  if (existing.brand_id !== brandId) {
+    return errorResponse("Access denied: template not in your brand", 403);
+  }
+
+  // 提取可更新字段
+  const updatePayload: Record<string, unknown> = {
+    updated_at: new Date().toISOString(),
+  };
+  for (const field of TEMPLATE_FIELDS) {
+    if (body[field] !== undefined) {
+      updatePayload[field] = body[field];
+    }
+  }
+
+  const { data: template, error } = await admin
+    .from("deal_templates")
+    .update(updatePayload)
+    .eq("id", templateId)
+    .select()
+    .single();
+
+  if (error) {
+    return errorResponse(error.message, 500);
+  }
+
+  return jsonResponse({ template });
+}
+
+// POST /merchant-deals/templates/:templateId/publish — 发布到选中门店
+async function handlePublishTemplate(
+  admin: ReturnType<typeof createClient>,
+  brandId: string,
+  templateId: string,
+  body: Record<string, unknown>,
+  authorizedMerchantIds: string[],
+): Promise<Response> {
+  // 校验模板
+  const { data: template, error: tplError } = await admin
+    .from("deal_templates")
+    .select("*")
+    .eq("id", templateId)
+    .eq("brand_id", brandId)
+    .single();
+
+  if (tplError || !template) {
+    return errorResponse("Template not found", 404);
+  }
+
+  // 获取要发布的门店 ID 列表
+  const merchantIds = body.merchant_ids as string[] ?? [];
+  if (merchantIds.length === 0) {
+    return errorResponse("merchant_ids is required", 400);
+  }
+
+  // 校验门店都在品牌下
+  const { data: brandStores } = await admin
+    .from("merchants")
+    .select("id")
+    .eq("brand_id", brandId)
+    .in("id", merchantIds);
+
+  const validIds = (brandStores ?? []).map((s: { id: string }) => s.id);
+  const invalidIds = merchantIds.filter(id => !validIds.includes(id));
+  if (invalidIds.length > 0) {
+    return errorResponse(`Stores not in brand: ${invalidIds.join(", ")}`, 400);
+  }
+
+  // 查询已发布的门店，避免重复
+  const { data: existingStores } = await admin
+    .from("deal_template_stores")
+    .select("merchant_id")
+    .eq("template_id", templateId);
+
+  const alreadyPublished = new Set(
+    (existingStores ?? []).map((s: { merchant_id: string }) => s.merchant_id)
+  );
+
+  const newMerchantIds = merchantIds.filter(id => !alreadyPublished.has(id));
+
+  if (newMerchantIds.length === 0) {
+    return jsonResponse({
+      message: "All selected stores already have this deal",
+      published: 0,
+    });
+  }
+
+  // 为每家新门店创建 Deal 记录
+  const createdDeals: { merchantId: string; dealId: string }[] = [];
+
+  for (const mid of newMerchantIds) {
+    const dealPayload = templateToDealPayload(template, mid, templateId);
+
+    const { data: deal, error: dealError } = await admin
+      .from("deals")
+      .insert(dealPayload)
+      .select("id")
+      .single();
+
+    if (dealError) {
+      console.error(`[template-publish] Failed for merchant ${mid}:`, dealError);
+      continue;
+    }
+
+    // 记录模板-门店关联
+    await admin
+      .from("deal_template_stores")
+      .insert({
+        template_id: templateId,
+        merchant_id: mid,
+        deal_id: deal.id,
+        is_customized: false,
+      });
+
+    createdDeals.push({ merchantId: mid, dealId: deal.id });
+  }
+
+  return jsonResponse({
+    message: `Published to ${createdDeals.length} stores`,
+    published: createdDeals.length,
+    deals: createdDeals,
+  });
+}
+
+// POST /merchant-deals/templates/:templateId/sync — 同步模板更新到未自定义的门店
+async function handleSyncTemplate(
+  admin: ReturnType<typeof createClient>,
+  brandId: string,
+  templateId: string,
+): Promise<Response> {
+  // 获取模板
+  const { data: template, error: tplError } = await admin
+    .from("deal_templates")
+    .select("*")
+    .eq("id", templateId)
+    .eq("brand_id", brandId)
+    .single();
+
+  if (tplError || !template) {
+    return errorResponse("Template not found", 404);
+  }
+
+  // 获取未自定义的关联门店
+  const { data: linkedStores } = await admin
+    .from("deal_template_stores")
+    .select("merchant_id, deal_id")
+    .eq("template_id", templateId)
+    .eq("is_customized", false);
+
+  if (!linkedStores || linkedStores.length === 0) {
+    return jsonResponse({ message: "No stores to sync", synced: 0 });
+  }
+
+  // 构建同步更新的字段
+  const syncFields: Record<string, unknown> = {
+    updated_at: new Date().toISOString(),
+    deal_status: "pending",
+    is_active: false,
+  };
+  for (const field of TEMPLATE_FIELDS) {
+    if (template[field] !== undefined) {
+      syncFields[field] = template[field];
+    }
+  }
+
+  let synced = 0;
+  for (const store of linkedStores) {
+    if (!store.deal_id) continue;
+
+    const { error: updateError } = await admin
+      .from("deals")
+      .update(syncFields)
+      .eq("id", store.deal_id);
+
+    if (!updateError) synced++;
+  }
+
+  return jsonResponse({
+    message: `Synced ${synced} stores`,
+    synced,
+    total: linkedStores.length,
+  });
+}
+
+// DELETE /merchant-deals/templates/:templateId — 删除模板
+async function handleDeleteTemplate(
+  admin: ReturnType<typeof createClient>,
+  brandId: string,
+  templateId: string,
+): Promise<Response> {
+  // 校验模板属于该品牌
+  const { data: existing, error: fetchError } = await admin
+    .from("deal_templates")
+    .select("id, brand_id")
+    .eq("id", templateId)
+    .single();
+
+  if (fetchError || !existing) {
+    return errorResponse("Template not found", 404);
+  }
+  if (existing.brand_id !== brandId) {
+    return errorResponse("Access denied: template not in your brand", 403);
+  }
+
+  // 删除模板（CASCADE 会删除 deal_template_stores，deals.deal_template_id 会置 NULL）
+  const { error } = await admin
+    .from("deal_templates")
+    .delete()
+    .eq("id", templateId);
+
+  if (error) {
+    return errorResponse(error.message, 500);
+  }
+
+  return jsonResponse({ success: true, deleted_id: templateId });
 }

@@ -1,0 +1,14 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<testsuites>
+  <testsuite name="Test Suite" device="emulator-5554" tests="3" failures="3" time="117.0">
+    <testcase id="TC_P8_03 - Earnings report page" name="TC_P8_03 - Earnings report page" classname="TC_P8_03 - Earnings report page" time="47.0" status="ERROR">
+      <failure>Assertion is false: "Dashboard" is visible</failure>
+    </testcase>
+    <testcase id="TC_P8_01 - Earnings page loads with summary cards" name="TC_P8_01 - Earnings page loads with summary cards" classname="TC_P8_01 - Earnings page loads with summary cards" time="38.0" status="ERROR">
+      <failure>Assertion is false: "Dashboard" is visible</failure>
+    </testcase>
+    <testcase id="TC_P8_02 - Withdrawal page accessible" name="TC_P8_02 - Withdrawal page accessible" classname="TC_P8_02 - Withdrawal page accessible" time="32.0" status="ERROR">
+      <failure>Assertion is false: "Dashboard" is visible</failure>
+    </testcase>
+  </testsuite>
+</testsuites>

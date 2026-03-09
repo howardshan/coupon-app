@@ -1,0 +1,43 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<testsuites>
+  <testsuite name="Test Suite" device="Medium_Phone_API_36.1" tests="14" failures="12" time="655.0">
+    <testcase id="TC007_category_other" name="TC007_category_other" classname="TC007_category_other" time="57.0" status="ERROR">
+      <failure>Element not found: Text matching regex: Contact Name</failure>
+    </testcase>
+    <testcase id="TC012_missing_fields" name="TC012_missing_fields" classname="TC012_missing_fields" time="52.0" status="ERROR">
+      <failure>Element not found: Text matching regex: Contact Name</failure>
+    </testcase>
+    <testcase id="TC001_email_signup" name="TC001_email_signup" classname="TC001_email_signup" time="25.0" status="SUCCESS"/>
+    <testcase id="TC003_basic_info_form" name="TC003_basic_info_form" classname="TC003_basic_info_form" time="36.0" status="ERROR">
+      <failure>Assertion is false: "Business Info" is visible</failure>
+    </testcase>
+    <testcase id="TC013_under_review_page" name="TC013_under_review_page" classname="TC013_under_review_page" time="33.0" status="ERROR">
+      <failure>Assertion is false: "Under Review" is visible</failure>
+    </testcase>
+    <testcase id="TC004_category_restaurant" name="TC004_category_restaurant" classname="TC004_category_restaurant" time="56.0" status="ERROR">
+      <failure>Element not found: Text matching regex: Contact Name</failure>
+    </testcase>
+    <testcase id="TC011_submit_review" name="TC011_submit_review" classname="TC011_submit_review" time="56.0" status="ERROR">
+      <failure>Element not found: Text matching regex: Contact Name</failure>
+    </testcase>
+    <testcase id="TC002_google_signup" name="TC002_google_signup" classname="TC002_google_signup" time="24.0" status="SUCCESS"/>
+    <testcase id="TC006_category_fitness" name="TC006_category_fitness" classname="TC006_category_fitness" time="58.0" status="ERROR">
+      <failure>Element not found: Text matching regex: Contact Name</failure>
+    </testcase>
+    <testcase id="TC009_ein_validation" name="TC009_ein_validation" classname="TC009_ein_validation" time="56.0" status="ERROR">
+      <failure>Element not found: Text matching regex: Contact Name</failure>
+    </testcase>
+    <testcase id="TC008_upload_business_license" name="TC008_upload_business_license" classname="TC008_upload_business_license" time="56.0" status="ERROR">
+      <failure>Element not found: Text matching regex: Contact Name</failure>
+    </testcase>
+    <testcase id="TC010_store_address" name="TC010_store_address" classname="TC010_store_address" time="56.0" status="ERROR">
+      <failure>Element not found: Text matching regex: Contact Name</failure>
+    </testcase>
+    <testcase id="TC005_category_spa" name="TC005_category_spa" classname="TC005_category_spa" time="56.0" status="ERROR">
+      <failure>Element not found: Text matching regex: Contact Name</failure>
+    </testcase>
+    <testcase id="TC014_rejection_resubmit" name="TC014_rejection_resubmit" classname="TC014_rejection_resubmit" time="34.0" status="ERROR">
+      <failure>Assertion is false: "Rejected" is visible</failure>
+    </testcase>
+  </testsuite>
+</testsuites>

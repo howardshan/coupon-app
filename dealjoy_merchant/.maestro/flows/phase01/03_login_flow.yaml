@@ -1,0 +1,55 @@
+appId: com.dealjoy.dealjoy_merchant
+name: "Phase1-03: Login Flow UI Test"
+---
+# 先停止再启动应用
+- stopApp:
+    appId: com.dealjoy.dealjoy_merchant
+- clearState:
+    appId: com.dealjoy.dealjoy_merchant
+- launchApp:
+    appId: com.dealjoy.dealjoy_merchant
+
+# 等待登录页出现（给足时间启动和 Supabase 初始化）
+- extendedWaitUntil:
+    visible: "Welcome back"
+    timeout: 30000
+
+# 验证登录页 UI 元素
+- assertVisible: "Sign in to your merchant account"
+- assertVisible:
+    id: "login_email_field"
+- assertVisible:
+    id: "login_password_field"
+- assertVisible:
+    id: "login_submit_btn"
+
+# 测试空表单提交
+- tapOn:
+    id: "login_submit_btn"
+
+# 应该显示验证错误
+- extendedWaitUntil:
+    visible: "Email is required"
+    timeout: 5000
+
+# 填写无效邮箱后提交
+- tapOn:
+    id: "login_email_field"
+- inputText: "nonexistent@test.com"
+
+- tapOn:
+    id: "login_password_field"
+- inputText: "wrongpassword123"
+
+- tapOn:
+    id: "login_submit_btn"
+
+# 等待错误消息（登录失败）
+- extendedWaitUntil:
+    visible:
+      text: ".*account found.*|.*incorrect.*|.*failed.*"
+      regex: true
+    timeout: 15000
+
+# 截图
+- takeScreenshot: phase01_login_error

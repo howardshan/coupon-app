@@ -1,0 +1,18 @@
+# 可复用子流程：从相册选择一张照片
+# 调用前：已经点击了对应的 Upload 按钮，底部弹窗即将出现
+# 前提：模拟器相册里已有图片（通过 adb push 预置）
+appId: com.dealjoy.dealjoy_merchant
+---
+- tapOn: "Choose from Gallery"
+- extendedWaitUntil:
+    visible: "Photos"
+    timeout: 5000
+# 点击第一张图片（Photo Picker 中间区域）
+- tapOn:
+    point: "25%,65%"
+# 确认选择
+- tapOn: "Done"
+# 等待返回 app
+- extendedWaitUntil:
+    visible: "Upload Documents"
+    timeout: 10000

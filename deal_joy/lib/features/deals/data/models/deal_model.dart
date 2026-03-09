@@ -30,6 +30,8 @@ class DealModel {
   final String? dealCategoryId;
   final String? badgeText; // 自定义角标，如 "Best Value"
   final int? sortOrder; // 首页展示排序，NULL 表示不展示
+  // 多店通用：适用门店 ID 列表（null = 仅创建门店）
+  final List<String>? applicableMerchantIds;
 
   const DealModel({
     required this.id,
@@ -61,6 +63,7 @@ class DealModel {
     this.dealCategoryId,
     this.badgeText,
     this.sortOrder,
+    this.applicableMerchantIds,
   });
 
   factory DealModel.fromJson(Map<String, dynamic> json) => DealModel(
@@ -96,6 +99,10 @@ class DealModel {
         dealCategoryId: json['deal_category_id'] as String?,
         badgeText: json['badge_text'] as String?,
         sortOrder: json['sort_order'] as int?,
+        applicableMerchantIds: (json['applicable_merchant_ids'] as List?)
+            ?.map((e) => e?.toString() ?? '')
+            .where((s) => s.isNotEmpty)
+            .toList(),
       );
 
   // RPC 搜索结果（search_deals_nearby / search_deals_by_city）解析
@@ -129,6 +136,10 @@ class DealModel {
         dealCategoryId: json['deal_category_id'] as String?,
         badgeText: json['badge_text'] as String?,
         sortOrder: json['sort_order'] as int?,
+        applicableMerchantIds: (json['applicable_merchant_ids'] as List?)
+            ?.map((e) => e?.toString() ?? '')
+            .where((s) => s.isNotEmpty)
+            .toList(),
       );
 
   /// 解析菜品列表：优先读 dishes 数组，为空时从 package_contents 文本按行解析

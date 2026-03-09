@@ -160,6 +160,232 @@ Deno.serve(async (req: Request) => {
       return await handleDeletePhoto(supabaseAdmin, merchantId, photoId);
     }
 
+    // -------------------------------------------------------
+    // POST /merchant-store/close — 闭店
+    // 仅 store_owner 可操作，流程：
+    // 1. 标记门店 status = 'closed'
+    // 2. 下架所有 active deals
+    // 3. 自动退款所有未核销的券（异步处理）
+    // -------------------------------------------------------
+    if (
+      req.method === "POST" &&
+      pathSegments[0] === "close" &&
+      pathSegments.length === 1
+    ) {
+      if (auth.role !== "store_owner" && auth.role !== "brand_owner") {
+        return errorResponse("Only store owner can close a store", 403);
+      }
+
+      // 1. 更新门店状态为 closed
+      const { error: closeErr } = await supabaseAdmin
+        .from("merchants")
+        .update({
+          status: "closed",
+          is_online: false,
+        })
+        .eq("id", merchantId);
+
+      if (closeErr) {
+        return errorResponse(`Failed to close store: ${closeErr.message}`);
+      }
+
+      // 2. 下架所有该门店的 active deals
+      await supabaseAdmin
+        .from("deals")
+        .update({
+          is_active: false,
+          deal_status: "inactive",
+        })
+        .eq("merchant_id", merchantId)
+        .eq("is_active", true);
+
+      // 3. 查找该门店所有 unused 订单并标记为待退款
+      const { data: unusedOrders } = await supabaseAdmin
+        .from("orders")
+        .select("id")
+        .in(
+          "deal_id",
+          (
+            await supabaseAdmin
+              .from("deals")
+              .select("id")
+              .eq("merchant_id", merchantId)
+          ).data?.map((d: { id: string }) => d.id) ?? []
+        )
+        .eq("status", "unused");
+
+      const pendingCount = unusedOrders?.length ?? 0;
+
+      // 标记所有 unused 订单为 refund_requested（由 auto-refund cron 处理）
+      if (pendingCount > 0) {
+        const now = new Date().toISOString();
+        const orderIds = unusedOrders!.map((o: { id: string }) => o.id);
+        await supabaseAdmin
+          .from("orders")
+          .update({
+            status: "refund_requested",
+            refund_reason: "store_closed",
+            refund_requested_at: now,
+            updated_at: now,
+          })
+          .in("id", orderIds);
+
+        // 同步更新 coupons 状态
+        await supabaseAdmin
+          .from("coupons")
+          .update({ status: "refund_requested" })
+          .in("order_id", orderIds);
+      }
+
+      // 4. 如果是连锁店，从多店 deal 的 applicable_merchant_ids 中移除
+      const { data: multiDeals } = await supabaseAdmin
+        .from("deals")
+        .select("id, applicable_merchant_ids")
+        .contains("applicable_merchant_ids", [merchantId]);
+
+      if (multiDeals && multiDeals.length > 0) {
+        for (const deal of multiDeals) {
+          const updated = (deal.applicable_merchant_ids as string[]).filter(
+            (id: string) => id !== merchantId
+          );
+          await supabaseAdmin
+            .from("deals")
+            .update({ applicable_merchant_ids: updated })
+            .eq("id", deal.id);
+        }
+      }
+
+      return jsonResponse({
+        success: true,
+        message: "Store has been closed successfully",
+        pending_refund_count: pendingCount,
+      });
+    }
+
+    // -------------------------------------------------------
+    // POST /merchant-store/leave-brand — 解除品牌合作
+    // 仅 store_owner 可操作
+    // -------------------------------------------------------
+    if (
+      req.method === "POST" &&
+      pathSegments[0] === "leave-brand" &&
+      pathSegments.length === 1
+    ) {
+      if (auth.role !== "store_owner") {
+        return errorResponse("Only store owner can leave a brand", 403);
+      }
+
+      // 检查门店是否关联品牌
+      const { data: merchant } = await supabaseAdmin
+        .from("merchants")
+        .select("brand_id")
+        .eq("id", merchantId)
+        .single();
+
+      if (!merchant?.brand_id) {
+        return errorResponse("This store is not associated with any brand");
+      }
+
+      // 清除品牌关联
+      const { error: leaveErr } = await supabaseAdmin
+        .from("merchants")
+        .update({ brand_id: null })
+        .eq("id", merchantId);
+
+      if (leaveErr) {
+        return errorResponse(`Failed to leave brand: ${leaveErr.message}`);
+      }
+
+      const brandId = merchant.brand_id;
+
+      // 更新多店通用 Deal 中的 applicable_merchant_ids
+      // 从所有包含此门店 ID 的 Deal 中移除
+      const { data: affectedDeals } = await supabaseAdmin
+        .from("deals")
+        .select("id, applicable_merchant_ids, merchant_id")
+        .contains("applicable_merchant_ids", [merchantId]);
+
+      let deactivatedDeals = 0;
+      if (affectedDeals && affectedDeals.length > 0) {
+        for (const deal of affectedDeals) {
+          const updatedIds = (deal.applicable_merchant_ids || [])
+            .filter((id: string) => id !== merchantId);
+          await supabaseAdmin
+            .from("deals")
+            .update({
+              applicable_merchant_ids: updatedIds.length > 0 ? updatedIds : null,
+            })
+            .eq("id", deal.id);
+
+          // 如果 deal 原属于该门店且无其他可用门店，停用并退款
+          if (deal.merchant_id === merchantId && updatedIds.length === 0) {
+            await supabaseAdmin
+              .from("deals")
+              .update({ is_active: false, deal_status: "inactive" })
+              .eq("id", deal.id);
+            deactivatedDeals++;
+
+            // 标记相关未使用订单为待退款
+            const { data: unusedOrders } = await supabaseAdmin
+              .from("orders")
+              .select("id")
+              .eq("deal_id", deal.id)
+              .eq("status", "unused");
+            if (unusedOrders && unusedOrders.length > 0) {
+              const now = new Date().toISOString();
+              await supabaseAdmin
+                .from("orders")
+                .update({
+                  status: "refund_requested",
+                  refund_reason: "store_left_brand",
+                  refund_requested_at: now,
+                  updated_at: now,
+                })
+                .in("id", unusedOrders.map((o: { id: string }) => o.id));
+            }
+          }
+        }
+      }
+
+      // 通知品牌管理员
+      try {
+        const { data: storeName } = await supabaseAdmin
+          .from("merchants")
+          .select("name")
+          .eq("id", merchantId)
+          .single();
+
+        // 查找品牌下其他门店，发通知
+        const { data: brandStores } = await supabaseAdmin
+          .from("merchants")
+          .select("id")
+          .eq("brand_id", brandId)
+          .neq("id", merchantId)
+          .limit(10);
+
+        if (brandStores) {
+          const notifications = brandStores.map((s: { id: string }) => ({
+            merchant_id: s.id,
+            type: "system",
+            title: "Store Left Brand",
+            body: `"${storeName?.name ?? 'A store'}" has left the brand.`,
+            is_read: false,
+          }));
+          if (notifications.length > 0) {
+            await supabaseAdmin.from("merchant_notifications").insert(notifications);
+          }
+        }
+      } catch (_) {
+        // 通知失败不阻断
+      }
+
+      return jsonResponse({
+        success: true,
+        message: "Successfully left the brand",
+        deactivated_deals: deactivatedDeals,
+      });
+    }
+
     return errorResponse("Route not found", 404);
   } catch (err) {
     console.error("merchant-store error:", err);

@@ -1,0 +1,19 @@
+appId: com.dealjoy.dealjoy_merchant
+---
+- clearState
+- launchApp
+- extendedWaitUntil:
+    visible: "Welcome back"
+    timeout: 20000
+- tapOn: "Email"
+- inputText: "testmerchant@dealjoy.com"
+- tapOn: "Password"
+- inputText: "Test123456"
+- hideKeyboard
+- extendedWaitUntil:
+    visible: "Sign In"
+    timeout: 5000
+- tapOn: "Sign In"
+- extendedWaitUntil:
+    visible: "Today's Stats"
+    timeout: 20000

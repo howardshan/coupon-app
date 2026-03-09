@@ -1,0 +1,80 @@
+appId: com.dealjoy.dealjoy_merchant
+name: "Phase1-01: Single Location Registration Flow"
+---
+- stopApp:
+    appId: com.dealjoy.dealjoy_merchant
+- clearState:
+    appId: com.dealjoy.dealjoy_merchant
+- launchApp:
+    appId: com.dealjoy.dealjoy_merchant
+
+# 等待登录页出现
+- extendedWaitUntil:
+    visible: "Welcome back"
+    timeout: 30000
+
+# 点击 Register 链接进入注册页
+- tapOn: "Register"
+
+# Step 0: Create Account 页面
+- extendedWaitUntil:
+    visible: "Create Account"
+    timeout: 15000
+
+# 填写邮箱
+- tapOn:
+    id: "register_email_field"
+- inputText: "test_single_001@testmail.com"
+
+# 填写密码
+- tapOn:
+    id: "register_password_field"
+- inputText: "Test1234!"
+
+# 填写确认密码
+- tapOn:
+    id: "register_confirm_password_field"
+- inputText: "Test1234!"
+
+# 点击 Next
+- tapOn:
+    id: "register_next_btn"
+
+# Step 1: Store Type 页面
+- extendedWaitUntil:
+    visible: "How many locations?"
+    timeout: 15000
+
+# 选择 Single Location
+- tapOn:
+    id: "reg_type_single"
+
+# 点击 Next
+- tapOn:
+    id: "register_next_btn"
+
+# Step 2: Business Info 页面
+- extendedWaitUntil:
+    visible: "Tell us about your business"
+    timeout: 15000
+
+# 验证品牌字段不显示（单店模式）
+- assertNotVisible: "Brand Information"
+
+# 填写公司名
+- tapOn:
+    id: "register_company_name"
+- inputText: "Test Single Store LLC"
+
+# 填写联系人
+- tapOn:
+    id: "register_contact_name"
+- inputText: "John Doe"
+
+# 填写电话
+- tapOn:
+    id: "register_phone"
+- inputText: "+15551234567"
+
+# 截图验证
+- takeScreenshot: phase01_single_reg_step2

@@ -1,0 +1,24 @@
+# Restaurant 分类：上传5个证件
+appId: com.dealjoy.dealjoy_merchant
+---
+- runFlow: upload_base_docs.yaml
+
+# Health Permit
+- scrollUntilVisible:
+    element: "Health Permit"
+    direction: DOWN
+    timeout: 5000
+- tapOn:
+    text: "Upload"
+    below: "Health Permit"
+- runFlow: upload_photo.yaml
+
+# Food Service License
+- scrollUntilVisible:
+    element: "Food Service License"
+    direction: DOWN
+    timeout: 5000
+- tapOn:
+    text: "Upload"
+    below: "Food Service License"
+- runFlow: upload_photo.yaml

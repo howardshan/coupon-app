@@ -92,6 +92,103 @@ class DashboardService {
       throw DashboardException('Network error: $e');
     }
   }
+
+  // ----------------------------------------------------------
+  // V2.1 品牌总览 — 获取品牌级汇总数据
+  // ----------------------------------------------------------
+  Future<BrandOverviewData> fetchBrandOverview() async {
+    try {
+      final response = await _supabase.functions.invoke(
+        '$_functionName/brand-overview',
+        method: HttpMethod.get,
+      );
+
+      if (response.status != 200) {
+        final body = response.data;
+        final message = body is Map ? (body['error'] ?? 'Unknown error') : 'Request failed';
+        throw DashboardException('Fetch brand overview failed: $message (${response.status})');
+      }
+
+      final json = _parseJson(response.data);
+      return BrandOverviewData.fromJson(json);
+    } on FunctionException catch (e) {
+      throw DashboardException('Edge Function error: ${e.details}');
+    } catch (e) {
+      if (e is DashboardException) rethrow;
+      throw DashboardException('Network error: $e');
+    }
+  }
+
+  // ----------------------------------------------------------
+  // V2.1 门店排行
+  // ----------------------------------------------------------
+  Future<List<StoreRanking>> fetchBrandRankings({
+    String sortBy = 'revenue',
+    int days = 30,
+  }) async {
+    try {
+      final response = await _supabase.functions.invoke(
+        '$_functionName/brand-rankings?sort_by=$sortBy&days=$days',
+        method: HttpMethod.get,
+      );
+
+      if (response.status != 200) {
+        final body = response.data;
+        final message = body is Map ? (body['error'] ?? 'Unknown error') : 'Request failed';
+        throw DashboardException('Fetch brand rankings failed: $message (${response.status})');
+      }
+
+      final json = _parseJson(response.data);
+      final list = json['rankings'] as List<dynamic>? ?? [];
+      return list
+          .map((e) => StoreRanking.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } on FunctionException catch (e) {
+      throw DashboardException('Edge Function error: ${e.details}');
+    } catch (e) {
+      if (e is DashboardException) rethrow;
+      throw DashboardException('Network error: $e');
+    }
+  }
+
+  // ----------------------------------------------------------
+  // V2.1 门店健康度
+  // ----------------------------------------------------------
+  Future<List<StoreHealthAlert>> fetchBrandHealth() async {
+    try {
+      final response = await _supabase.functions.invoke(
+        '$_functionName/brand-health',
+        method: HttpMethod.get,
+      );
+
+      if (response.status != 200) {
+        final body = response.data;
+        final message = body is Map ? (body['error'] ?? 'Unknown error') : 'Request failed';
+        throw DashboardException('Fetch brand health failed: $message (${response.status})');
+      }
+
+      final json = _parseJson(response.data);
+      final list = json['alerts'] as List<dynamic>? ?? [];
+      return list
+          .map((e) => StoreHealthAlert.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } on FunctionException catch (e) {
+      throw DashboardException('Edge Function error: ${e.details}');
+    } catch (e) {
+      if (e is DashboardException) rethrow;
+      throw DashboardException('Network error: $e');
+    }
+  }
+
+  /// 统一 JSON 解析
+  Map<String, dynamic> _parseJson(dynamic data) {
+    if (data is String) {
+      return jsonDecode(data) as Map<String, dynamic>;
+    } else if (data is Map<String, dynamic>) {
+      return data;
+    }
+    throw DashboardException('Unexpected response format');
+  }
 }
 
 // ============================================================

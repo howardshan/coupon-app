@@ -26,8 +26,12 @@ class MerchantRegisterPage extends ConsumerStatefulWidget {
 
 class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
   // 当前步骤索引（0-based）
+  // 0=账号, 1=注册类型, 2=公司信息, 3=类别, 4=证件, 5=地址
   late int _currentStep;
-  static const int _totalSteps = 5;
+  static const int _totalSteps = 6;
+
+  // 注册类型: single（独立门店）/ multiple（连锁品牌）
+  String _registrationType = 'single';
 
   /// 是否为重提模式（跳过 Step 0 账号注册）
   bool get _isResubmit => widget.isResubmit;
@@ -42,12 +46,15 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
   final _confirmPasswordCtrl = TextEditingController();
   bool _passwordVisible = false;
 
-  // Step 2: 公司信息表单
+  // Step 2: 公司信息表单（连锁模式含品牌信息）
   final _step2FormKey = GlobalKey<FormState>();
   final _companyNameCtrl = TextEditingController();
   final _contactNameCtrl = TextEditingController();
   final _contactEmailCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
+  // 品牌信息（连锁注册时使用）
+  final _brandNameCtrl = TextEditingController();
+  final _brandDescriptionCtrl = TextEditingController();
 
   // Step 4: EIN 输入
   final _step4FormKey = GlobalKey<FormState>();
@@ -70,8 +77,8 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
   @override
   void initState() {
     super.initState();
-    // 重提模式从 Step 1（Business Info）开始，普通注册从 Step 0
-    _currentStep = _isResubmit ? 1 : 0;
+    // 重提模式从 Step 2（Business Info）开始，普通注册从 Step 0
+    _currentStep = _isResubmit ? 2 : 0;
 
     Future.microtask(() {
       if (_isResubmit) {
@@ -98,6 +105,8 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
     _contactEmailCtrl.dispose();
     _phoneCtrl.dispose();
     _einCtrl.dispose();
+    _brandNameCtrl.dispose();
+    _brandDescriptionCtrl.dispose();
     _address1Ctrl.dispose();
     _address2Ctrl.dispose();
     _cityCtrl.dispose();
@@ -115,12 +124,12 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
-        leading: (_currentStep > 0 && !(_isResubmit && _currentStep == 1))
+        leading: (_currentStep > 0 && !(_isResubmit && _currentStep == 2))
             ? IconButton(
                 icon: const Icon(Icons.arrow_back, color: Color(0xFF212121)),
                 onPressed: _goBack,
               )
-            : _isResubmit && _currentStep == 1
+            : _isResubmit && _currentStep == 2
                 ? IconButton(
                     icon: const Icon(Icons.close, color: Color(0xFF212121)),
                     onPressed: () {
@@ -146,8 +155,8 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
         children: [
           // 顶部进度指示器
           _StepProgressBar(
-            currentStep: _isResubmit ? _currentStep - 1 : _currentStep,
-            totalSteps: _isResubmit ? _totalSteps - 1 : _totalSteps,
+            currentStep: _isResubmit ? _currentStep - 2 : _currentStep,
+            totalSteps: _isResubmit ? _totalSteps - 2 : _totalSteps,
           ),
           // 表单内容区域
           Expanded(
@@ -193,12 +202,14 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
       case 0:
         return 'Create Account';
       case 1:
-        return 'Business Info';
+        return 'Store Type';
       case 2:
-        return 'Select Category';
+        return 'Business Info';
       case 3:
-        return 'Upload Documents';
+        return 'Select Category';
       case 4:
+        return 'Upload Documents';
+      case 5:
         return 'Store Address';
       default:
         return 'Register';
@@ -213,12 +224,14 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
       case 0:
         return _buildStep1AccountForm();
       case 1:
-        return _buildStep2BusinessInfo(application);
+        return _buildStepRegistrationType();
       case 2:
-        return _buildStep3CategorySelect(application);
+        return _buildStep2BusinessInfo(application);
       case 3:
-        return _buildStep4Documents(application);
+        return _buildStep3CategorySelect(application);
       case 4:
+        return _buildStep4Documents(application);
+      case 5:
         return _buildStep5Address(application);
       default:
         return const SizedBox.shrink();
@@ -244,6 +257,7 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
             controller: _emailCtrl,
             label: 'Business Email',
             hint: 'you@business.com',
+            valueKey: 'register_email_field',
             keyboardType: TextInputType.emailAddress,
             readOnly: Supabase.instance.client.auth.currentUser != null,
             validator: (v) {
@@ -260,6 +274,7 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
             controller: _passwordCtrl,
             label: 'Password',
             hint: 'At least 8 characters',
+            valueKey: 'register_password_field',
             obscureText: !_passwordVisible,
             suffixIcon: IconButton(
               icon: Icon(
@@ -282,6 +297,7 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
             controller: _confirmPasswordCtrl,
             label: 'Confirm Password',
             hint: 'Re-enter your password',
+            valueKey: 'register_confirm_password_field',
             obscureText: !_passwordVisible,
             validator: (v) {
               if (v != _passwordCtrl.text) {
@@ -321,7 +337,41 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
   }
 
   // ----------------------------------------------------------
-  // Step 2: 公司基本信息
+  // Step 1.5: 注册类型选择（Single / Multiple Locations）
+  // ----------------------------------------------------------
+  Widget _buildStepRegistrationType() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _SectionHeader(
+          title: 'How many locations?',
+          subtitle: 'Choose your store setup type.',
+        ),
+        const SizedBox(height: 24),
+        _RegistrationTypeCard(
+          key: const ValueKey('reg_type_single'),
+          icon: Icons.storefront,
+          title: 'Single Location',
+          subtitle: 'I have one store location.',
+          isSelected: _registrationType == 'single',
+          onTap: () => setState(() => _registrationType = 'single'),
+        ),
+        const SizedBox(height: 16),
+        _RegistrationTypeCard(
+          key: const ValueKey('reg_type_multiple'),
+          icon: Icons.business,
+          title: 'Multiple Locations',
+          subtitle:
+              'I have a brand with multiple store locations.',
+          isSelected: _registrationType == 'multiple',
+          onTap: () => setState(() => _registrationType = 'multiple'),
+        ),
+      ],
+    );
+  }
+
+  // ----------------------------------------------------------
+  // Step 2: 公司基本信息（连锁模式含品牌字段）
   // ----------------------------------------------------------
   Widget _buildStep2BusinessInfo(MerchantApplication? app) {
     // 预填邮箱
@@ -342,6 +392,7 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
             controller: _companyNameCtrl,
             label: 'Company Name',
             hint: 'Legal business name',
+            valueKey: 'register_company_name',
             validator: (v) => v == null || v.trim().isEmpty
                 ? 'Company name is required'
                 : null,
@@ -351,6 +402,7 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
             controller: _contactNameCtrl,
             label: 'Contact Person Name',
             hint: 'Your full name',
+            valueKey: 'register_contact_name',
             validator: (v) => v == null || v.trim().isEmpty
                 ? 'Contact name is required'
                 : null,
@@ -360,6 +412,7 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
             controller: _phoneCtrl,
             label: 'Contact Phone',
             hint: '+1 (555) 000-0000',
+            valueKey: 'register_phone',
             keyboardType: TextInputType.phone,
             validator: (v) {
               if (v == null || v.trim().isEmpty) {
@@ -373,6 +426,7 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
             controller: _contactEmailCtrl,
             label: 'Contact Email',
             hint: 'Business contact email',
+            valueKey: 'register_contact_email',
             keyboardType: TextInputType.emailAddress,
             validator: (v) {
               if (v == null || v.trim().isEmpty) {
@@ -385,6 +439,44 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
               return null;
             },
           ),
+          // 连锁注册：品牌信息字段
+          if (_registrationType == 'multiple') ...[
+            const SizedBox(height: 32),
+            const Text(
+              'Brand Information',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF212121),
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Your brand will be visible to customers across all locations.',
+              style: TextStyle(fontSize: 13, color: Color(0xFF757575)),
+            ),
+            const SizedBox(height: 16),
+            _AppTextField(
+              controller: _brandNameCtrl,
+              label: 'Brand Name',
+              hint: 'Your brand or chain name',
+              valueKey: 'register_brand_name',
+              validator: (v) {
+                if (_registrationType == 'multiple' &&
+                    (v == null || v.trim().isEmpty)) {
+                  return 'Brand name is required for multi-location';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 16),
+            _AppTextField(
+              controller: _brandDescriptionCtrl,
+              label: 'Brand Description (Optional)',
+              hint: 'A brief description of your brand',
+              valueKey: 'register_brand_description',
+            ),
+          ],
         ],
       ),
     );
@@ -446,6 +538,7 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
             controller: _einCtrl,
             label: 'EIN / Tax ID',
             hint: 'XX-XXXXXXX',
+            valueKey: 'register_ein',
             keyboardType: TextInputType.number,
             validator: (v) {
               if (v == null || v.trim().isEmpty) {
@@ -513,6 +606,7 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
             controller: _address1Ctrl,
             label: 'Address Line 1',
             hint: '123 Main St',
+            valueKey: 'register_address1',
             validator: (v) => v == null || v.trim().isEmpty
                 ? 'Address is required'
                 : null,
@@ -522,12 +616,14 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
             controller: _address2Ctrl,
             label: 'Address Line 2 (Optional)',
             hint: 'Apt, Suite, Unit, etc.',
+            valueKey: 'register_address2',
           ),
           const SizedBox(height: 16),
           _AppTextField(
             controller: _cityCtrl,
             label: 'City',
             hint: 'Dallas',
+            valueKey: 'register_city',
             validator: (v) => v == null || v.trim().isEmpty
                 ? 'City is required'
                 : null,
@@ -541,6 +637,7 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
                   controller: _stateCtrl,
                   label: 'State',
                   hint: 'TX',
+                  valueKey: 'register_state',
                   validator: (v) => v == null || v.trim().isEmpty
                       ? 'Required'
                       : null,
@@ -552,6 +649,7 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
                   controller: _zipcodeCtrl,
                   label: 'Zip Code',
                   hint: '75201',
+                  valueKey: 'register_zipcode',
                   keyboardType: TextInputType.number,
                   validator: (v) {
                     if (v == null || v.trim().isEmpty) return 'Required';
@@ -638,6 +736,7 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
         width: double.infinity,
         height: 52,
         child: ElevatedButton(
+          key: ValueKey(isLastStep ? 'register_submit_btn' : 'register_next_btn'),
           onPressed: isLoading ? null : _handleNext,
           style: ElevatedButton.styleFrom(
             backgroundColor: _primaryOrange,
@@ -676,7 +775,7 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
 
     switch (_currentStep) {
       case 0:
-        // Step 1: 仅做本地校验，暂存邮箱密码（不调 signUp）
+        // Step 0: 仅做本地校验，暂存邮箱密码（不调 signUp）
         if (!(_step1FormKey.currentState?.validate() ?? false)) return;
         notifier.updateAccountInfo(
           email: _emailCtrl.text.trim(),
@@ -685,7 +784,11 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
         _goNext();
 
       case 1:
-        // Step 2: 公司信息
+        // Step 1: 注册类型选择（已通过 setState 更新 _registrationType）
+        _goNext();
+
+      case 2:
+        // Step 2: 公司信息（含连锁品牌信息）
         if (!(_step2FormKey.currentState?.validate() ?? false)) return;
         notifier.updateBusinessInfo(
           companyName: _companyNameCtrl.text.trim(),
@@ -695,7 +798,7 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
         );
         _goNext();
 
-      case 2:
+      case 3:
         // Step 3: 类别选择（必须选了才能继续）
         final app = ref.read(merchantAuthProvider).value;
         if (app?.category == null) {
@@ -704,7 +807,7 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
         }
         _goNext();
 
-      case 3:
+      case 4:
         // Step 4: EIN + 证件校验
         if (!(_step4FormKey.currentState?.validate() ?? false)) return;
         notifier.updateEin(_einCtrl.text.trim());
@@ -726,7 +829,7 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
         }
         _goNext();
 
-      case 4:
+      case 5:
         // Step 5: 地址 + 提交申请
         if (!(_step5FormKey.currentState?.validate() ?? false)) return;
         notifier.updateAddress(
@@ -738,11 +841,18 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
         );
 
         if (_isResubmit) {
-          // 重提模式：直接重新提交（已有账号，无需 signUp）
           await notifier.resubmitApplication();
         } else {
-          // 新注册模式：注册账号 + 提交申请
-          await notifier.registerAndSubmit();
+          // 新注册：传递 registrationType 和品牌信息
+          await notifier.registerAndSubmit(
+            registrationType: _registrationType,
+            brandName: _registrationType == 'multiple'
+                ? _brandNameCtrl.text.trim()
+                : null,
+            brandDescription: _registrationType == 'multiple'
+                ? _brandDescriptionCtrl.text.trim()
+                : null,
+          );
         }
         final state5 = ref.read(merchantAuthProvider);
         if (state5 is AsyncError) {
@@ -763,7 +873,7 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
 
   // 后退一步
   void _goBack() {
-    final minStep = _isResubmit ? 1 : 0;
+    final minStep = _isResubmit ? 2 : 0;
     if (_currentStep > minStep) {
       setState(() => _currentStep--);
     }
@@ -915,6 +1025,7 @@ class _AppTextField extends StatelessWidget {
     this.suffixIcon,
     this.validator,
     this.readOnly = false,
+    this.valueKey,
   });
 
   final TextEditingController controller;
@@ -925,11 +1036,13 @@ class _AppTextField extends StatelessWidget {
   final Widget? suffixIcon;
   final String? Function(String?)? validator;
   final bool readOnly;
+  final String? valueKey;
   final int maxLines = 1;
 
   @override
   Widget build(BuildContext context) {
     return TextFormField(
+      key: valueKey != null ? ValueKey(valueKey) : null,
       controller: controller,
       keyboardType: keyboardType,
       obscureText: obscureText,
@@ -1084,6 +1197,97 @@ class _ErrorBanner extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ============================================================
+// 注册类型选择卡片（单店 / 连锁）
+// ============================================================
+class _RegistrationTypeCard extends StatelessWidget {
+  const _RegistrationTypeCard({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  static const _primaryOrange = Color(0xFFFF6B35);
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFFFFF3E0) : Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected ? _primaryOrange : const Color(0xFFE0E0E0),
+            width: isSelected ? 2 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? _primaryOrange.withAlpha(30)
+                    : const Color(0xFFF5F5F5),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                icon,
+                color: isSelected ? _primaryOrange : const Color(0xFF757575),
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: isSelected
+                          ? _primaryOrange
+                          : const Color(0xFF212121),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: Color(0xFF757575),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              isSelected
+                  ? Icons.radio_button_checked
+                  : Icons.radio_button_unchecked,
+              color: isSelected ? _primaryOrange : const Color(0xFFBDBDBD),
+            ),
+          ],
+        ),
       ),
     );
   }

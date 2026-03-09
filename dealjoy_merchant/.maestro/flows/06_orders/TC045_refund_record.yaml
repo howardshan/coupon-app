@@ -1,0 +1,29 @@
+# TC045: 退款记录
+# 测试步骤：Orders 页 → Refunded tab → 验证退款记录显示
+# 预期结果：退款记录正确显示
+# 注意：DealJoy 是自动退款，商家不需审批
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+# 登录
+- runFlow: ../../shared/login.yaml
+
+# 点击底部 Orders tab
+- tapOn: "Orders"
+
+# 等待订单列表页加载
+- extendedWaitUntil:
+    visible: "All"
+    timeout: 10000
+
+# 切换到 Refunded tab
+- tapOn: "Refunded"
+
+# 等待 Refunded 列表加载
+- extendedWaitUntil:
+    visible: "Refunded"
+    timeout: 10000
+
+# 截图保存退款记录
+- takeScreenshot: TC045_refund_record
