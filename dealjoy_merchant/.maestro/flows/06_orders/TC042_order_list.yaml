@@ -1,0 +1,26 @@
+# TC042: 订单列表
+# 测试步骤：登录 → 点击底部 Orders tab → 验证订单列表显示
+# 预期结果：订单列表正确显示，包含订单信息
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+# 登录
+- runFlow: ../../shared/login.yaml
+
+# 点击底部 Orders tab
+- tapOn: "Orders"
+
+# 等待订单列表页加载
+- extendedWaitUntil:
+    visible: "All"
+    timeout: 10000
+
+# 验证 tab 栏存在
+- assertVisible: "All"
+- assertVisible: "Paid"
+- assertVisible: "Redeemed"
+- assertVisible: "Refunded"
+
+# 截图保存订单列表
+- takeScreenshot: TC042_order_list

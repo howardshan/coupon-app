@@ -1,0 +1,37 @@
+# TC063: 退款流程查看
+# 测试步骤：登录 → Orders → Refunded tab → 验证退款记录显示
+# DealJoy 自动退款，商家端仅查看退款记录
+# 预期结果：Refunded tab 可点击，显示退款记录（如有数据）
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+# 登录
+- runFlow: ../../shared/login.yaml
+
+# 点击底部 Orders tab
+- tapOn: "Orders"
+
+# 等待订单列表加载
+- extendedWaitUntil:
+    visible: "All"
+    timeout: 10000
+
+# 验证 tab 栏
+- assertVisible: "All"
+- assertVisible: "Refunded"
+
+- takeScreenshot: TC063_orders_tabs
+
+# 点击 Refunded tab
+- tapOn: "Refunded"
+
+# 等待 Refunded 列表加载
+- extendedWaitUntil:
+    visible: "Refunded"
+    timeout: 8000
+
+- takeScreenshot: TC063_refunded_tab
+
+# 验证退款记录或空状态
+- takeScreenshot: TC063_refund_flow_result

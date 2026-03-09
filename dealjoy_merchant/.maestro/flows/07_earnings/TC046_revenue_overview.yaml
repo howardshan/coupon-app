@@ -1,0 +1,33 @@
+# TC046: 收入概览
+# 测试步骤：登录 → 导航到 Earnings 页 → 验证 overview cards 显示
+# 预期结果：显示 This Month Revenue, Pending Settlement, Total Settled
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+# 登录
+- runFlow: ../../shared/login.yaml
+
+# 点击底部 Me tab
+- tapOn: "Me"
+
+# 等待 Me 页加载
+- extendedWaitUntil:
+    visible: "Me"
+    timeout: 10000
+
+# 点击 Earnings 入口
+- tapOn: "Earnings"
+
+# 等待 Earnings 页加载
+- extendedWaitUntil:
+    visible: "Earnings"
+    timeout: 10000
+
+# 验证 overview cards
+- assertVisible: "This Month Revenue"
+- assertVisible: "Pending Settlement"
+- assertVisible: "Total Settled"
+
+# 截图保存收入概览
+- takeScreenshot: TC046_revenue_overview

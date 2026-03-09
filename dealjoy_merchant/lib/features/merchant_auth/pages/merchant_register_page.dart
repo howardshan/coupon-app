@@ -257,6 +257,7 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
             controller: _emailCtrl,
             label: 'Business Email',
             hint: 'you@business.com',
+            valueKey: 'register_email_field',
             keyboardType: TextInputType.emailAddress,
             readOnly: Supabase.instance.client.auth.currentUser != null,
             validator: (v) {
@@ -273,6 +274,7 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
             controller: _passwordCtrl,
             label: 'Password',
             hint: 'At least 8 characters',
+            valueKey: 'register_password_field',
             obscureText: !_passwordVisible,
             suffixIcon: IconButton(
               icon: Icon(
@@ -295,6 +297,7 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
             controller: _confirmPasswordCtrl,
             label: 'Confirm Password',
             hint: 'Re-enter your password',
+            valueKey: 'register_confirm_password_field',
             obscureText: !_passwordVisible,
             validator: (v) {
               if (v != _passwordCtrl.text) {
@@ -346,6 +349,7 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
         ),
         const SizedBox(height: 24),
         _RegistrationTypeCard(
+          key: const ValueKey('reg_type_single'),
           icon: Icons.storefront,
           title: 'Single Location',
           subtitle: 'I have one store location.',
@@ -354,6 +358,7 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
         ),
         const SizedBox(height: 16),
         _RegistrationTypeCard(
+          key: const ValueKey('reg_type_multiple'),
           icon: Icons.business,
           title: 'Multiple Locations',
           subtitle:
@@ -387,6 +392,7 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
             controller: _companyNameCtrl,
             label: 'Company Name',
             hint: 'Legal business name',
+            valueKey: 'register_company_name',
             validator: (v) => v == null || v.trim().isEmpty
                 ? 'Company name is required'
                 : null,
@@ -396,6 +402,7 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
             controller: _contactNameCtrl,
             label: 'Contact Person Name',
             hint: 'Your full name',
+            valueKey: 'register_contact_name',
             validator: (v) => v == null || v.trim().isEmpty
                 ? 'Contact name is required'
                 : null,
@@ -405,6 +412,7 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
             controller: _phoneCtrl,
             label: 'Contact Phone',
             hint: '+1 (555) 000-0000',
+            valueKey: 'register_phone',
             keyboardType: TextInputType.phone,
             validator: (v) {
               if (v == null || v.trim().isEmpty) {
@@ -418,6 +426,7 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
             controller: _contactEmailCtrl,
             label: 'Contact Email',
             hint: 'Business contact email',
+            valueKey: 'register_contact_email',
             keyboardType: TextInputType.emailAddress,
             validator: (v) {
               if (v == null || v.trim().isEmpty) {
@@ -451,6 +460,7 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
               controller: _brandNameCtrl,
               label: 'Brand Name',
               hint: 'Your brand or chain name',
+              valueKey: 'register_brand_name',
               validator: (v) {
                 if (_registrationType == 'multiple' &&
                     (v == null || v.trim().isEmpty)) {
@@ -464,6 +474,7 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
               controller: _brandDescriptionCtrl,
               label: 'Brand Description (Optional)',
               hint: 'A brief description of your brand',
+              valueKey: 'register_brand_description',
             ),
           ],
         ],
@@ -527,6 +538,7 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
             controller: _einCtrl,
             label: 'EIN / Tax ID',
             hint: 'XX-XXXXXXX',
+            valueKey: 'register_ein',
             keyboardType: TextInputType.number,
             validator: (v) {
               if (v == null || v.trim().isEmpty) {
@@ -594,6 +606,7 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
             controller: _address1Ctrl,
             label: 'Address Line 1',
             hint: '123 Main St',
+            valueKey: 'register_address1',
             validator: (v) => v == null || v.trim().isEmpty
                 ? 'Address is required'
                 : null,
@@ -603,12 +616,14 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
             controller: _address2Ctrl,
             label: 'Address Line 2 (Optional)',
             hint: 'Apt, Suite, Unit, etc.',
+            valueKey: 'register_address2',
           ),
           const SizedBox(height: 16),
           _AppTextField(
             controller: _cityCtrl,
             label: 'City',
             hint: 'Dallas',
+            valueKey: 'register_city',
             validator: (v) => v == null || v.trim().isEmpty
                 ? 'City is required'
                 : null,
@@ -622,6 +637,7 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
                   controller: _stateCtrl,
                   label: 'State',
                   hint: 'TX',
+                  valueKey: 'register_state',
                   validator: (v) => v == null || v.trim().isEmpty
                       ? 'Required'
                       : null,
@@ -633,6 +649,7 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
                   controller: _zipcodeCtrl,
                   label: 'Zip Code',
                   hint: '75201',
+                  valueKey: 'register_zipcode',
                   keyboardType: TextInputType.number,
                   validator: (v) {
                     if (v == null || v.trim().isEmpty) return 'Required';
@@ -719,6 +736,7 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
         width: double.infinity,
         height: 52,
         child: ElevatedButton(
+          key: ValueKey(isLastStep ? 'register_submit_btn' : 'register_next_btn'),
           onPressed: isLoading ? null : _handleNext,
           style: ElevatedButton.styleFrom(
             backgroundColor: _primaryOrange,
@@ -1007,6 +1025,7 @@ class _AppTextField extends StatelessWidget {
     this.suffixIcon,
     this.validator,
     this.readOnly = false,
+    this.valueKey,
   });
 
   final TextEditingController controller;
@@ -1017,11 +1036,13 @@ class _AppTextField extends StatelessWidget {
   final Widget? suffixIcon;
   final String? Function(String?)? validator;
   final bool readOnly;
+  final String? valueKey;
   final int maxLines = 1;
 
   @override
   Widget build(BuildContext context) {
     return TextFormField(
+      key: valueKey != null ? ValueKey(valueKey) : null,
       controller: controller,
       keyboardType: keyboardType,
       obscureText: obscureText,
@@ -1186,6 +1207,7 @@ class _ErrorBanner extends StatelessWidget {
 // ============================================================
 class _RegistrationTypeCard extends StatelessWidget {
   const _RegistrationTypeCard({
+    super.key,
     required this.icon,
     required this.title,
     required this.subtitle,

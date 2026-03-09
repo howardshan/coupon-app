@@ -1158,6 +1158,7 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
                     ],
                   ),
                   Switch(
+                    key: const ValueKey('deal_scope_multi_store_btn'),
                     value: _isMultiStore,
                     activeThumbColor: const Color(0xFFFF6B35),
                     onChanged: (v) => setState(() {
@@ -1224,6 +1225,7 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
                           ],
                         ),
                         ...stores.map((store) => CheckboxListTile(
+                              key: ValueKey('deal_store_checkbox_${store.id}'),
                               dense: true,
                               contentPadding: EdgeInsets.zero,
                               activeColor: const Color(0xFFFF6B35),

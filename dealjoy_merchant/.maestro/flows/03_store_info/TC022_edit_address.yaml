@@ -1,0 +1,77 @@
+# TC022: Edit Store Address
+# 测试步骤：登录 → Store Profile → Edit Basic Info → 修改地址 → Save
+# 预期结果：地址成功更新，显示成功提示
+# 注意：Google Places 自动补全在模拟器上可能 BLOCKED，此处使用纯文本输入
+# 导航路径: Dashboard → Store → Basic Info Edit → 修改 Address → Save Changes
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+- launchApp:
+    clearState: true
+
+# 引用共享登录
+- runFlow: ../../shared/login.yaml
+
+# 等待 Dashboard 加载完成
+- extendedWaitUntil:
+    visible: "Dashboard"
+    timeout: 10000
+
+# 点击 Store 快捷入口进入 Store Profile 页面
+- tapOn: "Store"
+
+# 等待 Store Profile 页面加载
+- extendedWaitUntil:
+    visible: "Basic Info"
+    timeout: 10000
+
+# 点击 Basic Info 区块的 Edit 按钮（第一个 Edit 按钮）
+- tapOn:
+    text: "Edit"
+    index: 0
+
+# 等待编辑页面加载
+- extendedWaitUntil:
+    visible: "Edit Basic Info"
+    timeout: 5000
+
+# 验证 Store Address 字段可见
+- assertVisible: "Store Address"
+
+# 截图：编辑页面加载完成
+- takeScreenshot: TC022_edit_page_loaded
+
+# 滚动到 Store Address 字段
+- scrollUntilVisible:
+    element: "Store Address"
+    direction: DOWN
+    timeout: 5000
+
+# 点击地址输入框并修改
+- tapOn: "123 Main St, Dallas, TX 75201"
+- eraseText: 30
+- inputText: "456 Elm St, Dallas, TX 75202"
+
+# 隐藏键盘
+- hideKeyboard
+
+# 截图：地址已修改
+- takeScreenshot: TC022_address_edited
+
+# 滚动到 Save Changes 按钮
+- scrollUntilVisible:
+    element: "Save Changes"
+    direction: DOWN
+    timeout: 5000
+
+# 点击 Save Changes 保存
+- tapOn: "Save Changes"
+
+# 等待保存成功提示
+- extendedWaitUntil:
+    visible: "Store info updated successfully"
+    timeout: 10000
+
+# 截图：保存成功
+- takeScreenshot: TC022_save_success

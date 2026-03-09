@@ -10,16 +10,18 @@ async function getStats() {
       { count: userCount },
       { count: merchantCount },
       { count: dealCount },
+      { count: brandCount },
       { count: pendingMerchantCount },
       { count: refundCount },
     ] = await Promise.all([
       supabase.from('users').select('*', { count: 'exact', head: true }),
       supabase.from('merchants').select('*', { count: 'exact', head: true }),
       supabase.from('deals').select('*', { count: 'exact', head: true }),
+      supabase.from('brands').select('*', { count: 'exact', head: true }),
       supabase.from('merchants').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
       supabase.from('orders').select('*', { count: 'exact', head: true }).eq('status', 'refund_requested'),
     ])
-    return { role: 'admin', userCount, merchantCount, dealCount, pendingMerchantCount, refundCount }
+    return { role: 'admin', userCount, merchantCount, dealCount, brandCount, pendingMerchantCount, refundCount }
   } else {
     const { data: merchant } = await supabase.from('merchants').select('id, name').eq('user_id', user!.id).single()
     if (!merchant) return { role: 'merchant', merchantName: null, dealCount: 0, orderCount: 0 }
@@ -41,10 +43,11 @@ export default async function DashboardPage() {
 
       {stats.role === 'admin' ? (
         <>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-4 gap-4">
             <StatCard label="Total Users" value={stats.userCount ?? 0} color="blue" />
             <StatCard label="Total Merchants" value={stats.merchantCount ?? 0} color="green" />
             <StatCard label="Total Deals" value={stats.dealCount ?? 0} color="purple" />
+            <StatCard label="Total Brands" value={stats.brandCount ?? 0} color="orange" />
           </div>
           <div className="mt-6 bg-white rounded-xl border border-gray-200 p-6">
             <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">Pending</h2>
@@ -83,14 +86,15 @@ export default async function DashboardPage() {
 
 function StatCard({ label, value, color }: { label: string; value: number; color: string }) {
   const colors: Record<string, string> = {
-    blue: 'bg-blue-50 text-blue-700',
-    green: 'bg-green-50 text-green-700',
-    purple: 'bg-purple-50 text-purple-700',
+    blue: 'text-blue-700',
+    green: 'text-green-700',
+    purple: 'text-purple-700',
+    orange: 'text-orange-700',
   }
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-6">
       <p className="text-sm text-gray-500">{label}</p>
-      <p className={`text-3xl font-bold mt-1 ${colors[color]?.split(' ')[1] ?? 'text-gray-900'}`}>{value}</p>
+      <p className={`text-3xl font-bold mt-1 ${colors[color] ?? 'text-gray-900'}`}>{value}</p>
     </div>
   )
 }

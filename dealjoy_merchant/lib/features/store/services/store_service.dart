@@ -462,6 +462,121 @@ class StoreService {
         .toList();
   }
 
+  // ----------------------------------------------------------
+  // 更新品牌信息（#30）
+  // ----------------------------------------------------------
+  Future<void> updateBrand({
+    String? name,
+    String? description,
+    String? logoUrl,
+  }) async {
+    final body = <String, dynamic>{};
+    if (name != null) body['name'] = name;
+    if (description != null) body['description'] = description;
+    if (logoUrl != null) body['logo_url'] = logoUrl;
+    if (body.isEmpty) return;
+
+    await _ensureFreshSession();
+    final response = await _supabase.functions.invoke(
+      _brandFunctionName,
+      method: HttpMethod.patch,
+      body: body,
+      headers: _merchantHeaders,
+    );
+
+    if (response.status != 200) {
+      throw _handleError(response);
+    }
+  }
+
+  // ----------------------------------------------------------
+  // 获取品牌完整信息（品牌+门店+管理员列表）
+  // ----------------------------------------------------------
+  Future<Map<String, dynamic>> fetchBrandDetails() async {
+    await _ensureFreshSession();
+    final response = await _supabase.functions.invoke(
+      _brandFunctionName,
+      method: HttpMethod.get,
+      headers: _merchantHeaders,
+    );
+
+    if (response.status != 200) {
+      throw _handleError(response);
+    }
+
+    return response.data as Map<String, dynamic>;
+  }
+
+  // ----------------------------------------------------------
+  // 添加门店到品牌（#33）
+  // ----------------------------------------------------------
+  Future<void> addStoreToBrand({String? merchantId, String? email}) async {
+    await _ensureFreshSession();
+    final body = <String, dynamic>{};
+    if (merchantId != null) body['merchant_id'] = merchantId;
+    if (email != null) body['email'] = email;
+
+    final response = await _supabase.functions.invoke(
+      '$_brandFunctionName/stores',
+      method: HttpMethod.post,
+      body: body,
+      headers: _merchantHeaders,
+    );
+
+    if (response.status != 200 && response.status != 201) {
+      throw _handleError(response);
+    }
+  }
+
+  // ----------------------------------------------------------
+  // 从品牌移除门店（#31）
+  // ----------------------------------------------------------
+  Future<void> removeStoreFromBrand(String merchantId) async {
+    await _ensureFreshSession();
+    final response = await _supabase.functions.invoke(
+      '$_brandFunctionName/stores/$merchantId',
+      method: HttpMethod.delete,
+      headers: _merchantHeaders,
+    );
+
+    if (response.status != 200) {
+      throw _handleError(response);
+    }
+  }
+
+  // ----------------------------------------------------------
+  // 邀请品牌管理员（#32）
+  // ----------------------------------------------------------
+  Future<void> inviteBrandAdmin(String email) async {
+    await _ensureFreshSession();
+    final response = await _supabase.functions.invoke(
+      '$_brandFunctionName/admins',
+      method: HttpMethod.post,
+      body: {'email': email},
+      headers: _merchantHeaders,
+    );
+
+    if (response.status != 200 && response.status != 201) {
+      throw _handleError(response);
+    }
+  }
+
+  // ----------------------------------------------------------
+  // 移除品牌管理员（#32）
+  // ----------------------------------------------------------
+  Future<void> removeBrandAdmin(String adminId) async {
+    await _ensureFreshSession();
+    final response = await _supabase.functions.invoke(
+      '$_brandFunctionName/admins/$adminId',
+      method: HttpMethod.delete,
+      headers: _merchantHeaders,
+    );
+
+    if (response.status != 200) {
+      throw _handleError(response);
+    }
+  }
+
   // ==========================================================
   // 员工管理相关方法（调 merchant-staff-mgmt Edge Function）
   // ==========================================================

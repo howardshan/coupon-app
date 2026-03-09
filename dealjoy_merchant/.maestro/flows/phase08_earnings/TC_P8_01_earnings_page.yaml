@@ -1,0 +1,17 @@
+appId: com.dealjoy.dealjoy_merchant
+name: "TC_P8_01 - Earnings page loads with summary cards"
+---
+- runFlow: ../../shared/login.yaml
+
+# 导航到 Me tab，再进 Earnings
+- tapOn: "Me"
+- tapOn: "Earnings"
+
+# 验证收入概览
+- extendedWaitUntil:
+    visible: "Earnings Overview"
+    timeout: 15000
+- assertVisible: "This Month"
+- assertVisible: "Pending"
+- assertVisible: "Settlement Info"
+- takeScreenshot: P8_TC01_earnings_page

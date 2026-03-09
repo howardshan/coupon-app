@@ -236,9 +236,8 @@ final appRouter = GoRouter(
         case 'rejected':
           return '/auth/review';
         default:
-          // 无商家记录 → 登出并留在登录页
-          await Supabase.instance.client.auth.signOut();
-          return '/auth/login';
+          // 无商家记录 → 跳转注册流程（#93）
+          return '/auth/register';
       }
     }
 
@@ -249,9 +248,8 @@ final appRouter = GoRouter(
         case 'rejected':
           return '/auth/review';
         default:
-          // 无商家记录 → 登出并跳登录页
-          await Supabase.instance.client.auth.signOut();
-          return '/auth/login';
+          // 无商家记录 → 跳转注册流程
+          return '/auth/register';
       }
     }
 
@@ -315,7 +313,13 @@ final appRouter = GoRouter(
           ],
         ),
 
-        // Tab 3: Me（设置）+ 子页面
+        // Tab 3: Reviews（评价管理）— 客服/店长/老板可见
+        GoRoute(
+          path: '/reviews',
+          builder: (context, state) => const ReviewsPage(),
+        ),
+
+        // Tab 4: Me（设置）+ 子页面
         GoRoute(
           path: '/me',
           builder: (context, state) => const SettingsPage(),
@@ -449,12 +453,6 @@ final appRouter = GoRouter(
           },
         ),
       ],
-    ),
-
-    // 评价管理
-    GoRoute(
-      path: '/reviews',
-      builder: (context, state) => const ReviewsPage(),
     ),
 
     // 数据分析

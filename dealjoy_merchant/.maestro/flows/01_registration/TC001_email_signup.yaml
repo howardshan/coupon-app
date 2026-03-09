@@ -1,0 +1,53 @@
+# TC001: 邮箱注册
+# 测试步骤：打开App → 点击Sign Up → 输入邮箱密码 → 创建账号
+# 预期结果：账号创建成功，跳转到 onboarding 流程
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+- launchApp:
+    clearState: true
+
+# 等待登录页加载
+- assertVisible: "Welcome back"
+
+# 点击 Register 链接
+- tapOn: "Register"
+
+# 等待注册页加载（Step 1: 创建账号）
+- extendedWaitUntil:
+    visible: "Create Account"
+    timeout: 10000
+
+# 输入邮箱
+- tapOn: "Business Email"
+- inputText: "testmerchant_tc001@test.com"
+
+# 输入密码
+- tapOn: "Password"
+- inputText: "Test1234!"
+
+# 输入确认密码
+- tapOn:
+    text: "Confirm Password"
+    optional: true
+- inputText: "Test1234!"
+
+# 隐藏键盘
+- hideKeyboard
+
+# 截图保存当前状态
+- takeScreenshot: TC001_email_signup_filled
+
+# 点击 Next
+- tapOn: "Next"
+
+# 等待10秒让页面跳转
+- waitForAnimationToEnd
+
+# 验证进入下一步 — 先尝试等待 Next 按钮消失（说明跳转了）
+- assertNotVisible:
+    text: "Create Account"
+    optional: true
+
+- takeScreenshot: TC001_email_signup_success

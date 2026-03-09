@@ -315,6 +315,59 @@ Deno.serve(async (req: Request) => {
       if (error) {
         return errorResponse(`Failed to remove store: ${error.message}`);
       }
+
+      // 从多店 deal 的 applicable_merchant_ids 中移除该门店
+      const { data: affectedDeals } = await supabaseAdmin
+        .from("deals")
+        .select("id, applicable_merchant_ids")
+        .contains("applicable_merchant_ids", [storeId]);
+
+      if (affectedDeals && affectedDeals.length > 0) {
+        for (const deal of affectedDeals) {
+          const updatedIds = (deal.applicable_merchant_ids || [])
+            .filter((id: string) => id !== storeId);
+          await supabaseAdmin
+            .from("deals")
+            .update({
+              applicable_merchant_ids: updatedIds.length > 0 ? updatedIds : null,
+            })
+            .eq("id", deal.id);
+
+          // 若 deal 无可用门店且非原 merchant 的 deal，自动停用
+          if (updatedIds.length === 0) {
+            const dealInfo = await supabaseAdmin
+              .from("deals")
+              .select("merchant_id, is_active")
+              .eq("id", deal.id)
+              .single();
+            // 如果移除的是 deal 原始门店（不太可能），跳过
+            if (dealInfo.data && dealInfo.data.merchant_id !== storeId && dealInfo.data.is_active) {
+              // 多店 deal 已无可用门店但原店仍在，保持 active
+            }
+          }
+        }
+      }
+
+      // 发通知给被移除门店的 owner
+      try {
+        const { data: storeOwnerData } = await supabaseAdmin
+          .from("merchants")
+          .select("user_id, name")
+          .eq("id", storeId)
+          .single();
+        if (storeOwnerData) {
+          await supabaseAdmin.from("merchant_notifications").insert({
+            merchant_id: storeId,
+            type: "system",
+            title: "Removed from Brand",
+            body: `Your store "${storeOwnerData.name}" has been removed from the brand.`,
+            is_read: false,
+          });
+        }
+      } catch (_) {
+        // 通知失败不阻断主流程
+      }
+
       return jsonResponse({ success: true });
     }
 

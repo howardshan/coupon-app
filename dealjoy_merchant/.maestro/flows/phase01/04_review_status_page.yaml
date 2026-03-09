@@ -1,0 +1,36 @@
+appId: com.dealjoy.dealjoy_merchant
+name: "Phase1-04: Registration Navigation Test"
+---
+- stopApp:
+    appId: com.dealjoy.dealjoy_merchant
+- clearState:
+    appId: com.dealjoy.dealjoy_merchant
+- launchApp:
+    appId: com.dealjoy.dealjoy_merchant
+
+# 等待登录页
+- extendedWaitUntil:
+    visible: "Welcome back"
+    timeout: 30000
+
+# 验证 Register 链接可跳转
+- tapOn: "Register"
+
+# 注册页出现
+- extendedWaitUntil:
+    visible: "Create Account"
+    timeout: 15000
+
+# 验证 Sign In 返回链接
+- assertVisible: "Already have an account"
+
+# 点击 Sign In 回到登录页
+- tapOn: "Sign In"
+
+# 验证回到登录页
+- extendedWaitUntil:
+    visible: "Welcome back"
+    timeout: 15000
+
+# 截图
+- takeScreenshot: phase01_nav_back_to_login

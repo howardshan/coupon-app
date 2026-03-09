@@ -1,0 +1,80 @@
+# TC008: 上传 Business License
+# 测试步骤：注册到文档上传步骤 → 点击 Business License 上传区 → 选择图片
+# 预期结果：文件上传成功，显示预览缩略图
+# 注意：模拟器上系统 file picker 可能无法被 Maestro 操作，此用例可能 BLOCKED
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+- launchApp:
+    clearState: true
+
+# 快速过注册前几步
+- assertVisible: "Welcome back"
+- tapOn: "Register"
+- extendedWaitUntil:
+    visible: "Create Account"
+    timeout: 10000
+- tapOn: "Business Email"
+- inputText: "testmerchant_tc008@test.com"
+- tapOn: "Password"
+- inputText: "Test1234!"
+- tapOn:
+    text: "Confirm Password"
+    optional: true
+- inputText: "Test1234!"
+- hideKeyboard
+- tapOn: "Next"
+
+# Step 1: Store Type
+- extendedWaitUntil:
+    visible: "Store Type"
+    timeout: 10000
+- tapOn:
+    text: "Single Location.*"
+    retryTapIfNoChange: false
+- tapOn: "Next"
+
+# Step 2: Business Info
+- extendedWaitUntil:
+    visible: "Company Name"
+    timeout: 10000
+- tapOn: "Company Name"
+- inputText: "TC008 Upload Test"
+- tapOn: "Contact Person Name"
+- inputText: "Test Owner"
+- tapOn: "Contact Phone"
+- inputText: "2145551234"
+- hideKeyboard
+- tapOn: "Next"
+
+# 选择分类（选 Restaurant 以便进入文档页）
+- extendedWaitUntil:
+    visible: "Select Category"
+    timeout: 10000
+- tapOn: "Restaurant"
+- tapOn: "Next"
+
+# 等待文档上传页
+- extendedWaitUntil:
+    visible: "Business License"
+    timeout: 10000
+
+- takeScreenshot: TC008_before_upload
+
+# 点击 Business License 上传区域
+# 注意：可能需要匹配上传按钮或整个卡片区域
+- tapOn:
+    text: "Business License"
+
+# BLOCKED: 系统 file picker 弹出后，Maestro 可能无法操作原生 picker
+# 以下步骤在模拟器上可能无法执行
+- tapOn:
+    text: "Choose from Gallery"
+    optional: true
+- tapOn:
+    text: "Gallery"
+    optional: true
+
+# 如果成功上传，应该能看到缩略图预览
+- takeScreenshot: TC008_after_upload

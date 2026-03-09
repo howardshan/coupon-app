@@ -1,0 +1,44 @@
+# TC013: Under Review 页面持久化
+# 测试步骤：用已提交但 pending 状态的测试账号登录 → 检查是否显示 Under Review
+# 预期结果：登录后直接显示 Under Review 页面，不显示注册流程或主页
+# 注意：需要预先准备一个已提交但 pending 状态的测试账号
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+- launchApp:
+    clearState: true
+
+# 登录页
+- assertVisible: "Welcome back"
+
+# 使用已提交审核的测试账号登录
+# TODO: 替换为实际的 pending 状态测试账号
+- tapOn: "Email"
+- inputText: "pending_merchant@test.com"
+- tapOn: "Password"
+- inputText: "Test1234!"
+- hideKeyboard
+- tapOn:
+    text: "Sign In"
+    optional: true
+- tapOn:
+    text: "Log In"
+    optional: true
+- tapOn:
+    text: "Login"
+    optional: true
+
+# 验证进入 Under Review 页面（不是主页或注册流程）
+- extendedWaitUntil:
+    visible: "Application Under Review"
+    timeout: 15000
+
+- takeScreenshot: TC013_under_review_page
+
+# 验证没有主页导航元素
+- assertNotVisible:
+    text: "Dashboard"
+    optional: true
+
+- takeScreenshot: TC013_no_dashboard_access

@@ -1,0 +1,86 @@
+# TC019: Edit Store Name
+# 测试步骤：登录 → 导航到 Store Profile → 编辑基本信息 → 修改店名 → Save → 验证更新
+# 预期结果：店名成功更新，显示成功提示
+# 导航路径: Dashboard → Store 快捷入口 → Store Profile → Basic Info Edit → Save
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+- launchApp:
+    clearState: true
+
+# 引用共享登录
+- runFlow: ../../shared/login.yaml
+
+# 等待 Dashboard 加载完成
+- extendedWaitUntil:
+    visible: "Dashboard"
+    timeout: 10000
+
+# 点击 Me tab 底部导航
+- tapOn: "Me"
+
+# 等待 Settings 页面加载
+- extendedWaitUntil:
+    visible: "Settings"
+    timeout: 5000
+
+# 返回 Dashboard，通过 Store 快捷入口进入
+- tapOn: "Dashboard"
+
+# 等待 Dashboard 加载
+- extendedWaitUntil:
+    visible: "Dashboard"
+    timeout: 5000
+
+# 点击 Store 快捷入口进入 Store Profile 页面
+- tapOn: "Store"
+
+# 等待 Store Profile 页面加载（显示 Basic Info 区块）
+- extendedWaitUntil:
+    visible: "Basic Info"
+    timeout: 10000
+
+# 验证 Store Profile 页面各区块可见
+- assertVisible: "Basic Info"
+- assertVisible: "Store Photos"
+- assertVisible: "Business Hours"
+
+# 截图：Store Profile 页面
+- takeScreenshot: TC019_store_profile_loaded
+
+# 点击 Basic Info 区块的 Edit 按钮
+# Basic Info 区块右上角有 Edit 按钮
+- tapOn:
+    text: "Edit"
+    index: 0
+
+# 等待编辑页面加载
+- extendedWaitUntil:
+    visible: "Edit Basic Info"
+    timeout: 5000
+
+# 验证编辑页面包含 Store Name 字段
+- assertVisible: "Store Name"
+
+# 清空当前店名并输入新名称
+- tapOn: "Enter store name"
+- eraseText: 30
+- inputText: "Test Store Updated"
+
+# 隐藏键盘
+- hideKeyboard
+
+# 截图：编辑后的表单
+- takeScreenshot: TC019_store_name_edited
+
+# 点击 Save Changes 按钮保存
+- tapOn: "Save Changes"
+
+# 等待保存成功提示
+- extendedWaitUntil:
+    visible: "Store info updated successfully"
+    timeout: 10000
+
+# 截图：保存成功
+- takeScreenshot: TC019_save_success

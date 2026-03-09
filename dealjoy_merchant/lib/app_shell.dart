@@ -29,13 +29,18 @@ class _TabItem {
 }
 
 // 所有可能的 Tab（按顺序）
+// 权限控制:
+// - 核销员(cashier): scan, orders → 2 tab
+// - 客服(service): scan, orders, reviews → 3 tab
+// - 店长(manager): 全部 → 5 tab
+// - 门店老板/品牌管理员: 全部 → 5 tab
 const _allTabs = [
   _TabItem(
     path: '/dashboard',
     icon: Icons.dashboard_outlined,
     selectedIcon: Icons.dashboard,
     label: 'Dashboard',
-    requiredPermission: 'analytics', // 核销员没有此权限
+    requiredPermission: 'analytics', // 核销员/客服没有此权限
   ),
   _TabItem(
     path: '/scan',
@@ -52,11 +57,18 @@ const _allTabs = [
     requiredPermission: 'orders',
   ),
   _TabItem(
+    path: '/reviews',
+    icon: Icons.rate_review_outlined,
+    selectedIcon: Icons.rate_review,
+    label: 'Reviews',
+    requiredPermission: 'reviews', // 核销员没有此权限
+  ),
+  _TabItem(
     path: '/me',
     icon: Icons.person_outline,
     selectedIcon: Icons.person,
     label: 'Me',
-    // Me tab 始终显示
+    requiredPermission: 'staff', // 核销员/客服没有此权限
   ),
 ];
 

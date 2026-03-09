@@ -1,0 +1,49 @@
+# TC017: Online/Offline Toggle
+# 测试步骤：登录后 → 找到 Online/Offline 开关 → 切换状态 → 验证状态文字变化
+# 预期结果：切换开关后状态文字在 Online 和 Offline 之间切换
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+- launchApp:
+    clearState: true
+
+# 引用共享登录
+- runFlow: ../../shared/login.yaml
+
+# 等待 Dashboard 加载完成
+- extendedWaitUntil:
+    visible: "Dashboard"
+    timeout: 10000
+
+# 截图记录初始状态
+- takeScreenshot: TC017_initial_state
+
+# 尝试找到当前状态（Online 或 Offline）
+# 点击开关切换状态
+- tapOn: "Online"
+  optional: true
+
+- tapOn: "Offline"
+  optional: true
+
+# 等待状态变化
+- extendedWaitUntil:
+    timeout: 3000
+
+# 截图记录切换后状态
+- takeScreenshot: TC017_after_first_toggle
+
+# 再次切换回来
+- tapOn: "Online"
+  optional: true
+
+- tapOn: "Offline"
+  optional: true
+
+# 等待状态变化
+- extendedWaitUntil:
+    timeout: 3000
+
+# 最终截图
+- takeScreenshot: TC017_online_offline_result

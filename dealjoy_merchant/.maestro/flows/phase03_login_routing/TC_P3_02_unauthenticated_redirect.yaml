@@ -1,0 +1,15 @@
+# Phase 3 TC02: 未登录用户被重定向到登录页
+# 功能点 #93: 新用户 → 进入注册流程
+appId: com.dealjoy.dealjoy_merchant
+---
+- launchApp:
+    clearState: true
+
+# 未登录应该看到登录页
+- extendedWaitUntil:
+    visible: "Welcome back"
+    timeout: 30000
+- assertVisible: "Sign In"
+- assertVisible: "Register"
+
+- takeScreenshot: P3_TC02_login_page

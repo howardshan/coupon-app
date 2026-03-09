@@ -48,7 +48,66 @@ class DealsRepository {
             (page + 1) * AppConstants.pageSize - 1,
           );
 
-      return (data as List).map((e) => DealModel.fromJson(e)).toList();
+      var results = (data as List).map((e) => DealModel.fromJson(e)).toList();
+
+      // 搜索品牌名/商家名：补充匹配品牌名或商家名的 deals
+      if (search != null && search.isNotEmpty && page == 0) {
+        try {
+          // 查询商家名或品牌名匹配的商家 ID
+          final merchantData = await _client
+              .from('merchants')
+              .select('id, brand_id, brands(name)')
+              .or('name.ilike.%$search%')
+              .eq('status', 'approved')
+              .limit(20);
+
+          // 也查品牌名匹配的商家
+          final brandData = await _client
+              .from('brands')
+              .select('id, name')
+              .ilike('name', '%$search%')
+              .limit(10);
+          final brandIds = (brandData as List).map((b) => b['id'] as String).toSet();
+
+          // 商家名匹配 + 品牌名匹配的门店
+          final merchantIds = <String>{};
+          for (final m in (merchantData as List)) {
+            merchantIds.add(m['id'] as String);
+          }
+          if (brandIds.isNotEmpty) {
+            final brandMerchants = await _client
+                .from('merchants')
+                .select('id')
+                .inFilter('brand_id', brandIds.toList())
+                .limit(20);
+            for (final m in (brandMerchants as List)) {
+              merchantIds.add(m['id'] as String);
+            }
+          }
+
+          if (merchantIds.isNotEmpty) {
+            final existingIds = results.map((d) => d.id).toSet();
+            final extraData = await _client
+                .from('deals')
+                .select('*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, brands(name, logo_url))')
+                .eq('is_active', true)
+                .gt('expires_at', DateTime.now().toIso8601String())
+                .inFilter('merchant_id', merchantIds.toList())
+                .order('is_featured', ascending: false)
+                .limit(AppConstants.pageSize);
+            for (final e in (extraData as List)) {
+              final deal = DealModel.fromJson(e);
+              if (!existingIds.contains(deal.id)) {
+                results.add(deal);
+              }
+            }
+          }
+        } catch (_) {
+          // 品牌搜索失败不影响主结果
+        }
+      }
+
+      return results;
     } on PostgrestException catch (e) {
       throw AppException('Failed to load deals: ${e.message}', code: e.code);
     }

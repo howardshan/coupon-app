@@ -68,7 +68,10 @@ Deno.serve(async (req) => {
     //     （团购券已过期超过 24 小时，满足需求 7.1.2）
     // 通过 join deals 表在数据库层完成过滤，减少网络传输量
     // -------------------------------------------------------------
-    const { data: eligibleOrders, error: queryErr } = await supabaseAdmin
+    // 查询两类待退款订单：
+    // A) 过期 24 小时的 unused 订单（原逻辑）
+    // B) 闭店标记为 refund_requested 的订单（新增）
+    const { data: expiredOrders, error: queryErr1 } = await supabaseAdmin
       .from('orders')
       .select(`
         id,
@@ -83,6 +86,30 @@ Deno.serve(async (req) => {
       .eq('status', 'unused')
       .lt('deals.expires_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
       .limit(BATCH_SIZE);
+
+    const { data: closedStoreOrders, error: queryErr2 } = await supabaseAdmin
+      .from('orders')
+      .select(`
+        id,
+        payment_intent_id,
+        total_amount,
+        status,
+        deal_id
+      `)
+      .eq('status', 'refund_requested')
+      .limit(BATCH_SIZE);
+
+    const queryErr = queryErr1 || queryErr2;
+    // 合并两组订单，去重
+    const seen = new Set<string>();
+    const eligibleOrders = [
+      ...(expiredOrders ?? []),
+      ...(closedStoreOrders ?? []),
+    ].filter((o) => {
+      if (seen.has(o.id)) return false;
+      seen.add(o.id);
+      return true;
+    });
 
     if (queryErr) {
       console.error('auto-refund-expired: 查询过期订单失败', queryErr);
@@ -114,11 +141,15 @@ Deno.serve(async (req) => {
         // 1. 向 Stripe 发起退款
         //    reason: 'expired_uncaptured_charge' 是 Stripe 内置枚举中最接近的值；
         //    实际为"团购券过期"场景，通过 metadata 额外说明。
+        // 判断退款原因
+        const isStoreClosed = order.status === 'refund_requested';
+        const refundSource = isStoreClosed ? 'store_closed' : 'auto_expired';
+
         const refund = await stripe.refunds.create({
           payment_intent: order.payment_intent_id,
-          reason: 'requested_by_customer', // Stripe 允许的枚举：duplicate | fraudulent | requested_by_customer
+          reason: 'requested_by_customer',
           metadata: {
-            source: 'auto-refund-expired',
+            source: `auto-refund-${refundSource}`,
             order_id: orderId,
           },
         });
@@ -130,8 +161,8 @@ Deno.serve(async (req) => {
           .from('orders')
           .update({
             status: 'refunded',
-            refund_reason: 'auto_expired',   // 区分于用户主动退款的标识
-            refund_requested_at: now,         // 自动退款无预申请环节，与 refunded_at 相同
+            refund_reason: refundSource,
+            refund_requested_at: isStoreClosed ? undefined : now,
             refunded_at: now,
             updated_at: now,
           })

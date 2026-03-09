@@ -1,0 +1,35 @@
+# TC048: 结算周期
+# 测试步骤：Earnings 页 → 查看结算信息 → 验证结算规则和下次打款日期
+# 预期结果：结算周期信息正确显示
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+# 登录
+- runFlow: ../../shared/login.yaml
+
+# 导航到 Earnings 页
+- tapOn: "Me"
+- extendedWaitUntil:
+    visible: "Me"
+    timeout: 10000
+- tapOn: "Earnings"
+- extendedWaitUntil:
+    visible: "Earnings"
+    timeout: 10000
+
+# 查找结算相关信息
+- extendedWaitUntil:
+    visible: "Settlement"
+    timeout: 10000
+
+# 验证结算周期信息
+- assertVisible:
+    text: "Settlement"
+    optional: true
+- assertVisible:
+    text: "Next Payout"
+    optional: true
+
+# 截图保存结算周期
+- takeScreenshot: TC048_settlement_cycle

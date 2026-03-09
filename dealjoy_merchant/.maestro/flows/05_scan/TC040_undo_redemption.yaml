@@ -1,0 +1,65 @@
+# TC040: 撤销核销
+# 测试步骤：核销成功后 → 扫码历史 → 10分钟内点击 Undo
+# 预期结果：核销被撤销
+# 注意：需要先成功核销，可能 BLOCKED
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+# 登录
+- runFlow: ../../shared/login.yaml
+
+# 点击底部 Scan tab
+- tapOn: "Scan"
+
+# 等待扫码页面加载
+- extendedWaitUntil:
+    visible: "Scan QR"
+    timeout: 10000
+
+# 先执行一次核销（Enter Code → 输入有效券码 → Verify → Confirm）
+- tapOn: "Enter Code"
+- tapOn: "e.g. DJ-XXXXXXXXXXXX"
+- inputText: "DJ-UNDOTEST00001"
+- hideKeyboard
+- tapOn: "Verify"
+
+# 等待确认页面
+- extendedWaitUntil:
+    visible: "Confirm Redemption"
+    timeout: 10000
+
+# 确认核销
+- tapOn: "Confirm Redemption"
+
+# 等待核销成功
+- extendedWaitUntil:
+    visible: "Success"
+    timeout: 10000
+
+# 截图保存核销成功
+- takeScreenshot: TC040_redemption_success
+
+# 进入扫码历史（Redemption History）
+- tapOn:
+    text: "Redemption History"
+    optional: true
+- tapOn:
+    id: "redemption_history"
+    optional: true
+
+# 等待历史列表加载
+- extendedWaitUntil:
+    visible: "Undo"
+    timeout: 10000
+
+# 点击 Undo 撤销
+- tapOn: "Undo"
+
+# 确认撤销操作（如有确认弹窗）
+- tapOn:
+    text: "Confirm"
+    optional: true
+
+# 截图保存撤销结果
+- takeScreenshot: TC040_undo_redemption_result

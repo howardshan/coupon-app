@@ -1,0 +1,31 @@
+# TC049: 评价列表
+# 测试步骤：登录 → 导航到 Reviews 页 → 验证评价列表显示（星级、文字、日期）
+# 预期结果：Reviews 页标题显示，评价列表正确展示
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+# 登录
+- runFlow: ../../shared/login.yaml
+
+# 点击底部 Me tab
+- tapOn: "Me"
+- extendedWaitUntil:
+    visible: "Me"
+    timeout: 10000
+
+# 点击 Reviews 入口
+- tapOn: "Reviews"
+
+# 等待 Reviews 页加载
+- extendedWaitUntil:
+    visible: "Reviews"
+    timeout: 10000
+
+# 验证评价列表内容
+- extendedWaitUntil:
+    visible: "★"
+    timeout: 10000
+
+# 截图保存评价列表
+- takeScreenshot: TC049_review_list

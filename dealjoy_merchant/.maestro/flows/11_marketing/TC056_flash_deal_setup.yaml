@@ -1,0 +1,48 @@
+# TC056: Flash Deal 设置
+# 测试步骤：登录 → Me tab → Marketing Tools → 验证3个卡片 → 点击 Flash Deals → 验证页面可达
+# 预期结果：Marketing Tools 页面显示3个卡片（Flash Deals, New Customer Offer, Promotions），点击 Flash Deals 可进入
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+# 登录
+- runFlow: ../../shared/login.yaml
+
+# 点击底部 Me tab
+- tapOn: "Me"
+
+# 等待 Me 页加载
+- extendedWaitUntil:
+    visible: "Me"
+    timeout: 10000
+
+# 点击 Marketing Tools 入口
+- tapOn: "Marketing Tools"
+
+# 等待 Marketing Tools 页加载
+- extendedWaitUntil:
+    visible: "Marketing Tools"
+    timeout: 10000
+
+# 验证3个卡片可见
+- assertVisible: "Flash Deals"
+- assertVisible: "New Customer Offer"
+- assertVisible: "Promotions"
+
+# 验证 "Coming in V2" 标签
+- assertVisible: "Coming in V2"
+
+- takeScreenshot: TC056_marketing_tools_overview
+
+# 点击 Flash Deals 卡片
+- tapOn: "Flash Deals"
+
+# 等待 Flash Deals 页面加载
+- extendedWaitUntil:
+    visible: "Flash Deals"
+    timeout: 8000
+
+- takeScreenshot: TC056_flash_deal_page
+
+# 验证 Flash Deals 页面可达
+- takeScreenshot: TC056_flash_deal_setup_result

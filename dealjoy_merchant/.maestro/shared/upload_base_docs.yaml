@@ -1,0 +1,32 @@
+# 上传基础3证件（所有分类通用）: Business License, Owner ID, Storefront Photo
+appId: com.dealjoy.dealjoy_merchant
+---
+# 上传 Business License
+- scrollUntilVisible:
+    element: "Business License"
+    direction: DOWN
+    timeout: 5000
+- tapOn:
+    text: "Upload"
+    below: "Business License"
+- runFlow: upload_photo.yaml
+
+# 上传 Owner ID
+- scrollUntilVisible:
+    element: "Owner ID"
+    direction: DOWN
+    timeout: 5000
+- tapOn:
+    text: "Upload"
+    below: "Owner ID"
+- runFlow: upload_photo.yaml
+
+# 上传 Storefront Photo
+- scrollUntilVisible:
+    element: "Storefront Photo"
+    direction: DOWN
+    timeout: 5000
+- tapOn:
+    text: "Upload"
+    below: "Storefront Photo"
+- runFlow: upload_photo.yaml

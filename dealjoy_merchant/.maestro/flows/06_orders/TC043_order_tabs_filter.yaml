@@ -1,0 +1,33 @@
+# TC043: 订单 Tab 过滤
+# 测试步骤：Orders 页 → 分别点击 All / Paid / Redeemed / Refunded tabs
+# 预期结果：每个 tab 正确过滤显示对应状态的订单
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+# 登录
+- runFlow: ../../shared/login.yaml
+
+# 点击底部 Orders tab
+- tapOn: "Orders"
+
+# 等待订单列表页加载
+- extendedWaitUntil:
+    visible: "All"
+    timeout: 10000
+
+# 验证 All tab（默认选中）
+- tapOn: "All"
+- takeScreenshot: TC043_tab_all
+
+# 切换到 Paid tab
+- tapOn: "Paid"
+- takeScreenshot: TC043_tab_paid
+
+# 切换到 Redeemed tab
+- tapOn: "Redeemed"
+- takeScreenshot: TC043_tab_redeemed
+
+# 切换到 Refunded tab
+- tapOn: "Refunded"
+- takeScreenshot: TC043_tab_refunded

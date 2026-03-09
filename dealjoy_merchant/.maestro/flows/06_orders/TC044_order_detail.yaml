@@ -1,0 +1,40 @@
+# TC044: 订单详情
+# 测试步骤：Orders 页 → 点击某个订单 → 验证详情页
+# 预期结果：详情页显示完整订单信息
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+# 登录
+- runFlow: ../../shared/login.yaml
+
+# 点击底部 Orders tab
+- tapOn: "Orders"
+
+# 等待订单列表页加载
+- extendedWaitUntil:
+    visible: "All"
+    timeout: 10000
+
+# 截图保存订单列表
+- takeScreenshot: TC044_order_list
+
+# 点击第一个订单（点击列表中的第一个可点击项）
+- tapOn:
+    index: 0
+    id: "order_item"
+    optional: true
+
+# 如果上面没匹配到 id，尝试点击列表第一个元素
+- tapOn:
+    index: 0
+    text: ".*"
+    optional: true
+
+# 等待详情页加载
+- extendedWaitUntil:
+    visible: "Order Detail"
+    timeout: 10000
+
+# 截图保存订单详情
+- takeScreenshot: TC044_order_detail

@@ -74,6 +74,7 @@ class SettingsPage extends ConsumerWidget {
               title: 'Brand',
               children: [
                 SettingsTile(
+                  key: const ValueKey('settings_brand_management_btn'),
                   icon: Icons.business,
                   title: 'Brand Management',
                   subtitle: 'Manage your brand and stores',
@@ -94,6 +95,7 @@ class SettingsPage extends ConsumerWidget {
               title: 'Growth',
               children: [
                 SettingsTile(
+                  key: const ValueKey('settings_upgrade_chain_btn'),
                   icon: Icons.trending_up,
                   title: 'Upgrade to Chain',
                   subtitle: 'Expand your business to multiple locations',
@@ -150,12 +152,14 @@ class SettingsPage extends ConsumerWidget {
               children: [
                 if (isChainStore)
                   SettingsTile(
+                    key: const ValueKey('settings_leave_brand_btn'),
                     icon: Icons.link_off,
                     title: 'Leave Brand',
                     subtitle: 'Disconnect from brand, become independent',
                     onTap: () => _confirmLeaveBrand(context, ref),
                   ),
                 SettingsTile(
+                  key: const ValueKey('settings_close_store_btn'),
                   icon: Icons.store_outlined,
                   title: 'Close Store',
                   subtitle: 'Permanently close and refund all vouchers',
@@ -310,7 +314,11 @@ class SettingsPage extends ConsumerWidget {
   // 升级为连锁确认弹窗
   // ----------------------------------------------------------
   Future<void> _showUpgradeDialog(BuildContext context, WidgetRef ref) async {
-    final brandNameCtrl = TextEditingController();
+    // 预填品牌名为当前门店的公司名（#11）
+    final storeInfo = ref.read(storeProvider).valueOrNull;
+    final brandNameCtrl = TextEditingController(
+      text: storeInfo?.companyName ?? storeInfo?.name ?? '',
+    );
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(

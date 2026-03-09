@@ -123,6 +123,36 @@ class CouponCard extends StatelessWidget {
               ),
               const SizedBox(height: 10),
 
+              // 多店通用提示（适用门店数 > 1 时显示）
+              if (coupon.applicableMerchantIds != null &&
+                  coupon.applicableMerchantIds!.length > 1) ...[
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.store_outlined,
+                          size: 13, color: AppColors.primary),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Valid at ${coupon.applicableMerchantIds!.length} locations',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+
               // 底部行：有效期 + 购买日期
               const Divider(height: 1),
               const SizedBox(height: 8),

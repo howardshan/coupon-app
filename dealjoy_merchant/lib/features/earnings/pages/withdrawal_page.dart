@@ -192,6 +192,7 @@ class _WithdrawButton extends ConsumerWidget {
     return SizedBox(
       width: double.infinity,
       child: ElevatedButton.icon(
+        key: const ValueKey('withdrawal_submit_btn'),
         onPressed: canWithdraw
             ? () => _showWithdrawDialog(context, ref, balance)
             : null,
@@ -374,6 +375,7 @@ class _AutoWithdrawalCard extends ConsumerWidget {
                   ],
                 ),
                 Switch(
+                  key: const ValueKey('withdrawal_auto_switch'),
                   value: settings.autoWithdrawalEnabled,
                   activeThumbColor: WithdrawalPage._orange,
                   onChanged: (v) async {

@@ -1,0 +1,38 @@
+# TC037: 扫描过期券码
+# 测试步骤：登录 → Scan tab → Enter Code → 输入过期券码 → Verify
+# 预期结果：显示 "expired" 错误提示
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+# 登录
+- runFlow: ../../shared/login.yaml
+
+# 点击底部 Scan tab
+- tapOn: "Scan"
+
+# 等待扫码页面加载
+- extendedWaitUntil:
+    visible: "Scan QR"
+    timeout: 10000
+
+# 切换到 Enter Code tab
+- tapOn: "Enter Code"
+
+# 输入过期券码
+- tapOn: "e.g. DJ-XXXXXXXXXXXX"
+- inputText: "DJ-EXPIREDCODE01"
+
+# 隐藏键盘
+- hideKeyboard
+
+# 点击 Verify
+- tapOn: "Verify"
+
+# 等待错误提示
+- extendedWaitUntil:
+    visible: "expired"
+    timeout: 10000
+
+# 截图保存错误提示
+- takeScreenshot: TC037_scan_expired_voucher_error

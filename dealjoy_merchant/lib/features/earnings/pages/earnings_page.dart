@@ -65,6 +65,7 @@ class EarningsPage extends ConsumerWidget {
                 children: [
                   _SectionHeader(title: 'Recent Transactions'),
                   TextButton(
+                    key: const ValueKey('earnings_view_all_transactions_btn'),
                     onPressed: () => context.push('/earnings/transactions'),
                     child: const Text(
                       'View All',
@@ -88,6 +89,7 @@ class EarningsPage extends ConsumerWidget {
               const SizedBox(height: 12),
               // 提现快速入口卡片
               InkWell(
+                key: const ValueKey('earnings_withdrawal_btn'),
                 onTap: () => context.push('/earnings/withdrawal'),
                 borderRadius: BorderRadius.circular(12),
                 child: Container(
@@ -167,6 +169,7 @@ class EarningsPage extends ConsumerWidget {
       // 报表入口按钮
       actions: [
         IconButton(
+          key: const ValueKey('earnings_report_btn'),
           icon: const Icon(Icons.bar_chart_outlined, color: Color(0xFF1A1A2E)),
           tooltip: 'Reports',
           onPressed: () => context.push('/earnings/report'),

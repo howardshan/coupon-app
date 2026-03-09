@@ -1,0 +1,96 @@
+# TC030: Deal On/Off Shelf Toggle
+# 测试步骤：Deal 详情 → Deactivate → 验证状态变为 Inactive → 再 Activate 回 Active
+# 前置条件：至少有一个 Active 状态的 Deal
+# 预期结果：Deal 状态在 Active/Inactive 之间正确切换
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+- launchApp:
+    clearState: true
+
+# 引用共享登录
+- runFlow: ../../shared/login.yaml
+
+# 等待 Dashboard 加载完成
+- extendedWaitUntil:
+    visible: "Dashboard"
+    timeout: 10000
+
+# 导航到 Deal 列表
+- tapOn: "Manage Deals"
+- extendedWaitUntil:
+    visible: "My Deals"
+    timeout: 8000
+
+# 切换到 Active tab 确保看到有效 Deal
+- tapOn: "Active"
+- extendedWaitUntil:
+    visible: "Active"
+    timeout: 3000
+- takeScreenshot: TC030_active_tab
+
+# 点击第一个 Active Deal 进入详情
+- tapOn:
+    index: 0
+- extendedWaitUntil:
+    visible: "Deal Details"
+    timeout: 5000
+- takeScreenshot: TC030_deal_detail_active
+
+# 滚动到底部找到操作按钮
+- scrollUntilVisible:
+    element: "Deactivate Deal"
+    direction: DOWN
+    timeout: 5000
+
+# 点击 Deactivate Deal 按钮
+- tapOn: "Deactivate Deal"
+
+# 确认对话框
+- extendedWaitUntil:
+    visible: "Deactivate Deal?"
+    timeout: 3000
+- takeScreenshot: TC030_deactivate_confirm_dialog
+
+# 点击确认 Deactivate
+- tapOn: "Deactivate"
+
+# 等待状态更新
+- extendedWaitUntil:
+    visible: "Deal deactivated"
+    timeout: 8000
+- takeScreenshot: TC030_deal_deactivated
+
+# 验证状态变为 Inactive — 页面现在应该显示 "Activate Deal" 按钮
+- scrollUntilVisible:
+    element: "Activate Deal"
+    direction: DOWN
+    timeout: 5000
+- assertVisible: "Activate Deal"
+- takeScreenshot: TC030_deal_detail_inactive
+
+# 再次激活 — 点击 Activate Deal
+- tapOn: "Activate Deal"
+
+# 确认对话框
+- extendedWaitUntil:
+    visible: "Activate Deal?"
+    timeout: 3000
+- takeScreenshot: TC030_activate_confirm_dialog
+
+# 点击确认 Activate
+- tapOn: "Activate"
+
+# 等待状态更新
+- extendedWaitUntil:
+    visible: "Deal activated"
+    timeout: 8000
+
+# 验证状态恢复为 Active — 应该显示 "Deactivate Deal" 按钮
+- scrollUntilVisible:
+    element: "Deactivate Deal"
+    direction: DOWN
+    timeout: 5000
+- assertVisible: "Deactivate Deal"
+- takeScreenshot: TC030_deal_on_off_shelf_result

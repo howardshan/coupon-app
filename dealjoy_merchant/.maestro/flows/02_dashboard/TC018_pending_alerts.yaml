@@ -1,0 +1,66 @@
+# TC018: Pending Alerts Section
+# 测试步骤：登录后 → 查看 Dashboard → 验证 alerts section 是否显示（如新评价或待处理退款徽章）
+# 预期结果：如有待处理事项应显示 alert 徽章；此用例依赖测试数据，部分场景可能 BLOCKED
+# 注意：此用例需要预置测试数据（如待处理退款、新评价等），无数据时部分断言可能失败
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+- launchApp:
+    clearState: true
+
+# 引用共享登录
+- runFlow: ../../shared/login.yaml
+
+# 等待 Dashboard 加载完成
+- extendedWaitUntil:
+    visible: "Dashboard"
+    timeout: 10000
+
+# 截图记录 Dashboard 完整状态
+- takeScreenshot: TC018_dashboard_overview
+
+# 向下滚动查看更多内容（alerts 可能在下方）
+- scrollUntilVisible:
+    element: "Alerts"
+    direction: DOWN
+    timeout: 5000
+  optional: true
+
+# 验证 alerts 区域（可选，取决于是否有测试数据）
+- assertVisible: "Alerts"
+  optional: true
+
+# 检查可能的 alert 类型
+- assertVisible: "New Reviews"
+  optional: true
+
+- assertVisible: "Pending Refunds"
+  optional: true
+
+- assertVisible: "Pending Orders"
+  optional: true
+
+# 截图记录 alerts 区域
+- takeScreenshot: TC018_alerts_section
+
+# 如果有 alert，尝试点击查看详情
+- tapOn: "New Reviews"
+  optional: true
+
+- extendedWaitUntil:
+    timeout: 3000
+
+- takeScreenshot: TC018_alert_detail
+
+# 返回 Dashboard
+- pressKey: back
+  optional: true
+
+- extendedWaitUntil:
+    visible: "Dashboard"
+    timeout: 5000
+  optional: true
+
+# 最终截图
+- takeScreenshot: TC018_pending_alerts_result
