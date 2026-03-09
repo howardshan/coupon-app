@@ -9,9 +9,10 @@ const STATUS_STYLES: Record<string, string> = {
   used: 'bg-gray-100 text-gray-600',
   refunded: 'bg-purple-100 text-purple-700',
   refund_requested: 'bg-orange-100 text-orange-700',
+  refund_failed: 'bg-red-100 text-red-700',
+  refund_rejected: 'bg-amber-100 text-amber-700',
   expired: 'bg-red-100 text-red-700',
   pending_refund: 'bg-amber-100 text-amber-700',
-  refund_failed: 'bg-red-100 text-red-700',
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -19,9 +20,10 @@ const STATUS_LABELS: Record<string, string> = {
   used: 'Used',
   refunded: 'Refunded',
   refund_requested: 'Refund Requested',
+  refund_failed: 'Refund Failed',
+  refund_rejected: 'Refund Rejected',
   expired: 'Expired',
   pending_refund: 'Pending Refund',
-  refund_failed: 'Refund Failed',
 }
 
 export default async function OrderDetailPage({
@@ -55,6 +57,7 @@ export default async function OrderDetailPage({
       updated_at,
       refund_requested_at,
       refunded_at,
+      refund_rejected_at,
       users ( id, email ),
       deals ( id, title, discount_price, expires_at, merchants ( id, name ) )
     `)
@@ -95,7 +98,7 @@ export default async function OrderDetailPage({
                 {STATUS_LABELS[tag] ?? tag}
               </span>
             ))}
-            {order.status === 'refund_requested' && (
+            {(order.status === 'refund_requested') && (
               <OrderRefundButtons orderId={order.id} initialStatus={order.status} />
             )}
           </div>
@@ -158,7 +161,7 @@ export default async function OrderDetailPage({
         </div>
 
         {/* Refund info (if any) */}
-        {(order.refund_reason != null || order.refund_requested_at != null || order.refunded_at != null) && (
+        {(order.refund_reason != null || order.refund_requested_at != null || order.refunded_at != null || (order as { refund_rejected_at?: string | null }).refund_rejected_at != null) && (
           <div className="bg-white rounded-xl border border-gray-200 p-6">
             <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Refund</h2>
             <dl className="space-y-2 text-sm">
@@ -178,6 +181,12 @@ export default async function OrderDetailPage({
                 <div>
                   <dt className="text-gray-500">Refunded at</dt>
                   <dd className="text-gray-900 mt-0.5">{new Date(order.refunded_at).toLocaleString()}</dd>
+                </div>
+              )}
+              {(order as { refund_rejected_at?: string | null }).refund_rejected_at != null && (
+                <div>
+                  <dt className="text-gray-500">Rejected at</dt>
+                  <dd className="text-gray-900 mt-0.5">{new Date((order as { refund_rejected_at: string }).refund_rejected_at).toLocaleString()}</dd>
                 </div>
               )}
             </dl>

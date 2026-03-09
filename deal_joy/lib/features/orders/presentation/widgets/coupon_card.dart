@@ -142,6 +142,17 @@ class CouponCard extends StatelessWidget {
                         fontSize: 12, color: AppColors.textSecondary),
                   ),
                   const Spacer(),
+                  if (coupon.orderNumber != null && coupon.orderNumber!.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: Text(
+                        '#${coupon.orderNumber}',
+                        style: const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textSecondary,
+                            fontWeight: FontWeight.w500),
+                      ),
+                    ),
                   const Icon(Icons.shopping_bag_outlined,
                       size: 14, color: AppColors.textSecondary),
                   const SizedBox(width: 4),

@@ -11,9 +11,13 @@ class OrderModel {
   final DateTime createdAt;
   final DateTime? refundRequestedAt;
   final DateTime? refundedAt;
+  /// 管理员拒绝退款时写入，详情页多维度展示 Refund Rejected
+  final DateTime? refundRejectedAt;
   final DealSummary? deal;
   /// 券过期时间（来自 coupons.expires_at，用于列表展示「按时间已过期」）
   final DateTime? couponExpiresAt;
+  /// 订单号，用于区分同一 deal 的多次购买
+  final String? orderNumber;
 
   const OrderModel({
     required this.id,
@@ -28,8 +32,10 @@ class OrderModel {
     required this.createdAt,
     this.refundRequestedAt,
     this.refundedAt,
+    this.refundRejectedAt,
     this.deal,
     this.couponExpiresAt,
+    this.orderNumber,
   });
 
   factory OrderModel.fromJson(Map<String, dynamic> json) {
@@ -55,6 +61,10 @@ class OrderModel {
         refundedAt: json['refunded_at'] != null
             ? DateTime.parse(json['refunded_at'] as String)
             : null,
+        refundRejectedAt: json['refund_rejected_at'] != null
+            ? DateTime.parse(json['refund_rejected_at'] as String)
+            : null,
+        orderNumber: json['order_number'] as String?,
         deal: json['deals'] != null
             ? DealSummary.fromJson(json['deals'] as Map<String, dynamic>)
             : null,
@@ -66,7 +76,10 @@ class OrderModel {
   bool get isUsed => status == 'used';
   bool get isRefunded => status == 'refunded';
   bool get isRefundRequested => status == 'refund_requested';
+  bool get isRefundFailed => status == 'refund_failed';
   bool get isExpired => status == 'expired';
+  /// 管理员曾拒绝过该订单的退款申请（详情页展示 Refund Rejected）
+  bool get isRefundRejected => refundRejectedAt != null;
   /// 未使用订单的券已按时间过期（用于列表展示）
   bool get isExpiredByDate =>
       couponExpiresAt != null && DateTime.now().isAfter(couponExpiresAt!);

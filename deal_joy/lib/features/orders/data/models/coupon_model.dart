@@ -26,6 +26,9 @@ class CouponModel {
   final String? merchantAddress;
   final String? merchantPhone;
 
+  /// 来自 orders 表，用于区分同一 deal 的多次购买
+  final String? orderNumber;
+
   const CouponModel({
     required this.id,
     required this.orderId,
@@ -47,6 +50,7 @@ class CouponModel {
     this.merchantLogoUrl,
     this.merchantAddress,
     this.merchantPhone,
+    this.orderNumber,
   });
 
   factory CouponModel.fromJson(Map<String, dynamic> json) {
@@ -55,6 +59,7 @@ class CouponModel {
 
     // 解析嵌套的 deals.merchants 对象
     final merchants = deals?['merchants'] as Map<String, dynamic>?;
+    final orders = json['orders'] as Map<String, dynamic>?;
 
     // deal 图片取第一张
     String? dealImageUrl;
@@ -88,6 +93,7 @@ class CouponModel {
       merchantLogoUrl: merchants?['logo_url'] as String?,
       merchantAddress: merchants?['address'] as String?,
       merchantPhone: merchants?['phone'] as String?,
+      orderNumber: orders?['order_number'] as String?,
     );
   }
 

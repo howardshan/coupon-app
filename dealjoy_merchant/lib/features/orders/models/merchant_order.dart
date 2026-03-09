@@ -22,7 +22,13 @@ enum OrderStatus {
   /// 展示用：券已过期、未满 24h
   expired,
   /// 展示用：过期 ≥24h、待自动退款
-  pendingRefund;
+  pendingRefund,
+
+  /// Stripe 退款失败
+  refundFailed,
+
+  /// 管理员拒绝退款（详情页标签，主状态仍为 paid）
+  refundRejected;
 
   /// 从数据库字符串值映射
   factory OrderStatus.fromString(String value) {
@@ -37,6 +43,8 @@ enum OrderStatus {
         return OrderStatus.refundRequested;
       case 'refunded':
         return OrderStatus.refunded;
+      case 'refund_failed':
+        return OrderStatus.refundFailed;
       case 'expired':
       case 'cancelled':
         return OrderStatus.cancelled;
@@ -62,6 +70,10 @@ enum OrderStatus {
         return 'Expired';
       case OrderStatus.pendingRefund:
         return 'Pending Refund';
+      case OrderStatus.refundFailed:
+        return 'Refund Failed';
+      case OrderStatus.refundRejected:
+        return 'Refund Rejected';
     }
   }
 
@@ -99,6 +111,10 @@ enum OrderStatus {
         return const Color(0xFFDC2626); // 红
       case OrderStatus.pendingRefund:
         return const Color(0xFFD97706); // 琥珀
+      case OrderStatus.refundFailed:
+        return const Color(0xFFDC2626); // 红
+      case OrderStatus.refundRejected:
+        return const Color(0xFFF59E0B); // 琥珀
     }
   }
 
@@ -118,6 +134,10 @@ enum OrderStatus {
       case OrderStatus.expired:
         return const Color(0xFFFEF2F2);
       case OrderStatus.pendingRefund:
+        return const Color(0xFFFFFBEB);
+      case OrderStatus.refundFailed:
+        return const Color(0xFFFEF2F2);
+      case OrderStatus.refundRejected:
         return const Color(0xFFFFFBEB);
     }
   }
@@ -295,6 +315,9 @@ class MerchantOrder {
   /// 退款完成时间
   final DateTime? refundedAt;
 
+  /// 管理员拒绝退款时间（详情页展示 Refund Rejected 标签）
+  final DateTime? refundRejectedAt;
+
   const MerchantOrder({
     required this.id,
     required this.orderNumber,
@@ -313,16 +336,19 @@ class MerchantOrder {
     required this.createdAt,
     this.refundRequestedAt,
     this.refundedAt,
+    this.refundRejectedAt,
   });
 
   /// 展示用状态（未使用且已过期时显示 Expired / Pending Refund）
   OrderStatus get displayStatus =>
       OrderStatus.displayStatus(status, couponExpiresAt);
 
-  /// 订单详情页：多个状态标签列表（如 [Paid, Expired]，与后台 Admin 一致）
+  /// 订单详情页：多个状态标签列表（如 [Paid, Expired]、[Paid, Refund Rejected]）
   List<OrderStatus> get detailStatusTags {
+    if (status == OrderStatus.refundFailed) return [OrderStatus.refundFailed];
     if (status != OrderStatus.paid) return [status];
-    final tags = <OrderStatus>[OrderStatus.paid]; // Unused
+    final tags = <OrderStatus>[OrderStatus.paid];
+    if (refundRejectedAt != null) tags.add(OrderStatus.refundRejected);
     if (couponExpiresAt == null) return tags;
     final now = DateTime.now();
     if (now.isBefore(couponExpiresAt!)) return tags;
@@ -362,6 +388,9 @@ class MerchantOrder {
           : null,
       refundedAt: json['refunded_at'] != null
           ? DateTime.parse(json['refunded_at'] as String)
+          : null,
+      refundRejectedAt: json['refund_rejected_at'] != null
+          ? DateTime.parse(json['refund_rejected_at'] as String)
           : null,
     );
   }
@@ -409,6 +438,7 @@ class MerchantOrderDetail extends MerchantOrder {
     required super.createdAt,
     super.refundRequestedAt,
     super.refundedAt,
+    super.refundRejectedAt,
     required this.dealOriginalPrice,
     required this.dealDiscountPrice,
     this.paymentIntentIdMasked,
@@ -444,6 +474,9 @@ class MerchantOrderDetail extends MerchantOrder {
           : null,
       refundedAt: orderJson['refunded_at'] != null
           ? DateTime.parse(orderJson['refunded_at'] as String)
+          : null,
+      refundRejectedAt: orderJson['refund_rejected_at'] != null
+          ? DateTime.parse(orderJson['refund_rejected_at'] as String)
           : null,
       dealOriginalPrice:
           (orderJson['deal_original_price'] as num?)?.toDouble() ?? 0.0,
@@ -532,10 +565,13 @@ class OrderFilter {
         return 'refund_requested';
       case OrderStatus.refunded:
         return 'refunded';
+      case OrderStatus.refundFailed:
+        return 'refund_failed';
       case OrderStatus.cancelled:
         return 'expired';
       case OrderStatus.expired:
       case OrderStatus.pendingRefund:
+      case OrderStatus.refundRejected:
         // 展示用状态，筛选用 DB 的 unused
         return 'unused';
     }

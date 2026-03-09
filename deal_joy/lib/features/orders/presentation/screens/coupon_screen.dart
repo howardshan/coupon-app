@@ -353,6 +353,16 @@ class _DealInfoSection extends StatelessWidget {
                 fontSize: 18,
               ),
             ),
+          if (coupon.orderNumber != null && coupon.orderNumber!.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Order #${coupon.orderNumber}',
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 13,
+              ),
+            ),
+          ],
           if (coupon.dealDescription != null) ...[
             const SizedBox(height: 6),
             Text(
