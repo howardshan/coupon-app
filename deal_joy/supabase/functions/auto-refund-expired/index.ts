@@ -2,7 +2,7 @@
 // 由 Supabase Cron Job 定期触发（建议每小时一次）
 // 需求 7.1.2：团购券过期 24 小时后自动退全额
 
-import Stripe from 'https://esm.sh/stripe@14?target=deno';
+import Stripe from 'https://esm.sh/stripe@11.2.0?target=deno';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2?target=deno';
 
 // Stripe 客户端初始化（与 create-refund 保持一致）

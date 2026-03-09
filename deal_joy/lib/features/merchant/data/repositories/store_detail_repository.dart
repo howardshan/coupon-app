@@ -51,7 +51,7 @@ class StoreDetailRepository {
     }
   }
 
-  /// 获取商家活跃 deals
+  /// 获取商家活跃 deals（仅未过期的）
   Future<List<DealModel>> fetchActiveDeals(String merchantId) async {
     try {
       final data = await _client
@@ -59,6 +59,7 @@ class StoreDetailRepository {
           .select('*, merchants(id, name, logo_url, phone, brand_id, brands(name, logo_url))')
           .eq('merchant_id', merchantId)
           .eq('is_active', true)
+          .gt('expires_at', DateTime.now().toIso8601String())
           .order('is_featured', ascending: false)
           .order('total_sold', ascending: false);
       return (data as List)

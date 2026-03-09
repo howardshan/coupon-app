@@ -235,7 +235,7 @@ class OrderDetailPage extends ConsumerWidget {
           const SizedBox(height: 8),
           Row(
             children: [
-              OrderStatusBadge(status: detail.status, fontSize: 13),
+              OrderStatusBadge(status: detail.displayStatus, fontSize: 13),
               const Spacer(),
               Text(
                 DateFormat('MMM d, yyyy · h:mm a')
@@ -247,6 +247,21 @@ class OrderDetailPage extends ConsumerWidget {
               ),
             ],
           ),
+          if ((detail.displayStatus == OrderStatus.expired ||
+                  detail.displayStatus == OrderStatus.pendingRefund) &&
+              detail.status == OrderStatus.paid)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                detail.displayStatus == OrderStatus.expired
+                    ? 'Coupon expired; will be auto-refunded 24h after expiry.'
+                    : 'Auto-refund in progress (runs hourly).',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey.shade600,
+                ),
+              ),
+            ),
         ],
       ),
     );

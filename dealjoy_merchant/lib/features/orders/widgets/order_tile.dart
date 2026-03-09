@@ -56,7 +56,7 @@ class OrderTile extends StatelessWidget {
                     ),
                   ),
                   const Spacer(),
-                  OrderStatusBadge(status: order.status),
+                  OrderStatusBadge(status: order.displayStatus),
                 ],
               ),
               const SizedBox(height: 8),

@@ -99,9 +99,9 @@ class CouponModel {
     );
   }
 
-  // 状态便捷 getter
+  // 状态便捷 getter（过期同时考虑 status 与过期时间，便于展示「已过期」提示）
   bool get isUnused => status == 'unused';
   bool get isUsed => status == 'used';
-  bool get isExpired => status == 'expired';
+  bool get isExpired => status == 'expired' || DateTime.now().isAfter(expiresAt);
   bool get isRefunded => status == 'refunded';
 }

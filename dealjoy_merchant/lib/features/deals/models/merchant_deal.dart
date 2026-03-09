@@ -15,7 +15,10 @@ enum DealStatus {
   inactive,
 
   /// 已拒绝（平台审核拒绝，含拒绝原因）
-  rejected;
+  rejected,
+
+  /// 已过期（按 expires_at 计算，仅用于展示，不持久化）
+  expired;
 
   /// 转换为 API 字符串
   String get value => name;
@@ -39,6 +42,8 @@ enum DealStatus {
         return 'Inactive';
       case DealStatus.rejected:
         return 'Rejected';
+      case DealStatus.expired:
+        return 'Expired';
     }
   }
 }
@@ -288,6 +293,9 @@ class MerchantDeal {
 
   /// 是否已售罄
   bool get isSoldOut => !isUnlimited && remainingStock <= 0;
+
+  /// 是否已按日期过期（expires_at 已过，用于展示「Expired」状态）
+  bool get isExpiredByDate => DateTime.now().isAfter(expiresAt);
 
   /// 主图 URL（第一张 is_primary=true 的图，或第一张图）
   String? get coverImageUrl {
