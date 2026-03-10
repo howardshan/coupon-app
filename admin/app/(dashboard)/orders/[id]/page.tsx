@@ -102,15 +102,6 @@ export default async function OrderDetailPage({
               {STATUS_LABELS[order.status as string] ?? order.status}
             </span>
             {order.status === 'refund_requested' && (
-            {statusTags.map((tag) => (
-              <span
-                key={tag}
-                className={`px-3 py-1 rounded-full text-sm font-medium ${STATUS_STYLES[tag] ?? STATUS_STYLES.used}`}
-              >
-                {STATUS_LABELS[tag] ?? tag}
-              </span>
-            ))}
-            {(order.status === 'refund_requested') && (
               <OrderRefundButtons orderId={order.id} initialStatus={order.status} />
             )}
           </div>
