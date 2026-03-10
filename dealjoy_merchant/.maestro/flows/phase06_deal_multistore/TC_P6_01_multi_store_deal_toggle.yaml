@@ -3,22 +3,18 @@ name: "TC_P6_01 - Multi-store deal toggle"
 ---
 - runFlow: ../../shared/login.yaml
 
-# 导航到 Deals
-- tapOn: "Me"
+# 从 Dashboard Quick Actions 进入 Deals
 - tapOn: "Deals"
 - extendedWaitUntil:
-    visible: "Deals"
+    visible: "My Deals"
     timeout: 15000
 
-# 点击创建 Deal
+# 点击创建 Deal（右下角 FAB）
 - tapOn: "Create Deal"
 
-# 滚动到多店开关
-- scrollUntilVisible:
-    element:
-      id: "deal_scope_multi_store_btn"
-    direction: DOWN
-    timeout: 15000
-    optional: true
+# 验证 Deal 创建页面已打开
+- extendedWaitUntil:
+    visible: "Create Deal"
+    timeout: 10000
 
 - takeScreenshot: P6_TC01_deal_create

@@ -195,10 +195,27 @@ Deno.serve(async (req: Request) => {
         return errorResponse("Brand not found", 404);
       }
 
+      // 补充管理员的 email 和 full_name（brand_admins.user_id 指向 auth.users，无法直接 join public.users）
+      const rawAdmins = adminsRes.data ?? [];
+      const adminUserIds = rawAdmins.map((a: any) => a.user_id);
+      let adminsWithUserInfo = rawAdmins;
+      if (adminUserIds.length > 0) {
+        const { data: adminUsers } = await supabaseAdmin
+          .from("users")
+          .select("id, email, full_name")
+          .in("id", adminUserIds);
+        const userMap = new Map((adminUsers ?? []).map((u: any) => [u.id, u]));
+        adminsWithUserInfo = rawAdmins.map((a: any) => ({
+          ...a,
+          email: (userMap.get(a.user_id) as any)?.email ?? null,
+          full_name: (userMap.get(a.user_id) as any)?.full_name ?? null,
+        }));
+      }
+
       return jsonResponse({
         brand: brandRes.data,
         stores: storesRes.data ?? [],
-        admins: adminsRes.data ?? [],
+        admins: adminsWithUserInfo,
       });
     }
 

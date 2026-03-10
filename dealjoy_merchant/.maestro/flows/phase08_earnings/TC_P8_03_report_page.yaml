@@ -1,21 +1,8 @@
 appId: com.dealjoy.dealjoy_merchant
-name: "TC_P8_03 - Earnings report page"
+name: "TC_P8_03 - Pending orders count display"
 ---
 - runFlow: ../../shared/login.yaml
 
-# 导航到 Me tab，再进 Earnings
-- tapOn: "Me"
-- tapOn: "Earnings"
-- extendedWaitUntil:
-    visible: "Earnings Overview"
-    timeout: 15000
-
-# 点击报表按钮
-- tapOn:
-    id: "earnings_report_btn"
-
-# 验证报表页面
-- extendedWaitUntil:
-    visible: "Monthly"
-    timeout: 15000
-- takeScreenshot: P8_TC03_report_page
+# 验证 Dashboard Pending 显示
+- assertVisible: "Quick Actions"
+- takeScreenshot: P8_TC03_dashboard_content

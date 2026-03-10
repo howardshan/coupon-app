@@ -687,7 +687,9 @@ class _AdminsTab extends ConsumerWidget {
                     final admin = admins[index];
                     final adminId = admin['id'] as String? ?? '';
                     final role = admin['role'] as String? ?? 'admin';
-                    final email = admin['email'] as String? ?? 'Unknown';
+                    final email = admin['email'] as String? ?? '';
+                    final fullName = admin['full_name'] as String? ?? '';
+                    final displayName = fullName.isNotEmpty ? fullName : (email.isNotEmpty ? email : 'Unknown');
                     final isOwner = role == 'owner';
 
                     return Container(
@@ -716,13 +718,23 @@ class _AdminsTab extends ConsumerWidget {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  email,
+                                  displayName,
                                   style: const TextStyle(
                                     fontSize: 14,
                                     fontWeight: FontWeight.w600,
                                     color: Color(0xFF212121),
                                   ),
                                 ),
+                                if (email.isNotEmpty && fullName.isNotEmpty) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    email,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Color(0xFF9E9E9E),
+                                    ),
+                                  ),
+                                ],
                                 const SizedBox(height: 2),
                                 Text(
                                   isOwner ? 'Brand Owner' : 'Admin',
