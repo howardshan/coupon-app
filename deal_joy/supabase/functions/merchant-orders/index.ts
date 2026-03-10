@@ -187,6 +187,7 @@ async function handleDetail(
       updated_at,
       refund_requested_at,
       refunded_at,
+      refund_rejected_at,
       deals!inner (
         id,
         title,
@@ -321,6 +322,7 @@ async function handleDetail(
       updated_at: order.updated_at,
       refund_requested_at: order.refund_requested_at ?? null,
       refunded_at: order.refunded_at ?? null,
+      refund_rejected_at: order.refund_rejected_at ?? null,
       // 时间线
       timeline,
     },

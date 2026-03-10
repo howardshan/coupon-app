@@ -12,7 +12,7 @@ class OrdersRepository {
       final data = await _client
           .from('orders')
           .select(
-            'id, user_id, deal_id, coupon_id, quantity, total_amount, status, payment_intent_id, refund_reason, created_at, deals(id, title, image_urls, merchants(name)), coupons!fk_orders_coupon_id(expires_at)',
+            'id, user_id, deal_id, coupon_id, quantity, total_amount, status, payment_intent_id, refund_reason, created_at, order_number, refund_requested_at, refunded_at, refund_rejected_at, deals(id, title, image_urls, merchants(name)), coupons!fk_orders_coupon_id(expires_at)',
           )
           .eq('user_id', userId)
           .order('created_at', ascending: false);
@@ -27,7 +27,7 @@ class OrdersRepository {
       final data = await _client
           .from('orders')
           .select(
-            'id, user_id, deal_id, coupon_id, quantity, total_amount, status, payment_intent_id, refund_reason, created_at, deals(id, title, image_urls, merchants(name)), coupons!fk_orders_coupon_id(expires_at)',
+            'id, user_id, deal_id, coupon_id, quantity, total_amount, status, payment_intent_id, refund_reason, created_at, order_number, refund_requested_at, refunded_at, refund_rejected_at, deals(id, title, image_urls, merchants(name)), coupons!fk_orders_coupon_id(expires_at)',
           )
           .eq('id', orderId)
           .single();
@@ -37,12 +37,14 @@ class OrdersRepository {
     }
   }
 
-  Future<void> requestRefund(String orderId) async {
+  /// 仅提交退款申请（状态改为 refund_requested），不调用 Stripe；审核通过由 Admin 调用退款
+  Future<void> requestRefund(String orderId, {String? reason}) async {
     try {
-      await _client
-          .from('orders')
-          .update({'status': 'refund_requested'})
-          .eq('id', orderId);
+      await _client.from('orders').update({
+        'status': 'refund_requested',
+        'refund_requested_at': DateTime.now().toUtc().toIso8601String(),
+        if (reason != null && reason.isNotEmpty) 'refund_reason': reason,
+      }).eq('id', orderId);
     } on PostgrestException catch (e) {
       throw AppException(
         'Failed to request refund: ${e.message}',

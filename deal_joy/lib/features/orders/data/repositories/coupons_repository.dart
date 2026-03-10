@@ -9,7 +9,8 @@ const _couponSelect =
     'id, order_id, user_id, deal_id, merchant_id, qr_code, status, '
     'expires_at, used_at, created_at, gifted_from, verified_by, '
     'deals(id, title, description, image_urls, refund_policy, '
-    'merchants(name, logo_url, address, phone))';
+    'merchants(name, logo_url, address, phone)), '
+    'orders(order_number)';
 
 class CouponsRepository {
   final SupabaseClient _client;
@@ -81,106 +82,35 @@ class CouponsRepository {
     }
   }
 
-  /// 请求退款：通过 create-refund Edge Function 调用 Stripe 退款
-  /// [couponId] 券 ID，先查出 orderId 再调用 Edge Function
-  /// [reason] 退款原因，可选，默认 'customer_request'
-  Future<Map<String, dynamic>> requestRefund(
-    String couponId, {
-    String? reason,
-  }) async {
-    try {
-      // 先获取对应 order_id
-      final couponData = await _client
-          .from('coupons')
-          .select('id, order_id')
-          .eq('id', couponId)
-          .single();
-
-      final orderId = couponData['order_id'] as String;
-
-      // 调用 create-refund Edge Function（内部处理 Stripe 退款 + DB 状态更新）
-      // SDK 在 HTTP 2xx 时返回 FunctionResponse，非 2xx 时抛出 FunctionException
-      final response = await _client.functions.invoke(
-        'create-refund',
-        body: {
-          'orderId': orderId,
-          'reason': ?reason,
-        },
-      );
-
-      // response.data 类型为 dynamic；Edge Function 返回 application/json，
-      // SDK 会将其解码为 Map — 但需做类型安全检查
-      final rawData = response.data;
-      if (rawData is! Map) {
-        throw AppException('Unexpected response format from refund service');
-      }
-      final data = Map<String, dynamic>.from(rawData);
-
-      // Edge Function 返回 error 字段表示业务错误（此路径通常不触发，
-      // 因为 Edge Function 对业务错误返回非 2xx，SDK 会抛 FunctionException）
-      if (data.containsKey('error')) {
-        throw AppException(data['error'] as String);
-      }
-
-      return data; // { refundId, status, amount }
-    } on AppException {
-      rethrow;
-    } on FunctionException catch (e) {
-      // HTTP 非 2xx 响应：从 details 中提取 Edge Function 返回的 error 字段
-      final details = e.details;
-      String message;
-      if (details is Map && details.containsKey('error')) {
-        message = details['error'].toString();
-      } else {
-        message = 'Refund request failed (${e.status})';
-      }
-      throw AppException(message);
-    } on PostgrestException catch (e) {
-      throw AppException('Failed to request refund: ${e.message}',
-          code: e.code);
-    } catch (e) {
-      throw AppException('Refund failed: $e');
-    }
+  /// 仅提交退款申请（更新订单状态为 refund_requested），不调用 Stripe；审核由 Admin 通过后执行退款
+  Future<void> requestRefund(String couponId, {String? reason}) async {
+    final couponData = await _client
+        .from('coupons')
+        .select('order_id')
+        .eq('id', couponId)
+        .single();
+    final orderId = couponData['order_id'] as String;
+    await _updateOrderToRefundRequested(orderId, reason: reason);
   }
 
-  /// 通过 orderId 请求退款（供 OrdersScreen 使用）
-  Future<Map<String, dynamic>> requestRefundByOrderId(
-    String orderId, {
-    String? reason,
-  }) async {
+  /// 通过 orderId 仅提交退款申请（供退款页/订单列表使用）
+  Future<void> requestRefundByOrderId(String orderId, {String? reason}) async {
+    await _updateOrderToRefundRequested(orderId, reason: reason);
+  }
+
+  Future<void> _updateOrderToRefundRequested(String orderId,
+      {String? reason}) async {
     try {
-      final response = await _client.functions.invoke(
-        'create-refund',
-        body: {
-          'orderId': orderId,
-          'reason': ?reason,
-        },
+      await _client.from('orders').update({
+        'status': 'refund_requested',
+        'refund_requested_at': DateTime.now().toUtc().toIso8601String(),
+        if (reason != null && reason.isNotEmpty) 'refund_reason': reason,
+      }).eq('id', orderId);
+    } on PostgrestException catch (e) {
+      throw AppException(
+        'Failed to request refund: ${e.message}',
+        code: e.code,
       );
-
-      final rawData = response.data;
-      if (rawData is! Map) {
-        throw AppException('Unexpected response format from refund service');
-      }
-      final data = Map<String, dynamic>.from(rawData);
-
-      if (data.containsKey('error')) {
-        throw AppException(data['error'] as String);
-      }
-
-      return data;
-    } on AppException {
-      rethrow;
-    } on FunctionException catch (e) {
-      final details = e.details;
-      String message;
-      if (details is Map && details.containsKey('error')) {
-        message = details['error'].toString();
-      } else {
-        message = 'Refund request failed (${e.status})';
-      }
-      throw AppException(message);
-    } catch (e) {
-      throw AppException('Refund failed: $e');
     }
   }
 }

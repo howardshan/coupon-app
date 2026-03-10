@@ -8,8 +8,9 @@ export type OrderForDisplayStatus = {
   status: string
   deals?: { expires_at?: string | null } | null
   coupon_expires_at?: string | null
-  /** RPC 搜索返回的 deal 下可能有 expires_at */
   deal_expires_at?: string | null
+  /** 管理员拒绝退款时写入，详情页展示 Refund Rejected */
+  refund_rejected_at?: string | null
 }
 
 export function getOrderDisplayStatus(order: OrderForDisplayStatus): string {
@@ -41,6 +42,7 @@ export function getOrderDetailStatusTags(order: OrderForDisplayStatus): string[]
   // 1. 使用维度：始终有一个主状态
   if (order.status === 'unused') {
     tags.push('unused')
+    if (order.refund_rejected_at) tags.push('refund_rejected')
   } else if (order.status === 'used') {
     tags.push('used')
     return tags
@@ -49,6 +51,9 @@ export function getOrderDetailStatusTags(order: OrderForDisplayStatus): string[]
     return tags
   } else if (order.status === 'refund_requested') {
     tags.push('refund_requested')
+    return tags
+  } else if (order.status === 'refund_failed') {
+    tags.push('refund_failed')
     return tags
   }
 

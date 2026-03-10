@@ -60,6 +60,7 @@ class _OrderCard extends StatelessWidget {
     'used' => AppColors.success,
     'refunded' => AppColors.textSecondary,
     'refund_requested' => AppColors.warning,
+    'refund_failed' => AppColors.error,
     'expired' => AppColors.textHint,
     _ => AppColors.textHint,
   };
@@ -67,6 +68,7 @@ class _OrderCard extends StatelessWidget {
   /// 展示用状态：未使用但券已按时间过期时显示为 expired
   String get _displayStatus {
     if (order.isExpired) return 'expired';
+    if (order.isRefundFailed) return 'refund_failed';
     if (order.isUnused && order.isExpiredByDate) return 'expired';
     return order.status;
   }
@@ -80,7 +82,7 @@ class _OrderCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         onTap: order.isUnused
             ? () => context.push('/coupon/${order.couponId}')
-            : order.isRefundRequested || order.isRefunded
+            : order.isRefundRequested || order.isRefunded || order.isRefundFailed || order.isRefundRejected
             ? () => context.push('/refund/${order.id}')
             : null,
         child: Padding(
@@ -130,7 +132,7 @@ class _OrderCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '\$${order.totalAmount.toStringAsFixed(2)} · Qty ${order.quantity}',
+                      '\$${order.totalAmount.toStringAsFixed(2)} · Qty ${order.quantity}${order.orderNumber != null && order.orderNumber!.isNotEmpty ? ' · #${order.orderNumber}' : ''}',
                       style: const TextStyle(
                         fontSize: 13,
                         color: AppColors.textSecondary,
