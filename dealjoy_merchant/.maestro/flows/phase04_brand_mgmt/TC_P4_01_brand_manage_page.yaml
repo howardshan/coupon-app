@@ -21,8 +21,9 @@ appId: com.dealjoy.dealjoy_merchant
     visible: "Today's Stats"
     timeout: 15000
 
-# 导航到 Me tab
-- tapOn: "Me"
+# 导航到 Me tab（点击底部 Me tab）
+- tapOn:
+    point: "90%,97%"
 - extendedWaitUntil:
     visible: "Settings"
     timeout: 15000

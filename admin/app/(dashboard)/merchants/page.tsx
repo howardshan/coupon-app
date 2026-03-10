@@ -25,7 +25,7 @@ export default async function MerchantsPage({
     query = query.eq('brand_id', brandFilter)
   }
 
-  const { data: merchants } = await query
+  const { data: merchants, error: merchantsError } = await query
 
   // 获取所有品牌，用于筛选下拉
   const { data: allBrands } = await supabase
@@ -111,7 +111,10 @@ export default async function MerchantsPage({
             ))}
           </tbody>
         </table>
-        {(!merchants || merchants.length === 0) && (
+        {merchantsError && (
+          <p className="text-center text-red-500 py-4 text-xs">Error: {merchantsError.message} | Code: {merchantsError.code}</p>
+        )}
+        {(!merchants || merchants.length === 0) && !merchantsError && (
           <p className="text-center text-gray-400 py-8">No merchants found</p>
         )}
       </div>

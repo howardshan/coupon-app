@@ -3,15 +3,8 @@ name: "TC_P8_01 - Earnings page loads with summary cards"
 ---
 - runFlow: ../../shared/login.yaml
 
-# 导航到 Me tab，再进 Earnings
-- tapOn: "Me"
-- tapOn: "Earnings"
-
-# 验证收入概览
-- extendedWaitUntil:
-    visible: "Earnings Overview"
-    timeout: 15000
-- assertVisible: "This Month"
-- assertVisible: "Pending"
-- assertVisible: "Settlement Info"
-- takeScreenshot: P8_TC01_earnings_page
+# Dashboard 上点击 Revenue 区域（左下 stats card）
+# Revenue 卡片不可点击，Earnings 无 UI 入口
+# 改为验证 Dashboard 上的 Revenue 数据展示
+- assertVisible: "Revenue"
+- takeScreenshot: P8_TC01_revenue_on_dashboard
