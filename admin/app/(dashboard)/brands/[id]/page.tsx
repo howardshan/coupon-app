@@ -1,6 +1,11 @@
 import { createClient } from '@/lib/supabase/server'
+import { getServiceRoleClient } from '@/lib/supabase/service'
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
+import AddBrandAdminForm from '@/components/add-brand-admin-form'
+import AddStoreToBrand from '@/components/add-store-to-brand'
+import RemoveBrandAdminButton from './remove-brand-admin-button'
+import RemoveStoreButton from './remove-store-button'
 
 export default async function BrandDetailPage({
   params,
@@ -14,8 +19,11 @@ export default async function BrandDetailPage({
 
   if (profile?.role !== 'admin') redirect('/dashboard')
 
+  // 使用 service role client 绕过 RLS（admin 页面需要读取所有数据）
+  const adminDb = getServiceRoleClient()
+
   // 品牌基本信息
-  const { data: brand } = await supabase
+  const { data: brand } = await adminDb
     .from('brands')
     .select('id, name, logo_url, created_at')
     .eq('id', id)
@@ -24,38 +32,79 @@ export default async function BrandDetailPage({
   if (!brand) notFound()
 
   // 品牌下所有门店
-  const { data: stores } = await supabase
+  const { data: stores } = await adminDb
     .from('merchants')
     .select('id, name, category, status, address, created_at')
     .eq('brand_id', id)
     .order('created_at', { ascending: false })
 
-  // 品牌管理员
-  const { data: brandAdmins } = await supabase
+  // 品牌管理员（brand_admins.user_id 指向 auth.users，无法直接 join public.users）
+  const { data: rawBrandAdmins } = await adminDb
     .from('brand_admins')
-    .select('id, user_id, role, created_at, users(email, full_name)')
+    .select('id, user_id, role, created_at')
     .eq('brand_id', id)
     .order('created_at', { ascending: true })
 
+  // 手动补充用户信息
+  const brandAdminUserIds = rawBrandAdmins?.map(a => a.user_id) ?? []
+  let brandAdminUsers: Record<string, { email: string; full_name: string | null }> = {}
+  if (brandAdminUserIds.length > 0) {
+    const { data: users } = await adminDb
+      .from('users')
+      .select('id, email, full_name')
+      .in('id', brandAdminUserIds)
+    for (const u of users ?? []) {
+      brandAdminUsers[u.id] = { email: u.email, full_name: u.full_name }
+    }
+  }
+  const brandAdmins = rawBrandAdmins?.map(a => ({
+    ...a,
+    users: brandAdminUsers[a.user_id] ?? null,
+  })) ?? []
+
   // 品牌邀请
-  const { data: invitations } = await supabase
+  const { data: invitations } = await adminDb
     .from('brand_invitations')
     .select('id, email, role, status, created_at, expires_at')
     .eq('brand_id', id)
     .order('created_at', { ascending: false })
     .limit(20)
 
-  // 品牌下所有 staff
+  // 品牌下所有 staff（merchant_staff.user_id 也指向 auth.users，无法 join public.users）
   const storeIds = stores?.map(s => s.id) ?? []
   let allStaff: any[] = []
   if (storeIds.length > 0) {
-    const { data: staff } = await supabase
+    const { data: rawStaff } = await adminDb
       .from('merchant_staff')
-      .select('id, merchant_id, user_id, role, is_active, created_at, users(email, full_name)')
+      .select('id, merchant_id, user_id, role, is_active, created_at')
       .in('merchant_id', storeIds)
       .order('created_at', { ascending: false })
-    allStaff = staff ?? []
+
+    // 手动补充 staff 用户信息
+    const staffUserIds = rawStaff?.map(s => s.user_id) ?? []
+    let staffUsers: Record<string, { email: string; full_name: string | null }> = {}
+    if (staffUserIds.length > 0) {
+      const { data: users } = await adminDb
+        .from('users')
+        .select('id, email, full_name')
+        .in('id', staffUserIds)
+      for (const u of users ?? []) {
+        staffUsers[u.id] = { email: u.email, full_name: u.full_name }
+      }
+    }
+    allStaff = (rawStaff ?? []).map(s => ({
+      ...s,
+      users: staffUsers[s.user_id] ?? null,
+    }))
   }
+
+  // 未关联品牌的已通过门店（给 AddStoreToBrand 下拉用）
+  const { data: unlinkedStores } = await adminDb
+    .from('merchants')
+    .select('id, name, category, address')
+    .is('brand_id', null)
+    .eq('status', 'approved')
+    .order('name', { ascending: true })
 
   return (
     <div>
@@ -92,9 +141,12 @@ export default async function BrandDetailPage({
 
         {/* 门店列表 */}
         <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">
-            Member Stores ({stores?.length ?? 0})
-          </h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">
+              Member Stores ({stores?.length ?? 0})
+            </h2>
+            <AddStoreToBrand brandId={id} availableStores={unlinkedStores ?? []} />
+          </div>
           {stores && stores.length > 0 ? (
             <table className="w-full text-sm">
               <thead className="border-b border-gray-200">
@@ -103,6 +155,7 @@ export default async function BrandDetailPage({
                   <th className="text-left pb-2 font-medium text-gray-500">Category</th>
                   <th className="text-left pb-2 font-medium text-gray-500">Status</th>
                   <th className="text-left pb-2 font-medium text-gray-500">Address</th>
+                  <th className="text-right pb-2 font-medium text-gray-500">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -125,6 +178,9 @@ export default async function BrandDetailPage({
                       </span>
                     </td>
                     <td className="py-2 text-gray-500 text-xs">{s.address || '—'}</td>
+                    <td className="py-2 text-right">
+                      <RemoveStoreButton merchantId={s.id} brandId={id} storeName={s.name} />
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -136,9 +192,14 @@ export default async function BrandDetailPage({
 
         {/* 品牌管理员 */}
         <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">
-            Brand Admins ({brandAdmins?.length ?? 0})
-          </h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">
+              Brand Admins ({brandAdmins?.length ?? 0})
+            </h2>
+          </div>
+          <div className="mb-4">
+            <AddBrandAdminForm brandId={id} />
+          </div>
           {brandAdmins && brandAdmins.length > 0 ? (
             <table className="w-full text-sm">
               <thead className="border-b border-gray-200">
@@ -146,6 +207,7 @@ export default async function BrandDetailPage({
                   <th className="text-left pb-2 font-medium text-gray-500">User</th>
                   <th className="text-left pb-2 font-medium text-gray-500">Role</th>
                   <th className="text-left pb-2 font-medium text-gray-500">Since</th>
+                  <th className="text-right pb-2 font-medium text-gray-500">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -156,12 +218,15 @@ export default async function BrandDetailPage({
                     </td>
                     <td className="py-2">
                       <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                        a.role === 'brand_owner' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
+                        a.role === 'owner' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
                       }`}>
-                        {a.role?.replace('_', ' ')}
+                        {a.role}
                       </span>
                     </td>
                     <td className="py-2 text-gray-500">{new Date(a.created_at).toLocaleDateString()}</td>
+                    <td className="py-2 text-right">
+                      <RemoveBrandAdminButton brandAdminId={a.id} brandId={id} userName={a.users?.email || 'this admin'} />
+                    </td>
                   </tr>
                 ))}
               </tbody>

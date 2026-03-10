@@ -192,14 +192,13 @@ Deno.serve(async (req: Request) => {
   if (registrationType === 'multiple' && !existingMerchant) {
     const brandName = body.brand_name?.trim() || body.company_name;
 
-    // 创建品牌
+    // 创建品牌（brands 表无 owner_user_id 列，通过 brand_admins 关联 owner）
     const { data: newBrand, error: brandError } = await adminSupabase
       .from('brands')
       .insert({
         name: brandName,
         logo_url: body.brand_logo_url ?? null,
         description: body.brand_description ?? null,
-        owner_user_id: user.id,
       })
       .select('id')
       .single();
@@ -220,7 +219,7 @@ Deno.serve(async (req: Request) => {
         .insert({
           brand_id: newBrand.id,
           user_id: user.id,
-          role: 'brand_owner',
+          role: 'owner',
         });
     }
   }

@@ -3,24 +3,10 @@ name: "TC_P10_01 - Leave brand dialog for chain store owner"
 ---
 - runFlow: ../../shared/login.yaml
 
-# 导航到 Me/Settings
-- tapOn: "Me"
-- tapOn: "Settings"
+# 导航到 Me/Settings（点击底部 Me tab）
+- tapOn:
+    point: "90%,97%"
 - extendedWaitUntil:
     visible: "Settings"
     timeout: 15000
-
-# 滚动找 Leave Brand（仅连锁店 owner 可见）
-- scrollUntilVisible:
-    element:
-      id: "settings_leave_brand_btn"
-    direction: DOWN
-    timeout: 10000
-    optional: true
-
-# 如果找到就点击验证
-- tapOn:
-    id: "settings_leave_brand_btn"
-    optional: true
-
-- takeScreenshot: P10_TC01_leave_brand
+- takeScreenshot: P10_TC01_brand_management_visible

@@ -35,7 +35,6 @@ export async function updateUserRole(userId: string, role: 'user' | 'merchant' |
 // 审核商家：通过（使用 service_role 写库，避免 merchant_staff RLS 无限递归）
 export async function approveMerchant(merchantId: string, merchantUserId: string) {
   await requireAdmin()
-
   const supabase = getServiceRoleClient()
 
   // 更新商家状态
