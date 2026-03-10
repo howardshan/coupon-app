@@ -21,6 +21,16 @@ class StoreSelectorPage extends ConsumerWidget {
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Color(0xFF212121)),
+          onPressed: () {
+            if (Navigator.canPop(context)) {
+              Navigator.pop(context);
+            } else {
+              context.go('/dashboard');
+            }
+          },
+        ),
         title: const Text(
           'Select Store',
           style: TextStyle(
@@ -82,10 +92,23 @@ class StoreSelectorPage extends ConsumerWidget {
                 store: store,
                 onTap: () async {
                   // 切换到选中的门店
-                  final storeNotifier = ref.read(storeProvider.notifier);
-                  await storeNotifier.switchStore(store.id);
-                  if (context.mounted) {
-                    context.go('/dashboard');
+                  try {
+                    final service = ref.read(storeServiceProvider);
+                    service.setActiveMerchantId(store.id);
+                    // 直接跳转到 dashboard，让 storeProvider 在 dashboard 自动加载
+                    ref.invalidate(storeProvider);
+                    if (context.mounted) {
+                      context.go('/dashboard');
+                    }
+                  } catch (e) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Failed to switch store: $e'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
                   }
                 },
               );
