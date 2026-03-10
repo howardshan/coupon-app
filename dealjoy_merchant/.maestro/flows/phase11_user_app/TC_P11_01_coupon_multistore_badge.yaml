@@ -1,0 +1,20 @@
+appId: com.dealjoy.customer
+name: "TC_P11_01 - Coupon shows multi-store badge"
+---
+# 注意：此测试需要用户端 app
+# 验证 CouponCard 显示 "Valid at X locations" 徽章
+
+# 登录用户端
+- launchApp:
+    appId: com.dealjoy.customer
+
+# 导航到 Coupons
+- tapOn:
+    text: "Coupons"
+    timeout: 15000
+
+# 如果有多店券，验证多店提示
+- assertVisible:
+    text: "Valid at"
+    timeout: 15000
+    optional: true

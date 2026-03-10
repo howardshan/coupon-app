@@ -1,0 +1,65 @@
+# TC014: 拒绝后重新提交
+# 测试步骤：用被拒绝的测试账号登录 → 看到拒绝原因 → 可以编辑重新提交
+# 预期结果：显示拒绝原因说明，提供重新编辑和提交的入口
+# 注意：需要预先准备一个被拒绝状态的测试账号
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+- launchApp:
+    clearState: true
+
+# 登录页
+- assertVisible: "Welcome back"
+
+# 使用被拒绝的测试账号登录
+# TODO: 替换为实际的 rejected 状态测试账号
+- tapOn: "Email"
+- inputText: "rejected_merchant@test.com"
+- tapOn: "Password"
+- inputText: "Test1234!"
+- hideKeyboard
+- tapOn:
+    text: "Sign In"
+    optional: true
+- tapOn:
+    text: "Log In"
+    optional: true
+- tapOn:
+    text: "Login"
+    optional: true
+
+# 验证看到拒绝状态页面
+- extendedWaitUntil:
+    visible: "Rejected"
+    timeout: 15000
+
+- takeScreenshot: TC014_rejection_page
+
+# 验证显示拒绝原因
+- assertVisible:
+    text: "Rejected"
+    optional: true
+
+- takeScreenshot: TC014_rejection_reason
+
+# 点击重新编辑/重新提交按钮
+- tapOn:
+    text: "Edit"
+    optional: true
+- tapOn:
+    text: "Resubmit"
+    optional: true
+- tapOn:
+    text: "Update"
+    optional: true
+- tapOn:
+    text: "Try Again"
+    optional: true
+
+# 验证进入编辑模式（回到注册表单）
+- extendedWaitUntil:
+    visible: "Company Name"
+    timeout: 10000
+
+- takeScreenshot: TC014_edit_mode

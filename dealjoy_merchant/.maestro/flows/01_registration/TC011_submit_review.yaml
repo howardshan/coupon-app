@@ -1,0 +1,95 @@
+# TC011: 提交审核 — 完整注册流程
+# 测试步骤：走完所有注册步骤 → 最后点击 "Submit for Review"
+# 预期结果：提交成功，跳转到 Under Review 页面
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+- launchApp:
+    clearState: true
+
+# Step 0: Create Account
+- assertVisible: "Welcome back"
+- tapOn: "Register"
+- extendedWaitUntil:
+    visible: "Create Account"
+    timeout: 10000
+- tapOn: "Business Email"
+- inputText: "testmerchant_tc011@test.com"
+- tapOn: "Password"
+- inputText: "Test1234!"
+- tapOn:
+    text: "Confirm Password"
+    optional: true
+- inputText: "Test1234!"
+- hideKeyboard
+- tapOn: "Next"
+
+# Step 1: Store Type
+- extendedWaitUntil:
+    visible: "Store Type"
+    timeout: 10000
+- tapOn:
+    text: "Single Location.*"
+    retryTapIfNoChange: false
+- tapOn: "Next"
+
+# Step 2: Business Info
+- extendedWaitUntil:
+    visible: "Company Name"
+    timeout: 10000
+- tapOn: "Company Name"
+- inputText: "TC011 Submit Test"
+- tapOn: "Contact Person Name"
+- inputText: "Test Owner"
+- tapOn: "Contact Phone"
+- inputText: "2145551234"
+- hideKeyboard
+- tapOn: "Next"
+
+# Step 3: Select Category — Fun & Games（最少证件，加速测试）
+- extendedWaitUntil:
+    visible: "Select Category"
+    timeout: 10000
+- tapOn: "Fun & Games"
+- tapOn: "Next"
+
+# Step 4: EIN + 上传证件
+- extendedWaitUntil:
+    visible: "EIN / Tax ID"
+    timeout: 10000
+- tapOn: "EIN / Tax ID"
+- inputText: "12-3456789"
+- hideKeyboard
+
+# 上传3个基础证件
+- runFlow: ../../shared/upload_base_docs.yaml
+
+- tapOn: "Next"
+
+# Step 5: Store Address
+- extendedWaitUntil:
+    visible: "Store Address"
+    timeout: 10000
+
+- tapOn: "Address Line 1"
+- inputText: "1234 Main St"
+- tapOn: "City"
+- inputText: "Dallas"
+- tapOn: "State"
+- inputText: "Texas"
+- tapOn: "Zip Code"
+- inputText: "75201"
+- hideKeyboard
+
+- takeScreenshot: TC011_before_submit
+
+# 点击提交
+- tapOn: "Submit for Review"
+
+# 验证跳转到 Under Review 页面
+- extendedWaitUntil:
+    visible: "Application Under Review"
+    timeout: 20000
+
+- takeScreenshot: TC011_under_review

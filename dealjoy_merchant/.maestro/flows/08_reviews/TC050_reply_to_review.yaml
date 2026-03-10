@@ -1,0 +1,51 @@
+# TC050: 回复评价
+# 测试步骤：Reviews 页 → 点击某条评价 → 输入回复 → 提交
+# 预期结果：回复保存成功
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+# 登录
+- runFlow: ../../shared/login.yaml
+
+# 导航到 Reviews 页
+- tapOn: "Me"
+- extendedWaitUntil:
+    visible: "Me"
+    timeout: 10000
+- tapOn: "Reviews"
+- extendedWaitUntil:
+    visible: "Reviews"
+    timeout: 10000
+
+# 等待评价列表加载
+- extendedWaitUntil:
+    visible: "★"
+    timeout: 10000
+
+# 点击回复按钮（第一条评价）
+- tapOn:
+    text: "Reply"
+    optional: true
+
+# 输入回复内容
+- tapOn:
+    text: "Write a reply"
+    optional: true
+- inputText: "Thank you for your feedback! We appreciate your support."
+
+# 隐藏键盘
+- hideKeyboard
+
+# 提交回复
+- tapOn:
+    text: "Submit"
+    optional: true
+
+# 验证回复成功
+- extendedWaitUntil:
+    visible: "Reply sent"
+    timeout: 10000
+
+# 截图保存回复结果
+- takeScreenshot: TC050_reply_to_review

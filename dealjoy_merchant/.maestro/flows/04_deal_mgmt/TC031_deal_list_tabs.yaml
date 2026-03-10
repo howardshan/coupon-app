@@ -1,0 +1,46 @@
+# TC031: Deal List Tabs Navigation
+# 测试步骤：Deal 列表页 → 分别点击 All / Active / Inactive / Pending tabs → 验证每个 tab 显示
+# 预期结果：每个 tab 正确切换，显示对应状态的 Deal 列表或空状态提示
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+- launchApp:
+    clearState: true
+
+# 引用共享登录
+- runFlow: ../../shared/login.yaml
+
+# 等待 Dashboard 加载完成
+- extendedWaitUntil:
+    visible: "Dashboard"
+    timeout: 10000
+
+# 导航到 Deal 列表
+- tapOn: "Manage Deals"
+- extendedWaitUntil:
+    visible: "My Deals"
+    timeout: 8000
+
+# Tab 1: All（默认选中）
+- assertVisible: "All"
+- takeScreenshot: TC031_tab_all
+
+# Tab 2: Active
+- tapOn: "Active"
+- takeScreenshot: TC031_tab_active
+
+# Tab 3: Inactive
+- tapOn: "Inactive"
+- takeScreenshot: TC031_tab_inactive
+
+# Tab 4: Pending
+- tapOn: "Pending"
+- takeScreenshot: TC031_tab_pending
+
+# 切回 All tab 验证完整循环
+- tapOn: "All"
+- takeScreenshot: TC031_tab_all_again
+
+# 最终截图
+- takeScreenshot: TC031_deal_list_tabs_result

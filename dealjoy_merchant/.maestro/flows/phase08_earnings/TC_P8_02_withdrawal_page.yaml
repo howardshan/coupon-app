@@ -1,0 +1,22 @@
+appId: com.dealjoy.dealjoy_merchant
+name: "TC_P8_02 - Withdrawal page accessible"
+---
+- runFlow: ../../shared/login.yaml
+
+# 导航到 Me tab，再进 Earnings
+- tapOn: "Me"
+- tapOn: "Earnings"
+- extendedWaitUntil:
+    visible: "Withdrawal"
+    timeout: 15000
+
+# 点击提现入口
+- tapOn:
+    id: "earnings_withdrawal_btn"
+
+# 验证提现页面
+- extendedWaitUntil:
+    visible: "Available Balance"
+    timeout: 15000
+- assertVisible: "Withdrawal History"
+- takeScreenshot: P8_TC02_withdrawal_page

@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/errors/app_exception.dart';
+import '../models/brand_detail_model.dart';
 import '../models/merchant_model.dart';
 
 class MerchantRepository {
@@ -126,6 +127,31 @@ class MerchantRepository {
     } on PostgrestException catch (e) {
       throw AppException(
         'Failed to load stores: ${e.message}',
+        code: e.code,
+      );
+    }
+  }
+
+  // ----------------------------------------------------------
+  // V2.4 品牌聚合查询
+  // ----------------------------------------------------------
+
+  /// 获取品牌详情（含旗下所有门店 + deals 聚合数据）
+  Future<BrandDetailModel> fetchBrandDetail(String brandId) async {
+    try {
+      final data = await _client
+          .from('brands')
+          .select(
+            '*, merchants(id, name, address, city, phone, logo_url, homepage_cover_url, lat, lng, '
+            'deals(rating, review_count, discount_price, is_active))',
+          )
+          .eq('id', brandId)
+          .eq('merchants.status', 'approved')
+          .single();
+      return BrandDetailModel.fromJson(data);
+    } on PostgrestException catch (e) {
+      throw AppException(
+        'Failed to load brand: ${e.message}',
         code: e.code,
       );
     }

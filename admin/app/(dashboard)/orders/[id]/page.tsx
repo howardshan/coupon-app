@@ -2,7 +2,6 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import OrderRefundButtons from '@/components/order-refund-buttons'
-import { getOrderDetailStatusTags } from '@/lib/order-display-status'
 
 const STATUS_STYLES: Record<string, string> = {
   unused: 'bg-blue-100 text-blue-700',
@@ -34,11 +33,7 @@ export default async function OrderDetailPage({
   const { id } = await params
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  const { data: profile } = await supabase
-    .from('users')
-    .select('role')
-    .eq('id', user!.id)
-    .single()
+  const { data: profile } = await supabase.from('users').select('role').eq('id', user!.id).single()
 
   if (profile?.role !== 'admin') redirect('/dashboard')
 
@@ -59,25 +54,39 @@ export default async function OrderDetailPage({
       refunded_at,
       refund_rejected_at,
       users ( id, email ),
-      deals ( id, title, discount_price, expires_at, merchants ( id, name ) )
+      deals ( id, title, discount_price, applicable_merchant_ids, merchants ( id, name ) ),
+      coupons ( redeemed_at_merchant_id )
     `)
     .eq('id', id)
     .single()
 
   if (!order) notFound()
 
-  const deal = order.deals as { id: string; title: string; discount_price?: number; expires_at?: string | null; merchants?: { id: string; name: string } | null } | null
-  const merchant = deal?.merchants
-  const customer = order.users as { id: string; email: string } | null
-  const statusTags = getOrderDetailStatusTags(order)
+  const deal = order.deals as any
+  const merchant = Array.isArray(deal?.merchants) ? deal.merchants[0] : deal?.merchants
+  const customer = order.users as any
+
+  // 核销门店信息
+  const coupons = order.coupons as any[] | null
+  const redeemedMerchantId = coupons?.[0]?.redeemed_at_merchant_id
+  let redeemedMerchantName: string | null = null
+  if (redeemedMerchantId) {
+    const { data: rm } = await supabase.from('merchants').select('name').eq('id', redeemedMerchantId).single()
+    redeemedMerchantName = rm?.name ?? null
+  }
+
+  // 适用门店
+  const applicableIds = deal?.applicable_merchant_ids as string[] | null
+  let applicableStores: { id: string; name: string }[] = []
+  if (applicableIds && applicableIds.length > 0) {
+    const { data } = await supabase.from('merchants').select('id, name').in('id', applicableIds)
+    applicableStores = data ?? []
+  }
 
   return (
     <div>
       <div className="mb-6">
-        <Link
-          href="/orders"
-          className="mb-3 inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 bg-white text-gray-700 shadow-sm hover:bg-gray-50 transition-colors"
-        >
+        <Link href="/orders" className="mb-3 inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 bg-white text-gray-700 shadow-sm hover:bg-gray-50 transition-colors">
           ← Back to Orders
         </Link>
         <h1 className="text-2xl font-bold text-gray-900 mt-2">
@@ -86,10 +95,13 @@ export default async function OrderDetailPage({
       </div>
 
       <div className="space-y-6">
-        {/* Status */}
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Status</h2>
           <div className="flex items-center gap-3 flex-wrap">
+            <span className={`px-3 py-1 rounded-full text-sm font-medium ${STATUS_STYLES[order.status as string] ?? STATUS_STYLES.used}`}>
+              {STATUS_LABELS[order.status as string] ?? order.status}
+            </span>
+            {order.status === 'refund_requested' && (
             {statusTags.map((tag) => (
               <span
                 key={tag}
@@ -102,35 +114,34 @@ export default async function OrderDetailPage({
               <OrderRefundButtons orderId={order.id} initialStatus={order.status} />
             )}
           </div>
-          {(statusTags.includes('expired') || statusTags.includes('pending_refund')) && order.status === 'unused' && (
-            <p className="text-sm text-gray-500 mt-2">
-              {statusTags.includes('expired') ? 'Coupon expired; will be auto-refunded 24h after expiry.' : 'Auto-refund in progress (runs hourly).'}
-            </p>
-          )}
         </div>
 
-        {/* Order & deal info */}
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">Order & Deal</h2>
           <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
             <div>
               <dt className="text-gray-500">Deal</dt>
               <dd className="font-medium text-gray-900 mt-0.5">
-                {deal ? (
-                  <Link href={`/deals/${deal.id}`} className="text-blue-600 hover:underline">
-                    {deal.title}
-                  </Link>
-                ) : '—'}
+                {deal ? (<Link href={`/deals/${deal.id}`} className="text-blue-600 hover:underline">{deal.title}</Link>) : '—'}
               </dd>
             </div>
             <div>
-              <dt className="text-gray-500">Merchant</dt>
+              <dt className="text-gray-500">Purchase Merchant</dt>
               <dd className="font-medium text-gray-900 mt-0.5">
-                {merchant ? (
-                  <Link href={`/merchants/${merchant.id}`} className="text-blue-600 hover:underline">
-                    {merchant.name}
-                  </Link>
-                ) : '—'}
+                {merchant ? (<Link href={`/merchants/${merchant.id}`} className="text-blue-600 hover:underline">{merchant.name}</Link>) : '—'}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-gray-500">Redeemed At</dt>
+              <dd className="font-medium text-gray-900 mt-0.5">
+                {redeemedMerchantName ? (
+                  <Link href={`/merchants/${redeemedMerchantId}`} className="text-blue-600 hover:underline">{redeemedMerchantName}</Link>
+                ) : (
+                  <span className="text-gray-400">—</span>
+                )}
+                {redeemedMerchantId && merchant && redeemedMerchantId !== merchant.id && (
+                  <span className="ml-1 text-xs text-orange-600">(different store)</span>
+                )}
               </dd>
             </div>
             <div>
@@ -147,14 +158,25 @@ export default async function OrderDetailPage({
             </div>
             <div>
               <dt className="text-gray-500">Created</dt>
-              <dd className="font-medium text-gray-900 mt-0.5">
-                {new Date(order.created_at).toLocaleString()}
-              </dd>
+              <dd className="font-medium text-gray-900 mt-0.5">{new Date(order.created_at).toLocaleString()}</dd>
             </div>
           </dl>
         </div>
 
-        {/* Customer */}
+        {/* 适用门店（多店 Deal） */}
+        {applicableStores.length > 0 && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Applicable Stores</h2>
+            <div className="flex flex-wrap gap-2">
+              {applicableStores.map(s => (
+                <Link key={s.id} href={`/merchants/${s.id}`} className="px-2 py-1 rounded bg-gray-100 text-xs text-blue-600 hover:underline">
+                  {s.name}
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Customer</h2>
           <p className="text-sm text-gray-900">{customer?.email ?? '—'}</p>
@@ -166,22 +188,13 @@ export default async function OrderDetailPage({
             <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Refund</h2>
             <dl className="space-y-2 text-sm">
               {order.refund_reason != null && (
-                <div>
-                  <dt className="text-gray-500">Reason</dt>
-                  <dd className="text-gray-900 mt-0.5">{order.refund_reason}</dd>
-                </div>
+                <div><dt className="text-gray-500">Reason</dt><dd className="text-gray-900 mt-0.5">{order.refund_reason}</dd></div>
               )}
               {order.refund_requested_at != null && (
-                <div>
-                  <dt className="text-gray-500">Requested at</dt>
-                  <dd className="text-gray-900 mt-0.5">{new Date(order.refund_requested_at).toLocaleString()}</dd>
-                </div>
+                <div><dt className="text-gray-500">Requested at</dt><dd className="text-gray-900 mt-0.5">{new Date(order.refund_requested_at).toLocaleString()}</dd></div>
               )}
               {order.refunded_at != null && (
-                <div>
-                  <dt className="text-gray-500">Refunded at</dt>
-                  <dd className="text-gray-900 mt-0.5">{new Date(order.refunded_at).toLocaleString()}</dd>
-                </div>
+                <div><dt className="text-gray-500">Refunded at</dt><dd className="text-gray-900 mt-0.5">{new Date(order.refunded_at).toLocaleString()}</dd></div>
               )}
               {(order as { refund_rejected_at?: string | null }).refund_rejected_at != null && (
                 <div>
@@ -193,7 +206,6 @@ export default async function OrderDetailPage({
           </div>
         )}
 
-        {/* Payment reference */}
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Payment</h2>
           <p className="text-xs text-gray-500 font-mono break-all">{order.payment_intent_id ?? '—'}</p>

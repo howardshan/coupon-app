@@ -111,3 +111,50 @@ final storeOnlineProvider = StateProvider<bool>((ref) {
   final dashData = ref.watch(dashboardProvider).valueOrNull;
   return dashData?.stats.isOnline ?? true;
 });
+
+// ============================================================
+// V2.1 品牌总览 Provider
+// ============================================================
+
+/// 品牌总览视图模式：单店 vs 品牌
+final brandViewModeProvider = StateProvider<bool>((ref) => false);
+
+/// 品牌总览数据
+class BrandOverviewNotifier extends AsyncNotifier<BrandOverviewData> {
+  @override
+  Future<BrandOverviewData> build() async {
+    return ref.read(dashboardServiceProvider).fetchBrandOverview();
+  }
+
+  Future<void> refresh() async {
+    state = const AsyncLoading();
+    state = await AsyncValue.guard(
+      () => ref.read(dashboardServiceProvider).fetchBrandOverview(),
+    );
+  }
+}
+
+final brandOverviewProvider =
+    AsyncNotifierProvider<BrandOverviewNotifier, BrandOverviewData>(
+  BrandOverviewNotifier.new,
+);
+
+/// 门店排行排序方式
+final rankingSortByProvider = StateProvider<String>((ref) => 'revenue');
+
+/// 门店排行天数
+final rankingDaysProvider = StateProvider<int>((ref) => 30);
+
+/// 门店排行数据
+final brandRankingsProvider = FutureProvider<List<StoreRanking>>((ref) async {
+  final sortBy = ref.watch(rankingSortByProvider);
+  final days = ref.watch(rankingDaysProvider);
+  return ref
+      .read(dashboardServiceProvider)
+      .fetchBrandRankings(sortBy: sortBy, days: days);
+});
+
+/// 门店健康度数据
+final brandHealthProvider = FutureProvider<List<StoreHealthAlert>>((ref) async {
+  return ref.read(dashboardServiceProvider).fetchBrandHealth();
+});

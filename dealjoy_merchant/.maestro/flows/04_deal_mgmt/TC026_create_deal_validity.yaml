@@ -1,0 +1,71 @@
+# TC026: Create Deal - Validity Period Setting
+# 测试步骤：创建 Deal → 设置有效期（purchase date + 30 days）→ 验证有效期显示
+# 预期结果：有效期类型选为 "Days After Purchase"，天数设为 30，显示正确
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+- launchApp:
+    clearState: true
+
+# 引用共享登录
+- runFlow: ../../shared/login.yaml
+
+# 等待 Dashboard 加载完成
+- extendedWaitUntil:
+    visible: "Dashboard"
+    timeout: 10000
+
+# 导航到 Deal 列表
+- tapOn: "Manage Deals"
+- extendedWaitUntil:
+    visible: "My Deals"
+    timeout: 8000
+
+# 创建 Deal
+- tapOn: "Create Deal"
+- extendedWaitUntil:
+    visible: "Create Deal"
+    timeout: 5000
+
+# Step 1: 填写基本信息（最小必填）
+- tapOn: "Deal Title"
+- inputText: "Validity Test Deal"
+- hideKeyboard
+
+- tapOn: "Description"
+- inputText: "Test deal for validity period verification"
+- hideKeyboard
+
+# 进入 Step 2
+- tapOn: "Continue"
+
+# Step 2: 输入价格
+- tapOn: "Deal Price"
+- inputText: "20"
+- hideKeyboard
+
+# 进入 Step 3
+- tapOn: "Continue"
+
+# Step 3: 库存和有效期
+- extendedWaitUntil:
+    visible: "Stock & Validity"
+    timeout: 5000
+- takeScreenshot: TC026_step3_validity_initial
+
+# 切换有效期类型为 "Days After Purchase"
+- tapOn: "Days After Purchase"
+- takeScreenshot: TC026_step3_days_after_purchase_selected
+
+# 输入 30 天
+- tapOn:
+    text: "Number of days"
+    optional: true
+- inputText: "30"
+- hideKeyboard
+- takeScreenshot: TC026_step3_validity_30_days
+
+# 验证有效期设置显示
+- assertVisible: "30"
+- takeScreenshot: TC026_create_deal_validity_result

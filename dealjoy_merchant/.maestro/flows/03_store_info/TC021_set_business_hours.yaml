@@ -1,0 +1,78 @@
+# TC021: Set Business Hours
+# 测试步骤：登录 → Store Profile → Business Hours → 设置营业时间 → Save
+# 预期结果：营业时间成功保存，显示成功提示
+# 目标时间: Mon-Fri 10AM-9PM, Sat-Sun 11AM-10PM
+# 导航路径: Dashboard → Store → Business Hours (Edit) → 设置时间 → Save Changes
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+- launchApp:
+    clearState: true
+
+# 引用共享登录
+- runFlow: ../../shared/login.yaml
+
+# 等待 Dashboard 加载完成
+- extendedWaitUntil:
+    visible: "Dashboard"
+    timeout: 10000
+
+# 点击 Store 快捷入口进入 Store Profile 页面
+- tapOn: "Store"
+
+# 等待 Store Profile 页面加载
+- extendedWaitUntil:
+    visible: "Basic Info"
+    timeout: 10000
+
+# 滚动到 Business Hours 区块
+- scrollUntilVisible:
+    element: "Business Hours"
+    direction: DOWN
+    timeout: 5000
+
+# 点击 Business Hours 区块的 Edit 按钮
+# Business Hours 是第 5 个区块（Basic Info, Professional Info, Licenses, Store Photos, Business Hours）
+# 但 Licenses 可能不显示，所以 Edit 按钮 index 可能变化
+# 使用文本定位: 先滚动到 Business Hours 可见，然后点击附近的 Edit
+- tapOn:
+    text: "Edit"
+    index: 4
+
+# 等待 Business Hours 设置页面加载
+- extendedWaitUntil:
+    visible: "Business Hours"
+    timeout: 5000
+
+# 截图：营业时间设置页面
+- takeScreenshot: TC021_business_hours_page
+
+# 验证 7 天都有显示（默认配置）
+- assertVisible: "Monday"
+- assertVisible: "Tuesday"
+- assertVisible: "Wednesday"
+- assertVisible: "Thursday"
+- assertVisible: "Friday"
+- assertVisible: "Saturday"
+- assertVisible: "Sunday"
+
+# 截图：显示所有天的营业时间
+- takeScreenshot: TC021_all_days_visible
+
+# 滚动到底部找到 Save Changes 按钮
+- scrollUntilVisible:
+    element: "Save Changes"
+    direction: DOWN
+    timeout: 5000
+
+# 点击 Save Changes 保存
+- tapOn: "Save Changes"
+
+# 等待保存成功提示
+- extendedWaitUntil:
+    visible: "Business hours saved successfully"
+    timeout: 10000
+
+# 截图：保存成功
+- takeScreenshot: TC021_save_success

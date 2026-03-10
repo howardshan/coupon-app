@@ -1,0 +1,98 @@
+# TC009: EIN 格式验证
+# 测试步骤：注册到 Step 4 → 输入无 dash 的 EIN → Next 应报错 → 输入正确格式 → 上传证件 → Next 应通过
+# 预期结果：无 dash 格式 "123456789" 被拒绝，"12-3456789" 格式被接受
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+- launchApp:
+    clearState: true
+
+# Step 0: Create Account
+- assertVisible: "Welcome back"
+- tapOn: "Register"
+- extendedWaitUntil:
+    visible: "Create Account"
+    timeout: 10000
+- tapOn: "Business Email"
+- inputText: "testmerchant_tc009@test.com"
+- tapOn: "Password"
+- inputText: "Test1234!"
+- tapOn:
+    text: "Confirm Password"
+    optional: true
+- inputText: "Test1234!"
+- hideKeyboard
+- tapOn: "Next"
+
+# Step 1: Store Type
+- extendedWaitUntil:
+    visible: "Store Type"
+    timeout: 10000
+- tapOn:
+    text: "Single Location.*"
+    retryTapIfNoChange: false
+- tapOn: "Next"
+
+# Step 2: Business Info
+- extendedWaitUntil:
+    visible: "Company Name"
+    timeout: 10000
+- tapOn: "Company Name"
+- inputText: "TC009 EIN Test"
+- tapOn: "Contact Person Name"
+- inputText: "Test Owner"
+- tapOn: "Contact Phone"
+- inputText: "2145551234"
+- hideKeyboard
+- tapOn: "Next"
+
+# Step 3: Select Category — 选择 Fun & Games（只需3个基础证件，最少）
+- extendedWaitUntil:
+    visible: "Select Category"
+    timeout: 10000
+- tapOn: "Fun & Games"
+- tapOn: "Next"
+
+# Step 4: Upload Documents — EIN 验证
+- extendedWaitUntil:
+    visible: "EIN / Tax ID"
+    timeout: 10000
+
+# 输入错误格式（无 dash）
+- tapOn: "EIN / Tax ID"
+- inputText: "123456789"
+- hideKeyboard
+
+- takeScreenshot: TC009_ein_wrong_format
+
+# 点击 Next — 应该显示错误（EIN 格式不对 + 证件未上传）
+- tapOn: "Next"
+
+# 验证仍在 Step 4（没有进入下一步）
+- extendedWaitUntil:
+    visible: "EIN / Tax ID"
+    timeout: 5000
+
+- takeScreenshot: TC009_ein_error_shown
+
+# 清除错误的 EIN，输入正确格式
+- tapOn: "EIN / Tax ID"
+- eraseText: 30
+- inputText: "12-3456789"
+- hideKeyboard
+
+- takeScreenshot: TC009_ein_correct_format
+
+# 上传3个基础证件（Fun & Games 只需基础证件）
+- runFlow: ../../shared/upload_base_docs.yaml
+
+# 点击 Next — 应该通过验证
+- tapOn: "Next"
+
+# 验证进入下一步（Store Address）
+- extendedWaitUntil:
+    visible: "Store Address"
+    timeout: 10000
+
+- takeScreenshot: TC009_ein_validation_passed

@@ -1,0 +1,31 @@
+# TC064: Deal 过期自动退款
+# 状态：BLOCKED — 此用例需要 DB 操作模拟 deal 过期，无法通过 UI 测试
+# 测试步骤：仅验证订单中有 Refunded 状态的记录
+# 预期结果：Refunded tab 可访问
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+# 登录
+- runFlow: ../../shared/login.yaml
+
+# 点击底部 Orders tab
+- tapOn: "Orders"
+
+# 等待订单列表加载
+- extendedWaitUntil:
+    visible: "All"
+    timeout: 10000
+
+# 点击 Refunded tab 验证可访问
+- tapOn: "Refunded"
+
+- extendedWaitUntil:
+    visible: "Refunded"
+    timeout: 8000
+
+- takeScreenshot: TC064_refunded_tab
+
+# BLOCKED: 需要 DB 操作模拟 deal 过期触发自动退款
+# 仅验证 Refunded tab 可达
+- takeScreenshot: TC064_deal_expiry_auto_refund_blocked

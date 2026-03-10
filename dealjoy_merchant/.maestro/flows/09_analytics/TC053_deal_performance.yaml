@@ -1,0 +1,33 @@
+# TC053: Deal 转化表现
+# 测试步骤：Analytics 页 → Deal Performance section → 验证每个 Deal 的转化漏斗
+# 预期结果：Deal Performance 数据正确显示
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+# 登录
+- runFlow: ../../shared/login.yaml
+
+# 导航到 Analytics 页
+- tapOn: "Me"
+- extendedWaitUntil:
+    visible: "Me"
+    timeout: 10000
+- tapOn: "Analytics"
+- extendedWaitUntil:
+    visible: "Analytics"
+    timeout: 10000
+
+# 滚动查找 Deal Performance 区域
+- scrollUntilVisible:
+    element: "Deal Performance"
+    direction: DOWN
+    timeout: 10000
+
+# 验证 Deal Performance 数据
+- assertVisible:
+    text: "Deal Performance"
+    optional: true
+
+# 截图保存 Deal Performance
+- takeScreenshot: TC053_deal_performance

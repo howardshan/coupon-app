@@ -1,0 +1,75 @@
+# TC025: Create Deal - Inventory Setting
+# 测试步骤：创建 Deal → 设置库存 100 → 验证库存显示正确
+# 预期结果：库存设置为 100，Unlimited 开关关闭，库存数量输入框显示 100
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+- launchApp:
+    clearState: true
+
+# 引用共享登录
+- runFlow: ../../shared/login.yaml
+
+# 等待 Dashboard 加载完成
+- extendedWaitUntil:
+    visible: "Dashboard"
+    timeout: 10000
+
+# 导航到 Deal 列表
+- tapOn: "Manage Deals"
+- extendedWaitUntil:
+    visible: "My Deals"
+    timeout: 8000
+
+# 创建 Deal
+- tapOn: "Create Deal"
+- extendedWaitUntil:
+    visible: "Create Deal"
+    timeout: 5000
+
+# Step 1: 填写基本信息（最小必填）
+- tapOn: "Deal Title"
+- inputText: "Inventory Test Deal"
+- hideKeyboard
+
+- tapOn: "Description"
+- inputText: "Test deal for inventory setting verification"
+- hideKeyboard
+
+# 进入 Step 2（价格）
+- tapOn: "Continue"
+
+# Step 2: 输入价格
+- tapOn: "Deal Price"
+- inputText: "25"
+- hideKeyboard
+
+# 进入 Step 3（库存和有效期）
+- tapOn: "Continue"
+
+# Step 3: 设置库存
+- extendedWaitUntil:
+    visible: "Stock & Validity"
+    timeout: 5000
+- assertVisible: "Stock Quantity"
+- takeScreenshot: TC025_step3_stock_initial
+
+# 确保 Unlimited 开关处于关闭状态（默认应该关闭）
+- assertVisible: "Unlimited"
+
+# 输入库存数量 100
+- tapOn:
+    text: "Stock quantity"
+    optional: true
+- inputText: "100"
+- hideKeyboard
+- takeScreenshot: TC025_step3_stock_100
+
+# 验证库存设置
+- assertVisible: "100"
+- takeScreenshot: TC025_step3_stock_verified
+
+# 设置有效期（Days After Purchase = 30 天）
+- assertVisible: "Validity"
+- takeScreenshot: TC025_create_deal_inventory_result

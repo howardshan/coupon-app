@@ -238,6 +238,118 @@ class EarningsService {
   }
 
   // =============================================================
+  // 提现相关方法（调 merchant-withdrawal Edge Function）
+  // =============================================================
+
+  static const String _withdrawalFn = 'merchant-withdrawal';
+
+  /// 获取可提现余额
+  Future<WithdrawalBalance> fetchWithdrawalBalance() async {
+    try {
+      final response = await _supabase.functions.invoke(
+        '$_withdrawalFn/balance',
+        method: HttpMethod.get,
+      );
+      final data = _parseResponse(response);
+      if (data['error'] != null) {
+        throw EarningsException(
+          code: 'balance_error',
+          message: data['error'] as String? ?? 'Failed to fetch balance',
+        );
+      }
+      return WithdrawalBalance.fromJson(data);
+    } catch (e) {
+      if (e is EarningsException) rethrow;
+      return WithdrawalBalance.zero();
+    }
+  }
+
+  /// 发起手动提现
+  Future<WithdrawalRecord> requestWithdrawal(double amount) async {
+    final response = await _supabase.functions.invoke(
+      '$_withdrawalFn/withdraw',
+      method: HttpMethod.post,
+      body: {'amount': amount},
+    );
+    final data = _parseResponse(response);
+    if (data['error'] != null) {
+      throw EarningsException(
+        code: 'withdrawal_error',
+        message: data['error'] as String? ?? 'Failed to request withdrawal',
+      );
+    }
+    return WithdrawalRecord.fromJson(
+      data['withdrawal'] as Map<String, dynamic>? ?? data,
+    );
+  }
+
+  /// 获取提现记录
+  Future<List<WithdrawalRecord>> fetchWithdrawalHistory() async {
+    try {
+      final response = await _supabase.functions.invoke(
+        '$_withdrawalFn/history',
+        method: HttpMethod.get,
+      );
+      final data = _parseResponse(response);
+      if (data['error'] != null) {
+        throw EarningsException(
+          code: 'history_error',
+          message: data['error'] as String? ?? 'Failed to fetch history',
+        );
+      }
+      final list = data['withdrawals'] as List<dynamic>? ?? [];
+      return list
+          .map((e) => WithdrawalRecord.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      if (e is EarningsException) rethrow;
+      return [];
+    }
+  }
+
+  /// 获取提现设置
+  Future<WithdrawalSettings> fetchWithdrawalSettings() async {
+    try {
+      final response = await _supabase.functions.invoke(
+        '$_withdrawalFn/settings',
+        method: HttpMethod.get,
+      );
+      final data = _parseResponse(response);
+      if (data['error'] != null) return WithdrawalSettings.defaults();
+      return WithdrawalSettings.fromJson(
+        data['settings'] as Map<String, dynamic>? ?? data,
+      );
+    } catch (_) {
+      return WithdrawalSettings.defaults();
+    }
+  }
+
+  /// 更新提现设置
+  Future<void> updateWithdrawalSettings({
+    bool? autoEnabled,
+    String? frequency,
+    int? day,
+  }) async {
+    final body = <String, dynamic>{};
+    if (autoEnabled != null) body['auto_withdrawal_enabled'] = autoEnabled;
+    if (frequency != null) body['auto_withdrawal_frequency'] = frequency;
+    if (day != null) body['auto_withdrawal_day'] = day;
+
+    final response = await _supabase.functions.invoke(
+      '$_withdrawalFn/settings',
+      method: HttpMethod.patch,
+      body: body,
+    );
+    final data = _parseResponse(response);
+    if (data['error'] != null) {
+      throw EarningsException(
+        code: 'settings_error',
+        message: data['error'] as String? ?? 'Failed to update settings',
+      );
+    }
+  }
+
+  // =============================================================
   // 私有工具方法
   // =============================================================
 

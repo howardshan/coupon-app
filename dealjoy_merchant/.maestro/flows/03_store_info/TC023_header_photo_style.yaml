@@ -1,0 +1,79 @@
+# TC023: Header Photo Style Selection
+# 测试步骤：登录 → Store Profile → Store Photos → Header Display Style → 选择 "Three Photos" → Save
+# 预期结果：Header style 切换为 Triple 模式，保存成功
+# 注意：此功能在 Store Photos 页面内的 Header Display Style 区块
+# 导航路径: Dashboard → Store → Store Photos (Edit) → Header Display Style → Three Photos → Save
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+- launchApp:
+    clearState: true
+
+# 引用共享登录
+- runFlow: ../../shared/login.yaml
+
+# 等待 Dashboard 加载完成
+- extendedWaitUntil:
+    visible: "Dashboard"
+    timeout: 10000
+
+# 点击 Store 快捷入口进入 Store Profile 页面
+- tapOn: "Store"
+
+# 等待 Store Profile 页面加载
+- extendedWaitUntil:
+    visible: "Store Photos"
+    timeout: 10000
+
+# 滚动到 Store Photos 区块
+- scrollUntilVisible:
+    element: "Store Photos"
+    direction: DOWN
+    timeout: 5000
+
+# 点击 Store Photos 区块的 Edit 按钮
+- tapOn:
+    text: "Edit"
+    index: 3
+
+# 等待 Store Photos 管理页面加载
+- extendedWaitUntil:
+    visible: "Header Display Style"
+    timeout: 5000
+
+# 验证 Header Display Style 区块可见
+- assertVisible: "Header Display Style"
+- assertVisible: "How your store page header looks to customers"
+
+# 截图：Header Style 区块（默认状态）
+- takeScreenshot: TC023_header_style_default
+
+# 点击 "Three Photos" 选项（SegmentedButton 中的 Triple 模式）
+- tapOn: "Three Photos"
+
+# 等待模式切换完成（可能显示照片选择网格）
+- extendedWaitUntil:
+    visible: "Select 3 photos for triple header:"
+    timeout: 5000
+
+# 截图：切换到 Three Photos 模式
+- takeScreenshot: TC023_triple_mode_selected
+
+# 如果有可用照片，Save 按钮会出现
+# 滚动找到 Save Header Style 按钮
+- scrollUntilVisible:
+    element: "Save Header Style"
+    direction: DOWN
+    timeout: 5000
+
+# 点击 Save Header Style 保存
+- tapOn: "Save Header Style"
+
+# 等待保存成功提示
+- extendedWaitUntil:
+    visible: "Header style saved"
+    timeout: 10000
+
+# 截图：保存成功
+- takeScreenshot: TC023_save_success

@@ -1,0 +1,13 @@
+appId: com.dealjoy.dealjoy_merchant
+name: "TC_P7_01 - Scan page visible for authorized roles"
+---
+- runFlow: ../../shared/login.yaml
+
+# 导航到 Scan 页面
+- tapOn: "Scan"
+
+# 验证扫码页面
+- extendedWaitUntil:
+    visible: "Scan"
+    timeout: 15000
+- takeScreenshot: P7_TC01_scan_page

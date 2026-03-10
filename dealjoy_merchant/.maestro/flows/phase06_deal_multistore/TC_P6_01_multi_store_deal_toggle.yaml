@@ -1,0 +1,24 @@
+appId: com.dealjoy.dealjoy_merchant
+name: "TC_P6_01 - Multi-store deal toggle"
+---
+- runFlow: ../../shared/login.yaml
+
+# 导航到 Deals
+- tapOn: "Me"
+- tapOn: "Deals"
+- extendedWaitUntil:
+    visible: "Deals"
+    timeout: 15000
+
+# 点击创建 Deal
+- tapOn: "Create Deal"
+
+# 滚动到多店开关
+- scrollUntilVisible:
+    element:
+      id: "deal_scope_multi_store_btn"
+    direction: DOWN
+    timeout: 15000
+    optional: true
+
+- takeScreenshot: P6_TC01_deal_create

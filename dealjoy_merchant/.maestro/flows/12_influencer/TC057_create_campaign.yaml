@@ -1,0 +1,36 @@
+# TC057: 创建 Influencer Campaign
+# 测试步骤：登录 → 通过 Dashboard 或 Me tab 进入 Influencer Hub → 验证页面可达
+# 预期结果：Influencer 页面成功加载
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+# 登录
+- runFlow: ../../shared/login.yaml
+
+# 等待 Dashboard 加载
+- extendedWaitUntil:
+    visible: "Dashboard"
+    timeout: 10000
+
+# 尝试通过 Me tab 进入 Influencer Hub
+- tapOn: "Me"
+
+- extendedWaitUntil:
+    visible: "Me"
+    timeout: 10000
+
+# 点击 Influencer Hub 入口
+- tapOn:
+    text: "Influencer"
+    optional: true
+
+# 等待 Influencer 页面加载
+- extendedWaitUntil:
+    visible: "Influencer"
+    timeout: 10000
+
+- takeScreenshot: TC057_influencer_hub_page
+
+# 验证 Influencer 页面可达
+- takeScreenshot: TC057_create_campaign_result

@@ -1,0 +1,36 @@
+# TC041: 查看扫码核销历史
+# 测试步骤：登录 → Scan tab → 查看 Redemption History
+# 预期结果：历史列表正确显示
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+# 登录
+- runFlow: ../../shared/login.yaml
+
+# 点击底部 Scan tab
+- tapOn: "Scan"
+
+# 等待扫码页面加载
+- extendedWaitUntil:
+    visible: "Scan QR"
+    timeout: 10000
+
+# 截图保存扫码页面
+- takeScreenshot: TC041_scan_page
+
+# 进入扫码历史（点击 Redemption History 按钮或 tooltip 图标）
+- tapOn:
+    text: "Redemption History"
+    optional: true
+- tapOn:
+    id: "redemption_history"
+    optional: true
+
+# 等待历史列表加载
+- extendedWaitUntil:
+    visible: "History"
+    timeout: 10000
+
+# 截图保存历史列表
+- takeScreenshot: TC041_scan_history_list

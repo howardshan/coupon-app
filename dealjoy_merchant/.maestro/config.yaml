@@ -1,0 +1,9 @@
+# DealJoy Merchant App — Maestro 自动化测试配置
+appId: com.dealjoy.dealjoy_merchant
+name: DealJoy Merchant Tests
+
+# 环境变量：测试账号
+env:
+  TEST_EMAIL: "merchant@test.com"
+  TEST_PASSWORD: "test1234"
+  ANDROID_HOME: "${HOME}/Library/Android/sdk"

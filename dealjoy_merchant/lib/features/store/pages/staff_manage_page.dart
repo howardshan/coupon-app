@@ -28,6 +28,7 @@ class StaffManagePage extends ConsumerWidget {
         surfaceTintColor: Colors.transparent,
       ),
       floatingActionButton: FloatingActionButton.extended(
+        key: const ValueKey('staff_invite_btn'),
         onPressed: () => _showInviteDialog(context, ref),
         backgroundColor: _primaryColor,
         foregroundColor: Colors.white,
@@ -240,12 +241,18 @@ class StaffManagePage extends ConsumerWidget {
   Widget _buildRoleBadge(StaffRole role) {
     Color color;
     switch (role) {
+      case StaffRole.regional_manager:
+        color = Colors.indigo;
       case StaffRole.manager:
         color = Colors.blue;
+      case StaffRole.finance:
+        color = Colors.teal;
       case StaffRole.service:
         color = Colors.green;
       case StaffRole.cashier:
         color = Colors.purple;
+      case StaffRole.trainee:
+        color = Colors.grey;
     }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
@@ -276,6 +283,7 @@ class StaffManagePage extends ConsumerWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(
+                key: const ValueKey('staff_invite_email_field'),
                 controller: emailController,
                 decoration: const InputDecoration(
                   labelText: 'Email Address',
@@ -286,6 +294,7 @@ class StaffManagePage extends ConsumerWidget {
               ),
               const SizedBox(height: 16),
               DropdownButtonFormField<StaffRole>(
+                key: const ValueKey('staff_invite_role_dropdown'),
                 value: selectedRole,
                 decoration: const InputDecoration(
                   labelText: 'Role',
@@ -319,6 +328,7 @@ class StaffManagePage extends ConsumerWidget {
               child: const Text('Cancel'),
             ),
             FilledButton(
+              key: const ValueKey('staff_invite_submit_btn'),
               onPressed: () => Navigator.pop(ctx, true),
               child: const Text('Send Invite'),
             ),

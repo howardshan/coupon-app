@@ -62,6 +62,10 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
   late final TextEditingController _maxPerPersonController;
   bool _isStackable = true;
 
+  // Step 4b: 多店适用（仅连锁店显示）
+  bool _isMultiStore = false;
+  final Set<String> _selectedStoreIds = {};
+
   // Step 5: 图片
   final List<XFile> _selectedImages = [];
   bool _isSubmitting = false;
@@ -250,6 +254,9 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
             : null,
         isStackable:     _isStackable,
         dealCategoryId:  _selectedDealCategoryId,
+        applicableMerchantIds: _isMultiStore && _selectedStoreIds.isNotEmpty
+            ? _selectedStoreIds.toList()
+            : null,
         images:          widget.editDeal?.images ?? [],
         createdAt:       widget.editDeal?.createdAt ?? DateTime.now(),
         updatedAt:       DateTime.now(),
@@ -1094,9 +1101,164 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
                 ],
               ),
             ),
+
+            // 多店适用（仅连锁店显示）
+            _buildMultiStoreSection(),
           ],
         ),
       ),
+    );
+  }
+
+  // ============================================================
+  // 多店适用选择（仅连锁店品牌管理员显示）
+  // ============================================================
+  Widget _buildMultiStoreSection() {
+    final storeInfo = ref.watch(storeProvider).valueOrNull;
+    final isChain = storeInfo?.isChainStore ?? false;
+    if (!isChain) return const SizedBox.shrink();
+
+    final storesAsync = ref.watch(brandStoresProvider);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 20),
+        _sectionLabel('Applicable Stores'),
+        const SizedBox(height: 8),
+        // 切换: 仅本店 / 多店通用
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: const Color(0xFFE0E0E0)),
+          ),
+          child: Column(
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Multiple Locations',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: Color(0xFF333333),
+                        ),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        'Available at other store locations',
+                        style: TextStyle(fontSize: 12, color: Color(0xFF999999)),
+                      ),
+                    ],
+                  ),
+                  Switch(
+                    key: const ValueKey('deal_scope_multi_store_btn'),
+                    value: _isMultiStore,
+                    activeThumbColor: const Color(0xFFFF6B35),
+                    onChanged: (v) => setState(() {
+                      _isMultiStore = v;
+                      if (!v) _selectedStoreIds.clear();
+                    }),
+                  ),
+                ],
+              ),
+              // 门店勾选列表
+              if (_isMultiStore)
+                storesAsync.when(
+                  loading: () => const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: Center(
+                      child: SizedBox(
+                        width: 20, height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ),
+                  ),
+                  error: (e, _) => Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: Text('Failed to load stores',
+                        style: TextStyle(color: Colors.red[400], fontSize: 13)),
+                  ),
+                  data: (stores) {
+                    if (stores.isEmpty) {
+                      return const Padding(
+                        padding: EdgeInsets.all(8),
+                        child: Text('No other stores found',
+                            style: TextStyle(fontSize: 13, color: Color(0xFF999999))),
+                      );
+                    }
+                    return Column(
+                      children: [
+                        const Divider(height: 16),
+                        // 全选按钮
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            TextButton(
+                              onPressed: () {
+                                setState(() {
+                                  if (_selectedStoreIds.length == stores.length) {
+                                    _selectedStoreIds.clear();
+                                  } else {
+                                    _selectedStoreIds.addAll(
+                                      stores.map((s) => s.id),
+                                    );
+                                  }
+                                });
+                              },
+                              child: Text(
+                                _selectedStoreIds.length == stores.length
+                                    ? 'Deselect All'
+                                    : 'Select All',
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: Color(0xFFFF6B35),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        ...stores.map((store) => CheckboxListTile(
+                              key: ValueKey('deal_store_checkbox_${store.id}'),
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              activeColor: const Color(0xFFFF6B35),
+                              title: Text(store.name,
+                                  style: const TextStyle(fontSize: 14)),
+                              subtitle: store.address != null &&
+                                      store.address!.isNotEmpty
+                                  ? Text(store.address!,
+                                      style: const TextStyle(
+                                          fontSize: 12,
+                                          color: Color(0xFF999999)),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis)
+                                  : null,
+                              value: _selectedStoreIds.contains(store.id),
+                              onChanged: (v) {
+                                setState(() {
+                                  if (v == true) {
+                                    _selectedStoreIds.add(store.id);
+                                  } else {
+                                    _selectedStoreIds.remove(store.id);
+                                  }
+                                });
+                              },
+                            )),
+                      ],
+                    );
+                  },
+                ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 

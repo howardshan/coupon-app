@@ -1,0 +1,25 @@
+# Phase 3 TC01: 门店老板登录后进入 Dashboard
+# 功能点 #90: 门店老板登录 → 直接进入 Dashboard
+appId: com.dealjoy.dealjoy_merchant
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "Welcome back"
+    timeout: 30000
+- tapOn: "Email"
+- inputText: "testmerchant@dealjoy.com"
+- tapOn: "Password"
+- inputText: "Test123456"
+- hideKeyboard
+- extendedWaitUntil:
+    visible: "Sign In"
+    timeout: 5000
+- tapOn: "Sign In"
+
+# 验证进入 Dashboard（不是 store-selector）
+- extendedWaitUntil:
+    visible: "Today's Stats"
+    timeout: 20000
+
+- takeScreenshot: P3_TC01_owner_dashboard

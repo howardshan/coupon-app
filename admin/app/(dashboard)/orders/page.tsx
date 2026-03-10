@@ -5,7 +5,6 @@ import OrderRefundButtons from '@/components/order-refund-buttons'
 import OrderSearchForm from '@/components/order-search-form'
 import OrdersTableContainer from '@/components/orders-table-container'
 import { OrdersSearchProvider } from '@/contexts/orders-search-context'
-import { getOrderDisplayStatus } from '@/lib/order-display-status'
 
 export default async function OrdersPage({
   searchParams,
@@ -40,11 +39,38 @@ export default async function OrdersPage({
         refund_reason,
         created_at,
         users ( email ),
-        deals ( title, expires_at, merchants ( name ) )
+        deals ( title, merchants ( name ) ),
+        coupons ( redeemed_at_merchant_id )
       `)
       .order('created_at', { ascending: false })
       .limit(100)
     orders = data
+  }
+
+  // 获取核销门店名称映射
+  const redeemedMerchantIds = new Set<string>()
+  if (orders) {
+    for (const o of orders) {
+      const coupons = o.coupons as any[] | null
+      if (coupons) {
+        for (const c of coupons) {
+          if (c.redeemed_at_merchant_id) redeemedMerchantIds.add(c.redeemed_at_merchant_id)
+        }
+      }
+    }
+  }
+
+  let redeemedMerchantNames: Record<string, string> = {}
+  if (redeemedMerchantIds.size > 0) {
+    const { data: merchants } = await supabase
+      .from('merchants')
+      .select('id, name')
+      .in('id', Array.from(redeemedMerchantIds))
+    if (merchants) {
+      for (const m of merchants) {
+        redeemedMerchantNames[m.id] = m.name
+      }
+    }
   }
 
   const refundCount = orders?.filter((o: { status: string }) => o.status === 'refund_requested').length ?? 0
@@ -67,58 +93,68 @@ export default async function OrdersPage({
         <OrdersTableContainer>
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
             <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Order #</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Deal</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Merchant</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Customer</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Amount</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Date</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {(orders as any[])?.map((o: any) => {
-              const displayStatus = getOrderDisplayStatus(o)
-              return (
-              <tr
-                key={o.id}
-                className={o.status === 'refund_requested' ? 'bg-orange-50/60' : 'hover:bg-gray-50'}
-              >
-                <td className="px-4 py-3 font-mono text-gray-700">
-                  <Link href={`/orders/${o.id}`} className="text-blue-600 hover:underline">
-                    {o.order_number ?? `DJ-${String(o.id).slice(0, 8).toUpperCase()}`}
-                  </Link>
-                </td>
-                <td className="px-4 py-3 font-medium text-gray-900">
-                  <Link href={`/orders/${o.id}`} className="text-blue-600 hover:underline">
-                    {o.deals?.title ?? '—'}
-                  </Link>
-                </td>
-                <td className="px-4 py-3 text-gray-600">{o.deals?.merchants?.name ?? '—'}</td>
-                <td className="px-4 py-3 text-gray-600">{o.users?.email ?? '—'}</td>
-                <td className="px-4 py-3 text-gray-900">
-                  ${o.total_amount}
-                  {o.quantity > 1 && (
-                    <span className="text-gray-400 text-xs ml-1">×{o.quantity}</span>
-                  )}
-                </td>
-                <td className="px-4 py-3">
-                  <OrderRefundButtons orderId={o.id} initialStatus={o.status} displayStatus={displayStatus} />
-                </td>
-                <td className="px-4 py-3 text-gray-500">
-                  {new Date(o.created_at).toLocaleDateString()}
-                </td>
-              </tr>
-            )})}
-          </tbody>
-        </table>
-        {(!orders || orders.length === 0) && (
-          <p className="text-center text-gray-400 py-8">
-            {q != null && q.trim() !== '' ? 'No orders match your search.' : 'No orders yet'}
-          </p>
-        )}
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">Order #</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">Deal</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">Merchant</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">Redeemed At</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">Customer</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">Amount</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">Date</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {(orders as any[])?.map((o: any) => {
+                  // 获取核销门店
+                  const coupons = o.coupons as any[] | null
+                  const redeemedId = coupons?.[0]?.redeemed_at_merchant_id
+                  const redeemedName = redeemedId ? redeemedMerchantNames[redeemedId] : null
+
+                  return (
+                    <tr key={o.id} className={o.status === 'refund_requested' ? 'bg-orange-50/60' : 'hover:bg-gray-50'}>
+                      <td className="px-4 py-3 font-mono text-gray-700">
+                        <Link href={`/orders/${o.id}`} className="text-blue-600 hover:underline">
+                          {o.order_number ?? `DJ-${String(o.id).slice(0, 8).toUpperCase()}`}
+                        </Link>
+                      </td>
+                      <td className="px-4 py-3 font-medium text-gray-900">
+                        <Link href={`/orders/${o.id}`} className="text-blue-600 hover:underline">
+                          {o.deals?.title ?? '—'}
+                        </Link>
+                      </td>
+                      <td className="px-4 py-3 text-gray-600">{o.deals?.merchants?.name ?? '—'}</td>
+                      <td className="px-4 py-3 text-gray-600">
+                        {redeemedName ? (
+                          <span className="text-xs">{redeemedName}</span>
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-gray-600">{o.users?.email ?? '—'}</td>
+                      <td className="px-4 py-3 text-gray-900">
+                        ${o.total_amount}
+                        {o.quantity > 1 && (
+                          <span className="text-gray-400 text-xs ml-1">×{o.quantity}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <OrderRefundButtons orderId={o.id} initialStatus={o.status} />
+                      </td>
+                      <td className="px-4 py-3 text-gray-500">
+                        {new Date(o.created_at).toLocaleDateString()}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+            {(!orders || orders.length === 0) && (
+              <p className="text-center text-gray-400 py-8">
+                {q != null && q.trim() !== '' ? 'No orders match your search.' : 'No orders yet'}
+              </p>
+            )}
           </div>
         </OrdersTableContainer>
       </div>

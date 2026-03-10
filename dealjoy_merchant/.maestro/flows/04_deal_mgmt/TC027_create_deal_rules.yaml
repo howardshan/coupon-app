@@ -1,0 +1,97 @@
+# TC027: Create Deal - Usage Rules Setting
+# 测试步骤：创建 Deal → 设置使用规则（Mon-Thu only, max 2 per person）→ 验证规则显示
+# 预期结果：可用日期选中 Mon~Thu，每人限购 2 份，规则显示正确
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+- launchApp:
+    clearState: true
+
+# 引用共享登录
+- runFlow: ../../shared/login.yaml
+
+# 等待 Dashboard 加载完成
+- extendedWaitUntil:
+    visible: "Dashboard"
+    timeout: 10000
+
+# 导航到 Deal 列表
+- tapOn: "Manage Deals"
+- extendedWaitUntil:
+    visible: "My Deals"
+    timeout: 8000
+
+# 创建 Deal
+- tapOn: "Create Deal"
+- extendedWaitUntil:
+    visible: "Create Deal"
+    timeout: 5000
+
+# Step 1: 填写基本信息（最小必填）
+- tapOn: "Deal Title"
+- inputText: "Usage Rules Test Deal"
+- hideKeyboard
+
+- tapOn: "Description"
+- inputText: "Test deal for usage rules verification"
+- hideKeyboard
+
+# 进入 Step 2
+- tapOn: "Continue"
+
+# Step 2: 输入价格
+- tapOn: "Deal Price"
+- inputText: "30"
+- hideKeyboard
+
+# 进入 Step 3
+- tapOn: "Continue"
+
+# Step 3: 设置库存和有效期（快速跳过）
+- extendedWaitUntil:
+    visible: "Stock & Validity"
+    timeout: 5000
+
+# 开启 Unlimited 库存
+- tapOn: "Unlimited"
+
+# 选择有效期类型
+- tapOn: "Days After Purchase"
+- tapOn:
+    text: "Number of days"
+    optional: true
+- inputText: "30"
+- hideKeyboard
+
+# 进入 Step 4
+- tapOn: "Continue"
+
+# Step 4: 使用规则
+- extendedWaitUntil:
+    visible: "Usage Rules"
+    timeout: 5000
+- assertVisible: "Available Days"
+- takeScreenshot: TC027_step4_rules_initial
+
+# 选择 Mon-Thu（FilterChip 点击）
+- tapOn: "Mon"
+- tapOn: "Tue"
+- tapOn: "Wed"
+- tapOn: "Thu"
+- takeScreenshot: TC027_step4_days_selected
+
+# 设置 Max Per Person = 2
+- tapOn:
+    text: "Max per person"
+    optional: true
+- inputText: "2"
+- hideKeyboard
+- takeScreenshot: TC027_step4_max_per_person
+
+# 验证 Stackable 开关可见
+- assertVisible: "Stackable"
+- takeScreenshot: TC027_step4_rules_complete
+
+# 最终截图
+- takeScreenshot: TC027_create_deal_rules_result

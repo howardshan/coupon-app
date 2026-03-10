@@ -26,6 +26,8 @@ class CouponModel {
   final String? merchantAddress;
   final String? merchantPhone;
 
+  // 多店通用：适用门店 ID 列表
+  final List<String>? applicableMerchantIds;
   /// 来自 orders 表，用于区分同一 deal 的多次购买
   final String? orderNumber;
 
@@ -50,6 +52,7 @@ class CouponModel {
     this.merchantLogoUrl,
     this.merchantAddress,
     this.merchantPhone,
+    this.applicableMerchantIds,
     this.orderNumber,
   });
 
@@ -93,6 +96,10 @@ class CouponModel {
       merchantLogoUrl: merchants?['logo_url'] as String?,
       merchantAddress: merchants?['address'] as String?,
       merchantPhone: merchants?['phone'] as String?,
+      applicableMerchantIds: (deals?['applicable_merchant_ids'] as List?)
+          ?.map((e) => e?.toString() ?? '')
+          .where((s) => s.isNotEmpty)
+          .toList(),
       orderNumber: orders?['order_number'] as String?,
     );
   }

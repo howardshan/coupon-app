@@ -1,0 +1,86 @@
+appId: com.dealjoy.dealjoy_merchant
+name: "Phase1-02: Multiple Locations (Brand) Registration Flow"
+---
+- stopApp:
+    appId: com.dealjoy.dealjoy_merchant
+- clearState:
+    appId: com.dealjoy.dealjoy_merchant
+- launchApp:
+    appId: com.dealjoy.dealjoy_merchant
+
+# 等待登录页
+- extendedWaitUntil:
+    visible: "Welcome back"
+    timeout: 30000
+
+# 进入注册页
+- tapOn: "Register"
+
+# Step 0: Create Account
+- extendedWaitUntil:
+    visible: "Create Account"
+    timeout: 15000
+
+- tapOn:
+    id: "register_email_field"
+- inputText: "test_multi_001@testmail.com"
+
+- tapOn:
+    id: "register_password_field"
+- inputText: "Test1234!"
+
+- tapOn:
+    id: "register_confirm_password_field"
+- inputText: "Test1234!"
+
+- tapOn:
+    id: "register_next_btn"
+
+# Step 1: Store Type 页面
+- extendedWaitUntil:
+    visible: "How many locations?"
+    timeout: 15000
+
+# 选择 Multiple Locations
+- tapOn:
+    id: "reg_type_multiple"
+
+# 点击 Next
+- tapOn:
+    id: "register_next_btn"
+
+# Step 2: Business Info 页面（连锁模式应该显示品牌字段）
+- extendedWaitUntil:
+    visible: "Tell us about your business"
+    timeout: 15000
+
+# 验证品牌字段显示
+- extendedWaitUntil:
+    visible: "Brand Information"
+    timeout: 5000
+
+# 填写公司信息
+- tapOn:
+    id: "register_company_name"
+- inputText: "Test Chain Corp"
+
+- tapOn:
+    id: "register_contact_name"
+- inputText: "Jane Smith"
+
+- tapOn:
+    id: "register_phone"
+- inputText: "+15559876543"
+
+# 滚动到品牌字段
+- scrollUntilVisible:
+    element:
+      id: "register_brand_name"
+    direction: DOWN
+
+- tapOn:
+    id: "register_brand_name"
+- inputText: "Test Chain Brand"
+
+# 截图
+- takeScreenshot: phase01_multi_reg_step2_brand

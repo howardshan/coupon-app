@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../shared/providers/supabase_provider.dart';
 import '../../../deals/domain/providers/deals_provider.dart';
+import '../../data/models/brand_detail_model.dart';
 import '../../data/models/merchant_model.dart';
 import '../../data/repositories/merchant_repository.dart';
 
@@ -83,4 +84,14 @@ final merchantsByIdsProvider =
     FutureProvider.family<List<MerchantModel>, List<String>>((ref, ids) async {
   if (ids.isEmpty) return [];
   return ref.watch(merchantRepositoryProvider).fetchMerchantsByIds(ids);
+});
+
+// ============================================================
+// V2.4 品牌聚合页 Provider
+// ============================================================
+
+/// 品牌详情（含旗下门店列表 + 聚合数据）
+final brandDetailProvider =
+    FutureProvider.family<BrandDetailModel, String>((ref, brandId) async {
+  return ref.watch(merchantRepositoryProvider).fetchBrandDetail(brandId);
 });

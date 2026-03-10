@@ -1,0 +1,31 @@
+appId: com.dealjoy.dealjoy_merchant
+name: "TC_P9_01 - Close store dialog for owner"
+---
+- runFlow: ../../shared/login.yaml
+
+# 导航到 Me/Settings
+- tapOn: "Me"
+- tapOn: "Settings"
+- extendedWaitUntil:
+    visible: "Settings"
+    timeout: 15000
+
+# 滚动到 Danger Zone
+- scrollUntilVisible:
+    element:
+      id: "settings_close_store_btn"
+    direction: DOWN
+
+# 点击 Close Store
+- tapOn:
+    id: "settings_close_store_btn"
+
+# 验证确认弹窗
+- extendedWaitUntil:
+    visible: "Close Store"
+    timeout: 10000
+- assertVisible: "Deactivate all active deals"
+
+# 取消
+- tapOn: "Cancel"
+- takeScreenshot: P9_TC01_close_store_dialog

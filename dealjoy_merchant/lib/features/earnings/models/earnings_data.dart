@@ -462,3 +462,152 @@ class TransactionsFilter {
 
   bool get hasFilter => dateFrom != null || dateTo != null;
 }
+
+// =============================================================
+// WithdrawalBalance — 可提现余额信息
+// =============================================================
+class WithdrawalBalance {
+  final double availableBalance;
+  final double pendingWithdrawal;
+  final double totalWithdrawn;
+
+  const WithdrawalBalance({
+    required this.availableBalance,
+    required this.pendingWithdrawal,
+    required this.totalWithdrawn,
+  });
+
+  factory WithdrawalBalance.fromJson(Map<String, dynamic> json) {
+    return WithdrawalBalance(
+      availableBalance:  (json['available_balance'] as num?)?.toDouble() ?? 0.0,
+      pendingWithdrawal: (json['pending_withdrawal'] as num?)?.toDouble() ?? 0.0,
+      totalWithdrawn:    (json['total_withdrawn'] as num?)?.toDouble() ?? 0.0,
+    );
+  }
+
+  factory WithdrawalBalance.zero() {
+    return const WithdrawalBalance(
+      availableBalance: 0.0,
+      pendingWithdrawal: 0.0,
+      totalWithdrawn: 0.0,
+    );
+  }
+}
+
+// =============================================================
+// WithdrawalRecord — 提现记录
+// =============================================================
+class WithdrawalRecord {
+  final String id;
+  final double amount;
+  final String status; // pending, processing, completed, failed, cancelled
+  final DateTime requestedAt;
+  final DateTime? completedAt;
+  final String? failureReason;
+
+  const WithdrawalRecord({
+    required this.id,
+    required this.amount,
+    required this.status,
+    required this.requestedAt,
+    this.completedAt,
+    this.failureReason,
+  });
+
+  factory WithdrawalRecord.fromJson(Map<String, dynamic> json) {
+    return WithdrawalRecord(
+      id:            json['id'] as String? ?? '',
+      amount:        (json['amount'] as num?)?.toDouble() ?? 0.0,
+      status:        json['status'] as String? ?? 'pending',
+      requestedAt:   json['requested_at'] != null
+          ? DateTime.parse(json['requested_at'] as String)
+          : DateTime.now(),
+      completedAt:   json['completed_at'] != null
+          ? DateTime.parse(json['completed_at'] as String)
+          : null,
+      failureReason: json['failure_reason'] as String?,
+    );
+  }
+
+  /// 状态显示标签
+  String get statusLabel {
+    switch (status) {
+      case 'pending':    return 'Pending';
+      case 'processing': return 'Processing';
+      case 'completed':  return 'Completed';
+      case 'failed':     return 'Failed';
+      case 'cancelled':  return 'Cancelled';
+      default:           return status;
+    }
+  }
+
+  /// 状态颜色
+  int get statusColorValue {
+    switch (status) {
+      case 'completed':  return 0xFF2E7D32;
+      case 'pending':
+      case 'processing': return 0xFFF57F17;
+      case 'failed':     return 0xFFC62828;
+      case 'cancelled':  return 0xFF757575;
+      default:           return 0xFF757575;
+    }
+  }
+}
+
+// =============================================================
+// BankAccountInfo — 银行账户信息
+// =============================================================
+class BankAccountInfo {
+  final String id;
+  final String? bankName;
+  final String? last4;
+  final String status; // active, pending, restricted
+  final String? stripeAccountId;
+
+  const BankAccountInfo({
+    required this.id,
+    this.bankName,
+    this.last4,
+    required this.status,
+    this.stripeAccountId,
+  });
+
+  factory BankAccountInfo.fromJson(Map<String, dynamic> json) {
+    return BankAccountInfo(
+      id:              json['id'] as String? ?? '',
+      bankName:        json['bank_name'] as String?,
+      last4:           json['last4'] as String?,
+      status:          json['status'] as String? ?? 'pending',
+      stripeAccountId: json['stripe_account_id'] as String?,
+    );
+  }
+}
+
+// =============================================================
+// WithdrawalSettings — 自动提现设置
+// =============================================================
+class WithdrawalSettings {
+  final bool autoWithdrawalEnabled;
+  final String? autoWithdrawalFrequency; // weekly, biweekly, monthly
+  final int? autoWithdrawalDay;
+
+  const WithdrawalSettings({
+    required this.autoWithdrawalEnabled,
+    this.autoWithdrawalFrequency,
+    this.autoWithdrawalDay,
+  });
+
+  factory WithdrawalSettings.fromJson(Map<String, dynamic> json) {
+    return WithdrawalSettings(
+      autoWithdrawalEnabled:   json['auto_withdrawal_enabled'] as bool? ?? false,
+      autoWithdrawalFrequency: json['auto_withdrawal_frequency'] as String?,
+      autoWithdrawalDay:       json['auto_withdrawal_day'] as int?,
+    );
+  }
+
+  factory WithdrawalSettings.defaults() {
+    return const WithdrawalSettings(
+      autoWithdrawalEnabled: false,
+    );
+  }
+}

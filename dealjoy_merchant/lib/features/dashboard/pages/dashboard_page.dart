@@ -11,6 +11,7 @@ import '../providers/dashboard_provider.dart';
 import '../widgets/stats_card.dart';
 import '../widgets/shortcut_grid.dart';
 import '../../store/widgets/store_selector.dart';
+import '../../store/providers/store_provider.dart';
 
 // ============================================================
 // DashboardPage — 工作台主页（ConsumerWidget）
@@ -190,6 +191,11 @@ class DashboardPage extends ConsumerWidget {
             ShortcutGrid(
               onTap: (action) => _onShortcutTap(context, action),
             ),
+
+            // ------------------------------------------------
+            // V2.1 品牌总览入口（仅品牌管理员可见）
+            // ------------------------------------------------
+            const _BrandOverviewEntry(),
 
             // ------------------------------------------------
             // 区块 3: 待办提醒（P1 — 有待办时才显示）
@@ -646,6 +652,69 @@ class _TrendSection extends StatelessWidget {
             );
           }),
         ],
+      ),
+    );
+  }
+}
+
+// ============================================================
+// V2.1 品牌总览入口卡片（仅品牌管理员可见）
+// ============================================================
+class _BrandOverviewEntry extends ConsumerWidget {
+  const _BrandOverviewEntry();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final storeAsync = ref.watch(storeProvider);
+    final isBrandAdmin = storeAsync.valueOrNull?.isBrandAdmin ?? false;
+
+    if (!isBrandAdmin) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: InkWell(
+        onTap: () => context.push('/brand-overview'),
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFFFF6B35), Color(0xFFFF8F65)],
+            ),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.dashboard_customize,
+                    color: Colors.white, size: 24),
+              ),
+              const SizedBox(width: 14),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Brand Overview',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold)),
+                    SizedBox(height: 2),
+                    Text('View all stores performance',
+                        style: TextStyle(
+                            color: Colors.white70, fontSize: 13)),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right, color: Colors.white70),
+            ],
+          ),
+        ),
       ),
     );
   }

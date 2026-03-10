@@ -1,0 +1,84 @@
+# TC020: Upload Store Photos
+# 测试步骤：登录 → Store Profile → Store Photos → 验证照片管理页面各区块
+# 预期结果：照片管理页面正常加载，显示各照片类别区块
+# 注意：文件上传在模拟器上可能 BLOCKED（无法选择真实文件），仅验证页面可达
+# 导航路径: Dashboard → Store → Store Photos (Edit) → Photos 页面
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+- launchApp:
+    clearState: true
+
+# 引用共享登录
+- runFlow: ../../shared/login.yaml
+
+# 等待 Dashboard 加载完成
+- extendedWaitUntil:
+    visible: "Dashboard"
+    timeout: 10000
+
+# 点击 Store 快捷入口进入 Store Profile 页面
+- tapOn: "Store"
+
+# 等待 Store Profile 页面加载
+- extendedWaitUntil:
+    visible: "Store Photos"
+    timeout: 10000
+
+# 截图：Store Profile 页面
+- takeScreenshot: TC020_store_profile
+
+# 滚动到 Store Photos 区块（可能需要向下滚动）
+- scrollUntilVisible:
+    element: "Store Photos"
+    direction: DOWN
+    timeout: 5000
+
+# 点击 Store Photos 区块的 Edit 按钮（Store Photos 是第 4 个区块）
+# 找到 Store Photos 区块旁边的 Edit 按钮
+- tapOn:
+    text: "Edit"
+    index: 3
+
+# 等待 Store Photos 管理页面加载
+- extendedWaitUntil:
+    visible: "Store Photos"
+    timeout: 5000
+
+# 验证照片管理页面各区块可见
+- assertVisible: "Header Display Style"
+
+# 截图：照片管理页面顶部
+- takeScreenshot: TC020_photos_page_top
+
+# 向下滚动查看更多照片区块
+- scrollUntilVisible:
+    element: "Cover Photos"
+    direction: DOWN
+    timeout: 5000
+- assertVisible: "Cover Photos"
+
+- scrollUntilVisible:
+    element: "Storefront Photos"
+    direction: DOWN
+    timeout: 5000
+- assertVisible: "Storefront Photos"
+
+- scrollUntilVisible:
+    element: "Environment Photos"
+    direction: DOWN
+    timeout: 5000
+- assertVisible: "Environment Photos"
+
+- scrollUntilVisible:
+    element: "Product Photos"
+    direction: DOWN
+    timeout: 5000
+- assertVisible: "Product Photos"
+
+# 截图：照片管理页面底部
+- takeScreenshot: TC020_photos_page_bottom
+
+# 注意：实际上传操作在模拟器上可能被系统文件选择器阻断
+# 此测试仅验证照片管理页面可达且各区块正常显示

@@ -146,6 +146,7 @@ class _MerchantLoginPageState extends State<MerchantLoginPage> {
 
                 // Email
                 TextFormField(
+                  key: const ValueKey('login_email_field'),
                   controller: _emailCtrl,
                   keyboardType: TextInputType.emailAddress,
                   decoration: const InputDecoration(
@@ -163,6 +164,7 @@ class _MerchantLoginPageState extends State<MerchantLoginPage> {
 
                 // Password
                 TextFormField(
+                  key: const ValueKey('login_password_field'),
                   controller: _passwordCtrl,
                   obscureText: !_passwordVisible,
                   decoration: InputDecoration(
@@ -195,6 +197,7 @@ class _MerchantLoginPageState extends State<MerchantLoginPage> {
 
                 // Sign In button
                 ElevatedButton(
+                  key: const ValueKey('login_submit_btn'),
                   onPressed: _loading ? null : _submit,
                   child: _loading
                       ? const SizedBox(

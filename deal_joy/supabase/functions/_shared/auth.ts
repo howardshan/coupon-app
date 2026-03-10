@@ -10,9 +10,12 @@ export type UserRole =
   | "brand_owner"
   | "brand_admin"
   | "store_owner"
+  | "regional_manager"
   | "manager"
+  | "finance"
   | "cashier"
-  | "service";
+  | "service"
+  | "trainee";
 
 // 权限类型
 export type Permission =
@@ -87,6 +90,21 @@ const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "analytics",
     "settings",
   ],
+  // V2.3 区域经理：管理多店，含品牌权限但不含 settings
+  regional_manager: [
+    "scan",
+    "orders",
+    "orders_detail",
+    "reviews",
+    "deals",
+    "store",
+    "finance",
+    "staff",
+    "influencer",
+    "marketing",
+    "analytics",
+    "brand",
+  ],
   manager: [
     "scan",
     "orders",
@@ -100,8 +118,12 @@ const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "marketing",
     "analytics",
   ],
+  // V2.3 财务角色：只看财务 + 订单相关
+  finance: ["orders", "orders_detail", "finance", "analytics"],
   service: ["scan", "orders", "orders_detail", "reviews"],
   cashier: ["scan", "orders"],
+  // V2.3 实习生：只读扫码（不能核销，只能查看）
+  trainee: ["scan"],
 };
 
 /**
@@ -189,9 +211,12 @@ export async function resolveAuth(
     if (!isBrandAdmin && (!ownedStores || ownedStores.length === 0)) {
       // 取最高权限的员工角色
       const staffRolePriority: Record<string, number> = {
-        manager: 3,
+        regional_manager: 5,
+        manager: 4,
+        finance: 3,
         service: 2,
         cashier: 1,
+        trainee: 0,
       };
       let highestPriority = 0;
       for (const sr of staffRecords) {

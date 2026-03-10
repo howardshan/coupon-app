@@ -1,0 +1,44 @@
+# TC035: 手动输入券码
+# 测试步骤：登录 → Scan tab → 点击 Enter Code tab → 输入券码 → Verify
+# 预期结果：进入确认核销流程
+appId: com.dealjoy.dealjoy_merchant
+
+---
+
+# 登录
+- runFlow: ../../shared/login.yaml
+
+# 点击底部 Scan tab
+- tapOn: "Scan"
+
+# 等待扫码页面加载
+- extendedWaitUntil:
+    visible: "Scan QR"
+    timeout: 10000
+
+# 切换到 Enter Code tab
+- tapOn: "Enter Code"
+
+# 验证输入框可见
+- assertVisible: "e.g. DJ-XXXXXXXXXXXX"
+
+# 输入券码
+- tapOn: "e.g. DJ-XXXXXXXXXXXX"
+- inputText: "DJ-TESTCODE00001"
+
+# 隐藏键盘
+- hideKeyboard
+
+# 截图保存输入状态
+- takeScreenshot: TC035_manual_code_entered
+
+# 点击 Verify
+- tapOn: "Verify"
+
+# 等待验证结果（确认页面或错误提示）
+- extendedWaitUntil:
+    visible: "Confirm Redemption"
+    timeout: 10000
+
+# 截图保存结果
+- takeScreenshot: TC035_manual_code_result
