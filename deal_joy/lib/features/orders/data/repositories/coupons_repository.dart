@@ -10,7 +10,7 @@ const _couponSelect =
     'expires_at, used_at, created_at, gifted_from, verified_by, '
     'deals(id, title, description, image_urls, refund_policy, '
     'merchants(name, logo_url, address, phone)), '
-    'orders(order_number)';
+    'orders!coupons_order_id_fkey(order_number)';
 
 class CouponsRepository {
   final SupabaseClient _client;
