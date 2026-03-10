@@ -110,9 +110,12 @@ serve(async (req: Request) => {
     return await handleOrderTransfers(req, serviceClient, auth, transferId);
   }
 
-  // 订单详情（subPath 是 UUID）
-  if (subPath && subPath !== '') {
-    return await handleDetail(serviceClient, merchantId, subPath);
+  // 订单详情（path 为 merchant-orders/:id 或 query 带 ?id=）
+  const detailIdFromPath = subPath && subPath !== '' ? subPath : null;
+  const detailIdFromQuery = url.searchParams.get('id')?.trim() ?? null;
+  const orderIdForDetail = detailIdFromPath || detailIdFromQuery;
+  if (orderIdForDetail) {
+    return await handleDetail(serviceClient, merchantId, orderIdForDetail);
   }
 
   // 订单列表（默认）：POST 时用 body 参数，GET 时用 query
