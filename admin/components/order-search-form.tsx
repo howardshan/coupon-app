@@ -42,13 +42,23 @@ function SpinnerIcon({ className, size = 24 }: { className?: string; size?: numb
   )
 }
 
-export default function OrderSearchForm({ initialValue = '' }: { initialValue?: string }) {
+type OrderSearchFormProps = {
+  initialValue?: string
+  /** 若提供，则走局部搜索：只回调不跳转，不整页刷新 */
+  onSearch?: (q: string) => void
+  /** 局部搜索时的 loading 状态（由父组件传入） */
+  isSearching?: boolean
+}
+
+export default function OrderSearchForm({ initialValue = '', onSearch, isSearching: isSearchingProp }: OrderSearchFormProps) {
   const router = useRouter()
   const pathname = usePathname()
-  const [isPending, startTransition] = useTransition()
+  const [urlPending, startTransition] = useTransition()
   const ordersSearch = useOrdersSearch()
   const [value, setValue] = useState(initialValue)
   const lastPushedQRef = useRef(initialValue)
+
+  const isPending = onSearch ? isSearchingProp ?? false : urlPending
 
   useEffect(() => {
     if (initialValue !== lastPushedQRef.current) {
@@ -57,21 +67,26 @@ export default function OrderSearchForm({ initialValue = '' }: { initialValue?: 
     }
   }, [initialValue])
 
+  // 仅 URL 搜索时同步 context，避免局部搜索时出现全屏遮罩
   useEffect(() => {
-    ordersSearch?.setSearching(isPending)
-  }, [isPending, ordersSearch])
+    if (!onSearch) ordersSearch?.setSearching(isPending)
+  }, [isPending, ordersSearch, onSearch])
 
   useEffect(() => {
     const timer = setTimeout(() => {
       const trimmed = value.trim()
       lastPushedQRef.current = trimmed
-      const url = trimmed ? `${pathname}?q=${encodeURIComponent(trimmed)}` : pathname
-      startTransition(() => {
-        router.replace(url)
-      })
+      if (onSearch) {
+        onSearch(trimmed)
+      } else {
+        const url = trimmed ? `${pathname}?q=${encodeURIComponent(trimmed)}` : pathname
+        startTransition(() => {
+          router.replace(url)
+        })
+      }
     }, DEBOUNCE_MS)
     return () => clearTimeout(timer)
-  }, [value, pathname, router, startTransition])
+  }, [value, pathname, router, startTransition, onSearch])
 
   return (
     <div className="flex items-center gap-2">
