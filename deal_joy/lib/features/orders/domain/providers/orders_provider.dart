@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../shared/providers/supabase_provider.dart';
 import '../../../auth/domain/providers/auth_provider.dart';
+import '../../data/models/order_detail_model.dart';
 import '../../data/models/order_model.dart';
 import '../../data/repositories/orders_repository.dart';
 
@@ -19,6 +20,12 @@ final orderDetailProvider = FutureProvider.family<OrderModel, String>((
   orderId,
 ) {
   return ref.watch(ordersRepositoryProvider).fetchOrderById(orderId);
+});
+
+/// 订单详情（来自 user-order-detail Edge Function，含时间线 / 支付状态 / 券码等）
+final userOrderDetailProvider =
+    FutureProvider.family<OrderDetailModel, String>((ref, orderId) {
+  return ref.watch(ordersRepositoryProvider).fetchOrderDetailFromApi(orderId);
 });
 
 final couponDataProvider = FutureProvider.family<Map<String, dynamic>, String>((
