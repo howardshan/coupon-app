@@ -25,6 +25,28 @@ const STATUS_LABELS: Record<string, string> = {
   pending_refund: 'Pending Refund',
 }
 
+/** 与客户端一致：详情页多状态标签（unused + 过期/待退/被拒等） */
+function getDetailStatusTags(
+  orderStatus: string,
+  refundRejectedAt: string | null | undefined,
+  couponExpiresAt: Date | null
+): string[] {
+  if (orderStatus === 'refund_failed') return ['refund_failed']
+  if (orderStatus !== 'unused') return [orderStatus]
+  const tags: string[] = ['unused']
+  if (refundRejectedAt) tags.push('refund_rejected')
+  if (!couponExpiresAt) return tags
+  const now = new Date()
+  if (now <= couponExpiresAt) return tags
+  const elapsedMs = now.getTime() - couponExpiresAt.getTime()
+  if (elapsedMs >= 24 * 60 * 60 * 1000) {
+    tags.push('pending_refund')
+  } else {
+    tags.push('expired')
+  }
+  return tags
+}
+
 export default async function OrderDetailPage({
   params,
 }: {
@@ -55,7 +77,7 @@ export default async function OrderDetailPage({
       refund_rejected_at,
       users ( id, email ),
       deals ( id, title, discount_price, applicable_merchant_ids, merchants ( id, name ) ),
-      coupons!fk_orders_coupon_id ( redeemed_at_merchant_id )
+      coupons!fk_orders_coupon_id ( redeemed_at_merchant_id, expires_at )
     `)
     .eq('id', id)
     .single()
@@ -66,10 +88,16 @@ export default async function OrderDetailPage({
   const merchant = Array.isArray(deal?.merchants) ? deal.merchants[0] : deal?.merchants
   const customer = order.users as any
 
-  // 核销门店信息
+  // 核销门店信息 + 券过期时间（用于多维度状态）
   const raw = order.coupons
   const first = Array.isArray(raw) ? raw[0] : raw
   const redeemedMerchantId = first?.redeemed_at_merchant_id
+  const couponExpiresAt = first?.expires_at ? new Date(first.expires_at) : null
+  const detailStatusTags = getDetailStatusTags(
+    order.status as string,
+    (order as { refund_rejected_at?: string | null }).refund_rejected_at,
+    couponExpiresAt
+  )
   let redeemedMerchantName: string | null = null
   if (redeemedMerchantId) {
     const { data: rm } = await supabase.from('merchants').select('name').eq('id', redeemedMerchantId).single()
@@ -99,13 +127,25 @@ export default async function OrderDetailPage({
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Status</h2>
           <div className="flex items-center gap-3 flex-wrap">
-            <span className={`px-3 py-1 rounded-full text-sm font-medium ${STATUS_STYLES[order.status as string] ?? STATUS_STYLES.used}`}>
-              {STATUS_LABELS[order.status as string] ?? order.status}
-            </span>
+            {detailStatusTags.map((tag) => (
+              <span
+                key={tag}
+                className={`px-3 py-1 rounded-full text-sm font-medium ${STATUS_STYLES[tag] ?? STATUS_STYLES.used}`}
+              >
+                {STATUS_LABELS[tag] ?? tag}
+              </span>
+            ))}
             {order.status === 'refund_requested' && (
               <OrderRefundButtons orderId={order.id} initialStatus={order.status} />
             )}
           </div>
+          {(detailStatusTags.includes('pending_refund') || detailStatusTags.includes('expired')) && (
+            <p className="text-sm text-gray-500 mt-3">
+              {detailStatusTags.includes('pending_refund')
+                ? 'Auto-refund in progress (runs hourly).'
+                : 'Coupon expired; will be auto-refunded 24h after expiry.'}
+            </p>
+          )}
         </div>
 
         <div className="bg-white rounded-xl border border-gray-200 p-6">
