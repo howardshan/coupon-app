@@ -80,11 +80,7 @@ class _OrderCard extends StatelessWidget {
     return Card(
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: order.isUnused
-            ? () => context.push('/coupon/${order.couponId}')
-            : order.isRefundRequested || order.isRefunded || order.isRefundFailed || order.isRefundRejected
-            ? () => context.push('/refund/${order.id}')
-            : null,
+        onTap: () => context.push('/order/${order.id}'),
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Row(
