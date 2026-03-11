@@ -55,7 +55,7 @@ export default async function OrderDetailPage({
       refund_rejected_at,
       users ( id, email ),
       deals ( id, title, discount_price, applicable_merchant_ids, merchants ( id, name ) ),
-      coupons ( redeemed_at_merchant_id )
+      coupons!fk_orders_coupon_id ( redeemed_at_merchant_id )
     `)
     .eq('id', id)
     .single()
@@ -67,8 +67,9 @@ export default async function OrderDetailPage({
   const customer = order.users as any
 
   // 核销门店信息
-  const coupons = order.coupons as any[] | null
-  const redeemedMerchantId = coupons?.[0]?.redeemed_at_merchant_id
+  const raw = order.coupons
+  const first = Array.isArray(raw) ? raw[0] : raw
+  const redeemedMerchantId = first?.redeemed_at_merchant_id
   let redeemedMerchantName: string | null = null
   if (redeemedMerchantId) {
     const { data: rm } = await supabase.from('merchants').select('name').eq('id', redeemedMerchantId).single()
