@@ -110,7 +110,7 @@ export default function OrdersPageClient({
                       <OrderRefundButtons orderId={o.id} initialStatus={o.status} />
                     </td>
                     <td className="px-4 py-3 text-gray-500">
-                      {new Date(o.created_at).toLocaleDateString()}
+                      {new Date(o.created_at).toLocaleDateString('en-US')}
                     </td>
                   </tr>
                 )
