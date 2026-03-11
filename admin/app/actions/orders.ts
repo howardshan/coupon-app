@@ -19,6 +19,82 @@ async function requireAdmin() {
   return supabase
 }
 
+export type OrdersListPayload = {
+  orders: any[] | null
+  redeemedMerchantNames: Record<string, string>
+  fetchError: string | null
+  refundCount: number
+}
+
+/** 供订单总览「局部搜索」使用：按关键词拉取订单列表，不触发整页刷新 */
+export async function getOrdersList(searchQ?: string): Promise<OrdersListPayload> {
+  const supabase = await requireAdmin()
+  const adminSupabase = getServiceRoleClient()
+
+  const q = searchQ?.trim() ?? ''
+  let orders: any[] | null = null
+  let fetchError: string | null = null
+
+  if (q !== '') {
+    const { data, error } = await supabase.rpc('get_admin_orders_search', { search_q: q })
+    if (error) {
+      fetchError = error.message
+    } else {
+      orders = data ?? null
+    }
+  } else {
+    const { data, error } = await adminSupabase
+      .from('orders')
+      .select(`
+        id,
+        order_number,
+        total_amount,
+        quantity,
+        status,
+        refund_reason,
+        created_at,
+        users ( email ),
+        deals ( title, merchants ( name ) ),
+        coupons!fk_orders_coupon_id ( redeemed_at_merchant_id )
+      `)
+      .order('created_at', { ascending: false })
+      .limit(100)
+    if (error) {
+      fetchError = error.message
+    } else {
+      orders = data
+    }
+  }
+
+  const redeemedMerchantIds = new Set<string>()
+  if (orders) {
+    for (const o of orders) {
+      const raw = o.coupons
+      const list = Array.isArray(raw) ? raw : raw != null ? [raw] : []
+      for (const c of list) {
+        if (c?.redeemed_at_merchant_id) redeemedMerchantIds.add(c.redeemed_at_merchant_id)
+      }
+    }
+  }
+
+  let redeemedMerchantNames: Record<string, string> = {}
+  if (redeemedMerchantIds.size > 0) {
+    const { data: merchants } = await adminSupabase
+      .from('merchants')
+      .select('id, name')
+      .in('id', Array.from(redeemedMerchantIds))
+    if (merchants) {
+      for (const m of merchants) {
+        redeemedMerchantNames[m.id] = m.name
+      }
+    }
+  }
+
+  const refundCount = orders?.filter((o: { status: string }) => o.status === 'refund_requested').length ?? 0
+
+  return { orders, redeemedMerchantNames, fetchError, refundCount }
+}
+
 /** 管理员通过退款：调用 create-refund Edge Function 执行 Stripe 退款并更新订单/券/支付状态 */
 export async function approveRefund(orderId: string) {
   await requireAdmin()
