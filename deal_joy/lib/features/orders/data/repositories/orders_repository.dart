@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/errors/app_exception.dart';
+import '../models/order_detail_model.dart';
 import '../models/order_model.dart';
 
 class OrdersRepository {
@@ -34,6 +35,46 @@ class OrdersRepository {
       return OrderModel.fromJson(data);
     } on PostgrestException catch (e) {
       throw AppException('Order not found: ${e.message}', code: e.code);
+    }
+  }
+
+  /// 从 user-order-detail Edge Function 获取订单详情（含时间线、支付状态、券码等）
+  /// 将 access_token 放入 body，避免网关不转发 Authorization 导致 401
+  Future<OrderDetailModel> fetchOrderDetailFromApi(String orderId) async {
+    try {
+      final token = _client.auth.currentSession?.accessToken;
+      if (token == null || token.isEmpty) {
+        throw const AppException(
+          'Not signed in. Please sign in and retry.',
+          code: 'unauthorized',
+        );
+      }
+      final res = await _client.functions.invoke(
+        'user-order-detail',
+        body: {'order_id': orderId, 'access_token': token},
+      );
+      if (res.data == null) {
+        throw AppException(
+          res.status == 404 ? 'Order not found' : 'Failed to load order detail',
+          code: res.status == 404 ? 'not_found' : 'server_error',
+        );
+      }
+      final data = res.data as Map<String, dynamic>;
+      if (data.containsKey('error')) {
+        throw AppException(
+          data['message'] as String? ?? 'Request failed',
+          code: data['error'] as String? ?? 'error',
+        );
+      }
+      final orderJson = data['order'];
+      if (orderJson == null || orderJson is! Map<String, dynamic>) {
+        throw const AppException('Invalid response', code: 'invalid_response');
+      }
+      return OrderDetailModel.fromJson(orderJson);
+    } on AppException {
+      rethrow;
+    } on PostgrestException catch (e) {
+      throw AppException('Failed to load order: ${e.message}', code: e.code);
     }
   }
 

@@ -5,3 +5,7 @@
 # 避免网关消费 body 导致函数收不到 access_token 而 401
 [functions.merchant-orders]
 verify_jwt = false
+
+# user-order-detail：同上，从 body 传 access_token，函数内自行鉴权
+[functions.user-order-detail]
+verify_jwt = false
