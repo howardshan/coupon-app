@@ -44,10 +44,11 @@ export default async function OrdersPage({
         quantity,
         status,
         refund_reason,
+        refund_rejected_at,
         created_at,
         users ( email ),
         deals ( title, merchants ( name ) ),
-        coupons!fk_orders_coupon_id ( redeemed_at_merchant_id )
+        coupons!fk_orders_coupon_id ( redeemed_at_merchant_id, expires_at )
       `)
       .order('created_at', { ascending: false })
       .limit(100)

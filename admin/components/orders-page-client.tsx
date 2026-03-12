@@ -6,6 +6,7 @@ import OrderRefundButtons from '@/components/order-refund-buttons'
 import OrderSearchForm from '@/components/order-search-form'
 import OrdersTableContainer from '@/components/orders-table-container'
 import { getOrdersList, type OrdersListPayload } from '@/app/actions/orders'
+import { getOrderDetailStatusTags, STATUS_STYLES, STATUS_LABELS } from '@/lib/order-display-status'
 
 type OrdersPageClientProps = OrdersListPayload & {
   initialSearchQ?: string
@@ -78,6 +79,16 @@ export default function OrdersPageClient({
                 const first = Array.isArray(raw) ? raw[0] : raw
                 const redeemedId = first?.redeemed_at_merchant_id
                 const redeemedName = redeemedId ? redeemedMerchantNames[redeemedId] : null
+                const orderForDisplay = {
+                  status: o.status,
+                  refund_rejected_at: o.refund_rejected_at,
+                  coupon_expires_at: first?.expires_at ?? o.coupon_expires_at ?? null,
+                  deal_expires_at: o.deal_expires_at,
+                  deals: o.deals,
+                }
+                const statusTags = getOrderDetailStatusTags(orderForDisplay)
+                const showTags = statusTags.slice(0, 2)
+                const extraCount = statusTags.length - 2
 
                 return (
                   <tr key={o.id} className={o.status === 'refund_requested' ? 'bg-orange-50/60' : 'hover:bg-gray-50'}>
@@ -107,7 +118,28 @@ export default function OrdersPageClient({
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      <OrderRefundButtons orderId={o.id} initialStatus={o.status} />
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {showTags.map((tag) => (
+                          <span
+                            key={tag}
+                            className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_STYLES[tag] ?? 'bg-gray-100 text-gray-600'}`}
+                          >
+                            {STATUS_LABELS[tag] ?? tag}
+                          </span>
+                        ))}
+                        {extraCount > 0 && (
+                          <Link
+                            href={`/orders/${o.id}`}
+                            className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-600 hover:bg-gray-300 transition-colors"
+                            title={`+${extraCount} more — view detail`}
+                          >
+                            +{extraCount}
+                          </Link>
+                        )}
+                        {o.status === 'refund_requested' && (
+                          <OrderRefundButtons orderId={o.id} initialStatus={o.status} />
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-gray-500">
                       {new Date(o.created_at).toLocaleDateString('en-US')}

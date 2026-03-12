@@ -2,50 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import OrderRefundButtons from '@/components/order-refund-buttons'
-
-const STATUS_STYLES: Record<string, string> = {
-  unused: 'bg-blue-100 text-blue-700',
-  used: 'bg-gray-100 text-gray-600',
-  refunded: 'bg-purple-100 text-purple-700',
-  refund_requested: 'bg-orange-100 text-orange-700',
-  refund_failed: 'bg-red-100 text-red-700',
-  refund_rejected: 'bg-amber-100 text-amber-700',
-  expired: 'bg-red-100 text-red-700',
-  pending_refund: 'bg-amber-100 text-amber-700',
-}
-
-const STATUS_LABELS: Record<string, string> = {
-  unused: 'Unused',
-  used: 'Used',
-  refunded: 'Refunded',
-  refund_requested: 'Refund Requested',
-  refund_failed: 'Refund Failed',
-  refund_rejected: 'Refund Rejected',
-  expired: 'Expired',
-  pending_refund: 'Pending Refund',
-}
-
-/** 与客户端一致：详情页多状态标签（unused + 过期/待退/被拒等） */
-function getDetailStatusTags(
-  orderStatus: string,
-  refundRejectedAt: string | null | undefined,
-  couponExpiresAt: Date | null
-): string[] {
-  if (orderStatus === 'refund_failed') return ['refund_failed']
-  if (orderStatus !== 'unused') return [orderStatus]
-  const tags: string[] = ['unused']
-  if (refundRejectedAt) tags.push('refund_rejected')
-  if (!couponExpiresAt) return tags
-  const now = new Date()
-  if (now <= couponExpiresAt) return tags
-  const elapsedMs = now.getTime() - couponExpiresAt.getTime()
-  if (elapsedMs >= 24 * 60 * 60 * 1000) {
-    tags.push('pending_refund')
-  } else {
-    tags.push('expired')
-  }
-  return tags
-}
+import { getOrderDetailStatusTags, STATUS_STYLES, STATUS_LABELS } from '@/lib/order-display-status'
 
 export default async function OrderDetailPage({
   params,
@@ -92,12 +49,13 @@ export default async function OrderDetailPage({
   const raw = order.coupons
   const first = Array.isArray(raw) ? raw[0] : raw
   const redeemedMerchantId = first?.redeemed_at_merchant_id
-  const couponExpiresAt = first?.expires_at ? new Date(first.expires_at) : null
-  const detailStatusTags = getDetailStatusTags(
-    order.status as string,
-    (order as { refund_rejected_at?: string | null }).refund_rejected_at,
-    couponExpiresAt
-  )
+  const orderForDisplay = {
+    status: order.status as string,
+    refund_rejected_at: (order as { refund_rejected_at?: string | null }).refund_rejected_at,
+    coupon_expires_at: first?.expires_at ?? null,
+    deals: order.deals as { expires_at?: string | null } | null,
+  }
+  const detailStatusTags = getOrderDetailStatusTags(orderForDisplay)
   let redeemedMerchantName: string | null = null
   if (redeemedMerchantId) {
     const { data: rm } = await supabase.from('merchants').select('name').eq('id', redeemedMerchantId).single()
