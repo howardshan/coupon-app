@@ -4,6 +4,30 @@
  */
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 
+/** 状态徽章样式（与详情页、列表一致） */
+export const STATUS_STYLES: Record<string, string> = {
+  unused: 'bg-blue-100 text-blue-700',
+  used: 'bg-gray-100 text-gray-600',
+  refunded: 'bg-purple-100 text-purple-700',
+  refund_requested: 'bg-orange-100 text-orange-700',
+  refund_failed: 'bg-red-100 text-red-700',
+  refund_rejected: 'bg-amber-100 text-amber-700',
+  expired: 'bg-red-100 text-red-700',
+  pending_refund: 'bg-amber-100 text-amber-700',
+};
+
+/** 状态展示文案 */
+export const STATUS_LABELS: Record<string, string> = {
+  unused: 'Unused',
+  used: 'Used',
+  refunded: 'Refunded',
+  refund_requested: 'Refund Requested',
+  refund_failed: 'Refund Failed',
+  refund_rejected: 'Refund Rejected',
+  expired: 'Expired',
+  pending_refund: 'Pending Refund',
+};
+
 export type OrderForDisplayStatus = {
   status: string
   deals?: { expires_at?: string | null } | null
