@@ -379,6 +379,7 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
               width: double.infinity,
               height: 50,
               child: ElevatedButton(
+                key: const ValueKey('deal_edit_submit_btn'),
                 onPressed: _isSubmitting ? null : _submit,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _orange,
@@ -539,6 +540,7 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildTextField(
+            fieldKey: const ValueKey('deal_edit_title_field'),
             controller: _titleController,
             label: 'Deal Title',
             hint: 'e.g. 2-Person BBQ Set',
@@ -546,6 +548,7 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
           ),
           const SizedBox(height: 12),
           _buildTextField(
+            fieldKey: const ValueKey('deal_edit_desc_field'),
             controller: _descriptionController,
             label: 'Description',
             hint: 'Describe what customers will get...',
@@ -628,6 +631,7 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
           _buildDealCategoryDropdown(),
           const SizedBox(height: 12),
           _buildTextField(
+            fieldKey: const ValueKey('deal_edit_usage_notes_field'),
             controller: _usageNotesController,
             label: 'Usage Notes (Optional)',
             hint: 'e.g. Reservation required 24 hours in advance',
@@ -703,6 +707,7 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
         ),
         const SizedBox(height: 12),
         TextFormField(
+          key: const ValueKey('deal_edit_discount_price_field'),
           controller: _dealPriceController,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           inputFormatters: [
@@ -768,6 +773,7 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
         if (!_isUnlimited) ...[
           const SizedBox(height: 8),
           _buildTextField(
+            fieldKey: const ValueKey('deal_edit_stock_field'),
             controller: _stockController,
             label: 'Stock Quantity',
             hint: 'e.g. 50',
@@ -800,6 +806,7 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
           _buildDatePicker()
         else
           _buildTextField(
+            fieldKey: const ValueKey('deal_edit_validity_days_field'),
             controller: _validityDaysController,
             label: 'Valid for (days)',
             hint: 'e.g. 30',
@@ -922,6 +929,7 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
         ),
         const SizedBox(height: 16),
         _buildTextField(
+          fieldKey: const ValueKey('deal_edit_max_per_person_field'),
           controller: _maxPerPersonController,
           label: 'Max Per Person (Optional)',
           hint: 'Leave empty for no limit',
@@ -1381,8 +1389,10 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
     int? maxLength,
     TextInputType? keyboardType,
     List<TextInputFormatter>? inputFormatters,
+    Key? fieldKey,
   }) {
     return TextFormField(
+      key: fieldKey,
       controller: controller,
       maxLines: maxLines ?? 1,
       maxLength: maxLength,

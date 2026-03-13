@@ -241,6 +241,7 @@ class _WithdrawButton extends ConsumerWidget {
             ),
             const SizedBox(height: 16),
             TextField(
+              key: const ValueKey('withdrawal_amount_field'),
               controller: amountCtrl,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               inputFormatters: [
@@ -265,6 +266,7 @@ class _WithdrawButton extends ConsumerWidget {
             child: const Text('Cancel'),
           ),
           ElevatedButton(
+            key: const ValueKey('withdrawal_confirm_btn'),
             onPressed: () => Navigator.of(ctx).pop(true),
             style: ElevatedButton.styleFrom(
               backgroundColor: WithdrawalPage._orange,

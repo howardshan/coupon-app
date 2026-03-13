@@ -134,6 +134,7 @@ class _EmailVerificationBannerState extends State<_EmailVerificationBanner> {
               ),
               if (!_sent)
                 TextButton(
+                  key: const ValueKey('scaffold_resend_otp_btn'),
                   onPressed: _sending ? null : _resend,
                   child: _sending
                       ? const SizedBox(

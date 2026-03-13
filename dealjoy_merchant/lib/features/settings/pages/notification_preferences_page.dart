@@ -131,6 +131,7 @@ class _NotificationPreferencesPageState
                   textAlign: TextAlign.center),
               const SizedBox(height: 16),
               ElevatedButton(
+                key: const ValueKey('notification_retry_btn'),
                 onPressed: () =>
                     ref.read(notificationPrefsProvider.notifier).refresh(),
                 child: const Text('Retry'),

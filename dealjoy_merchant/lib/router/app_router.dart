@@ -441,7 +441,10 @@ final appRouter = GoRouter(
             ),
             GoRoute(
               path: 'create',
-              builder: (context, state) => const MenuEditPage(),
+              builder: (context, state) {
+                final initialName = state.extra as String?;
+                return MenuEditPage(initialName: initialName);
+              },
             ),
             GoRoute(
               path: ':itemId',

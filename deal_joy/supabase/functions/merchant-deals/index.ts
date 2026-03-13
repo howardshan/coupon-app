@@ -226,6 +226,9 @@ Deno.serve(async (req: Request) => {
 // =============================================================
 // GET /merchant-deals
 // 获取商家所有 deals，支持 ?status= 筛选
+// 包含两类 deal：
+//   1. 本店创建的 deal（merchant_id = merchantId）
+//   2. 通过 deal_applicable_stores 关联的品牌 deal（status = active）
 // =============================================================
 async function handleGetDeals(
   admin: ReturnType<typeof createClient>,
@@ -234,59 +237,98 @@ async function handleGetDeals(
 ): Promise<Response> {
   const statusFilter = url.searchParams.get("status");
 
-  // 构建查询：deals + deal_images（获取图片列表）
-  let query = admin
-    .from("deals")
-    .select(`
+  const selectFields = `
+    id,
+    merchant_id,
+    title,
+    description,
+    category,
+    original_price,
+    discount_price,
+    discount_percent,
+    stock_limit,
+    total_sold,
+    rating,
+    review_count,
+    is_active,
+    is_featured,
+    deal_status,
+    package_contents,
+    usage_notes,
+    usage_days,
+    max_per_person,
+    is_stackable,
+    validity_type,
+    validity_days,
+    expires_at,
+    review_notes,
+    rejection_reason,
+    published_at,
+    created_at,
+    updated_at,
+    applicable_merchant_ids,
+    deal_images (
       id,
-      title,
-      description,
-      category,
-      original_price,
-      discount_price,
-      discount_percent,
-      stock_limit,
-      total_sold,
-      rating,
-      review_count,
-      is_active,
-      is_featured,
-      deal_status,
-      package_contents,
-      usage_notes,
-      usage_days,
-      max_per_person,
-      is_stackable,
-      validity_type,
-      validity_days,
-      expires_at,
-      review_notes,
-      published_at,
-      created_at,
-      updated_at,
-      applicable_merchant_ids,
-      deal_images (
-        id,
-        image_url,
-        sort_order,
-        is_primary
-      )
-    `)
+      image_url,
+      sort_order,
+      is_primary
+    )
+  `;
+
+  // 1. 本店创建的 deal
+  let ownQuery = admin
+    .from("deals")
+    .select(selectFields)
     .eq("merchant_id", merchantId)
     .order("created_at", { ascending: false });
 
-  // 按状态筛选
   if (statusFilter && ["pending", "active", "inactive", "rejected"].includes(statusFilter)) {
-    query = query.eq("deal_status", statusFilter);
+    ownQuery = ownQuery.eq("deal_status", statusFilter);
   }
 
-  const { data, error } = await query;
-
-  if (error) {
-    return errorResponse(error.message, 500);
+  const { data: ownDeals, error: ownError } = await ownQuery;
+  if (ownError) {
+    return errorResponse(ownError.message, 500);
   }
 
-  return jsonResponse({ deals: data ?? [] });
+  // 2. 通过 deal_applicable_stores 关联的品牌 deal（非本店创建但本店已接受）
+  const { data: dasRecords } = await admin
+    .from("deal_applicable_stores")
+    .select("deal_id, status")
+    .eq("store_id", merchantId)
+    .eq("status", "active");
+
+  let associatedDeals: typeof ownDeals = [];
+  if (dasRecords && dasRecords.length > 0) {
+    // 排除本店自己创建的 deal（避免重复）
+    const ownDealIds = new Set((ownDeals ?? []).map((d: { id: string }) => d.id));
+    const extraDealIds = dasRecords
+      .map((r: { deal_id: string }) => r.deal_id)
+      .filter((id: string) => !ownDealIds.has(id));
+
+    if (extraDealIds.length > 0) {
+      let assocQuery = admin
+        .from("deals")
+        .select(selectFields)
+        .in("id", extraDealIds)
+        .order("created_at", { ascending: false });
+
+      if (statusFilter && ["pending", "active", "inactive", "rejected"].includes(statusFilter)) {
+        assocQuery = assocQuery.eq("deal_status", statusFilter);
+      }
+
+      const { data: assocData } = await assocQuery;
+      associatedDeals = assocData ?? [];
+    }
+  }
+
+  // 合并两类 deal，按 created_at 降序排列
+  const allDeals = [...(ownDeals ?? []), ...associatedDeals];
+  allDeals.sort((a: { created_at: string }, b: { created_at: string }) =>
+    b.created_at.localeCompare(a.created_at)
+  );
+
+  return jsonResponse({ deals: allDeals });
 }
 
 // =============================================================
@@ -366,7 +408,7 @@ async function handleCreateDeal(
     discount_label:   body.discount_label ? String(body.discount_label) : "",
     refund_policy:    body.refund_policy
       ? String(body.refund_policy)
-      : "Risk-Free Refund within 7 days",
+      : "Refund anytime before use, refund when expired",
     image_urls:       (body.image_urls as string[]) ?? [],
     dishes:           body.dishes ?? [],
     deal_category_id: body.deal_category_id ?? null,
@@ -702,9 +744,9 @@ async function handleStoreConfirm(
   }
 
   if (action === "accept") {
-    // accept 只能在 pending_store_confirmation 状态下执行
-    if (storeRecord.status !== "pending_store_confirmation") {
-      return errorResponse("This deal is not pending confirmation for your store.", 400);
+    // accept 允许从 pending_store_confirmation 或 declined 状态执行（支持重新 approve）
+    if (!["pending_store_confirmation", "declined"].includes(storeRecord.status)) {
+      return errorResponse("This deal cannot be accepted in its current state.", 400);
     }
 
     const menuItemId = body.menu_item_id as string | null ?? null;
@@ -737,8 +779,9 @@ async function handleStoreConfirm(
   }
 
   if (action === "decline") {
-    if (storeRecord.status !== "pending_store_confirmation") {
-      return errorResponse("This deal is not pending confirmation for your store.", 400);
+    // 允许从 pending_store_confirmation 或 active 状态 decline（门店退出）
+    if (!["pending_store_confirmation", "active"].includes(storeRecord.status)) {
+      return errorResponse("This deal cannot be declined in its current state.", 400);
     }
 
     const { error } = await admin.rpc("decline_deal_store", {
@@ -845,7 +888,7 @@ function templateToDealPayload(
     is_stackable: template.is_stackable ?? true,
     validity_type: template.validity_type ?? "fixed_date",
     validity_days: template.validity_days ?? 30,
-    refund_policy: template.refund_policy ?? "Risk-Free Refund within 7 days",
+    refund_policy: template.refund_policy ?? "Refund anytime before use, refund when expired",
     image_urls: template.image_urls ?? [],
     dishes: template.dishes ?? [],
     deal_type: template.deal_type ?? "regular",

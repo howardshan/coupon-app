@@ -294,6 +294,7 @@ class _StoreTagsPageState extends ConsumerState<StoreTagsPage> {
                     width: double.infinity,
                     height: 52,
                     child: ElevatedButton(
+                      key: const ValueKey('store_tags_save_btn'),
                       onPressed: _isSaving ? null : _save,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFFFF6B35),

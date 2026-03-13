@@ -49,8 +49,9 @@ const _faqItems = [
   _FaqItem(
     question: 'How does the refund policy work?',
     answer:
-        'DealJoy offers automatic refunds — customers can request a full refund '
-        'any time before the voucher is redeemed. Once a voucher is confirmed as '
+        'DealJoy offers a customer-friendly refund policy: customers can request a '
+        'full refund at any time before the voucher is used, and vouchers that '
+        'expire unused are automatically refunded. Once a voucher is confirmed as '
         'redeemed, it cannot be refunded. You can view all refunds in the Orders '
         'tab. Refunded amounts are deducted from your next payout.',
   ),

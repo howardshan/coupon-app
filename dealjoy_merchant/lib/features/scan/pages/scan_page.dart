@@ -294,6 +294,7 @@ class _ScanPageState extends ConsumerState<ScanPage>
 
               // 券码输入框
               TextFormField(
+                key: const ValueKey('scan_code_field'),
                 controller: _codeController,
                 keyboardType: TextInputType.text,
                 textCapitalization: TextCapitalization.none,
@@ -353,6 +354,7 @@ class _ScanPageState extends ConsumerState<ScanPage>
                 width: double.infinity,
                 height: 52,
                 child: ElevatedButton(
+                  key: const ValueKey('scan_verify_btn'),
                   onPressed: (isLoading || _isVerifying) ? null : _verifyManual,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFFFF6B35),

@@ -16,9 +16,12 @@ import '../providers/category_provider.dart';
 // MenuEditPage — 菜品创建/编辑
 // ============================================================
 class MenuEditPage extends ConsumerStatefulWidget {
-  const MenuEditPage({super.key, this.editItem});
+  const MenuEditPage({super.key, this.editItem, this.initialName});
 
   final model.MenuItem? editItem;
+
+  /// 创建模式下预填的菜品名称（从 Deal 确认页传入）
+  final String? initialName;
 
   @override
   ConsumerState<MenuEditPage> createState() => _MenuEditPageState();
@@ -40,7 +43,7 @@ class _MenuEditPageState extends ConsumerState<MenuEditPage> {
   void initState() {
     super.initState();
     final item = widget.editItem;
-    _nameController = TextEditingController(text: item?.name ?? '');
+    _nameController = TextEditingController(text: item?.name ?? widget.initialName ?? '');
     _priceController = TextEditingController(
       text: item?.price != null ? item!.price!.toStringAsFixed(2) : '',
     );
@@ -171,6 +174,7 @@ class _MenuEditPageState extends ConsumerState<MenuEditPage> {
 
               // 名称
               TextFormField(
+                key: const ValueKey('menu_edit_name_field'),
                 controller: _nameController,
                 maxLength: 100,
                 decoration: _inputDecoration(
@@ -186,6 +190,7 @@ class _MenuEditPageState extends ConsumerState<MenuEditPage> {
 
               // 价格
               TextFormField(
+                key: const ValueKey('menu_edit_price_field'),
                 controller: _priceController,
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true),

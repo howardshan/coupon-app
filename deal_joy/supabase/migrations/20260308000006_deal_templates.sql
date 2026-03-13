@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS public.deal_templates (
   is_stackable  BOOL DEFAULT true,
   validity_type TEXT DEFAULT 'fixed_date',   -- 'fixed_date' | 'days_after_purchase'
   validity_days INT DEFAULT 30,
-  refund_policy TEXT DEFAULT 'Risk-Free Refund within 7 days',
+  refund_policy TEXT DEFAULT 'Refund anytime before use, refund when expired',
   image_urls    TEXT[] DEFAULT '{}',
   dishes        JSONB DEFAULT '[]',
   deal_type     TEXT DEFAULT 'regular',

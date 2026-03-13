@@ -202,6 +202,7 @@ class _RedemptionSuccessPageState
                 width: double.infinity,
                 height: 52,
                 child: ElevatedButton(
+                  key: const ValueKey('redemption_done_btn'),
                   onPressed: () {
                     // 重置 ScanNotifier 状态，回到扫码页
                     ref.read(scanNotifierProvider.notifier).reset();

@@ -189,6 +189,7 @@ class _BrandInfoPageState extends ConsumerState<BrandInfoPage> {
                         ),
                         const SizedBox(height: 16),
                         TextFormField(
+                          key: const ValueKey('brand_info_name_field'),
                           controller: _nameCtrl,
                           decoration: const InputDecoration(
                             labelText: 'Brand Name',
@@ -197,6 +198,7 @@ class _BrandInfoPageState extends ConsumerState<BrandInfoPage> {
                         ),
                         const SizedBox(height: 12),
                         TextFormField(
+                          key: const ValueKey('brand_info_desc_field'),
                           controller: _descCtrl,
                           maxLines: 3,
                           decoration: const InputDecoration(
@@ -208,6 +210,7 @@ class _BrandInfoPageState extends ConsumerState<BrandInfoPage> {
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton(
+                            key: const ValueKey('brand_info_save_btn'),
                             onPressed: _isSaving ? null : _saveBrandInfo,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: _primaryOrange,

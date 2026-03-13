@@ -253,6 +253,7 @@ class _SearchBar extends StatelessWidget {
                 borderRadius: BorderRadius.circular(12),
               ),
               child: TextField(
+                key: const ValueKey('search_keyword_field'),
                 controller: controller,
                 focusNode: focusNode,
                 textInputAction: TextInputAction.search,
@@ -796,6 +797,7 @@ class _ResultsView extends ConsumerWidget {
             ),
             const SizedBox(height: 16),
             TextButton(
+              key: const ValueKey('search_retry_btn'),
               onPressed: onRetry,
               child: const Text('Retry'),
             ),
@@ -1261,6 +1263,7 @@ class _FilterSheetState extends ConsumerState<_FilterSheet> {
                 ),
                 const Spacer(),
                 TextButton(
+                  key: const ValueKey('search_reset_filters_btn'),
                   onPressed: () => setState(() {
                     _selectedCategory = null;
                     _minPrice = null;
@@ -1501,6 +1504,7 @@ class _FilterSheetState extends ConsumerState<_FilterSheet> {
               width: double.infinity,
               height: 50,
               child: ElevatedButton(
+                key: const ValueKey('search_apply_filters_btn'),
                 onPressed: () => widget.onApply(
                   SearchFilters(
                     category: _selectedCategory,

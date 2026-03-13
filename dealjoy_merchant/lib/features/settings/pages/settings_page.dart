@@ -333,6 +333,7 @@ class SettingsPage extends ConsumerWidget {
             ),
             const SizedBox(height: 16),
             TextField(
+              key: const ValueKey('settings_brand_name_field'),
               controller: brandNameCtrl,
               decoration: const InputDecoration(
                 labelText: 'Brand Name',
@@ -348,6 +349,7 @@ class SettingsPage extends ConsumerWidget {
             child: const Text('Cancel'),
           ),
           ElevatedButton(
+            key: const ValueKey('settings_confirm_btn'),
             onPressed: () => Navigator.of(ctx).pop(true),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFFFF6B35),

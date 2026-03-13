@@ -383,6 +383,7 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
                   // 继续/提交按钮
                   Expanded(
                     child: ElevatedButton(
+                      key: const ValueKey('deal_create_submit_btn'),
                       onPressed: _isSubmitting
                           ? null
                           : () {
@@ -471,6 +472,7 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
           children: [
             // 标题
             _buildTextField(
+              fieldKey: const ValueKey('deal_create_title_field'),
               controller: _titleController,
               label: 'Deal Title',
               hint: 'e.g. 2-Person BBQ Set for 2',
@@ -523,6 +525,7 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
 
             // 描述
             _buildTextField(
+              fieldKey: const ValueKey('deal_create_desc_field'),
               controller: _descriptionController,
               label: 'Description',
               hint: 'Describe what customers will get...',
@@ -543,6 +546,7 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
 
             // 使用须知
             _buildTextField(
+              fieldKey: const ValueKey('deal_create_usage_notes_field'),
               controller: _usageNotesController,
               label: 'Usage Notes (Optional)',
               hint: 'e.g. Reservation required 24 hours in advance',
@@ -772,6 +776,7 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
 
             // 现价（手动输入）
             TextFormField(
+              key: const ValueKey('deal_create_discount_price_field'),
               initialValue: _dealPrice?.toStringAsFixed(2),
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               inputFormatters: [
@@ -844,6 +849,7 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
             // 库存数量输入（unlimited 时禁用）
             if (!_isUnlimited)
               TextFormField(
+                key: const ValueKey('deal_create_stock_field'),
                 controller: _stockController,
                 enabled: !_isUnlimited,
                 keyboardType: TextInputType.number,
@@ -981,6 +987,7 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
 
   Widget _buildDaysAfterPurchaseInput() {
     return TextFormField(
+      key: const ValueKey('deal_create_validity_days_field'),
       controller: _validityDaysController,
       keyboardType: TextInputType.number,
       inputFormatters: [FilteringTextInputFormatter.digitsOnly],
@@ -1057,6 +1064,7 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
 
             // 每人限用数量
             _buildTextField(
+              fieldKey: const ValueKey('deal_create_max_per_person_field'),
               controller: _maxPerPersonController,
               label: 'Max Per Person (Optional)',
               hint: 'Leave empty for no limit',
@@ -1447,8 +1455,10 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
     TextInputType? keyboardType,
     List<TextInputFormatter>? inputFormatters,
     FormFieldValidator<String>? validator,
+    Key? fieldKey,
   }) {
     return TextFormField(
+      key: fieldKey,
       controller: controller,
       maxLines: maxLines ?? 1,
       maxLength: maxLength,

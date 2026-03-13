@@ -152,6 +152,7 @@ class _CategoryManagePageState extends ConsumerState<CategoryManagePage> {
       builder: (ctx) => AlertDialog(
         title: const Text('Add Category'),
         content: TextField(
+          key: const ValueKey('menu_new_category_field'),
           controller: controller,
           autofocus: true,
           textCapitalization: TextCapitalization.words,
@@ -207,6 +208,7 @@ class _CategoryManagePageState extends ConsumerState<CategoryManagePage> {
       builder: (ctx) => AlertDialog(
         title: const Text('Rename Category'),
         content: TextField(
+          key: const ValueKey('menu_edit_category_field'),
           controller: controller,
           autofocus: true,
           textCapitalization: TextCapitalization.words,

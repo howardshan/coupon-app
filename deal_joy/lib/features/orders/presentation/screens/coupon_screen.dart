@@ -46,6 +46,7 @@ class CouponScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 16),
                 ElevatedButton(
+                  key: const ValueKey('coupon_retry_btn'),
                   onPressed: () =>
                       ref.invalidate(couponDetailProvider(couponId)),
                   child: const Text('Retry'),
@@ -591,10 +592,12 @@ class _ActionButtonsState extends ConsumerState<_ActionButtons> {
         ),
         actions: [
           TextButton(
+            key: const ValueKey('coupon_refund_cancel_btn'),
             onPressed: () => Navigator.of(ctx).pop(false),
             child: const Text('Cancel'),
           ),
           ElevatedButton(
+            key: const ValueKey('coupon_refund_confirm_btn'),
             onPressed: () => Navigator.of(ctx).pop(true),
             style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.error,
@@ -655,10 +658,12 @@ class _ActionButtonsState extends ConsumerState<_ActionButtons> {
         ),
         actions: [
           TextButton(
+            key: const ValueKey('coupon_gift_cancel_btn'),
             onPressed: () => Navigator.of(ctx).pop(false),
             child: const Text('Cancel'),
           ),
           ElevatedButton(
+            key: const ValueKey('coupon_send_gift_btn'),
             onPressed: () {
               if (formKey.currentState!.validate()) {
                 Navigator.of(ctx).pop(true);

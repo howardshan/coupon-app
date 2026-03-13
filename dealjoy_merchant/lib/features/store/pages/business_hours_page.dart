@@ -255,6 +255,7 @@ class _BusinessHoursPageState extends ConsumerState<BusinessHoursPage> {
                     width: double.infinity,
                     height: 52,
                     child: ElevatedButton(
+                      key: const ValueKey('business_hours_save_btn'),
                       onPressed: _isSaving ? null : _save,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFFFF6B35),

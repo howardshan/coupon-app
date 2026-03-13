@@ -104,6 +104,20 @@
   - `dealjoy_merchant/lib/features/dashboard/widgets/shortcut_grid.dart` — Brand 入口
   - `dealjoy_merchant/lib/features/deals/providers/deals_provider.dart` — `pendingStoreDealsProvider`
 
+#### Brand Deal 创建 + 审批 + 客户端展示 ✅
+- 状态：已完成，品牌 Deal 创建、门店确认、客户端搜索和商家详情页展示测试通过
+- 改动内容：
+  - 修复 RPC 函数 `search_deals_by_city` / `search_deals_nearby` 的 `m.city` 类型不匹配 bug（`varchar(50)` → `::TEXT`）
+  - 用户端商家详情页 `fetchActiveDeals` 增加 `deal_applicable_stores` 关联查询，子门店可展示品牌 Deal
+  - `pendingStoreDealsProvider` 改为 `.autoDispose`，修复切换账号后缓存旧结果的 bug
+- 受保护文件：
+  - `deal_joy/supabase/migrations/20260312000002_rpc_deal_applicable_stores.sql` — `m.city::TEXT` 转换
+  - `deal_joy/lib/features/merchant/data/repositories/store_detail_repository.dart` — `fetchActiveDeals()` 含 `deal_applicable_stores` 关联查询
+  - `deal_joy/lib/features/deals/data/repositories/deals_repository.dart` — `_filterBrandDealsWithActiveStores()`
+  - `dealjoy_merchant/lib/features/deals/providers/deals_provider.dart` — `pendingStoreDealsProvider`（`.autoDispose`）
+  - `dealjoy_merchant/lib/features/deals/pages/store_deal_confirm_page.dart`
+  - `dealjoy_merchant/lib/features/dashboard/pages/dashboard_page.dart` — `_PendingBrandDealsBanner`
+
 ---
 
 ### Admin 管理端（admin/）
@@ -124,6 +138,7 @@
 | 2026-03-12 | 初始化文件，录入已知完成模块 | Claude |
 | 2026-03-12 | 多店 Deal 门店确认机制全部实施完成 | Claude |
 | 2026-03-12 | Brand Management 改版 + 门店确认入口 + Brand Deals 过滤 | Claude |
+| 2026-03-13 | Brand Deal 创建/审批/客户端展示 — RPC 类型修复 + 商家详情页关联查询 + provider autoDispose | Claude |
 
 ---
 
