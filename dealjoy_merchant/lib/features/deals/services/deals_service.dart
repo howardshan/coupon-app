@@ -379,4 +379,31 @@ class DealsService {
       throw _handleError(response);
     }
   }
+
+  // ----------------------------------------------------------
+  // 门店确认（store_deal_confirm）
+  // 门店 Accept/Decline/Remove 某个 brand_multi_store Deal
+  // ----------------------------------------------------------
+
+  /// 门店 Accept/Decline/Remove 某个 brand_multi_store Deal
+  /// action: 'accept' | 'decline' | 'remove'
+  /// menuItemId: Accept 时传入关联菜品 ID（可为 null）
+  Future<void> storeConfirmDeal({
+    required String dealId,
+    required String action,
+    String? menuItemId,
+  }) async {
+    final response = await _supabase.functions.invoke(
+      '$_functionName/$dealId/store-confirm',
+      method: HttpMethod.patch,
+      body: {
+        'action': action,
+        'menu_item_id': menuItemId,
+      },
+    );
+
+    if (response.status != 200) {
+      throw _handleError(response);
+    }
+  }
 }

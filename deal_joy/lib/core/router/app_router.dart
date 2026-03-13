@@ -161,8 +161,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       // Checkout flow
       GoRoute(
         path: '/checkout/:dealId',
-        builder: (_, state) =>
-            CheckoutScreen(dealId: state.pathParameters['dealId']!),
+        builder: (_, state) => CheckoutScreen(
+          dealId: state.pathParameters['dealId']!,
+          purchasedMerchantId: state.uri.queryParameters['merchantId'],
+        ),
       ),
       GoRoute(
         path: '/order-success/:orderId',

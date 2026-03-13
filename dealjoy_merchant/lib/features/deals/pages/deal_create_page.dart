@@ -65,6 +65,8 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
   // Step 4b: 多店适用（仅连锁店显示）
   bool _isMultiStore = false;
   final Set<String> _selectedStoreIds = {};
+  // 品牌管理员预确认的门店（打勾 = 已确认该门店有此菜品，审核通过后直接 active）
+  final Set<String> _confirmedStoreIds = {};
 
   // Step 5: 图片
   final List<XFile> _selectedImages = [];
@@ -256,6 +258,13 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
         dealCategoryId:  _selectedDealCategoryId,
         applicableMerchantIds: _isMultiStore && _selectedStoreIds.isNotEmpty
             ? _selectedStoreIds.toList()
+            : null,
+        // 门店预确认数据，格式：[{ store_id, pre_confirmed }]，传给 Edge Function 用于写 deal_applicable_stores
+        storeConfirmations: _isMultiStore && _selectedStoreIds.isNotEmpty
+            ? _selectedStoreIds.map((id) => {
+                'store_id': id,
+                'pre_confirmed': _confirmedStoreIds.contains(id),
+              }).toList()
             : null,
         images:          widget.editDeal?.images ?? [],
         createdAt:       widget.editDeal?.createdAt ?? DateTime.now(),
@@ -1196,6 +1205,19 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
                     return Column(
                       children: [
                         const Divider(height: 16),
+                        // 说明文字
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Text(
+                            'Select stores and confirm which locations carry this item. '
+                            'Confirmed locations go live immediately after platform review. '
+                            'Unconfirmed locations receive a pending notification.',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF666666),
+                            ),
+                          ),
+                        ),
                         // 全选按钮
                         Row(
                           mainAxisAlignment: MainAxisAlignment.end,
@@ -1224,33 +1246,83 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
                             ),
                           ],
                         ),
-                        ...stores.map((store) => CheckboxListTile(
-                              key: ValueKey('deal_store_checkbox_${store.id}'),
-                              dense: true,
-                              contentPadding: EdgeInsets.zero,
-                              activeColor: const Color(0xFFFF6B35),
-                              title: Text(store.name,
-                                  style: const TextStyle(fontSize: 14)),
-                              subtitle: store.address != null &&
-                                      store.address!.isNotEmpty
-                                  ? Text(store.address!,
-                                      style: const TextStyle(
-                                          fontSize: 12,
-                                          color: Color(0xFF999999)),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis)
-                                  : null,
-                              value: _selectedStoreIds.contains(store.id),
-                              onChanged: (v) {
-                                setState(() {
-                                  if (v == true) {
-                                    _selectedStoreIds.add(store.id);
-                                  } else {
-                                    _selectedStoreIds.remove(store.id);
-                                  }
-                                });
-                              },
-                            )),
+                        ...stores.map((store) {
+                              final isSelected = _selectedStoreIds.contains(store.id);
+                              final isConfirmed = _confirmedStoreIds.contains(store.id);
+                              return Column(
+                                children: [
+                                  CheckboxListTile(
+                                    key: ValueKey('deal_store_checkbox_${store.id}'),
+                                    dense: true,
+                                    contentPadding: EdgeInsets.zero,
+                                    activeColor: const Color(0xFFFF6B35),
+                                    title: Text(store.name,
+                                        style: const TextStyle(fontSize: 14)),
+                                    subtitle: store.address != null &&
+                                            store.address!.isNotEmpty
+                                        ? Text(store.address!,
+                                            style: const TextStyle(
+                                                fontSize: 12,
+                                                color: Color(0xFF999999)),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis)
+                                        : null,
+                                    value: isSelected,
+                                    onChanged: (v) {
+                                      setState(() {
+                                        if (v == true) {
+                                          _selectedStoreIds.add(store.id);
+                                        } else {
+                                          _selectedStoreIds.remove(store.id);
+                                          _confirmedStoreIds.remove(store.id);
+                                        }
+                                      });
+                                    },
+                                  ),
+                                  // 选中后显示预确认行
+                                  if (isSelected)
+                                    Padding(
+                                      padding: const EdgeInsets.only(left: 16, bottom: 6, right: 4),
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            isConfirmed
+                                                ? Icons.check_circle
+                                                : Icons.radio_button_unchecked,
+                                            size: 16,
+                                            color: isConfirmed
+                                                ? const Color(0xFF4CAF50)
+                                                : const Color(0xFF999999),
+                                          ),
+                                          const SizedBox(width: 6),
+                                          Expanded(
+                                            child: GestureDetector(
+                                              onTap: () => setState(() {
+                                                if (isConfirmed) {
+                                                  _confirmedStoreIds.remove(store.id);
+                                                } else {
+                                                  _confirmedStoreIds.add(store.id);
+                                                }
+                                              }),
+                                              child: Text(
+                                                isConfirmed
+                                                    ? 'Confirmed — carries this item'
+                                                    : 'Tap to confirm this location carries this item',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: isConfirmed
+                                                      ? const Color(0xFF4CAF50)
+                                                      : const Color(0xFF999999),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                ],
+                              );
+                            }),
                       ],
                     );
                   },

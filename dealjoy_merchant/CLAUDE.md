@@ -86,7 +86,8 @@ features/{module}/
 
 ## 导航
 底部 4 Tab: `/dashboard` | `/scan` | `/orders` | `/me`
-主要路由: `/store`, `/deals`, `/deals/create`, `/deals/:dealId`, `/reviews`, `/analytics`, `/earnings`
+主要路由: `/store`, `/deals`, `/deals/create`, `/deals/:dealId`, `/deals/confirm/:dealId`, `/reviews`, `/analytics`, `/earnings`
+品牌管理: `/brand-manage`, `/brand-manage/info`, `/brand-manage/stores`, `/brand-manage/admins`, `/brand-manage/deals`, `/brand-overview`
 
 ## 代码规范
 - **UI 全英文**，注释用中文

@@ -876,11 +876,19 @@ class _ApplicableStores extends StatelessWidget {
     final merchant = deal.merchant;
     if (merchant == null) return const SizedBox.shrink();
 
-    // 计算适用门店数量
-    final storeIds = deal.applicableMerchantIds;
-    final storeCount = (storeIds != null && storeIds.isNotEmpty)
-        ? storeIds.length
-        : 1;
+    // 从 deal_applicable_stores 表动态查询 active 门店数量
+    final activeStoreFuture = Supabase.instance.client
+        .from('deal_applicable_stores')
+        .select('id')
+        .eq('deal_id', deal.id)
+        .eq('status', 'active');
+
+    // 降级：优先用 RPC 返回的 activeStoreCount，其次用旧的 applicableMerchantIds 数组长度
+    final legacyStoreIds = deal.applicableMerchantIds;
+    final fallbackCount = deal.activeStoreCount ??
+        ((legacyStoreIds != null && legacyStoreIds.isNotEmpty)
+            ? legacyStoreIds.length
+            : 1);
 
     return Container(
       color: Colors.white,
@@ -888,33 +896,45 @@ class _ApplicableStores extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Applicable Stores',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              ),
-              Text(
-                '$storeCount ${storeCount == 1 ? 'Store' : 'Stores'}',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: AppColors.textSecondary,
-                ),
-              ),
-            ],
+          // Header：异步展示 active 门店数
+          FutureBuilder<List<Map<String, dynamic>>>(
+            future: activeStoreFuture,
+            builder: (context, snapshot) {
+              // 优先使用 deal_applicable_stores 的查询结果；查不到则降级
+              final storeCount = (snapshot.hasData && snapshot.data!.isNotEmpty)
+                  ? snapshot.data!.length
+                  : fallbackCount;
+
+              return Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Applicable Stores',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  Text(
+                    'Available at $storeCount ${storeCount == 1 ? 'location' : 'locations'}',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
           const SizedBox(height: 14),
 
-          // 创建门店卡片（主门店始终显示）
+          // 主门店卡片始终显示
           _buildStoreCard(context, merchant),
 
-          // 多店时加载并显示其他门店
-          if (storeIds != null && storeIds.length > 1)
-            _MultiStoreList(
-              storeIds: storeIds.where((id) => id != merchant.id).toList(),
-            ),
+          // 从 deal_applicable_stores 加载并显示其他 active 门店
+          _MultiStoreList(
+            dealId: deal.id,
+            dealDiscountPrice: deal.discountPrice,
+            dealDiscountPercent: deal.discountPercent,
+            primaryMerchantId: merchant.id,
+          ),
         ],
       ),
     );
@@ -1005,33 +1025,70 @@ class _ApplicableStores extends StatelessWidget {
   }
 }
 
-// 多店列表：异步加载其他适用门店的基本信息
+// 多店列表：从 deal_applicable_stores 表异步加载 active 门店，支持 per-store 折扣展示
 class _MultiStoreList extends StatelessWidget {
-  final List<String> storeIds;
+  final String dealId;
+  final double? dealDiscountPrice;   // deal 现价，用于计算各门店折扣
+  final int? dealDiscountPercent;    // 全局折扣%，当门店无独立原价时降级使用
+  final String primaryMerchantId;   // 主门店 ID，已在外部展示，此处跳过
 
-  const _MultiStoreList({required this.storeIds});
+  const _MultiStoreList({
+    required this.dealId,
+    required this.dealDiscountPrice,
+    required this.dealDiscountPercent,
+    required this.primaryMerchantId,
+  });
 
   @override
   Widget build(BuildContext context) {
-    if (storeIds.isEmpty) return const SizedBox.shrink();
-
     return FutureBuilder<List<Map<String, dynamic>>>(
+      // 查 deal_applicable_stores 表，join merchants 获取门店信息
       future: Supabase.instance.client
-          .from('merchants')
-          .select('id, name, address, logo_url, phone')
-          .inFilter('id', storeIds),
+          .from('deal_applicable_stores')
+          .select(
+            'store_id, store_original_price, '
+            'merchants!deal_applicable_stores_store_id_fkey(id, name, address, logo_url, phone)',
+          )
+          .eq('deal_id', dealId)
+          .eq('status', 'active'),
       builder: (context, snapshot) {
         if (!snapshot.hasData || snapshot.data!.isEmpty) {
           return const SizedBox.shrink();
         }
 
-        final stores = snapshot.data!;
+        // 过滤掉主门店（已在上方单独展示）
+        final rows = snapshot.data!
+            .where((r) => (r['store_id'] as String? ?? '') != primaryMerchantId)
+            .toList();
+
+        if (rows.isEmpty) return const SizedBox.shrink();
+
         return Column(
-          children: stores.map((store) {
+          children: rows.map((row) {
+            final merchant = row['merchants'] as Map<String, dynamic>? ?? {};
+            final storeId = row['store_id'] as String? ?? '';
+            final logoUrl = merchant['logo_url'] as String? ?? '';
+            final name = merchant['name'] as String? ?? '';
+            final address = merchant['address'] as String? ?? '';
+            final phone = merchant['phone'] as String? ?? '';
+
+            // 计算门店折扣：优先用 store_original_price，否则降级用全局 discountPercent
+            final storeOriginalPrice = (row['store_original_price'] as num?)?.toDouble();
+            int? discountPct;
+            if (storeOriginalPrice != null &&
+                storeOriginalPrice > 0 &&
+                dealDiscountPrice != null) {
+              discountPct =
+                  ((storeOriginalPrice - dealDiscountPrice!) / storeOriginalPrice * 100)
+                      .round();
+            } else {
+              discountPct = dealDiscountPercent;
+            }
+
             return Padding(
               padding: const EdgeInsets.only(top: 8),
               child: GestureDetector(
-                onTap: () => context.push('/merchant/${store['id']}'),
+                onTap: () => context.push('/merchant/$storeId'),
                 child: Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
@@ -1040,12 +1097,12 @@ class _MultiStoreList extends StatelessWidget {
                   ),
                   child: Row(
                     children: [
+                      // 门店 Logo
                       ClipRRect(
                         borderRadius: BorderRadius.circular(8),
-                        child: store['logo_url'] != null &&
-                                (store['logo_url'] as String).isNotEmpty
+                        child: logoUrl.isNotEmpty
                             ? CachedNetworkImage(
-                                imageUrl: store['logo_url'] as String,
+                                imageUrl: logoUrl,
                                 width: 44,
                                 height: 44,
                                 fit: BoxFit.cover,
@@ -1059,12 +1116,13 @@ class _MultiStoreList extends StatelessWidget {
                               ),
                       ),
                       const SizedBox(width: 12),
+                      // 门店名称 + 地址
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              store['name'] as String? ?? '',
+                              name,
                               style: const TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
@@ -1072,11 +1130,10 @@ class _MultiStoreList extends StatelessWidget {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
-                            if (store['address'] != null &&
-                                (store['address'] as String).isNotEmpty) ...[
+                            if (address.isNotEmpty) ...[
                               const SizedBox(height: 2),
                               Text(
-                                store['address'] as String,
+                                address,
                                 style: const TextStyle(
                                   fontSize: 11,
                                   color: AppColors.textSecondary,
@@ -1088,8 +1145,47 @@ class _MultiStoreList extends StatelessWidget {
                           ],
                         ),
                       ),
-                      const Icon(Icons.chevron_right,
-                          size: 20, color: AppColors.textHint),
+                      // 折扣 chip（绿色）+ 导航箭头
+                      if (discountPct != null && discountPct > 0) ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 7, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF22C55E).withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            '$discountPct% off',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF16A34A),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                      ],
+                      // 拨号按钮
+                      if (phone.isNotEmpty)
+                        GestureDetector(
+                          onTap: () => launchUrl(
+                            Uri.parse('tel:$phone'),
+                            mode: LaunchMode.externalApplication,
+                          ),
+                          child: Container(
+                            width: 32,
+                            height: 32,
+                            decoration: BoxDecoration(
+                              color: AppColors.primary.withValues(alpha: 0.1),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.phone,
+                                size: 16, color: AppColors.primary),
+                          ),
+                        )
+                      else
+                        const Icon(Icons.chevron_right,
+                            size: 20, color: AppColors.textHint),
                     ],
                   ),
                 ),
@@ -1552,6 +1648,27 @@ class _BottomBar extends ConsumerWidget {
 
   const _BottomBar({required this.deal});
 
+  /// brand deal：弹出门店选择 bottom sheet；store_only deal：直接跳转 checkout
+  void _handleBuyNow(BuildContext context, DealModel deal) {
+    final isBrandDeal = deal.applicableMerchantIds != null &&
+        deal.applicableMerchantIds!.isNotEmpty;
+
+    if (!isBrandDeal) {
+      // store_only deal，不传 merchantId，触发器自动用 deal.merchant_id
+      context.push('/checkout/${deal.id}');
+      return;
+    }
+
+    // brand deal：弹出门店选择
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => _StorePickerSheet(deal: deal),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     if (deal.isExpired) {
@@ -1660,7 +1777,7 @@ class _BottomBar extends ConsumerWidget {
             // Buy Now button
             Expanded(
               child: GestureDetector(
-                onTap: () => context.push('/checkout/${deal.id}'),
+                onTap: () => _handleBuyNow(context, deal),
                 child: Container(
                   height: 48,
                   decoration: BoxDecoration(
@@ -1697,6 +1814,197 @@ class _BottomBar extends ConsumerWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+// ── 门店选择 Bottom Sheet（brand deal 购买时弹出）──────────────
+class _StorePickerSheet extends StatelessWidget {
+  final DealModel deal;
+
+  const _StorePickerSheet({required this.deal});
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: Supabase.instance.client
+          .from('deal_applicable_stores')
+          .select(
+            'store_id, store_original_price, '
+            'merchants!deal_applicable_stores_store_id_fkey(id, name, address, logo_url)',
+          )
+          .eq('deal_id', deal.id)
+          .eq('status', 'active'),
+      builder: (context, snapshot) {
+        final stores = snapshot.data ?? [];
+
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 拖拽条
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceVariant,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Select a Store',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Choose which location to purchase from',
+                  style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                ),
+                const SizedBox(height: 16),
+                if (!snapshot.hasData)
+                  const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: CircularProgressIndicator(),
+                  )
+                else if (stores.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Text(
+                      'No stores available',
+                      style: TextStyle(color: AppColors.textSecondary),
+                    ),
+                  )
+                else
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: MediaQuery.of(context).size.height * 0.4,
+                    ),
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: stores.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                      itemBuilder: (context, index) {
+                        final row = stores[index];
+                        final merchant =
+                            row['merchants'] as Map<String, dynamic>? ?? {};
+                        final storeId = row['store_id'] as String? ?? '';
+                        final name = merchant['name'] as String? ?? '';
+                        final address = merchant['address'] as String? ?? '';
+                        final logoUrl = merchant['logo_url'] as String? ?? '';
+
+                        final storeOrigPrice =
+                            (row['store_original_price'] as num?)?.toDouble();
+                        String? discountText;
+                        if (storeOrigPrice != null && storeOrigPrice > 0) {
+                          final pct = ((storeOrigPrice - deal.discountPrice) /
+                                  storeOrigPrice *
+                                  100)
+                              .round();
+                          if (pct > 0) discountText = '$pct% off';
+                        }
+
+                        return GestureDetector(
+                          onTap: () {
+                            Navigator.pop(context);
+                            context.push(
+                              '/checkout/${deal.id}?merchantId=$storeId',
+                            );
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                              border:
+                                  Border.all(color: AppColors.surfaceVariant),
+                            ),
+                            child: Row(
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: logoUrl.isNotEmpty
+                                      ? Image.network(
+                                          logoUrl,
+                                          width: 44,
+                                          height: 44,
+                                          fit: BoxFit.cover,
+                                        )
+                                      : Container(
+                                          width: 44,
+                                          height: 44,
+                                          color: AppColors.surfaceVariant,
+                                          child: const Icon(Icons.storefront,
+                                              size: 20,
+                                              color: AppColors.textHint),
+                                        ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        name,
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      if (address.isNotEmpty) ...[
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          address,
+                                          style: const TextStyle(
+                                            fontSize: 11,
+                                            color: AppColors.textSecondary,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                                if (discountText != null) ...[
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 7, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF22C55E)
+                                          .withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      discountText,
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: Color(0xFF16A34A),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                ],
+                                const Icon(Icons.chevron_right,
+                                    size: 20, color: AppColors.textHint),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

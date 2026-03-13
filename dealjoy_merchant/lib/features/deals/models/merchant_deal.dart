@@ -192,6 +192,7 @@ class MerchantDeal {
     this.publishedAt,
     this.dealCategoryId,
     this.applicableMerchantIds,
+    this.storeConfirmations,
   });
 
   /// Deal ID
@@ -271,6 +272,10 @@ class MerchantDeal {
 
   /// 适用门店 ID 列表（null = 仅本店，非空 = 多店通用）
   final List<String>? applicableMerchantIds;
+
+  /// 门店预确认数据（brand_multi_store deal 创建时传给 Edge Function）
+  /// 格式：[{ 'store_id': 'uuid', 'pre_confirmed': true/false }]
+  final List<Map<String, dynamic>>? storeConfirmations;
 
   /// 图片列表（含主图）
   final List<DealImage> images;
@@ -372,6 +377,7 @@ class MerchantDeal {
           ?.map((e) => e?.toString() ?? '')
           .where((s) => s.isNotEmpty)
           .toList(),
+      storeConfirmations: null, // 后端不返回此字段，仅用于创建时传参
       images:          imagesSorted,
       createdAt:       json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
@@ -402,6 +408,8 @@ class MerchantDeal {
         'deal_category_id': dealCategoryId,
         if (applicableMerchantIds != null)
           'applicable_merchant_ids': applicableMerchantIds,
+        if (storeConfirmations != null)
+          'store_confirmations': storeConfirmations,
       };
 
   /// 复制并修改部分字段
@@ -432,6 +440,7 @@ class MerchantDeal {
     DateTime? publishedAt,
     String? dealCategoryId,
     List<String>? applicableMerchantIds,
+    List<Map<String, dynamic>>? storeConfirmations,
     List<DealImage>? images,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -463,6 +472,7 @@ class MerchantDeal {
       publishedAt:     publishedAt ?? this.publishedAt,
       dealCategoryId:  dealCategoryId ?? this.dealCategoryId,
       applicableMerchantIds: applicableMerchantIds ?? this.applicableMerchantIds,
+      storeConfirmations: storeConfirmations ?? this.storeConfirmations,
       images:          images ?? this.images,
       createdAt:       createdAt ?? this.createdAt,
       updatedAt:       updatedAt ?? this.updatedAt,

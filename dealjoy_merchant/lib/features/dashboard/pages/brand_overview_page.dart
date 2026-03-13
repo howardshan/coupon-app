@@ -157,7 +157,7 @@ class _BrandStatsGrid extends StatelessWidget {
           physics: const NeverScrollableScrollPhysics(),
           mainAxisSpacing: 8,
           crossAxisSpacing: 8,
-          childAspectRatio: 1.3,
+          childAspectRatio: 1.1,
           children: [
             _StatTile(
               icon: Icons.shopping_bag_outlined,
