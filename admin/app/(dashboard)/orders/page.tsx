@@ -1,10 +1,10 @@
 import { createClient } from '@/lib/supabase/server'
+import { getServiceRoleClient } from '@/lib/supabase/service'
 import { redirect } from 'next/navigation'
-import Link from 'next/link'
-import OrderRefundButtons from '@/components/order-refund-buttons'
-import OrderSearchForm from '@/components/order-search-form'
-import OrdersTableContainer from '@/components/orders-table-container'
+import OrdersPageClient from '@/components/orders-page-client'
 import { OrdersSearchProvider } from '@/contexts/orders-search-context'
+
+export const dynamic = 'force-dynamic'
 
 export default async function OrdersPage({
   searchParams,
@@ -22,13 +22,20 @@ export default async function OrdersPage({
 
   if (profile?.role !== 'admin') redirect('/dashboard')
 
-  let orders: any[] | null
+  const adminSupabase = getServiceRoleClient()
+  let orders: any[] | null = null
+  let fetchError: string | null = null
 
   if (q != null && q.trim() !== '') {
-    const { data } = await supabase.rpc('get_admin_orders_search', { search_q: q.trim() })
-    orders = data ?? null
+    const { data, error } = await supabase.rpc('get_admin_orders_search', { search_q: q.trim() })
+    if (error) {
+      fetchError = error.message
+      console.error('[Orders] get_admin_orders_search error:', error)
+    } else {
+      orders = data ?? null
+    }
   } else {
-    const { data } = await supabase
+    const { data, error } = await adminSupabase
       .from('orders')
       .select(`
         id,
@@ -37,32 +44,36 @@ export default async function OrdersPage({
         quantity,
         status,
         refund_reason,
+        refund_rejected_at,
         created_at,
         users ( email ),
         deals ( title, merchants ( name ) ),
-        coupons ( redeemed_at_merchant_id )
+        coupons!fk_orders_coupon_id ( redeemed_at_merchant_id, expires_at )
       `)
       .order('created_at', { ascending: false })
       .limit(100)
-    orders = data
+    if (error) {
+      fetchError = error.message
+      console.error('[Orders] orders select error:', error)
+    } else {
+      orders = data
+    }
   }
 
-  // 获取核销门店名称映射
   const redeemedMerchantIds = new Set<string>()
   if (orders) {
     for (const o of orders) {
-      const coupons = o.coupons as any[] | null
-      if (coupons) {
-        for (const c of coupons) {
-          if (c.redeemed_at_merchant_id) redeemedMerchantIds.add(c.redeemed_at_merchant_id)
-        }
+      const raw = o.coupons
+      const list = Array.isArray(raw) ? raw : raw != null ? [raw] : []
+      for (const c of list) {
+        if (c?.redeemed_at_merchant_id) redeemedMerchantIds.add(c.redeemed_at_merchant_id)
       }
     }
   }
 
   let redeemedMerchantNames: Record<string, string> = {}
   if (redeemedMerchantIds.size > 0) {
-    const { data: merchants } = await supabase
+    const { data: merchants } = await adminSupabase
       .from('merchants')
       .select('id, name')
       .in('id', Array.from(redeemedMerchantIds))
@@ -77,87 +88,13 @@ export default async function OrdersPage({
 
   return (
     <OrdersSearchProvider>
-      <div>
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-          <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-2xl font-bold text-gray-900">Orders</h1>
-            {refundCount > 0 && (
-              <span className="text-sm bg-orange-100 text-orange-700 px-3 py-1 rounded-full font-medium">
-                {refundCount} refund {refundCount === 1 ? 'request' : 'requests'}
-              </span>
-            )}
-          </div>
-          <OrderSearchForm initialValue={q ?? ''} />
-        </div>
-
-        <OrdersTableContainer>
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Order #</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Deal</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Merchant</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Redeemed At</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Customer</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Amount</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Date</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {(orders as any[])?.map((o: any) => {
-                  // 获取核销门店
-                  const coupons = o.coupons as any[] | null
-                  const redeemedId = coupons?.[0]?.redeemed_at_merchant_id
-                  const redeemedName = redeemedId ? redeemedMerchantNames[redeemedId] : null
-
-                  return (
-                    <tr key={o.id} className={o.status === 'refund_requested' ? 'bg-orange-50/60' : 'hover:bg-gray-50'}>
-                      <td className="px-4 py-3 font-mono text-gray-700">
-                        <Link href={`/orders/${o.id}`} className="text-blue-600 hover:underline">
-                          {o.order_number ?? `DJ-${String(o.id).slice(0, 8).toUpperCase()}`}
-                        </Link>
-                      </td>
-                      <td className="px-4 py-3 font-medium text-gray-900">
-                        <Link href={`/orders/${o.id}`} className="text-blue-600 hover:underline">
-                          {o.deals?.title ?? '—'}
-                        </Link>
-                      </td>
-                      <td className="px-4 py-3 text-gray-600">{o.deals?.merchants?.name ?? '—'}</td>
-                      <td className="px-4 py-3 text-gray-600">
-                        {redeemedName ? (
-                          <span className="text-xs">{redeemedName}</span>
-                        ) : (
-                          <span className="text-gray-400">—</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-gray-600">{o.users?.email ?? '—'}</td>
-                      <td className="px-4 py-3 text-gray-900">
-                        ${o.total_amount}
-                        {o.quantity > 1 && (
-                          <span className="text-gray-400 text-xs ml-1">×{o.quantity}</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <OrderRefundButtons orderId={o.id} initialStatus={o.status} />
-                      </td>
-                      <td className="px-4 py-3 text-gray-500">
-                        {new Date(o.created_at).toLocaleDateString()}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-            {(!orders || orders.length === 0) && (
-              <p className="text-center text-gray-400 py-8">
-                {q != null && q.trim() !== '' ? 'No orders match your search.' : 'No orders yet'}
-              </p>
-            )}
-          </div>
-        </OrdersTableContainer>
-      </div>
+      <OrdersPageClient
+        orders={orders}
+        redeemedMerchantNames={redeemedMerchantNames}
+        fetchError={fetchError}
+        refundCount={refundCount}
+        initialSearchQ={q ?? ''}
+      />
     </OrdersSearchProvider>
   )
 }

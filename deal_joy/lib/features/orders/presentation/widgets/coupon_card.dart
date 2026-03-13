@@ -40,12 +40,13 @@ class CouponCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 按时间已过期时在列表中统一显示为 Expired
-    final displayExpired = coupon.isExpired;
-    final color = displayExpired
-        ? _statusColor('expired')
-        : _statusColor(coupon.status);
-    final label = displayExpired ? 'Expired' : _statusLabel(coupon.status);
+    // 标签优先体现业务状态：已退款一律显示 Refunded；未退款但已过期显示 Expired；其余按 status
+    final isRefunded = coupon.status == 'refunded';
+    final displayExpired = coupon.isExpired && !isRefunded;
+    final color = isRefunded
+        ? _statusColor('refunded')
+        : (displayExpired ? _statusColor('expired') : _statusColor(coupon.status));
+    final label = isRefunded ? 'Refunded' : (displayExpired ? 'Expired' : _statusLabel(coupon.status));
 
     return Card(
       margin: EdgeInsets.zero,
@@ -158,7 +159,7 @@ class CouponCard extends StatelessWidget {
                 const SizedBox(height: 8),
               ],
 
-              // 底部行：有效期 + 购买日期
+              // 底部行：有效期 + 订单号 + 购买日期（避免窄屏下右侧溢出）
               const Divider(height: 1),
               const SizedBox(height: 8),
               Row(
@@ -166,19 +167,40 @@ class CouponCard extends StatelessWidget {
                   const Icon(Icons.event_available_outlined,
                       size: 14, color: AppColors.textSecondary),
                   const SizedBox(width: 4),
-                  Text(
-                    'Expires: ${_formatDate(coupon.expiresAt)}',
-                    style: const TextStyle(
-                        fontSize: 12, color: AppColors.textSecondary),
+                  Flexible(
+                    child: Text(
+                      'Expires: ${_formatDate(coupon.expiresAt)}',
+                      style: const TextStyle(
+                          fontSize: 12, color: AppColors.textSecondary),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
+                  const SizedBox(width: 8),
+                  if (coupon.orderNumber != null && coupon.orderNumber!.isNotEmpty)
+                    Flexible(
+                      child: Text(
+                        '#${coupon.orderNumber}',
+                        style: const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textSecondary,
+                            fontWeight: FontWeight.w500),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
                   const Spacer(),
                   const Icon(Icons.shopping_bag_outlined,
                       size: 14, color: AppColors.textSecondary),
                   const SizedBox(width: 4),
-                  Text(
-                    'Purchased: ${_formatDate(coupon.createdAt)}',
-                    style: const TextStyle(
-                        fontSize: 12, color: AppColors.textSecondary),
+                  Flexible(
+                    child: Text(
+                      'Purchased: ${_formatDate(coupon.createdAt)}',
+                      style: const TextStyle(
+                          fontSize: 12, color: AppColors.textSecondary),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                 ],
               ),

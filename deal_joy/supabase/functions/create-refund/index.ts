@@ -81,75 +81,86 @@ Deno.serve(async (req) => {
       );
     }
 
-    // 防重复退款：已申请或已完成退款的订单不可再次提交
-    if (order.status === 'refunded' || order.status === 'refund_requested') {
+    // 仅处理「已提交退款申请」的订单（管理员审核通过时调用）
+    if (order.status !== 'refund_requested') {
+      if (order.status === 'refunded') {
+        return new Response(
+          JSON.stringify({ error: 'Refund already completed' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
+      if (order.status === 'used' || order.status === 'expired') {
+        return new Response(
+          JSON.stringify({ error: 'Cannot refund used or expired order' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
       return new Response(
-        JSON.stringify({ error: 'Refund already requested or completed' }),
+        JSON.stringify({ error: 'Order must be in refund_requested status' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
-
-    // 已过期订单由自动退款任务（auto-refund-expired）处理，不接受手动退款
-    if (order.status === 'expired') {
-      return new Response(
-        JSON.stringify({ error: 'Cannot manually refund an expired order' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      );
-    }
-
-    // 已核销的优惠券不可退款
-    if (order.status === 'used') {
-      return new Response(
-        JSON.stringify({ error: 'Cannot refund a used coupon' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      );
-    }
-
-    // 向 Stripe 发起退款请求
-    const refund = await stripe.refunds.create({
-      payment_intent: order.payment_intent_id,
-      reason: 'requested_by_customer',
-    });
 
     const now = new Date().toISOString();
 
-    // 使用 service role 客户端更新 orders 表
-    // refund_requested_at：若之前已设置（预申请流程）则保留原值，否则记录为当前时间
-    await supabaseAdmin
-      .from('orders')
-      .update({
-        status: 'refunded',
-        refund_reason: reason ?? 'customer_request',
-        refund_requested_at: order.refund_requested_at ?? now,
-        refunded_at: now,
-        updated_at: now,
-      })
-      .eq('id', orderId);
+    try {
+      // 向 Stripe 发起退款
+      const refund = await stripe.refunds.create({
+        payment_intent: order.payment_intent_id,
+        reason: 'requested_by_customer',
+      });
 
-    // 更新 payments 表，记录退款状态和金额
-    await supabaseAdmin
-      .from('payments')
-      .update({
-        status: 'refunded',
-        refund_amount: order.total_amount,
-      })
-      .eq('order_id', orderId);
+      // 使用 service role 客户端更新 orders 表
+      await supabaseAdmin
+        .from('orders')
+        .update({
+          status: 'refunded',
+          refund_reason: reason ?? 'customer_request',
+          refund_requested_at: order.refund_requested_at ?? now,
+          refunded_at: now,
+          updated_at: now,
+        })
+        .eq('id', orderId);
 
-    // 使用 service role 客户端将关联优惠券标记为已退款
-    await supabaseAdmin
-      .from('coupons')
-      .update({ status: 'refunded' })
-      .eq('order_id', orderId);
+      // 更新 payments 表
+      await supabaseAdmin
+        .from('payments')
+        .update({
+          status: 'refunded',
+          refund_amount: order.total_amount,
+        })
+        .eq('order_id', orderId);
 
-    return new Response(
-      JSON.stringify({
-        refundId: refund.id,
-        status: refund.status,
-        // 前端用于显示退款金额（单位：美元）
-        amount: Number(order.total_amount),
-      }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-    );
+      // 将关联优惠券标记为已退款
+      await supabaseAdmin
+        .from('coupons')
+        .update({ status: 'refunded' })
+        .eq('order_id', orderId);
+
+      return new Response(
+        JSON.stringify({
+          refundId: refund.id,
+          status: refund.status,
+          amount: Number(order.total_amount),
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    } catch (stripeErr: unknown) {
+      // Stripe 退款失败：将订单标记为 refund_failed
+      await supabaseAdmin
+        .from('orders')
+        .update({
+          status: 'refund_failed',
+          updated_at: now,
+        })
+        .eq('id', orderId);
+
+      const message = stripeErr instanceof Error ? stripeErr.message : 'Stripe refund failed';
+      return new Response(
+        JSON.stringify({ error: message }),
+        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
   } catch (err) {
     console.error('create-refund error:', err);
     return new Response(

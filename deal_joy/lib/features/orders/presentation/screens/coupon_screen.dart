@@ -140,8 +140,9 @@ class _StatusBanner extends StatelessWidget {
 
   const _StatusBanner({required this.coupon});
 
-  /// 按时间已过期时统一按 EXPIRED 展示
+  /// 与列表卡片一致：已退款一律按 REFUNDED 展示，未退款但已过期按 EXPIRED，其余按 status
   Color get _color {
+    if (coupon.status == 'refunded') return AppColors.warning;
     if (coupon.isExpired) return AppColors.textSecondary;
     return switch (coupon.status) {
       'unused' => AppColors.primary,
@@ -153,6 +154,7 @@ class _StatusBanner extends StatelessWidget {
   }
 
   String get _label {
+    if (coupon.status == 'refunded') return 'REFUNDED';
     if (coupon.isExpired) return 'EXPIRED';
     return switch (coupon.status) {
       'unused' => 'READY TO USE',
@@ -282,15 +284,15 @@ class _UsedStatusSection extends StatelessWidget {
   Widget build(BuildContext context) {
     String message;
 
-    if (coupon.isUsed && coupon.usedAt != null) {
+    if (coupon.isRefunded) {
+      message = 'This coupon has been refunded.';
+    } else if (coupon.isUsed && coupon.usedAt != null) {
       final formatted = DateFormat('MMM d, yyyy \'at\' h:mm a')
           .format(coupon.usedAt!.toLocal());
       message = 'Used on $formatted';
     } else if (coupon.isExpired) {
       message =
           'This coupon expired on ${DateFormat('MMM d, yyyy').format(coupon.expiresAt.toLocal())}';
-    } else if (coupon.isRefunded) {
-      message = 'This coupon has been refunded.';
     } else {
       message = 'This coupon is no longer active.';
     }
@@ -300,11 +302,13 @@ class _UsedStatusSection extends StatelessWidget {
       child: Column(
         children: [
           Icon(
-            coupon.isUsed
-                ? Icons.check_circle_outline
-                : coupon.isExpired
-                    ? Icons.timer_off_outlined
-                    : Icons.currency_exchange,
+            coupon.isRefunded
+                ? Icons.currency_exchange
+                : coupon.isUsed
+                    ? Icons.check_circle_outline
+                    : coupon.isExpired
+                        ? Icons.timer_off_outlined
+                        : Icons.currency_exchange,
             size: 64,
             color: AppColors.textHint,
           ),
@@ -354,6 +358,16 @@ class _DealInfoSection extends StatelessWidget {
                 fontSize: 18,
               ),
             ),
+          if (coupon.orderNumber != null && coupon.orderNumber!.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Order #${coupon.orderNumber}',
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 13,
+              ),
+            ),
+          ],
           if (coupon.dealDescription != null) ...[
             const SizedBox(height: 6),
             Text(
