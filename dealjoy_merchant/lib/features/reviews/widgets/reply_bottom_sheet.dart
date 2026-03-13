@@ -148,6 +148,7 @@ class _ReplyBottomSheetState extends State<ReplyBottomSheet> {
               ),
             ),
             child: TextField(
+              key: const ValueKey('reply_content_field'),
               controller:   _controller,
               focusNode:    _focusNode,
               maxLines:     5,
@@ -213,6 +214,7 @@ class _ReplyBottomSheetState extends State<ReplyBottomSheet> {
           SizedBox(
             height: 50,
             child: ElevatedButton(
+              key: const ValueKey('reply_submit_btn'),
               onPressed: _canSubmit ? _handleSubmit : null,
               style: ElevatedButton.styleFrom(
                 backgroundColor:      _primaryColor,

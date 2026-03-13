@@ -72,7 +72,7 @@ VALUES
          'https://images.unsplash.com/photo-1529193591184-b1d58069ecdd?w=800'],
    '["Beef Brisket (1lb)", "Baby Back Ribs (half rack)", "Coleslaw", "Baked Beans", "Cornbread"]',
    'Mon–Sun 11:00 AM – 10:00 PM', 50, 127, 4.80, 89, true, true,
-   'Risk-Free Refund within 7 days', expires,
+   'Refund anytime before use, refund when expired', expires,
    '2301 N Henderson Ave, Dallas, TX 75206', 32.8210, -96.7793),
 
   (merchant1_id,
@@ -82,7 +82,7 @@ VALUES
    ARRAY['https://images.unsplash.com/photo-1529193591184-b1d58069ecdd?w=800'],
    '["Brisket (4oz)", "Pulled Pork (4oz)", "Jalapeño Sausage", "2 Sides of Choice"]',
    'Mon–Sun 11:00 AM – 10:00 PM', 30, 55, 4.60, 42, false, true,
-   'Risk-Free Refund within 7 days', expires,
+   'Refund anytime before use, refund when expired', expires,
    '2301 N Henderson Ave, Dallas, TX 75206', 32.8210, -96.7793),
 
   (merchant2_id,
@@ -93,7 +93,7 @@ VALUES
          'https://images.unsplash.com/photo-1585032226651-759b368d7246?w=800'],
    '["Wagyu Beef (200g)", "Pork Belly (200g)", "Mushroom Mix", "Tofu Plate", "Noodles", "Dipping Sauce Set"]',
    'Mon–Sun 11:00 AM – 11:00 PM', 40, 213, 4.90, 156, true, true,
-   'Risk-Free Refund within 7 days', expires,
+   'Refund anytime before use, refund when expired', expires,
    '4601 W Park Blvd, Plano, TX 75093', 33.0198, -96.7497),
 
   (merchant2_id,
@@ -103,7 +103,7 @@ VALUES
    ARRAY['https://images.unsplash.com/photo-1585032226651-759b368d7246?w=800'],
    '["Mala Broth (spicy level selectable)", "Beef Slices (150g)", "Veggies Mix", "Noodles"]',
    'Mon–Sun 11:00 AM – 11:00 PM', 60, 88, 4.70, 63, false, true,
-   'Risk-Free Refund within 7 days', expires,
+   'Refund anytime before use, refund when expired', expires,
    '4601 W Park Blvd, Plano, TX 75093', 33.0198, -96.7497),
 
   (merchant3_id,
@@ -114,7 +114,7 @@ VALUES
          'https://images.unsplash.com/photo-1617196034183-421b4040ed20?w=800'],
    '["8 Chef''s Choice Nigiri", "Miso Soup", "Edamame", "Pickled Ginger"]',
    'Tue–Sun 5:00 PM – 10:30 PM', 20, 174, 4.95, 201, true, true,
-   'Risk-Free Refund within 7 days', expires,
+   'Refund anytime before use, refund when expired', expires,
    '3636 McKinney Ave, Dallas, TX 75204', 32.8090, -96.8001);
 
 RAISE NOTICE 'Seed data inserted: merchant1=%, merchant2=%, merchant3=%', merchant1_id, merchant2_id, merchant3_id;

@@ -84,6 +84,7 @@ class _WriteReviewScreenState extends ConsumerState<WriteReviewScreen> {
                 style: TextStyle(fontWeight: FontWeight.w600)),
             const SizedBox(height: 8),
             TextField(
+              key: const ValueKey('review_comment_field'),
               controller: _commentCtrl,
               maxLines: 5,
               decoration: const InputDecoration(

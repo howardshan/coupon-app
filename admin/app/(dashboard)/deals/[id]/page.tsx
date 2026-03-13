@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import DealReviewActions from '@/components/deal-review-actions'
+import RejectionHistory from '@/components/rejection-history'
 
 export default async function DealReviewPage({
   params,
@@ -21,11 +22,11 @@ export default async function DealReviewPage({
       id, merchant_id, title, description, category,
       original_price, discount_price, discount_label,
       image_urls, stock_limit, total_sold, rating, review_count,
-      is_featured, is_active, refund_policy, address,
+      is_featured, is_active, deal_status, rejection_reason, refund_policy, address,
       dishes, merchant_hours, expires_at,
       applicable_merchant_ids,
       created_at, updated_at,
-      merchants(name, user_id, brand_id, brands(name))
+      merchants(name, address, phone, user_id, brand_id, brands(name))
     `)
     .eq('id', id)
     .single()
@@ -60,6 +61,13 @@ export default async function DealReviewPage({
     applicableStores = data ?? []
   }
 
+  // 查询驳回历史记录
+  const { data: rejectionHistory } = await supabase
+    .from('deal_rejections')
+    .select('id, reason, rejected_by, created_at, deal_snapshot, users(email)')
+    .eq('deal_id', id)
+    .order('created_at', { ascending: false })
+
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
@@ -69,15 +77,22 @@ export default async function DealReviewPage({
           </Link>
           <h1 className="text-2xl font-bold text-gray-900">Deal Review</h1>
         </div>
-        <DealReviewActions dealId={deal.id} isActive={deal.is_active} />
+        <DealReviewActions dealId={deal.id} isActive={deal.is_active} dealStatus={deal.deal_status ?? 'pending'} />
       </div>
 
       <div className="space-y-6">
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Status</h2>
-          <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${isExpired ? 'bg-red-100 text-red-700' : deal.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
-            {isExpired ? 'expired' : deal.is_active ? 'active' : 'inactive'}
+          <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${
+            isExpired ? 'bg-red-100 text-red-700'
+            : deal.deal_status === 'rejected' ? 'bg-red-100 text-red-700'
+            : deal.deal_status === 'pending' ? 'bg-yellow-100 text-yellow-700'
+            : deal.is_active ? 'bg-green-100 text-green-700'
+            : 'bg-gray-100 text-gray-600'
+          }`}>
+            {isExpired ? 'expired' : deal.deal_status ?? (deal.is_active ? 'active' : 'inactive')}
           </span>
+          <RejectionHistory records={rejectionHistory ?? []} />
         </div>
 
         <div className="bg-white rounded-xl border border-gray-200 p-6">
@@ -134,9 +149,23 @@ export default async function DealReviewPage({
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">Location & Hours</h2>
           <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3 text-sm">
-            {deal.address && <div className="sm:col-span-2"><dt className="text-gray-500">Address</dt><dd className="font-medium text-gray-900">{deal.address}</dd></div>}
+            {(deal.address || (deal.merchants as any)?.address) && (
+              <div className="sm:col-span-2">
+                <dt className="text-gray-500">Address</dt>
+                <dd className="font-medium text-gray-900">
+                  {deal.address || (deal.merchants as any)?.address}
+                  {!deal.address && (deal.merchants as any)?.address && <span className="text-xs text-gray-400 ml-1">(from merchant)</span>}
+                </dd>
+              </div>
+            )}
+            {(deal.merchants as any)?.phone && (
+              <div className="sm:col-span-2">
+                <dt className="text-gray-500">Phone</dt>
+                <dd className="font-medium text-gray-900">{(deal.merchants as any).phone}</dd>
+              </div>
+            )}
             {deal.merchant_hours && <div className="sm:col-span-2"><dt className="text-gray-500">Merchant hours</dt><dd className="font-medium text-gray-900">{deal.merchant_hours}</dd></div>}
-            {!deal.address && !deal.merchant_hours && <p className="text-gray-500 text-sm">Not provided.</p>}
+            {!deal.address && !(deal.merchants as any)?.address && !deal.merchant_hours && <p className="text-gray-500 text-sm">Not provided.</p>}
           </dl>
         </div>
 

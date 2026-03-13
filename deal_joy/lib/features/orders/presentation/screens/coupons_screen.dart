@@ -79,6 +79,7 @@ class _CouponTabView extends ConsumerWidget {
               ),
               const SizedBox(height: 16),
               ElevatedButton(
+                key: const ValueKey('coupons_retry_btn'),
                 onPressed: () => ref.invalidate(userCouponsProvider),
                 child: const Text('Retry'),
               ),

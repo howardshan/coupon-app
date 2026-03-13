@@ -163,6 +163,7 @@ class EarningsReportPage extends ConsumerWidget {
           const Text('Failed to load report'),
           const SizedBox(height: 16),
           ElevatedButton(
+            key: const ValueKey('earnings_report_retry_btn'),
             onPressed: () => ref.invalidate(reportDataProvider),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFFFF6B35),

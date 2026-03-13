@@ -353,6 +353,7 @@ class _DateRangeFilterState extends State<_DateRangeFilter> {
           SizedBox(
             height: 36,
             child: ElevatedButton(
+              key: const ValueKey('transactions_apply_filter_btn'),
               onPressed: hasFilter
                   ? () => widget.onApply(_from, _to)
                   : null,

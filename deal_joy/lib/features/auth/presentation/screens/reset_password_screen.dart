@@ -238,6 +238,7 @@ class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
 
           // 新密码输入框
           AppTextField(
+            key: const ValueKey('reset_password_field'),
             controller: _passwordCtrl,
             label: 'New Password',
             hint: '••••••••',
@@ -252,6 +253,7 @@ class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
 
           // 确认密码输入框
           AppTextField(
+            key: const ValueKey('reset_confirm_password_field'),
             controller: _confirmCtrl,
             label: 'Confirm Password',
             hint: '••••••••',

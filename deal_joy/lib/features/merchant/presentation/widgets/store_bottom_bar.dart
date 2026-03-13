@@ -64,6 +64,7 @@ class StoreBottomBar extends ConsumerWidget {
             child: SizedBox(
               height: 44,
               child: ElevatedButton(
+                key: const ValueKey('store_buy_now_btn'),
                 onPressed: deals.isNotEmpty
                     ? () => _handleBuyNow(context)
                     : null,
@@ -239,6 +240,7 @@ class _DealSelectorSheet extends StatelessWidget {
                     width: 70,
                     height: 32,
                     child: ElevatedButton(
+                      key: const ValueKey('store_view_deal_btn'),
                       onPressed: () {
                         Navigator.pop(ctx);
                         context.push('/deals/${deal.id}');

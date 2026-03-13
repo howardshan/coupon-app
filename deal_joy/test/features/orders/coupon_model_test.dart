@@ -23,7 +23,7 @@ void main() {
         'title': 'BBQ Combo for 2',
         'description': 'Includes ribs, brisket, and sides',
         'image_urls': ['https://example.com/bbq.jpg'],
-        'refund_policy': 'Risk-Free Refund within 7 days',
+        'refund_policy': 'Refund anytime before use, refund when expired',
         'merchants': {
           'name': 'Texas BBQ House',
           'logo_url': 'https://example.com/logo.png',
@@ -53,7 +53,7 @@ void main() {
       expect(coupon.dealTitle, 'BBQ Combo for 2');
       expect(coupon.dealDescription, 'Includes ribs, brisket, and sides');
       expect(coupon.dealImageUrl, 'https://example.com/bbq.jpg');
-      expect(coupon.refundPolicy, 'Risk-Free Refund within 7 days');
+      expect(coupon.refundPolicy, 'Refund anytime before use, refund when expired');
       expect(coupon.merchantName, 'Texas BBQ House');
       expect(coupon.merchantLogoUrl, 'https://example.com/logo.png');
       expect(coupon.merchantAddress, '123 Main St, Dallas, TX');

@@ -45,7 +45,7 @@ class _DealTemplateCreatePageState
   final Set<String> _selectedUsageDays = {};
   bool _isStackable = true;
   final _refundPolicyController =
-      TextEditingController(text: 'Risk-Free Refund within 7 days');
+      TextEditingController(text: 'Refund anytime before use, refund when expired');
 
   // ── Other ───────────────────────────────────────────────────
   String _dealType = 'regular';

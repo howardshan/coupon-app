@@ -112,7 +112,7 @@ create table public.deals (
   review_count     int not null default 0,
   is_featured      boolean not null default false,
   is_active        boolean not null default true,
-  refund_policy    text not null default 'Risk-Free Refund within 7 days',
+  refund_policy    text not null default 'Refund anytime before use, refund when expired',
   lat              double precision,
   lng              double precision,
   address          text,

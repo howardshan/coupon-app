@@ -67,7 +67,7 @@ BEGIN
     d.expires_at,
     m.name,
     m.logo_url,
-    m.city,
+    m.city::TEXT,
     m.homepage_cover_url,
     -- 用户距离（基于 Deal 创建门店坐标）
     CASE
@@ -175,7 +175,7 @@ BEGIN
     d.expires_at,
     m.name,
     m.logo_url,
-    m.city,
+    m.city::TEXT,
     m.homepage_cover_url,
     -- 到 Deal 创建门店的距离
     (3958.8 * 2 * ASIN(SQRT(

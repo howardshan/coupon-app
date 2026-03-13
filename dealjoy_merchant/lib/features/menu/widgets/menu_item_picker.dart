@@ -327,6 +327,7 @@ class _MenuItemPickerState extends ConsumerState<MenuItemPicker> {
           SizedBox(
             height: 44,
             child: ElevatedButton(
+              key: const ValueKey('menu_picker_confirm_btn'),
               onPressed: count > 0
                   ? () {
                       // 构建选中列表返回

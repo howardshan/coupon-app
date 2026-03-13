@@ -353,35 +353,13 @@ class _PriceSection extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 10),
-          // = original - savings
-          Text(
-            '= ',
-            style: TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 13,
-            ),
-          ),
+          // 原价划线
           Text(
             '\$${deal.originalPrice.toStringAsFixed(0)}',
             style: const TextStyle(
               color: AppColors.textHint,
               fontSize: 13,
               decoration: TextDecoration.lineThrough,
-            ),
-          ),
-          Text(
-            ' - ',
-            style: TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 13,
-            ),
-          ),
-          Text(
-            '\$${deal.savingsAmount.toStringAsFixed(0)}',
-            style: const TextStyle(
-              color: AppColors.primary,
-              fontSize: 13,
-              fontWeight: FontWeight.bold,
             ),
           ),
         ],
@@ -476,7 +454,7 @@ class _InfoSection extends StatelessWidget {
                     color: AppColors.success, size: 15),
                 const SizedBox(width: 6),
                 const Text(
-                  'Risk-Free Refund',
+                  'Refund Anytime',
                   style: TextStyle(
                     color: AppColors.success,
                     fontWeight: FontWeight.w600,

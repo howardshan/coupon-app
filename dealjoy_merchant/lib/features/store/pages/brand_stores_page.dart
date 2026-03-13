@@ -174,6 +174,7 @@ class BrandStoresPage extends ConsumerWidget {
             ),
             const SizedBox(height: 16),
             TextField(
+              key: const ValueKey('brand_store_add_email_field'),
               controller: emailCtrl,
               keyboardType: TextInputType.emailAddress,
               decoration: const InputDecoration(
@@ -190,6 +191,7 @@ class BrandStoresPage extends ConsumerWidget {
             child: const Text('Cancel'),
           ),
           ElevatedButton(
+            key: const ValueKey('brand_store_add_submit_btn'),
             onPressed: () async {
               final email = emailCtrl.text.trim();
               if (email.isEmpty) return;

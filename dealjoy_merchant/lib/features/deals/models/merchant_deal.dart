@@ -368,7 +368,7 @@ class MerchantDeal {
           .toList() ?? [],
       maxPerPerson:    json['max_per_person'] as int?,
       isStackable:     json['is_stackable'] as bool? ?? true,
-      reviewNotes:     json['review_notes'] as String?,
+      reviewNotes:     json['rejection_reason'] as String? ?? json['review_notes'] as String?,
       publishedAt:     json['published_at'] != null
           ? DateTime.parse(json['published_at'] as String)
           : null,

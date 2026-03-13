@@ -53,7 +53,7 @@ class DealModel {
     required this.stockLimit,
     required this.expiresAt,
     this.isFeatured = false,
-    this.refundPolicy = 'Risk-Free Refund within 7 days',
+    this.refundPolicy = 'Refund anytime before use, refund when expired',
     this.lat,
     this.lng,
     this.address,
@@ -89,7 +89,7 @@ class DealModel {
         expiresAt: DateTime.parse(json['expires_at'] as String),
         isFeatured: json['is_featured'] as bool? ?? false,
         refundPolicy: json['refund_policy'] as String? ??
-            'Risk-Free Refund within 7 days',
+            'Refund anytime before use, refund when expired',
         lat: (json['lat'] as num?)?.toDouble(),
         lng: (json['lng'] as num?)?.toDouble(),
         address: json['address'] as String?,

@@ -142,10 +142,12 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         content: Text(message),
         actions: [
           TextButton(
+            key: const ValueKey('checkout_change_payment_btn'),
             onPressed: () => Navigator.pop(ctx),
             child: const Text('Change Payment Method'),
           ),
           ElevatedButton(
+            key: const ValueKey('checkout_retry_btn'),
             onPressed: () {
               Navigator.pop(ctx);
               // 重新计算 total 后重试
@@ -422,6 +424,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                         children: [
                           Expanded(
                             child: TextField(
+                              key: const ValueKey('checkout_coupon_field'),
                               controller: _couponCtrl,
                               textCapitalization: TextCapitalization.characters,
                               decoration: InputDecoration(
@@ -441,6 +444,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                             height: 52,
                             width: 80,
                             child: ElevatedButton(
+                              key: const ValueKey('checkout_apply_coupon_btn'),
                               onPressed: _isValidatingCoupon
                                   ? null
                                   : () => _applyCoupon(subtotal),

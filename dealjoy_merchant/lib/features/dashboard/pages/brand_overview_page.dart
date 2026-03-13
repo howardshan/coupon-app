@@ -36,6 +36,7 @@ class BrandOverviewPage extends ConsumerWidget {
               Text('Failed to load: $err'),
               const SizedBox(height: 12),
               ElevatedButton(
+                key: const ValueKey('brand_overview_retry_btn'),
                 onPressed: () =>
                     ref.read(brandOverviewProvider.notifier).refresh(),
                 child: const Text('Retry'),

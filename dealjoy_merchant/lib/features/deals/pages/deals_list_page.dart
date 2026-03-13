@@ -35,7 +35,7 @@ class DealsListPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return DefaultTabController(
-      length: 4,
+      length: 5,
       child: Scaffold(
         backgroundColor: const Color(0xFFF8F9FA),
         appBar: AppBar(
@@ -81,6 +81,8 @@ class DealsListPage extends ConsumerWidget {
             ),
           ],
           bottom: const TabBar(
+            isScrollable: true,
+            tabAlignment: TabAlignment.start,
             labelColor: Color(0xFFFF6B35),
             unselectedLabelColor: Color(0xFF999999),
             indicatorColor: Color(0xFFFF6B35),
@@ -92,6 +94,7 @@ class DealsListPage extends ConsumerWidget {
               Tab(text: 'Active'),
               Tab(text: 'Inactive'),
               Tab(text: 'Pending'),
+              Tab(text: 'Declined'),
             ],
           ),
         ),
@@ -105,6 +108,8 @@ class DealsListPage extends ConsumerWidget {
             _DealTabView(filter: DealStatus.inactive, ref: ref, brandOnly: brandOnly),
             // Pending — 待审核
             _DealTabView(filter: DealStatus.pending, ref: ref, brandOnly: brandOnly),
+            // Declined — 已拒绝的品牌 Deal
+            const _DeclinedDealsTab(),
           ],
         ),
 
@@ -397,6 +402,167 @@ class _ErrorView extends StatelessWidget {
 }
 
 // ============================================================
+// Declined Tab — 展示被拒绝的品牌 Deal 列表
+// 数据来源：declinedStoreDealsProvider（不来自 dealsProvider）
+// ============================================================
+class _DeclinedDealsTab extends ConsumerWidget {
+  const _DeclinedDealsTab();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final declinedAsync = ref.watch(declinedStoreDealsProvider);
+
+    return declinedAsync.when(
+      // 加载中显示进度指示器
+      loading: () => const Center(child: CircularProgressIndicator()),
+      // 出错显示错误提示
+      error: (e, _) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.cloud_off_rounded, size: 64, color: Color(0xFFCCCCCC)),
+              const SizedBox(height: 16),
+              const Text(
+                'Failed to load declined deals',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF333333),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                e.toString(),
+                style: const TextStyle(fontSize: 13, color: Color(0xFF999999)),
+                textAlign: TextAlign.center,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+      ),
+      data: (deals) {
+        // 空列表显示空状态
+        if (deals.isEmpty) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.block_outlined,
+                    size: 72,
+                    color: Color(0xFFDDDDDD),
+                  ),
+                  SizedBox(height: 16),
+                  Text(
+                    'No Declined Deals',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF333333),
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    'Brand deals you have declined will appear here.',
+                    style: TextStyle(fontSize: 13, color: Color(0xFF999999)),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        // 渲染 Deal 列表
+        return ListView.separated(
+          padding: const EdgeInsets.only(top: 8, bottom: 100),
+          itemCount: deals.length,
+          separatorBuilder: (_, i) => Divider(height: 1, color: Colors.grey.shade100),
+          itemBuilder: (context, index) {
+            final row = deals[index];
+            final dealId = row['deal_id'] as String? ?? '';
+
+            // 解析嵌套的 deals join 结果
+            final dealData = row['deals'] as Map<String, dynamic>? ?? {};
+            final title = dealData['title'] as String? ?? 'Untitled Deal';
+            final price = (dealData['discount_price'] as num?)?.toDouble() ?? 0.0;
+
+            // 解析品牌名称（双重嵌套）
+            final merchantData = dealData['merchants'] as Map<String, dynamic>? ?? {};
+            final brandName = merchantData['name'] as String? ?? 'Brand';
+
+            // 解析 deal 图片（优先 is_primary，否则取 sort_order 最小的）
+            final dealImages = (dealData['deal_images'] as List<dynamic>?) ?? [];
+            String? imageUrl;
+            if (dealImages.isNotEmpty) {
+              final primary = dealImages.firstWhere(
+                (img) => img['is_primary'] == true,
+                orElse: () => dealImages.first,
+              );
+              imageUrl = primary['image_url'] as String?;
+            }
+
+            return ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              leading: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: SizedBox(
+                  width: 48,
+                  height: 48,
+                  child: imageUrl != null && imageUrl.isNotEmpty
+                      ? Image.network(
+                          imageUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Container(
+                            color: const Color(0xFFF5F5F5),
+                            child: const Icon(Icons.local_offer_outlined, size: 20, color: Color(0xFF9E9E9E)),
+                          ),
+                        )
+                      : Container(
+                          color: const Color(0xFFF5F5F5),
+                          child: const Icon(Icons.local_offer_outlined, size: 20, color: Color(0xFF9E9E9E)),
+                        ),
+                ),
+              ),
+              title: Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF1A1A2E),
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              subtitle: Text(
+                '$brandName · \$${price.toStringAsFixed(2)}',
+                style: const TextStyle(fontSize: 12, color: Color(0xFF666666)),
+              ),
+              trailing: const Icon(Icons.chevron_right, color: Color(0xFF9E9E9E)),
+              // 点击跳转到 Deal 确认页
+              onTap: () => context.push(
+                '/deals/confirm/$dealId',
+                extra: {
+                  'title': title,
+                  'price': price,
+                  'brand_name': brandName,
+                },
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+// ============================================================
 // 分类管理 BottomSheet
 // ============================================================
 class _CategoryManagerSheet extends ConsumerStatefulWidget {
@@ -524,6 +690,7 @@ class _CategoryManagerSheetState extends ConsumerState<_CategoryManagerSheet> {
       builder: (ctx) => AlertDialog(
         title: const Text('New Category'),
         content: TextField(
+          key: const ValueKey('deals_list_new_category_field'),
           controller: controller,
           autofocus: true,
           decoration: const InputDecoration(
@@ -576,6 +743,7 @@ class _CategoryManagerSheetState extends ConsumerState<_CategoryManagerSheet> {
       builder: (ctx) => AlertDialog(
         title: const Text('Edit Category'),
         content: TextField(
+          key: const ValueKey('deals_list_edit_category_field'),
           controller: controller,
           autofocus: true,
           decoration: const InputDecoration(

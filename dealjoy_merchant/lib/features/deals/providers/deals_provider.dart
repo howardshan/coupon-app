@@ -1,6 +1,7 @@
 // Deal管理 Riverpod Provider
 // 使用 AsyncNotifier 管理 MerchantDeal 列表状态
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -344,12 +345,57 @@ final dealTemplatesProvider =
 // 直接查 Supabase 表（门店视角，不走 Edge Function）
 // ============================================================
 final pendingStoreDealsProvider =
-    FutureProvider<List<Map<String, dynamic>>>((ref) async {
+    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+  final supabase = Supabase.instance.client;
+  final user = supabase.auth.currentUser;
+  if (user == null) {
+    debugPrint('[pendingStoreDeals] user is null');
+    return [];
+  }
+  debugPrint('[pendingStoreDeals] user=${user.id}');
+
+  // 获取当前用户关联的门店 merchant_id
+  final merchant = await supabase
+      .from('merchants')
+      .select('id')
+      .eq('user_id', user.id)
+      .maybeSingle();
+  if (merchant == null) {
+    debugPrint('[pendingStoreDeals] merchant not found for user');
+    return [];
+  }
+  final merchantId = merchant['id'] as String;
+  debugPrint('[pendingStoreDeals] merchantId=$merchantId');
+
+  try {
+    // 查询 deal_applicable_stores 中 pending 记录，join deals 和品牌商家名称
+    final rows = await supabase
+        .from('deal_applicable_stores')
+        .select(
+          'deal_id, created_at, deals(title, discount_price, merchants!deals_merchant_id_fkey(name))',
+        )
+        .eq('store_id', merchantId)
+        .eq('status', 'pending_store_confirmation')
+        .order('created_at', ascending: false);
+
+    debugPrint('[pendingStoreDeals] rows count=${(rows as List).length}, data=$rows');
+    return List<Map<String, dynamic>>.from(rows);
+  } catch (e) {
+    debugPrint('[pendingStoreDeals] ERROR: $e');
+    rethrow;
+  }
+});
+
+// ============================================================
+// declinedStoreDealsProvider — 当前门店已拒绝的品牌 Deal 列表
+// 直接查 Supabase 表（门店视角，不走 Edge Function）
+// ============================================================
+final declinedStoreDealsProvider =
+    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
   final supabase = Supabase.instance.client;
   final user = supabase.auth.currentUser;
   if (user == null) return [];
 
-  // 获取当前用户关联的门店 merchant_id
   final merchant = await supabase
       .from('merchants')
       .select('id')
@@ -358,15 +404,19 @@ final pendingStoreDealsProvider =
   if (merchant == null) return [];
   final merchantId = merchant['id'] as String;
 
-  // 查询 deal_applicable_stores 中 pending 记录，join deals 和品牌商家名称
-  final rows = await supabase
-      .from('deal_applicable_stores')
-      .select(
-        'deal_id, created_at, deals(title, discount_price, merchants!deals_merchant_id_fkey(name))',
-      )
-      .eq('store_id', merchantId)
-      .eq('status', 'pending_store_confirmation')
-      .order('created_at', ascending: false);
+  try {
+    final rows = await supabase
+        .from('deal_applicable_stores')
+        .select(
+          'deal_id, created_at, deals(title, discount_price, merchants!deals_merchant_id_fkey(name), deal_images(image_url, is_primary, sort_order))',
+        )
+        .eq('store_id', merchantId)
+        .eq('status', 'declined')
+        .order('created_at', ascending: false);
 
-  return List<Map<String, dynamic>>.from(rows as List);
+    return List<Map<String, dynamic>>.from(rows);
+  } catch (e) {
+    debugPrint('[declinedStoreDeals] ERROR: $e');
+    rethrow;
+  }
 });

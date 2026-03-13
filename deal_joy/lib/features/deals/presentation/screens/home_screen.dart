@@ -162,6 +162,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           Padding(
                             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                             child: TextField(
+                              key: const ValueKey('home_search_field'),
                               controller: _searchCtrl,
                               decoration: InputDecoration(
                                 hintText: 'Search deals, restaurants...',

@@ -106,6 +106,7 @@ class _HeaderStyleSelectorState extends ConsumerState<HeaderStyleSelector> {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
+              key: const ValueKey('header_style_save_btn'),
               onPressed: _saving ? null : _save,
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFFFF6B35),
