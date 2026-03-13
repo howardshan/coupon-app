@@ -39,6 +39,9 @@ import '../features/store/pages/store_photos_page.dart';
 import '../features/store/pages/store_tags_page.dart';
 import '../features/store/pages/store_selector_page.dart';
 import '../features/store/pages/brand_manage_page.dart';
+import '../features/store/pages/brand_info_page.dart';
+import '../features/store/pages/brand_stores_page.dart';
+import '../features/store/pages/brand_admins_page.dart';
 import '../features/dashboard/pages/brand_overview_page.dart';
 
 // ── 菜品管理 ─────────────────────────────────────────────────
@@ -52,6 +55,8 @@ import '../features/deals/pages/deals_list_page.dart';
 import '../features/deals/pages/deal_create_page.dart';
 import '../features/deals/pages/deal_detail_page.dart';
 import '../features/deals/pages/deal_templates_page.dart';
+import '../features/deals/pages/deal_template_create_page.dart';
+import '../features/deals/pages/store_deal_confirm_page.dart';
 
 // ── 评价 / 分析 / 财务 / 通知 / 营销 ───────────────────────────
 import '../features/reviews/pages/reviews_page.dart';
@@ -372,10 +377,29 @@ final appRouter = GoRouter(
       builder: (context, state) => const StoreSelectorPage(),
     ),
 
-    // 品牌管理页
+    // 品牌管理页 + 子页面
     GoRoute(
       path: '/brand-manage',
       builder: (context, state) => const BrandManagePage(),
+      routes: [
+        GoRoute(
+          path: 'info',
+          builder: (context, state) => const BrandInfoPage(),
+        ),
+        GoRoute(
+          path: 'stores',
+          builder: (context, state) => const BrandStoresPage(),
+        ),
+        GoRoute(
+          path: 'admins',
+          builder: (context, state) => const BrandAdminsPage(),
+        ),
+        // 品牌 Deal 列表（只显示多店 Deal）
+        GoRoute(
+          path: 'deals',
+          builder: (context, state) => const DealsListPage(brandOnly: true),
+        ),
+      ],
     ),
 
     // V2.1 品牌总览 Dashboard
@@ -444,6 +468,26 @@ final appRouter = GoRouter(
         GoRoute(
           path: 'templates',
           builder: (context, state) => const DealTemplatesPage(),
+          routes: [
+            GoRoute(
+              path: 'create',
+              builder: (context, state) => const DealTemplateCreatePage(),
+            ),
+          ],
+        ),
+        // 门店确认品牌 Deal（store_deal_confirm_page）
+        GoRoute(
+          path: 'confirm/:dealId',
+          builder: (context, state) {
+            final dealId = state.pathParameters['dealId']!;
+            final extra = state.extra as Map<String, dynamic>? ?? {};
+            return StoreDealConfirmPage(
+              dealId: dealId,
+              dealTitle: extra['title'] as String? ?? '',
+              dealPrice: (extra['price'] as num?)?.toDouble() ?? 0,
+              brandName: extra['brand_name'] as String? ?? '',
+            );
+          },
         ),
         GoRoute(
           path: ':dealId',

@@ -54,14 +54,14 @@ class SettingsPage extends ConsumerWidget {
                 icon: Icons.lock_outline,
                 title: 'Account Security',
                 subtitle: 'Password, phone, 2FA',
-                onTap: () => context.push('/settings/account-security'),
+                onTap: () => context.push('/me/account-security'),
               ),
               SettingsTile(
                 icon: Icons.group_outlined,
                 title: 'Staff Accounts',
                 subtitle: 'Manage employee access',
                 showDivider: false,
-                onTap: () => context.push('/settings/staff'),
+                onTap: () => context.push('/me/staff'),
               ),
             ],
           ),
@@ -116,7 +116,7 @@ class SettingsPage extends ConsumerWidget {
                 title: 'Notification Preferences',
                 subtitle: 'Choose what alerts you receive',
                 showDivider: false,
-                onTap: () => context.push('/settings/notifications'),
+                onTap: () => context.push('/me/notifications'),
               ),
             ],
           ),
@@ -131,7 +131,7 @@ class SettingsPage extends ConsumerWidget {
                 icon: Icons.help_outline,
                 title: 'Help Center',
                 subtitle: 'FAQ and contact support',
-                onTap: () => context.push('/settings/help'),
+                onTap: () => context.push('/me/help'),
               ),
               SettingsTile(
                 icon: Icons.info_outline,
@@ -295,7 +295,7 @@ class SettingsPage extends ConsumerWidget {
         final service = ref.read(settingsServiceProvider);
         await service.signOut();
         if (context.mounted) {
-          context.go('/login');
+          context.go('/auth/login');
         }
       } catch (e) {
         if (context.mounted) {

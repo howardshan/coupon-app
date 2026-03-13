@@ -44,6 +44,7 @@ class CheckoutRepository {
     required int quantity,
     required double total,
     String? promoCode, // P0 fix: 将优惠码传给服务端，让 Edge Function 进行服务端价格验证
+    String? purchasedMerchantId, // brand deal 用户选择的门店 ID
   }) async {
     // P0 fix: userId 不能为空串，否则订单会插入错误数据
     if (userId.isEmpty) {
@@ -72,6 +73,7 @@ class CheckoutRepository {
       quantity: quantity,
       total: total,
       paymentIntentId: paymentIntentId,
+      purchasedMerchantId: purchasedMerchantId,
     );
 
     return CheckoutResult(orderId: orderId);
@@ -211,9 +213,10 @@ class CheckoutRepository {
     required int quantity,
     required double total,
     required String paymentIntentId,
+    String? purchasedMerchantId,
   }) async {
     try {
-      final orderRes = await _client.from('orders').insert({
+      final orderData = {
         'user_id': userId,
         'deal_id': dealId,
         'quantity': quantity,
@@ -221,7 +224,10 @@ class CheckoutRepository {
         'total_amount': total,
         'status': 'unused',
         'payment_intent_id': paymentIntentId,
-      }).select('id').single();
+        if (purchasedMerchantId != null)
+          'purchased_merchant_id': purchasedMerchantId,
+      };
+      final orderRes = await _client.from('orders').insert(orderData).select('id').single();
 
       return orderRes['id'] as String;
     } catch (e) {

@@ -338,3 +338,35 @@ final dealTemplatesProvider =
     AsyncNotifierProvider<DealTemplatesNotifier, List<DealTemplate>>(
   DealTemplatesNotifier.new,
 );
+
+// ============================================================
+// pendingStoreDealsProvider — 当前门店待确认的品牌 Deal 列表
+// 直接查 Supabase 表（门店视角，不走 Edge Function）
+// ============================================================
+final pendingStoreDealsProvider =
+    FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  final supabase = Supabase.instance.client;
+  final user = supabase.auth.currentUser;
+  if (user == null) return [];
+
+  // 获取当前用户关联的门店 merchant_id
+  final merchant = await supabase
+      .from('merchants')
+      .select('id')
+      .eq('user_id', user.id)
+      .maybeSingle();
+  if (merchant == null) return [];
+  final merchantId = merchant['id'] as String;
+
+  // 查询 deal_applicable_stores 中 pending 记录，join deals 和品牌商家名称
+  final rows = await supabase
+      .from('deal_applicable_stores')
+      .select(
+        'deal_id, created_at, deals(title, discount_price, merchants!deals_merchant_id_fkey(name))',
+      )
+      .eq('store_id', merchantId)
+      .eq('status', 'pending_store_confirmation')
+      .order('created_at', ascending: false);
+
+  return List<Map<String, dynamic>>.from(rows as List);
+});

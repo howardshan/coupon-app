@@ -12,6 +12,7 @@ import '../widgets/stats_card.dart';
 import '../widgets/shortcut_grid.dart';
 import '../../store/widgets/store_selector.dart';
 import '../../store/providers/store_provider.dart';
+import '../../deals/providers/deals_provider.dart';
 
 // ============================================================
 // DashboardPage — 工作台主页（ConsumerWidget）
@@ -184,18 +185,19 @@ class DashboardPage extends ConsumerWidget {
             const SizedBox(height: 24),
 
             // ------------------------------------------------
+            // 区块 1.5: 待确认品牌 Deal 横幅（有待确认时才显示）
+            // ------------------------------------------------
+            _PendingBrandDealsBanner(ref: ref),
+
+            // ------------------------------------------------
             // 区块 2: 快捷入口（3x2 grid）
             // ------------------------------------------------
             _SectionHeader(title: 'Quick Actions'),
             const SizedBox(height: 12),
             ShortcutGrid(
               onTap: (action) => _onShortcutTap(context, action),
+              isBrandAdmin: ref.watch(storeProvider).valueOrNull?.isBrandAdmin ?? false,
             ),
-
-            // ------------------------------------------------
-            // V2.1 品牌总览入口（仅品牌管理员可见）
-            // ------------------------------------------------
-            const _BrandOverviewEntry(),
 
             // ------------------------------------------------
             // 区块 3: 待办提醒（P1 — 有待办时才显示）
@@ -344,6 +346,8 @@ class DashboardPage extends ConsumerWidget {
         context.push('/store');
       case ShortcutAction.menu:
         context.push('/store/menu');
+      case ShortcutAction.brand:
+        context.push('/brand-manage');
     }
   }
 
@@ -658,62 +662,212 @@ class _TrendSection extends StatelessWidget {
 }
 
 // ============================================================
-// V2.1 品牌总览入口卡片（仅品牌管理员可见）
+// _PendingBrandDealsBanner — 待确认品牌 Deal 橙色提示横幅
+// 查询当前门店在 deal_applicable_stores 中 pending_store_confirmation 的记录
 // ============================================================
-class _BrandOverviewEntry extends ConsumerWidget {
-  const _BrandOverviewEntry();
+class _PendingBrandDealsBanner extends ConsumerWidget {
+  final WidgetRef ref;
+
+  const _PendingBrandDealsBanner({required this.ref});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final storeAsync = ref.watch(storeProvider);
-    final isBrandAdmin = storeAsync.valueOrNull?.isBrandAdmin ?? false;
+  Widget build(BuildContext context, WidgetRef widgetRef) {
+    final pendingAsync = widgetRef.watch(pendingStoreDealsProvider);
 
-    if (!isBrandAdmin) return const SizedBox.shrink();
+    return pendingAsync.when(
+      // 加载中不显示任何内容
+      loading: () => const SizedBox.shrink(),
+      // 出错不显示（静默失败，不影响主界面）
+      error: (_, _) => const SizedBox.shrink(),
+      data: (deals) {
+        if (deals.isEmpty) return const SizedBox.shrink();
 
-    return Padding(
-      padding: const EdgeInsets.only(top: 16),
-      child: InkWell(
-        onTap: () => context.push('/brand-overview'),
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFFFF6B35), Color(0xFFFF8F65)],
+        final count = deals.length;
+
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 16),
+          child: GestureDetector(
+            onTap: () => _showPendingDealsSheet(context, deals),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF3E0),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFFF6B35)),
+              ),
+              child: Row(
+                children: [
+                  // 通知图标
+                  const Icon(
+                    Icons.notifications_active_outlined,
+                    size: 20,
+                    color: Color(0xFFFF6B35),
+                  ),
+                  const SizedBox(width: 10),
+                  // 提示文字
+                  Expanded(
+                    child: Text(
+                      'You have $count pending brand deal${count > 1 ? 's' : ''} to confirm',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFFE64A00),
+                      ),
+                    ),
+                  ),
+                  // 箭头
+                  const Text(
+                    'Tap to view →',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFFFF6B35),
+                    ),
+                  ),
+                ],
+              ),
             ),
-            borderRadius: BorderRadius.circular(12),
           ),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.2),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.dashboard_customize,
-                    color: Colors.white, size: 24),
+        );
+      },
+    );
+  }
+
+  // ----------------------------------------------------------
+  // 展示待确认 Deal 列表 BottomSheet
+  // ----------------------------------------------------------
+  void _showPendingDealsSheet(
+    BuildContext context,
+    List<Map<String, dynamic>> deals,
+  ) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.5,
+        minChildSize: 0.3,
+        maxChildSize: 0.85,
+        builder: (_, scrollController) => Column(
+          children: [
+            // 拖动手柄
+            Container(
+              margin: const EdgeInsets.only(top: 10, bottom: 4),
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2),
               ),
-              const SizedBox(width: 14),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Brand Overview',
-                        style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold)),
-                    SizedBox(height: 2),
-                    Text('View all stores performance',
-                        style: TextStyle(
-                            color: Colors.white70, fontSize: 13)),
-                  ],
-                ),
+            ),
+            // 标题
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.notifications_active_outlined,
+                    size: 18,
+                    color: Color(0xFFFF6B35),
+                  ),
+                  SizedBox(width: 8),
+                  Text(
+                    'Pending Brand Deals',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF1A1A2E),
+                    ),
+                  ),
+                ],
               ),
-              const Icon(Icons.chevron_right, color: Colors.white70),
-            ],
-          ),
+            ),
+            const Divider(height: 1),
+            // Deal 列表
+            Expanded(
+              child: ListView.separated(
+                controller: scrollController,
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                itemCount: deals.length,
+                separatorBuilder: (_, __) =>
+                    Divider(height: 1, color: Colors.grey.shade100),
+                itemBuilder: (_, index) {
+                  final row = deals[index];
+                  final dealId = row['deal_id'] as String? ?? '';
+
+                  // 解析嵌套的 deals join 结果
+                  final dealData = row['deals'] as Map<String, dynamic>? ?? {};
+                  final title = dealData['title'] as String? ?? 'Untitled Deal';
+                  final price =
+                      (dealData['discount_price'] as num?)?.toDouble() ?? 0.0;
+
+                  // 解析品牌名称（双重嵌套）
+                  final merchantData =
+                      dealData['merchants'] as Map<String, dynamic>? ?? {};
+                  final brandName =
+                      merchantData['name'] as String? ?? 'Brand';
+
+                  return ListTile(
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 4,
+                    ),
+                    leading: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFF3E0),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        Icons.local_offer_outlined,
+                        size: 20,
+                        color: Color(0xFFFF6B35),
+                      ),
+                    ),
+                    title: Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF1A1A2E),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(
+                      '$brandName · \$${price.toStringAsFixed(2)}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF666666),
+                      ),
+                    ),
+                    trailing: const Icon(
+                      Icons.chevron_right,
+                      color: Color(0xFFFF6B35),
+                    ),
+                    onTap: () {
+                      // 关闭 BottomSheet 后跳转到确认页
+                      Navigator.of(ctx).pop();
+                      context.push(
+                        '/deals/confirm/$dealId',
+                        extra: {
+                          'title': title,
+                          'price': price,
+                          'brand_name': brandName,
+                        },
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
         ),
       ),
     );

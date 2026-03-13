@@ -50,6 +50,9 @@ class DealsRepository {
 
       var results = (data as List).map((e) => DealModel.fromJson(e)).toList();
 
+      // 过滤 brand_multi_store deal：必须至少有一个 active 门店才展示
+      results = await _filterBrandDealsWithActiveStores(results);
+
       // 搜索品牌名/商家名：补充匹配品牌名或商家名的 deals
       if (search != null && search.isNotEmpty && page == 0) {
         try {
@@ -105,6 +108,9 @@ class DealsRepository {
         } catch (_) {
           // 品牌搜索失败不影响主结果
         }
+
+        // 额外添加的 deal 也需要过滤 brand deal
+        results = await _filterBrandDealsWithActiveStores(results);
       }
 
       return results;
@@ -124,11 +130,46 @@ class DealsRepository {
           .gt('expires_at', DateTime.now().toIso8601String())
           .order('sort_order', ascending: true)
           .limit(20);
-      return (data as List).map((e) => DealModel.fromJson(e)).toList();
+      final results = (data as List).map((e) => DealModel.fromJson(e)).toList();
+      return _filterBrandDealsWithActiveStores(results);
     } on PostgrestException catch (e) {
       throw AppException('Failed to load featured deals: ${e.message}',
           code: e.code);
     }
+  }
+
+  /// 过滤 brand_multi_store deal：只保留在 deal_applicable_stores 中
+  /// 至少有一条 status='active' 记录的 deal。store_only deal 不受影响。
+  Future<List<DealModel>> _filterBrandDealsWithActiveStores(
+      List<DealModel> deals) async {
+    // 筛出 brand deal（applicableMerchantIds 非空）
+    final brandDealIds = deals
+        .where((d) =>
+            d.applicableMerchantIds != null &&
+            d.applicableMerchantIds!.isNotEmpty)
+        .map((d) => d.id)
+        .toList();
+
+    if (brandDealIds.isEmpty) return deals;
+
+    // 批量查询这些 brand deal 中有 active 门店的 deal_id
+    final activeRows = await _client
+        .from('deal_applicable_stores')
+        .select('deal_id')
+        .inFilter('deal_id', brandDealIds)
+        .eq('status', 'active');
+
+    final activeDealIds =
+        (activeRows as List).map((r) => r['deal_id'] as String).toSet();
+
+    // 保留 store_only deal + 有 active 门店的 brand deal
+    return deals.where((d) {
+      if (d.applicableMerchantIds == null ||
+          d.applicableMerchantIds!.isEmpty) {
+        return true; // store_only deal，不过滤
+      }
+      return activeDealIds.contains(d.id);
+    }).toList();
   }
 
   Future<DealModel> fetchDealById(String dealId) async {

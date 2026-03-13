@@ -19,8 +19,9 @@ const _paymentMethods = [
 
 class CheckoutScreen extends ConsumerStatefulWidget {
   final String dealId;
+  final String? purchasedMerchantId; // brand deal 用户选择的门店 ID
 
-  const CheckoutScreen({super.key, required this.dealId});
+  const CheckoutScreen({super.key, required this.dealId, this.purchasedMerchantId});
 
   @override
   ConsumerState<CheckoutScreen> createState() => _CheckoutScreenState();
@@ -116,6 +117,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         quantity: _quantity,
         total: total,
         promoCode: _promoResult?.code, // P0 fix: 传递优惠码给服务端验证
+        purchasedMerchantId: widget.purchasedMerchantId,
       );
 
       if (mounted) context.go('/order-success/${result.orderId}');

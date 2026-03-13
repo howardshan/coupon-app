@@ -146,6 +146,14 @@ Deno.serve(async (req: Request) => {
       return await handleAddImage(supabaseAdmin, merchantId, dealId, body);
     }
 
+    // ----------------------------------------------------------
+    // PATCH /merchant-deals/:id/store-confirm — 门店 Accept/Decline/Remove
+    // ----------------------------------------------------------
+    if (req.method === "PATCH" && dealId && subPath === "store-confirm") {
+      const body = await req.json();
+      return await handleStoreConfirm(supabaseAdmin, merchantId, dealId, user.id, body);
+    }
+
     // ==========================================================
     // V2.2 Deal 模板路由
     // ==========================================================
@@ -364,8 +372,12 @@ async function handleCreateDeal(
     deal_category_id: body.deal_category_id ?? null,
     deal_type:        body.deal_type ? String(body.deal_type) : "regular",
     badge_text:       body.badge_text ? String(body.badge_text) : null,
-    // 多店通用：适用门店 ID 列表，NULL = 仅本店
+    // 多店通用：保持向后兼容，同时支持新的 store_confirmations 格式
     applicable_merchant_ids: body.applicable_merchant_ids ?? null,
+    // 门店预确认列表，格式：[{ store_id, pre_confirmed }]
+    // store_only deal 传 null，触发器会自动写一条 active 记录
+    // brand_multi_store deal 传确认列表，审核通过后触发器按此写入 deal_applicable_stores
+    store_confirmations: deriveStoreConfirmations(body),
   };
 
   const { data: deal, error } = await admin
@@ -635,6 +647,131 @@ async function handleAddImage(
   await syncDealImageUrls(admin, dealId);
 
   return jsonResponse({ image }, 201);
+}
+
+// =============================================================
+// 辅助：将请求体中的门店信息标准化为 store_confirmations 格式
+// 支持两种传参方式（向后兼容）：
+//   1. store_confirmations: [{ store_id, pre_confirmed }]  ← 新格式
+//   2. applicable_merchant_ids: string[]                   ← 旧格式（视为全部预确认）
+// =============================================================
+function deriveStoreConfirmations(
+  body: Record<string, unknown>
+): Array<{ store_id: string; pre_confirmed: boolean }> | null {
+  // 新格式：优先使用
+  if (body.store_confirmations) {
+    return body.store_confirmations as Array<{ store_id: string; pre_confirmed: boolean }>;
+  }
+  // 旧格式兼容：applicable_merchant_ids 里的门店全部视为预确认
+  if (Array.isArray(body.applicable_merchant_ids) && body.applicable_merchant_ids.length > 0) {
+    return (body.applicable_merchant_ids as string[]).map(id => ({
+      store_id: id,
+      pre_confirmed: true,
+    }));
+  }
+  // 没有多店信息 → store_only deal，触发器自动处理
+  return null;
+}
+
+// =============================================================
+// PATCH /merchant-deals/:id/store-confirm
+// 门店老板/店长 Accept / Decline / Remove 某个 brand_multi_store Deal
+// =============================================================
+async function handleStoreConfirm(
+  admin: ReturnType<typeof createClient>,
+  merchantId: string,
+  dealId: string,
+  userId: string,
+  body: Record<string, unknown>
+): Promise<Response> {
+  const action = body.action as string;
+  if (!["accept", "decline", "remove"].includes(action)) {
+    return errorResponse("Invalid action. Must be 'accept', 'decline', or 'remove'.", 400);
+  }
+
+  // 验证该门店有此 deal_applicable_stores 记录
+  const { data: storeRecord, error: fetchError } = await admin
+    .from("deal_applicable_stores")
+    .select("id, status, deal_scope")
+    .eq("deal_id", dealId)
+    .eq("store_id", merchantId)
+    .single();
+
+  if (fetchError || !storeRecord) {
+    return errorResponse("No pending confirmation found for this store and deal.", 404);
+  }
+
+  if (action === "accept") {
+    // accept 只能在 pending_store_confirmation 状态下执行
+    if (storeRecord.status !== "pending_store_confirmation") {
+      return errorResponse("This deal is not pending confirmation for your store.", 400);
+    }
+
+    const menuItemId = body.menu_item_id as string | null ?? null;
+    let storeOriginalPrice: number | null = null;
+
+    // 如果关联了菜品，读取菜品单价
+    if (menuItemId) {
+      const { data: menuItem } = await admin
+        .from("menu_items")
+        .select("price")
+        .eq("id", menuItemId)
+        .eq("merchant_id", merchantId)
+        .single();
+
+      if (menuItem?.price) {
+        storeOriginalPrice = Number(menuItem.price);
+      }
+    }
+
+    const { error } = await admin.rpc("accept_deal_store", {
+      p_deal_id:              dealId,
+      p_store_id:             merchantId,
+      p_user_id:              userId,
+      p_menu_item_id:         menuItemId,
+      p_store_original_price: storeOriginalPrice,
+    });
+
+    if (error) return errorResponse(error.message, 500);
+    return jsonResponse({ success: true, action: "accepted" });
+  }
+
+  if (action === "decline") {
+    if (storeRecord.status !== "pending_store_confirmation") {
+      return errorResponse("This deal is not pending confirmation for your store.", 400);
+    }
+
+    const { error } = await admin.rpc("decline_deal_store", {
+      p_deal_id:  dealId,
+      p_store_id: merchantId,
+      p_user_id:  userId,
+    });
+
+    if (error) return errorResponse(error.message, 500);
+    return jsonResponse({ success: true, action: "declined" });
+  }
+
+  if (action === "remove") {
+    // remove 可对 active 或 pending 状态执行（主动退出）
+    if (!["active", "pending_store_confirmation"].includes(storeRecord.status)) {
+      return errorResponse("Cannot remove: store is not active or pending for this deal.", 400);
+    }
+
+    const { data: activeCount, error } = await admin.rpc("remove_deal_store", {
+      p_deal_id:  dealId,
+      p_store_id: merchantId,
+      p_user_id:  userId,
+    });
+
+    if (error) return errorResponse(error.message, 500);
+    return jsonResponse({
+      success: true,
+      action: "removed",
+      remaining_active_stores: activeCount,
+    });
+  }
+
+  return errorResponse("Internal error", 500);
 }
 
 // =============================================================

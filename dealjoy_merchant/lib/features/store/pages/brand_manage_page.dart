@@ -8,33 +8,69 @@ import 'package:go_router/go_router.dart';
 import '../providers/store_provider.dart';
 import '../models/brand_info.dart';
 
-class BrandManagePage extends ConsumerStatefulWidget {
-  const BrandManagePage({super.key});
+// 品牌管理网格入口数据
+class _BrandMenuItem {
+  final IconData icon;
+  final String label;
+  final String subtitle;
+  final Color color;
+  final String route;
 
-  @override
-  ConsumerState<BrandManagePage> createState() => _BrandManagePageState();
+  const _BrandMenuItem({
+    required this.icon,
+    required this.label,
+    required this.subtitle,
+    required this.color,
+    required this.route,
+  });
 }
 
-class _BrandManagePageState extends ConsumerState<BrandManagePage>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
+class BrandManagePage extends ConsumerWidget {
+  const BrandManagePage({super.key});
 
   static const _primaryOrange = Color(0xFFFF6B35);
 
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 3, vsync: this);
-  }
+  // 品牌管理功能入口
+  static const List<_BrandMenuItem> _menuItems = [
+    _BrandMenuItem(
+      icon: Icons.info_outline,
+      label: 'Brand Info',
+      subtitle: 'Name, logo & details',
+      color: Color(0xFFFF6B35),
+      route: '/brand-manage/info',
+    ),
+    _BrandMenuItem(
+      icon: Icons.storefront_outlined,
+      label: 'Stores',
+      subtitle: 'Manage locations',
+      color: Color(0xFF4CAF50),
+      route: '/brand-manage/stores',
+    ),
+    _BrandMenuItem(
+      icon: Icons.admin_panel_settings_outlined,
+      label: 'Admins',
+      subtitle: 'Team access',
+      color: Color(0xFF9C27B0),
+      route: '/brand-manage/admins',
+    ),
+    _BrandMenuItem(
+      icon: Icons.local_offer_outlined,
+      label: 'Deals',
+      subtitle: 'Multi-store deals',
+      color: Color(0xFF2196F3),
+      route: '/brand-manage/deals',
+    ),
+    _BrandMenuItem(
+      icon: Icons.dashboard_outlined,
+      label: 'Overview',
+      subtitle: 'Stats & trends',
+      color: Color(0xFFFF9800),
+      route: '/brand-overview',
+    ),
+  ];
 
   @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final storeAsync = ref.watch(storeProvider);
 
     return Scaffold(
@@ -63,17 +99,6 @@ class _BrandManagePageState extends ConsumerState<BrandManagePage>
           ),
         ),
         centerTitle: true,
-        bottom: TabBar(
-          controller: _tabController,
-          labelColor: _primaryOrange,
-          unselectedLabelColor: const Color(0xFF757575),
-          indicatorColor: _primaryOrange,
-          tabs: const [
-            Tab(key: ValueKey('brand_tab_info'), text: 'Brand Info'),
-            Tab(key: ValueKey('brand_tab_stores'), text: 'Stores'),
-            Tab(key: ValueKey('brand_tab_admins'), text: 'Admins'),
-          ],
-        ),
       ),
       body: storeAsync.when(
         loading: () => const Center(
@@ -91,13 +116,29 @@ class _BrandManagePageState extends ConsumerState<BrandManagePage>
             );
           }
 
-          return TabBarView(
-            controller: _tabController,
-            children: [
-              _BrandInfoTab(brand: brand),
-              _StoresTab(),
-              _AdminsTab(brandId: brand.id),
-            ],
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 品牌信息头部
+                _BrandHeaderCard(brand: brand),
+                const SizedBox(height: 20),
+                // 功能入口网格
+                GridView.count(
+                  crossAxisCount: 2,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  mainAxisSpacing: 12,
+                  crossAxisSpacing: 12,
+                  childAspectRatio: 1.4,
+                  children: _menuItems.map((item) => _MenuCard(
+                    item: item,
+                    onTap: () => context.push(item.route),
+                  )).toList(),
+                ),
+              ],
+            ),
           );
         },
       ),
@@ -105,822 +146,73 @@ class _BrandManagePageState extends ConsumerState<BrandManagePage>
   }
 }
 
-// ============================================================
-// 品牌信息 Tab（可编辑）— 功能点 #30
-// ============================================================
-class _BrandInfoTab extends ConsumerStatefulWidget {
-  const _BrandInfoTab({required this.brand});
+// 品牌信息头部卡片
+class _BrandHeaderCard extends StatelessWidget {
+  const _BrandHeaderCard({required this.brand});
   final BrandInfo brand;
 
-  @override
-  ConsumerState<_BrandInfoTab> createState() => _BrandInfoTabState();
-}
-
-class _BrandInfoTabState extends ConsumerState<_BrandInfoTab> {
-  bool _isEditing = false;
-  bool _isSaving = false;
-  late TextEditingController _nameCtrl;
-  late TextEditingController _descCtrl;
-
   static const _primaryOrange = Color(0xFFFF6B35);
-
-  @override
-  void initState() {
-    super.initState();
-    _nameCtrl = TextEditingController(text: widget.brand.name);
-    _descCtrl = TextEditingController(text: widget.brand.description ?? '');
-  }
-
-  @override
-  void dispose() {
-    _nameCtrl.dispose();
-    _descCtrl.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 品牌 Logo + 名称
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFE0E0E0)),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 64,
-                  height: 64,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFF3E0),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: widget.brand.logoUrl != null &&
-                          widget.brand.logoUrl!.isNotEmpty
-                      ? ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: Image.network(
-                            widget.brand.logoUrl!,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => const Icon(
-                              Icons.business,
-                              color: _primaryOrange,
-                              size: 32,
-                            ),
-                          ),
-                        )
-                      : const Icon(
-                          Icons.business,
-                          color: _primaryOrange,
-                          size: 32,
-                        ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        widget.brand.name,
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF212121),
-                        ),
-                      ),
-                      if (widget.brand.description != null &&
-                          widget.brand.description!.isNotEmpty) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          widget.brand.description!,
-                          style: const TextStyle(
-                            fontSize: 13,
-                            color: Color(0xFF757575),
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                IconButton(
-                  key: const ValueKey('brand_edit_btn'),
-                  icon: Icon(
-                    _isEditing ? Icons.close : Icons.edit,
-                    color: const Color(0xFF757575),
-                  ),
-                  onPressed: () => setState(() {
-                    _isEditing = !_isEditing;
-                    if (!_isEditing) {
-                      _nameCtrl.text = widget.brand.name;
-                      _descCtrl.text = widget.brand.description ?? '';
-                    }
-                  }),
-                ),
-              ],
-            ),
-          ),
-
-          // 编辑表单
-          if (_isEditing) ...[
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFE0E0E0)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Edit Brand Info',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF212121),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    key: const ValueKey('brand_name_field'),
-                    controller: _nameCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Brand Name',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    key: const ValueKey('brand_desc_field'),
-                    controller: _descCtrl,
-                    maxLines: 3,
-                    decoration: const InputDecoration(
-                      labelText: 'Description',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      key: const ValueKey('brand_save_btn'),
-                      onPressed: _isSaving ? null : _saveBrandInfo,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _primaryOrange,
-                        foregroundColor: Colors.white,
-                      ),
-                      child: _isSaving
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Text('Save Changes'),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-          const SizedBox(height: 16),
-
-          // 品牌详情（只读）
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFE0E0E0)),
-            ),
-            child: Column(
-              children: [
-                _InfoRow(label: 'Brand ID', value: widget.brand.id),
-                if (widget.brand.storeCount != null)
-                  _InfoRow(
-                    label: 'Locations',
-                    value: '${widget.brand.storeCount} stores',
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // 保存品牌信息到后端
-  Future<void> _saveBrandInfo() async {
-    final name = _nameCtrl.text.trim();
-    if (name.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Brand name is required')),
-      );
-      return;
-    }
-
-    setState(() => _isSaving = true);
-    try {
-      final service = ref.read(storeServiceProvider);
-      await service.updateBrand(
-        name: name,
-        description: _descCtrl.text.trim(),
-      );
-      // 刷新门店信息（含品牌信息）
-      ref.invalidate(storeProvider);
-      if (mounted) {
-        setState(() {
-          _isEditing = false;
-          _isSaving = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Brand info updated'),
-            backgroundColor: Color(0xFF2E7D32),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isSaving = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed: $e'), backgroundColor: Colors.red),
-        );
-      }
-    }
-  }
-}
-
-// ============================================================
-// 旗下门店 Tab — 功能点 #31, #33
-// ============================================================
-class _StoresTab extends ConsumerWidget {
-  const _StoresTab();
-
-  static const _primaryOrange = Color(0xFFFF6B35);
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final storesAsync = ref.watch(brandStoresProvider);
-
-    return storesAsync.when(
-      loading: () => const Center(
-        child: CircularProgressIndicator(color: _primaryOrange),
-      ),
-      error: (e, _) => Center(child: Text('Error: $e')),
-      data: (stores) {
-        return Column(
-          children: [
-            // 添加门店按钮
-            Padding(
-              padding: const EdgeInsets.all(16).copyWith(bottom: 0),
-              child: SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  key: const ValueKey('brand_manage_add_store_btn'),
-                  onPressed: () => _showAddStoreDialog(context, ref),
-                  icon: const Icon(Icons.add),
-                  label: const Text('Add Store'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: _primaryOrange,
-                    side: const BorderSide(color: _primaryOrange),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                ),
-              ),
-            ),
-            if (stores.isEmpty)
-              const Expanded(
-                child: Center(
-                  child: Text(
-                    'No stores found.',
-                    style: TextStyle(color: Color(0xFF757575)),
-                  ),
-                ),
-              )
-            else
-              Expanded(
-                child: ListView.separated(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: stores.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 12),
-                  itemBuilder: (context, index) {
-                    final store = stores[index];
-                    return Container(
-                      key: ValueKey('brand_store_${store.id}'),
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFE0E0E0)),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.storefront, color: _primaryOrange),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  store.name,
-                                  style: const TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w600,
-                                    color: Color(0xFF212121),
-                                  ),
-                                ),
-                                if (store.address != null) ...[
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    store.address!,
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      color: Color(0xFF757575),
-                                    ),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                          // 状态标签
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: store.status == 'approved'
-                                  ? const Color(0xFFE8F5E9)
-                                  : const Color(0xFFFFF8E1),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              store.status == 'approved'
-                                  ? 'Active'
-                                  : (store.status ?? 'Pending'),
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                color: store.status == 'approved'
-                                    ? const Color(0xFF2E7D32)
-                                    : const Color(0xFFF57F17),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          // 移除按钮
-                          IconButton(
-                            key: ValueKey('brand_manage_remove_store_${store.id}'),
-                            icon: const Icon(
-                              Icons.remove_circle_outline,
-                              color: Colors.red,
-                              size: 20,
-                            ),
-                            onPressed: () =>
-                                _confirmRemoveStore(context, ref, store.id, store.name),
-                            tooltip: 'Remove from brand',
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-              ),
-          ],
-        );
-      },
-    );
-  }
-
-  // 添加门店对话框
-  void _showAddStoreDialog(BuildContext context, WidgetRef ref) {
-    final emailCtrl = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Add Store'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Invite an existing store to join your brand by entering the store owner\'s email.',
-              style: TextStyle(fontSize: 13, color: Color(0xFF757575)),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              key: const ValueKey('brand_add_store_email_field'),
-              controller: emailCtrl,
-              keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(
-                labelText: 'Store Owner Email',
-                hintText: 'owner@example.com',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFFFF6B35), Color(0xFFFF8F65)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            key: const ValueKey('brand_add_store_submit_btn'),
-            onPressed: () async {
-              final email = emailCtrl.text.trim();
-              if (email.isEmpty) return;
-              Navigator.pop(ctx);
-              try {
-                final service = ref.read(storeServiceProvider);
-                await service.addStoreToBrand(email: email);
-                ref.invalidate(brandStoresProvider);
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Store invitation sent'),
-                      backgroundColor: Color(0xFF2E7D32),
-                    ),
-                  );
-                }
-              } catch (e) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Failed: $e'), backgroundColor: Colors.red),
-                  );
-                }
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _primaryOrange,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Send Invitation'),
-          ),
-        ],
+        borderRadius: BorderRadius.circular(16),
       ),
-    );
-  }
-
-  // 确认移除门店
-  void _confirmRemoveStore(
-    BuildContext context, WidgetRef ref, String merchantId, String storeName,
-  ) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Remove Store'),
-        content: Text(
-          'Remove "$storeName" from your brand?\n\n'
-          'The store will become independent. Multi-store deals will no longer apply.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(ctx);
-              try {
-                final service = ref.read(storeServiceProvider);
-                await service.removeStoreFromBrand(merchantId);
-                ref.invalidate(brandStoresProvider);
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('"$storeName" removed from brand'),
-                      backgroundColor: const Color(0xFF2E7D32),
-                    ),
-                  );
-                }
-              } catch (e) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Failed: $e'), backgroundColor: Colors.red),
-                  );
-                }
-              }
-            },
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Remove'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ============================================================
-// 品牌管理员 Tab — 功能点 #32
-// ============================================================
-class _AdminsTab extends ConsumerWidget {
-  const _AdminsTab({required this.brandId});
-  final String brandId;
-
-  static const _primaryOrange = Color(0xFFFF6B35);
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final detailsAsync = ref.watch(brandDetailsProvider);
-
-    return detailsAsync.when(
-      loading: () => const Center(
-        child: CircularProgressIndicator(color: _primaryOrange),
-      ),
-      error: (e, _) => Center(child: Text('Error: $e')),
-      data: (details) {
-        final admins = (details['admins'] as List<dynamic>? ?? [])
-            .map((e) => e as Map<String, dynamic>)
-            .toList();
-
-        return Column(
-          children: [
-            // 邀请管理员按钮
-            Padding(
-              padding: const EdgeInsets.all(16).copyWith(bottom: 0),
-              child: SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  key: const ValueKey('brand_invite_admin_btn'),
-                  onPressed: () => _showInviteAdminDialog(context, ref),
-                  icon: const Icon(Icons.person_add),
-                  label: const Text('Invite Admin'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: _primaryOrange,
-                    side: const BorderSide(color: _primaryOrange),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                ),
-              ),
-            ),
-            if (admins.isEmpty)
-              const Expanded(
-                child: Center(
-                  child: Text(
-                    'No admins yet. Invite someone to help manage your brand.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: Color(0xFF757575)),
-                  ),
-                ),
-              )
-            else
-              Expanded(
-                child: ListView.separated(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: admins.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 12),
-                  itemBuilder: (context, index) {
-                    final admin = admins[index];
-                    final adminId = admin['id'] as String? ?? '';
-                    final role = admin['role'] as String? ?? 'admin';
-                    final email = admin['email'] as String? ?? '';
-                    final fullName = admin['full_name'] as String? ?? '';
-                    final displayName = fullName.isNotEmpty ? fullName : (email.isNotEmpty ? email : 'Unknown');
-                    final isOwner = role == 'owner';
-
-                    return Container(
-                      key: ValueKey('brand_admin_$adminId'),
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFE0E0E0)),
-                      ),
-                      child: Row(
-                        children: [
-                          CircleAvatar(
-                            backgroundColor: isOwner
-                                ? const Color(0xFFFFF3E0)
-                                : const Color(0xFFF5F5F5),
-                            child: Icon(
-                              isOwner ? Icons.star : Icons.admin_panel_settings,
-                              color: isOwner ? _primaryOrange : const Color(0xFF757575),
-                              size: 20,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  displayName,
-                                  style: const TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                    color: Color(0xFF212121),
-                                  ),
-                                ),
-                                if (email.isNotEmpty && fullName.isNotEmpty) ...[
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    email,
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      color: Color(0xFF9E9E9E),
-                                    ),
-                                  ),
-                                ],
-                                const SizedBox(height: 2),
-                                Text(
-                                  isOwner ? 'Brand Owner' : 'Admin',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: isOwner ? _primaryOrange : const Color(0xFF757575),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          // 移除按钮（Owner 不能被移除）
-                          if (!isOwner)
-                            IconButton(
-                              key: ValueKey('brand_remove_admin_$adminId'),
-                              icon: const Icon(
-                                Icons.remove_circle_outline,
-                                color: Colors.red,
-                                size: 20,
-                              ),
-                              onPressed: () =>
-                                  _confirmRemoveAdmin(context, ref, adminId, email),
-                              tooltip: 'Remove admin',
-                            ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-              ),
-          ],
-        );
-      },
-    );
-  }
-
-  // 邀请管理员对话框
-  void _showInviteAdminDialog(BuildContext context, WidgetRef ref) {
-    final emailCtrl = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Invite Brand Admin'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Enter the email of the person you want to invite as a brand admin.',
-              style: TextStyle(fontSize: 13, color: Color(0xFF757575)),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              key: const ValueKey('brand_admin_email_field'),
-              controller: emailCtrl,
-              keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(
-                labelText: 'Email Address',
-                hintText: 'admin@example.com',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            key: const ValueKey('brand_admin_invite_submit_btn'),
-            onPressed: () async {
-              final email = emailCtrl.text.trim();
-              if (email.isEmpty) return;
-              Navigator.pop(ctx);
-              try {
-                final service = ref.read(storeServiceProvider);
-                await service.inviteBrandAdmin(email);
-                ref.invalidate(brandDetailsProvider);
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Admin invitation sent'),
-                      backgroundColor: Color(0xFF2E7D32),
-                    ),
-                  );
-                }
-              } catch (e) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Failed: $e'), backgroundColor: Colors.red),
-                  );
-                }
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _primaryOrange,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Send Invitation'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // 确认移除管理员
-  void _confirmRemoveAdmin(
-    BuildContext context, WidgetRef ref, String adminId, String email,
-  ) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Remove Admin'),
-        content: Text(
-          'Remove "$email" as a brand admin?\n\n'
-          'They will lose access to all stores under this brand.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(ctx);
-              try {
-                final service = ref.read(storeServiceProvider);
-                await service.removeBrandAdmin(adminId);
-                ref.invalidate(brandDetailsProvider);
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('"$email" removed'),
-                      backgroundColor: const Color(0xFF2E7D32),
-                    ),
-                  );
-                }
-              } catch (e) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Failed: $e'), backgroundColor: Colors.red),
-                  );
-                }
-              }
-            },
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Remove'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// 信息行
-class _InfoRow extends StatelessWidget {
-  const _InfoRow({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         children: [
-          SizedBox(
-            width: 100,
-            child: Text(
-              label,
-              style: const TextStyle(
-                fontSize: 13,
-                color: Color(0xFF9E9E9E),
-              ),
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: Colors.white.withAlpha(51),
+              borderRadius: BorderRadius.circular(12),
             ),
+            child: brand.logoUrl != null && brand.logoUrl!.isNotEmpty
+                ? ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.network(brand.logoUrl!, fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const Icon(
+                        Icons.business, color: Colors.white, size: 28,
+                      ),
+                    ),
+                  )
+                : const Icon(Icons.business, color: Colors.white, size: 28),
           ),
+          const SizedBox(width: 16),
           Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-                color: Color(0xFF212121),
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  brand.name,
+                  style: const TextStyle(
+                    fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white,
+                  ),
+                ),
+                if (brand.description != null && brand.description!.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    brand.description!,
+                    style: TextStyle(fontSize: 13, color: Colors.white.withAlpha(204)),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+                if (brand.storeCount != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    '${brand.storeCount} locations',
+                    style: TextStyle(fontSize: 12, color: Colors.white.withAlpha(179)),
+                  ),
+                ],
+              ],
             ),
           ),
         ],
@@ -928,3 +220,57 @@ class _InfoRow extends StatelessWidget {
     );
   }
 }
+
+// 功能入口卡片
+class _MenuCard extends StatelessWidget {
+  const _MenuCard({required this.item, required this.onTap});
+  final _BrandMenuItem item;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.grey.shade100),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: item.color.withAlpha(26),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(item.icon, color: item.color, size: 22),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                item.label,
+                style: const TextStyle(
+                  fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF212121),
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                item.subtitle,
+                style: const TextStyle(fontSize: 11, color: Color(0xFF9E9E9E)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+

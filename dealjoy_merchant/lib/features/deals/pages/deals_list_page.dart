@@ -15,7 +15,10 @@ import '../widgets/deal_card.dart';
 // DealsListPage — Deal列表主页（ConsumerWidget）
 // ============================================================
 class DealsListPage extends ConsumerWidget {
-  const DealsListPage({super.key});
+  const DealsListPage({super.key, this.brandOnly = false});
+
+  /// true = 只显示品牌多店 Deal（applicableMerchantIds 非空）
+  final bool brandOnly;
 
   // 打开分类管理 BottomSheet
   void _showCategoryManager(BuildContext context, WidgetRef ref) {
@@ -48,9 +51,9 @@ class DealsListPage extends ConsumerWidget {
               }
             },
           ),
-          title: const Text(
-            'My Deals',
-            style: TextStyle(
+          title: Text(
+            brandOnly ? 'Brand Deals' : 'My Deals',
+            style: const TextStyle(
               color: Color(0xFF1A1A1A),
               fontSize: 18,
               fontWeight: FontWeight.w600,
@@ -95,13 +98,13 @@ class DealsListPage extends ConsumerWidget {
         body: TabBarView(
           children: [
             // All — 全部 Deal（无筛选）
-            _DealTabView(filter: null, ref: ref),
+            _DealTabView(filter: null, ref: ref, brandOnly: brandOnly),
             // Active — 已上架
-            _DealTabView(filter: DealStatus.active, ref: ref),
+            _DealTabView(filter: DealStatus.active, ref: ref, brandOnly: brandOnly),
             // Inactive — 已下架
-            _DealTabView(filter: DealStatus.inactive, ref: ref),
+            _DealTabView(filter: DealStatus.inactive, ref: ref, brandOnly: brandOnly),
             // Pending — 待审核
-            _DealTabView(filter: DealStatus.pending, ref: ref),
+            _DealTabView(filter: DealStatus.pending, ref: ref, brandOnly: brandOnly),
           ],
         ),
 
@@ -126,11 +129,14 @@ class DealsListPage extends ConsumerWidget {
 // 单个 Tab 视图（对应一种筛选状态）
 // ============================================================
 class _DealTabView extends ConsumerWidget {
-  const _DealTabView({required this.filter, required this.ref});
+  const _DealTabView({required this.filter, required this.ref, this.brandOnly = false});
 
   /// null = All（不筛选）
   final DealStatus? filter;
   final WidgetRef ref;
+
+  /// 只显示品牌多店 Deal
+  final bool brandOnly;
 
   @override
   Widget build(BuildContext context, WidgetRef consumerRef) {
@@ -143,10 +149,14 @@ class _DealTabView extends ConsumerWidget {
         onRetry: () => consumerRef.read(dealsProvider.notifier).refresh(),
       ),
       data: (deals) {
+        // 品牌模式：只显示多店 Deal
+        var source = brandOnly
+            ? deals.where((d) => d.applicableMerchantIds != null && d.applicableMerchantIds!.isNotEmpty).toList()
+            : deals;
         // 按状态筛选
         final filtered = filter == null
-            ? deals
-            : deals.where((d) => d.dealStatus == filter).toList();
+            ? source
+            : source.where((d) => d.dealStatus == filter).toList();
 
         if (filtered.isEmpty) {
           return _EmptyView(filter: filter);

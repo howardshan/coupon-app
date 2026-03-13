@@ -15,6 +15,7 @@ enum ShortcutAction {
   analytics,
   store, // 替换原来的 settings，直接跳转店铺管理
   menu, // 菜品/菜单管理
+  brand, // 品牌管理（仅品牌管理员可见）
 }
 
 // ============================================================
@@ -41,7 +42,10 @@ class ShortcutGrid extends StatelessWidget {
   /// 点击回调，参数为对应的 ShortcutAction
   final void Function(ShortcutAction action) onTap;
 
-  const ShortcutGrid({super.key, required this.onTap});
+  /// 是否品牌管理员（控制 Brand 入口显示）
+  final bool isBrandAdmin;
+
+  const ShortcutGrid({super.key, required this.onTap, this.isBrandAdmin = false});
 
   // 6 个快捷入口定义（美团工作台风格）
   static const List<_ShortcutItem> _items = [
@@ -87,10 +91,21 @@ class ShortcutGrid extends StatelessWidget {
       label: 'Menu',
       color: Color(0xFFE91E63), // 粉红色
     ),
+    _ShortcutItem(
+      action: ShortcutAction.brand,
+      icon: Icons.business_outlined,
+      label: 'Brand',
+      color: Color(0xFF795548), // 棕色
+    ),
   ];
 
   @override
   Widget build(BuildContext context) {
+    // 非品牌管理员过滤掉 Brand 入口
+    final visibleItems = isBrandAdmin
+        ? _items
+        : _items.where((i) => i.action != ShortcutAction.brand).toList();
+
     return GridView.count(
       crossAxisCount: 4,
       shrinkWrap: true, // 内嵌在 ScrollView 中需要
@@ -98,7 +113,7 @@ class ShortcutGrid extends StatelessWidget {
       childAspectRatio: 0.9, // 4 列稍窄，调整比例
       crossAxisSpacing: 12,
       mainAxisSpacing: 12,
-      children: _items.map((item) => _ShortcutCell(
+      children: visibleItems.map((item) => _ShortcutCell(
         item: item,
         onTap: () => onTap(item.action),
       )).toList(),
