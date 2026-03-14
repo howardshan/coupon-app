@@ -1,17 +1,30 @@
 import { createClient } from '@/lib/supabase/server'
-import { getServiceRoleClient } from '@/lib/supabase/service'
 import { redirect } from 'next/navigation'
 import OrdersPageClient from '@/components/orders-page-client'
 import { OrdersSearchProvider } from '@/contexts/orders-search-context'
+import { getOrdersList } from '@/app/actions/orders'
 
 export const dynamic = 'force-dynamic'
+
+type SearchParams = {
+  q?: string
+  status?: string | string[]
+  merchant?: string
+  date_from?: string
+  date_to?: string
+  amount_min?: string
+  amount_max?: string
+  sort?: string
+  page?: string
+  limit?: string
+}
 
 export default async function OrdersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>
+  searchParams: Promise<SearchParams>
 }) {
-  const { q } = await searchParams
+  const params = await searchParams
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   const { data: profile } = await supabase
@@ -22,78 +35,46 @@ export default async function OrdersPage({
 
   if (profile?.role !== 'admin') redirect('/dashboard')
 
-  const adminSupabase = getServiceRoleClient()
-  let orders: any[] | null = null
-  let fetchError: string | null = null
+  const statusArr = params.status != null
+    ? (Array.isArray(params.status) ? params.status : [params.status]).filter(Boolean)
+    : undefined
+  const page = params.page ? parseInt(params.page, 10) : 1
+  const limit = params.limit ? parseInt(params.limit, 10) : 20
+  const amountMin = params.amount_min != null && params.amount_min !== '' ? parseFloat(params.amount_min) : undefined
+  const amountMax = params.amount_max != null && params.amount_max !== '' ? parseFloat(params.amount_max) : undefined
 
-  if (q != null && q.trim() !== '') {
-    const { data, error } = await supabase.rpc('get_admin_orders_search', { search_q: q.trim() })
-    if (error) {
-      fetchError = error.message
-      console.error('[Orders] get_admin_orders_search error:', error)
-    } else {
-      orders = data ?? null
-    }
-  } else {
-    const { data, error } = await adminSupabase
-      .from('orders')
-      .select(`
-        id,
-        order_number,
-        total_amount,
-        quantity,
-        status,
-        refund_reason,
-        refund_rejected_at,
-        created_at,
-        users ( email ),
-        deals ( title, merchants ( name ) ),
-        coupons!fk_orders_coupon_id ( redeemed_at_merchant_id, expires_at )
-      `)
-      .order('created_at', { ascending: false })
-      .limit(100)
-    if (error) {
-      fetchError = error.message
-      console.error('[Orders] orders select error:', error)
-    } else {
-      orders = data
-    }
-  }
-
-  const redeemedMerchantIds = new Set<string>()
-  if (orders) {
-    for (const o of orders) {
-      const raw = o.coupons
-      const list = Array.isArray(raw) ? raw : raw != null ? [raw] : []
-      for (const c of list) {
-        if (c?.redeemed_at_merchant_id) redeemedMerchantIds.add(c.redeemed_at_merchant_id)
-      }
-    }
-  }
-
-  let redeemedMerchantNames: Record<string, string> = {}
-  if (redeemedMerchantIds.size > 0) {
-    const { data: merchants } = await adminSupabase
-      .from('merchants')
-      .select('id, name')
-      .in('id', Array.from(redeemedMerchantIds))
-    if (merchants) {
-      for (const m of merchants) {
-        redeemedMerchantNames[m.id] = m.name
-      }
-    }
-  }
-
-  const refundCount = orders?.filter((o: { status: string }) => o.status === 'refund_requested').length ?? 0
+  const payload = await getOrdersList({
+    q: params.q,
+    status: statusArr,
+    merchantId: params.merchant,
+    dateFrom: params.date_from,
+    dateTo: params.date_to,
+    amountMin: Number.isFinite(amountMin) ? amountMin : undefined,
+    amountMax: Number.isFinite(amountMax) ? amountMax : undefined,
+    sort: params.sort as 'date_desc' | 'date_asc' | 'amount_desc' | 'amount_asc' | undefined,
+    page: Number.isFinite(page) ? page : 1,
+    limit: Number.isFinite(limit) ? limit : 20,
+  })
 
   return (
     <OrdersSearchProvider>
       <OrdersPageClient
-        orders={orders}
-        redeemedMerchantNames={redeemedMerchantNames}
-        fetchError={fetchError}
-        refundCount={refundCount}
-        initialSearchQ={q ?? ''}
+        orders={payload.orders}
+        totalCount={payload.totalCount}
+        redeemedMerchantNames={payload.redeemedMerchantNames}
+        fetchError={payload.fetchError}
+        refundCount={payload.refundCount}
+        merchantsForFilter={payload.merchantsForFilter}
+        initialSearchQ={params.q ?? ''}
+        initialStatus={statusArr}
+        initialMerchantId={params.merchant}
+        initialDateFrom={params.date_from}
+        initialDateTo={params.date_to}
+        initialAmountMin={params.amount_min}
+        initialAmountMax={params.amount_max}
+        initialSort={params.sort ?? 'date_desc'}
+        initialPage={Number.isFinite(page) ? page : 1}
+        initialLimit={Number.isFinite(limit) ? limit : 20}
       />
     </OrdersSearchProvider>
   )
