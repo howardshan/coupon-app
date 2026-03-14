@@ -89,6 +89,27 @@ class DealsService {
   }
 
   // ----------------------------------------------------------
+  // 3b. 仅更新库存（不重审、不克隆）
+  // ----------------------------------------------------------
+  Future<MerchantDeal> updateStockOnly(String dealId, int stockLimit) async {
+    final response = await _supabase.functions.invoke(
+      '$_functionName/$dealId',
+      method: HttpMethod.patch,
+      body: {
+        'stock_only': true,
+        'stock_limit': stockLimit,
+      },
+    );
+
+    if (response.status != 200) {
+      throw _handleError(response);
+    }
+
+    final data = response.data as Map<String, dynamic>;
+    return MerchantDeal.fromJson(data['deal'] as Map<String, dynamic>);
+  }
+
+  // ----------------------------------------------------------
   // 4. 上下架切换
   //    isActive=true: 上架(active), isActive=false: 下架(inactive)
   //    注意: pending/rejected 状态不允许上架
@@ -179,6 +200,30 @@ class DealsService {
 
     final data = response.data as Map<String, dynamic>;
     return DealImage.fromJson(data['image'] as Map<String, dynamic>);
+  }
+
+  // ----------------------------------------------------------
+  // 6b. 上传使用须知附图（仅上传到 Storage，返回公开 URL）
+  //     不写 deal_images 表，URL 直接存到 deals.usage_note_images
+  // ----------------------------------------------------------
+  Future<String> uploadUsageNoteImage({
+    required String merchantId,
+    required XFile file,
+  }) async {
+    final fileName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
+    final storagePath = '$merchantId/usage_notes/$fileName';
+    final bytes = await file.readAsBytes();
+
+    await _supabase.storage.from(_storageBucket).uploadBinary(
+          storagePath,
+          bytes,
+          fileOptions: const FileOptions(
+            contentType: 'image/jpeg',
+            upsert: false,
+          ),
+        );
+
+    return _supabase.storage.from(_storageBucket).getPublicUrl(storagePath);
   }
 
   // ----------------------------------------------------------
@@ -384,6 +429,23 @@ class DealsService {
   // 门店确认（store_deal_confirm）
   // 门店 Accept/Decline/Remove 某个 brand_multi_store Deal
   // ----------------------------------------------------------
+
+  // ----------------------------------------------------------
+  // 批量更新 Deal 排序顺序
+  // 调用 PATCH /merchant-deals/reorder
+  // items: [{ id, sort_order }, ...]
+  // ----------------------------------------------------------
+  Future<void> batchReorder(List<Map<String, dynamic>> items) async {
+    final response = await _supabase.functions.invoke(
+      '$_functionName/reorder',
+      method: HttpMethod.patch,
+      body: {'items': items},
+    );
+
+    if (response.status != 200) {
+      throw _handleError(response);
+    }
+  }
 
   /// 门店 Accept/Decline/Remove 某个 brand_multi_store Deal
   /// action: 'accept' | 'decline' | 'remove'

@@ -117,25 +117,12 @@ class MerchantStatusCache {
       return _cachedStatus!;
     }
 
-    // 查询数据库：依次检查 门店 owner → 品牌管理员 → 门店员工
+    // 查询数据库：依次检查 品牌管理员 → 门店 owner → 门店员工
+    // 注意：品牌管理员必须先于门店 owner 检查，因为 brand_owner 同时也是门店 owner
     try {
       final supabase = Supabase.instance.client;
 
-      // 1. 检查是否为门店 owner
-      final merchantData = await supabase
-          .from('merchants')
-          .select('status')
-          .eq('user_id', user.id)
-          .maybeSingle();
-
-      if (merchantData != null) {
-        _cachedStatus = merchantData['status'] as String? ?? 'pending';
-        _cachedUserId = user.id;
-        _cachedRoleType = 'store_owner';
-        return _cachedStatus!;
-      }
-
-      // 2. 检查是否为品牌管理员（brand_admins 表）
+      // 1. 检查是否为品牌管理员（brand_admins 表，优先级最高）
       final brandAdmin = await supabase
           .from('brand_admins')
           .select('id, role')
@@ -146,6 +133,20 @@ class MerchantStatusCache {
         _cachedStatus = 'approved';
         _cachedUserId = user.id;
         _cachedRoleType = 'brand_admin';
+        return _cachedStatus!;
+      }
+
+      // 2. 检查是否为门店 owner
+      final merchantData = await supabase
+          .from('merchants')
+          .select('status')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+      if (merchantData != null) {
+        _cachedStatus = merchantData['status'] as String? ?? 'pending';
+        _cachedUserId = user.id;
+        _cachedRoleType = 'store_owner';
         return _cachedStatus!;
       }
 

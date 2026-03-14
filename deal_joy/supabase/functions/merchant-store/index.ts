@@ -85,6 +85,9 @@ Deno.serve(async (req: Request) => {
 
   const merchantId = auth.merchantId;
 
+  // 调试日志：确认 resolveAuth 返回值
+  console.log(`[merchant-store] user=${user.id}, role=${auth.role}, isBrandAdmin=${auth.isBrandAdmin}, brandId=${auth.brandId}, merchantId=${merchantId}, merchantIds=${auth.merchantIds.join(',')}`);
+
   // 路由分发
   try {
     // --- GET /merchant-store ---
@@ -436,6 +439,15 @@ async function handleGetStore(
 
   if (hoursError) {
     return errorResponse("Failed to fetch business hours", 500);
+  }
+
+  // 如果有品牌关联，动态计算旗下门店数量
+  if (storeData.brands && storeData.brand_id) {
+    const { count } = await supabase
+      .from("merchants")
+      .select("id", { count: "exact", head: true })
+      .eq("brand_id", storeData.brand_id);
+    storeData.brands.store_count = count ?? 0;
   }
 
   return jsonResponse({

@@ -94,7 +94,6 @@ class EarningsSummaryCard extends StatelessWidget {
             ),
           ],
         ),
-        const SizedBox(height: 12),
         // 金额数字
         Text(
           amount,
@@ -104,18 +103,20 @@ class EarningsSummaryCard extends StatelessWidget {
             color: color,
             letterSpacing: -0.5,
           ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
         // 可选副标题
-        if (subtitle != null) ...[
-          const SizedBox(height: 4),
+        if (subtitle != null)
           Text(
             subtitle!,
             style: TextStyle(
               fontSize: 11,
               color: Colors.grey.shade400,
             ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
-        ],
       ],
     );
   }
@@ -151,7 +152,6 @@ class EarningsSummaryCard extends StatelessWidget {
             ),
           ],
         ),
-        const SizedBox(height: 12),
         // 金额占位
         Container(
           width: 80,

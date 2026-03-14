@@ -26,8 +26,11 @@ class CouponModel {
   final String? merchantAddress;
   final String? merchantPhone;
 
-  // 多店通用：适用门店 ID 列表
+  // 多店通用：适用门店 ID 列表（旧字段，来自 deals.applicable_merchant_ids）
   final List<String>? applicableMerchantIds;
+
+  // 购买时门店快照（来自 orders.applicable_store_ids）
+  final List<String>? applicableStoreIds;
 
   const CouponModel({
     required this.id,
@@ -51,9 +54,13 @@ class CouponModel {
     this.merchantAddress,
     this.merchantPhone,
     this.applicableMerchantIds,
+    this.applicableStoreIds,
   });
 
   factory CouponModel.fromJson(Map<String, dynamic> json) {
+    // 解析嵌套的 orders 对象（获取购买时门店快照）
+    final orders = json['orders'] as Map<String, dynamic>?;
+
     // 解析嵌套的 deals 对象
     final deals = json['deals'] as Map<String, dynamic>?;
 
@@ -93,6 +100,10 @@ class CouponModel {
       merchantAddress: merchants?['address'] as String?,
       merchantPhone: merchants?['phone'] as String?,
       applicableMerchantIds: (deals?['applicable_merchant_ids'] as List?)
+          ?.map((e) => e?.toString() ?? '')
+          .where((s) => s.isNotEmpty)
+          .toList(),
+      applicableStoreIds: (orders?['applicable_store_ids'] as List?)
           ?.map((e) => e?.toString() ?? '')
           .where((s) => s.isNotEmpty)
           .toList(),

@@ -146,29 +146,31 @@ class _ShortcutCell extends StatelessWidget {
           children: [
             // 圆形图标背景（美团风格）
             Container(
-              width: 48,
-              height: 48,
+              width: 44,
+              height: 44,
               decoration: BoxDecoration(
                 color: item.color.withAlpha(26), // ~10% 透明度
                 shape: BoxShape.circle,
               ),
               child: Icon(
                 item.icon,
-                size: 24,
+                size: 22,
                 color: item.color,
               ),
             ),
 
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
 
             // 入口标签
             Text(
               item.label,
               style: TextStyle(
-                fontSize: 12,
+                fontSize: 11,
                 fontWeight: FontWeight.w500,
                 color: Colors.grey.shade700,
               ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ],
         ),

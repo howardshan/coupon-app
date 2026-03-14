@@ -166,19 +166,29 @@ class CouponCard extends StatelessWidget {
                   const Icon(Icons.event_available_outlined,
                       size: 14, color: AppColors.textSecondary),
                   const SizedBox(width: 4),
-                  Text(
-                    'Expires: ${_formatDate(coupon.expiresAt)}',
-                    style: const TextStyle(
-                        fontSize: 12, color: AppColors.textSecondary),
+                  // 有效期文字用 Flexible 包裹，防止长日期溢出
+                  Flexible(
+                    child: Text(
+                      'Expires: ${_formatDate(coupon.expiresAt)}',
+                      style: const TextStyle(
+                          fontSize: 12, color: AppColors.textSecondary),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                  const Spacer(),
+                  const SizedBox(width: 8),
                   const Icon(Icons.shopping_bag_outlined,
                       size: 14, color: AppColors.textSecondary),
                   const SizedBox(width: 4),
-                  Text(
-                    'Purchased: ${_formatDate(coupon.createdAt)}',
-                    style: const TextStyle(
-                        fontSize: 12, color: AppColors.textSecondary),
+                  // 购买日期文字用 Flexible 包裹，防止长日期溢出
+                  Flexible(
+                    child: Text(
+                      'Purchased: ${_formatDate(coupon.createdAt)}',
+                      style: const TextStyle(
+                          fontSize: 12, color: AppColors.textSecondary),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                 ],
               ),

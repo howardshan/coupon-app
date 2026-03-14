@@ -83,15 +83,20 @@ class OrderTile extends StatelessWidget {
                     color: Colors.grey.shade500,
                   ),
                   const SizedBox(width: 4),
-                  Text(
-                    order.userName,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.grey.shade600,
+                  // 用户名可能很长，用 Flexible 防止溢出
+                  Flexible(
+                    child: Text(
+                      order.userName,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey.shade600,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
                     ),
                   ),
-                  const SizedBox(width: 12),
                   if (order.quantity > 1) ...[
+                    const SizedBox(width: 12),
                     Icon(
                       Icons.confirmation_number_outlined,
                       size: 14,

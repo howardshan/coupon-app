@@ -4,12 +4,13 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/errors/app_exception.dart';
 import '../models/coupon_model.dart';
 
-/// Supabase 查询中携带 deals 和 merchants 的 select 字符串
+/// Supabase 查询中携带 deals、merchants、orders 的 select 字符串
 const _couponSelect =
     'id, order_id, user_id, deal_id, merchant_id, qr_code, status, '
     'expires_at, used_at, created_at, gifted_from, verified_by, '
     'deals(id, title, description, image_urls, refund_policy, '
-    'merchants(name, logo_url, address, phone))';
+    'merchants(name, logo_url, address, phone)), '
+    'orders(applicable_store_ids)';
 
 class CouponsRepository {
   final SupabaseClient _client;

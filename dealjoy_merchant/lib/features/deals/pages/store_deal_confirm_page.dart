@@ -437,9 +437,9 @@ class _StoreDealConfirmPageState extends State<StoreDealConfirmPage> {
           if (_dealData != null) _buildDealDetailSection(),
           if (_dealData != null) const SizedBox(height: 16),
 
-          // 48 小时倒计时提示
-          if (_requestedAt != null) _buildCountdownBanner(),
-          if (_requestedAt != null) const SizedBox(height: 16),
+          // 48 小时倒计时提示（仅待确认状态显示）
+          if (_requestedAt != null && _confirmStatus == 'pending_store_confirmation') _buildCountdownBanner(),
+          if (_requestedAt != null && _confirmStatus == 'pending_store_confirmation') const SizedBox(height: 16),
 
           // 当前状态显示
           if (_confirmStatus != 'pending_store_confirmation')
@@ -516,9 +516,14 @@ class _StoreDealConfirmPageState extends State<StoreDealConfirmPage> {
                   children: [
                     const Icon(Icons.store_outlined, size: 14, color: Color(0xFF999999)),
                     const SizedBox(width: 4),
-                    Text(
-                      widget.brandName,
-                      style: const TextStyle(fontSize: 12, color: Color(0xFF999999)),
+                    // brandName 可能较长，用 Flexible 防止溢出
+                    Flexible(
+                      child: Text(
+                        widget.brandName,
+                        style: const TextStyle(fontSize: 12, color: Color(0xFF999999)),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                      ),
                     ),
                   ],
                 ),
@@ -535,7 +540,7 @@ class _StoreDealConfirmPageState extends State<StoreDealConfirmPage> {
                 ),
                 const SizedBox(height: 12),
 
-                // 价格区域
+                // 价格区域（Flexible 保护原价文本，防止三段同时显示时溢出）
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
@@ -549,12 +554,16 @@ class _StoreDealConfirmPageState extends State<StoreDealConfirmPage> {
                     ),
                     if (originalPrice != null) ...[
                       const SizedBox(width: 8),
-                      Text(
-                        '\$${originalPrice.toStringAsFixed(2)}',
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: Color(0xFF999999),
-                          decoration: TextDecoration.lineThrough,
+                      Flexible(
+                        child: Text(
+                          '\$${originalPrice.toStringAsFixed(2)}',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            color: Color(0xFF999999),
+                            decoration: TextDecoration.lineThrough,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
                         ),
                       ),
                     ],
@@ -792,12 +801,17 @@ class _StoreDealConfirmPageState extends State<StoreDealConfirmPage> {
             color: isUrgent ? const Color(0xFFF57C00) : const Color(0xFF388E3C),
           ),
           const SizedBox(width: 8),
-          Text(
-            'Response deadline: $_countdownText',
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-              color: isUrgent ? const Color(0xFFF57C00) : const Color(0xFF388E3C),
+          // Expanded 防止倒计时文本过长时溢出
+          Expanded(
+            child: Text(
+              'Response deadline: $_countdownText',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: isUrgent ? const Color(0xFFF57C00) : const Color(0xFF388E3C),
+              ),
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
             ),
           ),
         ],

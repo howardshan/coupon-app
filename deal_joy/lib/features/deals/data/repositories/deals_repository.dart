@@ -176,7 +176,7 @@ class DealsRepository {
     try {
       final data = await _client
           .from('deals')
-          .select('*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, brands(name, logo_url))')
+          .select('*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, brands(name, logo_url)), deal_option_groups(*, deal_option_items(*))')
           .eq('id', dealId)
           .single();
       return DealModel.fromJson(data);
@@ -220,7 +220,7 @@ class DealsRepository {
           .eq('is_active', true)
           .gt('expires_at', DateTime.now().toIso8601String());
 
-      if (excludeDealId != null) {
+      if (excludeDealId != null && excludeDealId.isNotEmpty) {
         query = query.neq('id', excludeDealId);
       }
 

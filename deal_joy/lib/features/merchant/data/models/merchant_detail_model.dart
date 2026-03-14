@@ -121,12 +121,14 @@ class MerchantDetailModel {
     return urls;
   }
 
-  /// 环境照片（按 category 分组）
+  /// 展示照片（environment + storefront + license，按分类分组）
   Map<String, List<MerchantPhotoModel>> get environmentPhotos {
-    final env = photos.where((p) => p.photoType == 'environment').toList();
+    final displayTypes = {'environment', 'storefront', 'license'};
+    final relevant = photos.where((p) => displayTypes.contains(p.photoType)).toList();
     final grouped = <String, List<MerchantPhotoModel>>{};
-    for (final photo in env) {
-      final key = photo.category ?? 'other';
+    for (final photo in relevant) {
+      // 用 category 分组；无 category 时用 photoType 作为 key
+      final key = photo.category ?? photo.photoType;
       grouped.putIfAbsent(key, () => []).add(photo);
     }
     return grouped;

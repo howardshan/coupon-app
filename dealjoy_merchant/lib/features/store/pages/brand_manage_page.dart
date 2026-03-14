@@ -131,7 +131,7 @@ class BrandManagePage extends ConsumerWidget {
                   physics: const NeverScrollableScrollPhysics(),
                   mainAxisSpacing: 12,
                   crossAxisSpacing: 12,
-                  childAspectRatio: 1.4,
+                  childAspectRatio: 1.2,
                   children: _menuItems.map((item) => _MenuCard(
                     item: item,
                     onTap: () => context.push(item.route),
@@ -244,27 +244,32 @@ class _MenuCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                width: 40,
-                height: 40,
+                width: 36,
+                height: 36,
                 decoration: BoxDecoration(
                   color: item.color.withAlpha(26),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(item.icon, color: item.color, size: 22),
+                child: Icon(item.icon, color: item.color, size: 20),
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 8),
               Text(
                 item.label,
                 style: const TextStyle(
                   fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF212121),
                 ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 2),
               Text(
                 item.subtitle,
                 style: const TextStyle(fontSize: 11, color: Color(0xFF9E9E9E)),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),

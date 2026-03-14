@@ -115,35 +115,47 @@ class _VoucherCard extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                // 现价
-                Text(
-                  '\$${voucher.discountPrice.toStringAsFixed(0)}',
-                  style: const TextStyle(
-                    color: AppColors.error,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 22,
-                  ),
-                ),
-                const SizedBox(width: 6),
-                // 折扣标签
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: AppColors.secondary.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    voucher.effectiveDiscountLabel,
-                    style: const TextStyle(
-                      color: AppColors.secondary,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                    ),
+                // 左侧价格区域（可收缩）
+                Flexible(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      // 现价
+                      Text(
+                        '\$${voucher.discountPrice.toStringAsFixed(0)}',
+                        style: const TextStyle(
+                          color: AppColors.error,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 22,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      // 折扣标签
+                      Flexible(
+                        child: Container(
+                          padding:
+                              const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AppColors.secondary.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            voucher.effectiveDiscountLabel,
+                            style: const TextStyle(
+                              color: AppColors.secondary,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
 
-                const Spacer(),
+                const SizedBox(width: 8),
 
                 // 销量
                 Text(

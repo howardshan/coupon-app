@@ -14,6 +14,7 @@ import '../providers/deals_provider.dart';
 import '../../store/providers/store_provider.dart';
 import '../../menu/models/menu_item.dart';
 import '../../menu/widgets/menu_item_picker.dart';
+import '../../menu/providers/menu_provider.dart';
 
 // ============================================================
 // DealEditPage — Deal编辑页面（概览+点击展开编辑）
@@ -35,6 +36,7 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
 
   // Step 1: 基本信息
   late final TextEditingController _titleController;
+  late final TextEditingController _shortNameController;
   late final TextEditingController _descriptionController;
   late final TextEditingController _usageNotesController;
   List<SelectedMenuItem> _selectedMenuItems = [];
@@ -59,8 +61,14 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
   bool _isMultiStore = false;
   final Set<String> _selectedStoreIds = {};
 
+  // 选项组（"几选几"功能）
+  late List<DealOptionGroup> _optionGroups;
+
   // Step 5: 图片
   final List<XFile> _newImages = [];
+  // 使用须知附图（已有 URL + 新增文件）
+  late List<String> _existingUsageNoteImageUrls;
+  final List<XFile> _newUsageNoteImageFiles = [];
 
   bool _isSubmitting = false;
   final _formKey = GlobalKey<FormState>();
@@ -91,6 +99,7 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
     final deal = widget.deal;
 
     _titleController = TextEditingController(text: deal.title);
+    _shortNameController = TextEditingController(text: deal.shortName ?? '');
     _descriptionController = TextEditingController(text: deal.description);
     _usageNotesController = TextEditingController(text: deal.usageNotes);
     _dealPriceController = TextEditingController(
@@ -120,11 +129,16 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
       _isMultiStore = true;
       _selectedStoreIds.addAll(deal.applicableMerchantIds!);
     }
+    // 选项组回填
+    _optionGroups = List.of(deal.optionGroups);
+    // 使用须知附图回填
+    _existingUsageNoteImageUrls = List.of(deal.usageNoteImages);
   }
 
   @override
   void dispose() {
     _titleController.dispose();
+    _shortNameController.dispose();
     _descriptionController.dispose();
     _usageNotesController.dispose();
     _dealPriceController.dispose();
@@ -137,11 +151,50 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
   // --------------------------------------------------------
   // 提交更新
   // --------------------------------------------------------
+  // 判断是否只修改了库存
+  bool _isStockOnlyChange() {
+    final old = widget.deal;
+    final newStock = _isUnlimited ? -1 : (int.tryParse(_stockController.text) ?? old.stockLimit);
+    if (newStock == old.stockLimit) return false; // 库存没变
+
+    final dealPrice = double.tryParse(_dealPriceController.text) ?? old.discountPrice;
+    // 检查其他字段是否有变化
+    if (_titleController.text.trim() != old.title) return false;
+    if (_descriptionController.text.trim() != old.description) return false;
+    if (_originalPrice != old.originalPrice) return false;
+    if (dealPrice != old.discountPrice) return false;
+    if (_usageNotesController.text.trim() != (old.usageNotes ?? '')) return false;
+    if (_packageContentsText != (old.packageContents ?? '')) return false;
+    if (_validityType != old.validityType) return false;
+    if (_isStackable != old.isStackable) return false;
+    if (_newImages.isNotEmpty) return false; // 有新图片
+    return true;
+  }
+
   Future<void> _submit() async {
     setState(() => _isSubmitting = true);
 
     try {
       final notifier = ref.read(dealsProvider.notifier);
+
+      // 仅修改库存：原地更新，不克隆不重审
+      if (_isStockOnlyChange()) {
+        final newStock = _isUnlimited ? -1 : (int.tryParse(_stockController.text) ?? widget.deal.stockLimit);
+        await notifier.updateStockOnly(widget.deal.id, newStock);
+
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Stock updated successfully!'),
+            backgroundColor: Color(0xFF4CAF50),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        context.pop();
+        return;
+      }
+
+      // 其他修改：走克隆逻辑（后端处理）
       final storeInfo = ref.read(storeProvider).valueOrNull;
       final category = storeInfo?.category ?? widget.deal.category;
 
@@ -156,10 +209,49 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
       final dealPrice = double.tryParse(_dealPriceController.text) ??
           widget.deal.discountPrice;
 
+      // 验证 shortName（必填，最多10字符）
+      final shortNameText = _shortNameController.text.trim();
+      if (shortNameText.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Short name is required'),
+            backgroundColor: Color(0xFFE53935),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        setState(() => _isSubmitting = false);
+        return;
+      }
+      if (shortNameText.length > 10) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Short name must be 10 characters or less'),
+            backgroundColor: Color(0xFFE53935),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        setState(() => _isSubmitting = false);
+        return;
+      }
+
+      // 上传新增的使用须知附图
+      final allUsageNoteUrls = List<String>.from(_existingUsageNoteImageUrls);
+      if (_newUsageNoteImageFiles.isNotEmpty) {
+        final service = ref.read(dealsServiceProvider);
+        for (final file in _newUsageNoteImageFiles) {
+          final url = await service.uploadUsageNoteImage(
+            merchantId: widget.deal.merchantId,
+            file: file,
+          );
+          allUsageNoteUrls.add(url);
+        }
+      }
+
       final deal = MerchantDeal(
         id: widget.deal.id,
         merchantId: widget.deal.merchantId,
         title: _titleController.text.trim(),
+        shortName: shortNameText,
         description: _descriptionController.text.trim(),
         category: category,
         originalPrice: _originalPrice,
@@ -172,6 +264,7 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
         dealStatus: DealStatus.pending,
         packageContents: _packageContentsText,
         usageNotes: _usageNotesController.text.trim(),
+        usageNoteImages: allUsageNoteUrls,
         validityType: _validityType,
         expiresAt: expiresAt,
         validityDays: _validityType == ValidityType.daysAfterPurchase
@@ -186,6 +279,7 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
         applicableMerchantIds: _isMultiStore && _selectedStoreIds.isNotEmpty
             ? _selectedStoreIds.toList()
             : null,
+        optionGroups: _optionGroups,
         images: widget.deal.images,
         createdAt: widget.deal.createdAt,
         updatedAt: DateTime.now(),
@@ -193,7 +287,7 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
 
       await notifier.updateDeal(deal);
 
-      // 上传新图片（如有）
+      // 上传新图片到新 deal（后端返回的是新 deal ID）
       if (_newImages.isNotEmpty) {
         for (int i = 0; i < _newImages.length; i++) {
           await notifier.uploadImage(
@@ -363,7 +457,18 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
 
             const SizedBox(height: 12),
 
-            // 5. 图片
+            // 5. 选项组
+            _buildSection(
+              sectionKey: 'options',
+              icon: Icons.checklist_outlined,
+              title: 'Option Groups',
+              summaryBuilder: _buildOptionGroupsSummary,
+              editBuilder: _buildOptionGroupsEdit,
+            ),
+
+            const SizedBox(height: 12),
+
+            // 6. 图片
             _buildSection(
               sectionKey: 'images',
               icon: Icons.photo_library_outlined,
@@ -521,6 +626,8 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _summaryRow('Title', _titleController.text),
+        if (_shortNameController.text.isNotEmpty)
+          _summaryRow('Short Name', _shortNameController.text),
         _summaryRow('Description', _descriptionController.text),
         if (widget.deal.packageContents.isNotEmpty)
           _summaryRow('Package', _selectedMenuItems.isNotEmpty
@@ -545,6 +652,16 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
             label: 'Deal Title',
             hint: 'e.g. 2-Person BBQ Set',
             maxLength: 100,
+          ),
+          const SizedBox(height: 12),
+
+          // 短名称（最多10字符，用于变体选择器展示）
+          _buildTextField(
+            fieldKey: const ValueKey('deal_short_name_field'),
+            controller: _shortNameController,
+            label: 'Short Name (max 10 chars)',
+            hint: 'Used in variant selector',
+            maxLength: 10,
           ),
           const SizedBox(height: 12),
           _buildTextField(
@@ -638,8 +755,108 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
             maxLines: 3,
             maxLength: 500,
           ),
+          const SizedBox(height: 12),
+          _buildUsageNoteImagesSection(),
         ],
       ),
+    );
+  }
+
+  // 使用须知附图区域（编辑模式：已有 URL + 新增文件）
+  Widget _buildUsageNoteImagesSection() {
+    final totalCount = _existingUsageNoteImageUrls.length + _newUsageNoteImageFiles.length;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Usage Note Photos (Optional)',
+          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Color(0xFF333333)),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Add photos to help explain purchase/usage notes',
+          style: TextStyle(fontSize: 12, color: Color(0xFF999999)),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            // 已有的远程图片
+            for (int i = 0; i < _existingUsageNoteImageUrls.length; i++)
+              _usageNoteImageTile(
+                child: Image.network(
+                  _existingUsageNoteImageUrls[i],
+                  width: 80, height: 80, fit: BoxFit.cover,
+                ),
+                onRemove: () => setState(() => _existingUsageNoteImageUrls.removeAt(i)),
+              ),
+            // 新选择的本地图片
+            for (int i = 0; i < _newUsageNoteImageFiles.length; i++)
+              _usageNoteImageTile(
+                child: Image.file(
+                  File(_newUsageNoteImageFiles[i].path),
+                  width: 80, height: 80, fit: BoxFit.cover,
+                ),
+                onRemove: () => setState(() => _newUsageNoteImageFiles.removeAt(i)),
+              ),
+            // 添加按钮
+            if (totalCount < 5)
+              GestureDetector(
+                onTap: () async {
+                  final picker = ImagePicker();
+                  final picked = await picker.pickImage(
+                    source: ImageSource.gallery,
+                    maxWidth: 1200,
+                    maxHeight: 1200,
+                    imageQuality: 85,
+                  );
+                  if (picked != null) {
+                    setState(() => _newUsageNoteImageFiles.add(picked));
+                  }
+                },
+                child: Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF5F5F5),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFDDDDDD)),
+                  ),
+                  child: const Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.add_photo_alternate_outlined, size: 24, color: Color(0xFF999999)),
+                      SizedBox(height: 2),
+                      Text('Add', style: TextStyle(fontSize: 11, color: Color(0xFF999999))),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  // 使用须知图片单元（带删除按钮）
+  Widget _usageNoteImageTile({required Widget child, required VoidCallback onRemove}) {
+    return Stack(
+      children: [
+        ClipRRect(borderRadius: BorderRadius.circular(8), child: child),
+        Positioned(
+          top: 2,
+          right: 2,
+          child: GestureDetector(
+            onTap: onRemove,
+            child: Container(
+              decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+              padding: const EdgeInsets.all(2),
+              child: const Icon(Icons.close, size: 14, color: Colors.white),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -1127,7 +1344,446 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
   }
 
   // ============================================================
-  // 5. 图片 — 概览
+  // 5. 选项组 — 概览
+  // ============================================================
+  Widget _buildOptionGroupsSummary() {
+    if (_optionGroups.isEmpty) {
+      return const Text(
+        'No option groups',
+        style: TextStyle(fontSize: 13, color: Color(0xFF999999)),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: _optionGroups.map((g) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Text(
+          '${g.name} — ${g.displayLabel}',
+          style: const TextStyle(fontSize: 13, color: Color(0xFF333333)),
+        ),
+      )).toList(),
+    );
+  }
+
+  // ============================================================
+  // 5. 选项组 — 编辑
+  // ============================================================
+  Widget _buildOptionGroupsEdit() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 已有选项组列表
+        ..._optionGroups.asMap().entries.map((entry) {
+          final idx = entry.key;
+          final group = entry.value;
+          return Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8F9FA),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFE0E0E0)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${group.name} (${group.displayLabel})',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF333333),
+                        ),
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: () => _editOptionGroupInEditPage(idx),
+                      child: const Icon(Icons.edit_outlined,
+                          size: 18, color: Color(0xFFFF6B35)),
+                    ),
+                    const SizedBox(width: 8),
+                    GestureDetector(
+                      onTap: () => setState(() =>
+                          _optionGroups = List.of(_optionGroups)..removeAt(idx)),
+                      child: const Icon(Icons.delete_outline,
+                          size: 18, color: Color(0xFFE53935)),
+                    ),
+                  ],
+                ),
+                if (group.items.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  ...group.items.map((item) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Row(
+                      children: [
+                        const Text('• ', style: TextStyle(color: Color(0xFF666666))),
+                        Expanded(child: Text(item.name,
+                            style: const TextStyle(fontSize: 13, color: Color(0xFF666666)))),
+                        Text('\$${item.price.toStringAsFixed(2)}',
+                            style: const TextStyle(fontSize: 13, color: Color(0xFF666666))),
+                      ],
+                    ),
+                  )),
+                ],
+              ],
+            ),
+          );
+        }),
+        // 添加按钮
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: _addOptionGroupInEditPage,
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text('Add Option Group'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: _orange,
+              side: BorderSide(color: _orange),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _addOptionGroupInEditPage() {
+    _showOptionGroupDialogEdit(
+      onSave: (group) {
+        setState(() => _optionGroups = [..._optionGroups, group]);
+      },
+    );
+  }
+
+  void _editOptionGroupInEditPage(int index) {
+    _showOptionGroupDialogEdit(
+      existingGroup: _optionGroups[index],
+      onSave: (group) {
+        setState(() {
+          final updated = List<DealOptionGroup>.of(_optionGroups);
+          updated[index] = group;
+          _optionGroups = updated;
+        });
+      },
+    );
+  }
+
+  // 选项组编辑弹窗（编辑页版本）
+  void _showOptionGroupDialogEdit({
+    DealOptionGroup? existingGroup,
+    required void Function(DealOptionGroup) onSave,
+  }) {
+    final nameCtrl = TextEditingController(text: existingGroup?.name ?? '');
+    final selectCountCtrl = TextEditingController(
+        text: existingGroup?.selectMin.toString() ?? '1');
+    List<DealOptionItem> items = existingGroup?.items.toList() ?? [];
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: Text(existingGroup != null ? 'Edit Option Group' : 'Add Option Group'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextField(
+                    controller: nameCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Group Name',
+                      hintText: 'e.g. Main Course',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: selectCountCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Select Count',
+                      hintText: 'e.g. 2',
+                      border: OutlineInputBorder(),
+                    ),
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  ),
+                  const SizedBox(height: 16),
+                  const Text('Items', style: TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 8),
+                  ...items.asMap().entries.map((entry) {
+                    final itemIdx = entry.key;
+                    final item = entry.value;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Row(
+                        children: [
+                          Expanded(flex: 3, child: Text(item.name,
+                              style: const TextStyle(fontSize: 13))),
+                          const SizedBox(width: 8),
+                          Expanded(flex: 2, child: Text(
+                              '\$${item.price.toStringAsFixed(2)}',
+                              style: const TextStyle(fontSize: 13))),
+                          GestureDetector(
+                            onTap: () => _showOptionItemEditDialogEdit(
+                              existingItem: item,
+                              onSave: (updated) {
+                                setDialogState(() {
+                                  items = List.of(items);
+                                  items[itemIdx] = updated;
+                                });
+                              },
+                            ),
+                            child: const Icon(Icons.edit_outlined,
+                                size: 16, color: Color(0xFF999999)),
+                          ),
+                          const SizedBox(width: 4),
+                          GestureDetector(
+                            onTap: () => setDialogState(() =>
+                                items = List.of(items)..removeAt(itemIdx)),
+                            child: const Icon(Icons.close,
+                                size: 16, color: Color(0xFFE53935)),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                  TextButton.icon(
+                    onPressed: () => _showMenuItemSelectorForOptionEdit(
+                      existingItems: items,
+                      onSave: (item) {
+                        setDialogState(() => items = [...items, item]);
+                      },
+                    ),
+                    icon: const Icon(Icons.add, size: 16),
+                    label: const Text('Add Item'),
+                    style: TextButton.styleFrom(foregroundColor: _orange),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final name = nameCtrl.text.trim();
+                if (name.isEmpty) return;
+                final count = int.tryParse(selectCountCtrl.text) ?? 1;
+                if (count < 1) return;
+                final sortedItems = items.asMap().entries.map((e) =>
+                    e.value.copyWith(sortOrder: e.key)).toList();
+                onSave(DealOptionGroup(
+                  id: existingGroup?.id,
+                  name: name,
+                  selectMin: count,
+                  selectMax: count,
+                  sortOrder: 0,
+                  items: sortedItems,
+                ));
+                Navigator.pop(ctx);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _orange,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // 从菜单中选择选项项（底部弹窗，编辑页版本）
+  void _showMenuItemSelectorForOptionEdit({
+    required List<DealOptionItem> existingItems,
+    required void Function(DealOptionItem) onSave,
+  }) {
+    final existingNames = existingItems.map((e) => e.name).toSet();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.6,
+          maxChildSize: 0.85,
+          minChildSize: 0.3,
+          expand: false,
+          builder: (_, scrollController) {
+            return Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Select from Menu',
+                          style: TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.w600)),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.pop(ctx),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: Consumer(builder: (_, cRef, __) {
+                  final menuAsync = cRef.watch(activeMenuItemsProvider);
+                  return menuAsync.when(
+                    loading: () => const Center(
+                        child: CircularProgressIndicator(color: Color(0xFFFF6B35))),
+                    error: (e, _) => Center(child: Text('Error: $e')),
+                    data: (items) {
+                      if (items.isEmpty) {
+                        return const Center(
+                          child: Text('No active menu items',
+                              style: TextStyle(color: Color(0xFF999999))),
+                        );
+                      }
+                      return ListView.separated(
+                        controller: scrollController,
+                        padding: const EdgeInsets.all(12),
+                        itemCount: items.length,
+                        separatorBuilder: (_, _) => const SizedBox(height: 6),
+                        itemBuilder: (_, i) {
+                          final item = items[i];
+                          final alreadyAdded = existingNames.contains(item.name);
+                          return ListTile(
+                            leading: ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: SizedBox(
+                                width: 44, height: 44,
+                                child: item.imageUrl != null &&
+                                        item.imageUrl!.isNotEmpty
+                                    ? Image.network(item.imageUrl!,
+                                        fit: BoxFit.cover)
+                                    : Container(
+                                        color: Colors.grey.shade100,
+                                        child: const Icon(Icons.restaurant,
+                                            size: 20, color: Colors.grey)),
+                              ),
+                            ),
+                            title: Text(item.name,
+                                style: const TextStyle(fontSize: 14)),
+                            subtitle: Text(
+                              item.price != null
+                                  ? '\$${item.price!.toStringAsFixed(2)}'
+                                  : 'No price',
+                              style: const TextStyle(
+                                  fontSize: 13, color: Color(0xFF666666)),
+                            ),
+                            trailing: alreadyAdded
+                                ? const Icon(Icons.check_circle,
+                                    color: Colors.green, size: 20)
+                                : const Icon(Icons.add_circle_outline,
+                                    color: Color(0xFFFF6B35), size: 20),
+                            onTap: alreadyAdded
+                                ? null
+                                : () {
+                                    onSave(DealOptionItem(
+                                      name: item.name,
+                                      price: item.price ?? 0,
+                                    ));
+                                    Navigator.pop(ctx);
+                                  },
+                          );
+                        },
+                      );
+                    },
+                  );
+                  }),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // 选项项编辑弹窗（仅编辑已有项，编辑页版本）
+  void _showOptionItemEditDialogEdit({
+    required DealOptionItem existingItem,
+    required void Function(DealOptionItem) onSave,
+  }) {
+    final nameCtrl = TextEditingController(text: existingItem.name);
+    final priceCtrl = TextEditingController(
+        text: existingItem.price.toStringAsFixed(2));
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Edit Item'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Item Name',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: priceCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Price',
+                prefixText: '\$ ',
+                border: OutlineInputBorder(),
+              ),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final name = nameCtrl.text.trim();
+              final price = double.tryParse(priceCtrl.text) ?? 0;
+              if (name.isEmpty) return;
+              onSave(DealOptionItem(
+                id: existingItem.id,
+                name: name,
+                price: price,
+              ));
+              Navigator.pop(ctx);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _orange,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ============================================================
+  // 6. 图片 — 概览
   // ============================================================
   Widget _buildImagesSummary() {
     final totalImages = widget.deal.images.length + _newImages.length;

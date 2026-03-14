@@ -184,17 +184,21 @@ class _ProfileBody extends StatelessWidget {
                                     size: 18,
                                   ),
                                   const SizedBox(width: 6),
-                                  const Text(
-                                    'GOLD MEMBER',
-                                    style: TextStyle(
-                                      color: Color(0xFF78350F),
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 13,
-                                      letterSpacing: 0.5,
+                                  const Flexible(
+                                    child: Text(
+                                      'GOLD MEMBER',
+                                      style: TextStyle(
+                                        color: Color(0xFF78350F),
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                        letterSpacing: 0.5,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
                                   const SizedBox(width: 6),
                                   Row(
+                                    mainAxisSize: MainAxisSize.min,
                                     children: List.generate(
                                       5,
                                       (i) => Icon(

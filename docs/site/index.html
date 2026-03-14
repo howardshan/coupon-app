@@ -338,6 +338,29 @@
       <div class="nav-l3" onclick="navigate('bms-store-confirm-ui')">Store Confirm Flow (App)</div>
     </div>
 
+    <div class="nav-group">
+      <div class="nav-group-label">Deal Management</div>
+      <div class="nav-l1" onclick="navigate('deal-edit-clone')">Edit as Clone</div>
+      <div class="nav-l1" onclick="navigate('deal-sort-shortname')">Sort Order &amp; Short Name</div>
+      <div class="nav-l1" onclick="navigate('deal-dishes-format')">Products Data Format</div>
+      <div class="nav-l1" onclick="navigate('deal-option-groups')">Option Groups (Pick X)</div>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-group-label">User App</div>
+      <div class="nav-l1" onclick="navigate('user-deal-detail')">Deal Detail Page</div>
+      <div class="nav-l1" onclick="navigate('user-photo-gallery')">Photo Gallery</div>
+      <div class="nav-l1" onclick="navigate('user-cart')">Cart &amp; Checkout</div>
+      <div class="nav-l1" onclick="navigate('user-coupon-stores')">Coupon Store Snapshot</div>
+      <div class="nav-l1" onclick="navigate('user-responsive')">Responsive Layout Fixes</div>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-group-label">Admin &amp; Backend</div>
+      <div class="nav-l1" onclick="navigate('admin-activate')">Admin Activate Logic</div>
+      <div class="nav-l1" onclick="navigate('db-migrations-0313')">DB Migrations (03-13)</div>
+    </div>
+
   </div><!-- /sidebar -->
 
 
@@ -1060,6 +1083,363 @@
         <span class="callout-icon">⚠️</span>
         <div class="callout-body"><strong>48-hour window:</strong> Stores that do not respond within 48 hours are automatically declined by a pg_cron job. The pending banner will disappear after auto-decline.</div>
       </div>
+    </div>
+
+
+    <!-- ══════════════════════════════════════════
+         DEAL MANAGEMENT
+    ══════════════════════════════════════════ -->
+
+    <!-- ── Edit as Clone ──────────────────────── -->
+    <div class="page" id="page-deal-edit-clone">
+      <h2 class="page-title">Edit as Clone</h2>
+      <p class="page-subtitle">When a merchant edits a deal, the system clones it instead of updating in place. This preserves purchase history and triggers a fresh admin review.</p>
+
+      <h3>How It Works</h3>
+      <p>The <code>merchant-deals</code> Edge Function PATCH handler distinguishes two scenarios:</p>
+
+      <table class="doc-table">
+        <tr><th>Scenario</th><th>Behavior</th></tr>
+        <tr><td>Stock-only change (<code>total_stock</code>, <code>remaining_stock</code>)</td><td>Updates the existing deal row in place. No new deal is created.</td></tr>
+        <tr><td>Sort-order-only change (<code>sort_order_only: true</code>)</td><td>Updates <code>sort_order</code> in place. Used by drag-reorder.</td></tr>
+        <tr><td>Any other field change</td><td>Clones the deal: creates a new row with <code>status = pending</code>, copies <code>deal_images</code> and <code>deal_applicable_stores</code>, then sets the original deal to <code>inactive</code>.</td></tr>
+      </table>
+
+      <h3>Clone Process</h3>
+      <div class="flow-row">
+        <div class="flow-step">Merchant submits edit</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">PATCH <code>/merchant-deals</code></div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">New deal row (pending)</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Copy images &amp; stores</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Old deal → inactive</div>
+      </div>
+
+      <div class="callout callout-info">
+        <span class="callout-icon">ℹ️</span>
+        <div class="callout-body">If the deal has <code>option_groups</code>, they are also cloned to the new deal. If the edit payload includes new <code>option_groups</code>, those replace the cloned groups.</div>
+      </div>
+
+      <h3>Key Files</h3>
+      <table class="doc-table">
+        <tr><th>File</th><th>Change</th></tr>
+        <tr><td><code>merchant-deals/index.ts</code></td><td><code>handleUpdateDeal</code> — clone logic, stock-only bypass, sort_order_only bypass</td></tr>
+      </table>
+    </div>
+
+    <!-- ── Sort Order & Short Name ────────────── -->
+    <div class="page" id="page-deal-sort-shortname">
+      <h2 class="page-title">Sort Order &amp; Short Name</h2>
+      <p class="page-subtitle">Merchants can drag-reorder their deals and set a short display name (≤10 characters) used in the user app's variant selector.</p>
+
+      <h3>Sort Order (Drag Reorder)</h3>
+      <p>The merchant app's "All" tab in <code>deals_list_page.dart</code> uses a <code>ReorderableListView</code> with drag handles. On reorder, a batch update is sent to the backend.</p>
+
+      <div class="flow-row">
+        <div class="flow-step">Merchant drags deal</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step"><code>DealsNotifier.reorderDeals()</code></div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">PATCH <code>/merchant-deals/reorder</code></div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Batch update <code>sort_order</code></div>
+      </div>
+
+      <h3>Short Name</h3>
+      <p>A deal can have a <code>short_name</code> (max 10 characters, enforced by DB <code>CHECK</code> constraint). In the user app's deal detail page, the variant selector shows <code>shortName</code> first, falling back to the full deal title.</p>
+
+      <table class="doc-table">
+        <tr><th>Layer</th><th>Details</th></tr>
+        <tr><td>DB</td><td><code>deals.short_name text CHECK(char_length &lt;= 10)</code></td></tr>
+        <tr><td>Edge Function</td><td>CREATE accepts <code>short_name</code>; PATCH whitelist includes <code>short_name</code>, <code>sort_order</code></td></tr>
+        <tr><td>Merchant App</td><td><code>deal_create_page.dart</code> Step 0 — short_name input field</td></tr>
+        <tr><td>User App</td><td><code>deal_detail_screen.dart</code> — variant selector shows shortName</td></tr>
+      </table>
+    </div>
+
+    <!-- ── Products Data Format ───────────────── -->
+    <div class="page" id="page-deal-dishes-format">
+      <h2 class="page-title">Products Data Format</h2>
+      <p class="page-subtitle">Deals store their included products in a structured string format that carries quantity and price data.</p>
+
+      <div class="callout callout-warn">
+        <span class="callout-icon">⚠️</span>
+        <div class="callout-body"><strong>Naming note:</strong> The DB column is still called <code>dishes</code> for backward compatibility. In all Dart code, the field has been renamed to <code>products</code>.</div>
+      </div>
+
+      <h3>Format</h3>
+      <p>The <code>deals.dishes</code> column is a <code>text[]</code> array. Each element follows one of two formats:</p>
+      <table class="doc-table">
+        <tr><th>Format</th><th>Example</th><th>Description</th></tr>
+        <tr><td><code>name</code></td><td><code>"Smoked Brisket"</code></td><td>Legacy format — name only, no price</td></tr>
+        <tr><td><code>name::qty::subtotal</code></td><td><code>"Smoked Brisket::2::30"</code></td><td>New format — includes quantity and subtotal</td></tr>
+      </table>
+
+      <h3>Parsing (User App)</h3>
+      <p><code>DealModel._parseProducts()</code> splits each string by <code>::</code>. If 3 parts exist, it extracts <code>(name, qty, subtotal)</code>. The deal detail page renders each line as:</p>
+      <p style="font-family: monospace; background: var(--surface2); padding: 8px 12px; border-radius: 6px; margin: 8px 0;">Smoked Brisket &nbsp;&nbsp;&nbsp; ×2 &nbsp; $30</p>
+
+      <h3>Merchant App: Building the Data</h3>
+      <p>In <code>deal_create_page.dart</code>, the <code>_dishesData</code> getter constructs the array from selected menu items:</p>
+      <pre style="background: var(--surface2); padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 13px; margin: 8px 0;">_selectedMenuItems.map((s) {
+  final name = s.menuItem.name;
+  final qty = s.quantity;
+  final subtotal = ((s.menuItem.price ?? 0) * qty).toStringAsFixed(0);
+  return '$name::$qty::$subtotal';
+}).toList();</pre>
+
+      <h3>Global Rename: dishes → products</h3>
+      <table class="doc-table">
+        <tr><th>File</th><th>Change</th></tr>
+        <tr><td><code>deal_model.dart</code></td><td><code>dishes</code> → <code>products</code>, <code>_parseDishes</code> → <code>_parseProducts</code></td></tr>
+        <tr><td><code>deal_detail_screen.dart</code></td><td><code>_DishesSection</code> → <code>_ProductsSection</code></td></tr>
+        <tr><td><code>deal_card_horizontal.dart</code></td><td><code>dishesPreview</code> → <code>productsPreview</code></td></tr>
+        <tr><td><code>deal_card_v2.dart</code></td><td><code>dishesPreview</code> → <code>productsPreview</code></td></tr>
+        <tr><td><code>menu_tab.dart / menu_section.dart</code></td><td>"Signature Dishes" → "Signature Products"</td></tr>
+        <tr><td><code>photo_gallery_screen.dart</code></td><td>Filter label "Dishes" → "Products"</td></tr>
+      </table>
+    </div>
+
+    <!-- ── Option Groups ──────────────────────── -->
+    <div class="page" id="page-deal-option-groups">
+      <h2 class="page-title">Option Groups (Pick X from Y)</h2>
+      <p class="page-subtitle">Deals can have option groups that let customers choose items — e.g., "Pick 1 Main Course from 3 options".</p>
+
+      <h3>Database Schema</h3>
+      <table class="doc-table">
+        <tr><th>Table</th><th>Key Columns</th><th>Notes</th></tr>
+        <tr><td><code>deal_option_groups</code></td><td><code>deal_id</code>, <code>name</code>, <code>select_min</code>, <code>select_max</code>, <code>sort_order</code></td><td>FK to deals with CASCADE delete</td></tr>
+        <tr><td><code>deal_option_items</code></td><td><code>group_id</code>, <code>name</code>, <code>price</code>, <code>sort_order</code></td><td>FK to deal_option_groups with CASCADE delete</td></tr>
+        <tr><td><code>orders.selected_options</code></td><td>JSONB</td><td>Snapshot of customer's selections at purchase time</td></tr>
+      </table>
+
+      <h3>RLS Policy</h3>
+      <ul style="margin: 8px 0 16px 20px;">
+        <li>Everyone can read (SELECT) option groups and items</li>
+        <li>Merchants can INSERT / UPDATE / DELETE via <code>deal → merchant_staff</code> chain</li>
+      </ul>
+
+      <h3>Merchant App Flow</h3>
+      <div class="flow-row">
+        <div class="flow-step">Deal Create/Edit → "Option Groups" section</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Add Option Group dialog</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Select items from menu</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Set Select Count</div>
+      </div>
+      <p>The "Add Item" button inside the option group dialog opens a bottom sheet listing all active menu items. Selecting an item auto-fills the name and price. Already-added items show a green checkmark and cannot be re-added.</p>
+
+      <h3>User App Flow</h3>
+      <p>The deal detail page renders an <code>_OptionGroupsSelector</code> widget below the products section. Each group shows its items as selectable chips.</p>
+      <table class="doc-table">
+        <tr><th>Mode</th><th>Behavior</th></tr>
+        <tr><td><code>selectMax = 1</code></td><td>Single-select (radio-like): tapping a new item replaces the previous selection</td></tr>
+        <tr><td><code>selectMax &gt; 1</code></td><td>Multi-select: tapping toggles selection, capped at max</td></tr>
+      </table>
+      <p>The bottom bar's "Buy Now" and "Add to Cart" buttons validate that all option groups are fully selected. If not, a SnackBar prompts the user.</p>
+
+      <h3>Checkout Snapshot</h3>
+      <p>At payment time, the selected options are serialized as JSONB and stored in <code>orders.selected_options</code>:</p>
+      <pre style="background: var(--surface2); padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 13px; margin: 8px 0;">[{
+  "group_id": "uuid",
+  "group_name": "Main Course",
+  "items": [{
+    "item_id": "uuid",
+    "item_name": "Grilled Salmon",
+    "price": 18.00
+  }]
+}]</pre>
+
+      <h3>Key Files</h3>
+      <table class="doc-table">
+        <tr><th>Layer</th><th>Files</th></tr>
+        <tr><td>Migration</td><td><code>20260313000002_deal_option_groups.sql</code></td></tr>
+        <tr><td>Edge Function</td><td><code>merchant-deals/index.ts</code> — insertOptionGroups, cloneOptionGroups</td></tr>
+        <tr><td>Merchant Models</td><td><code>merchant_deal.dart</code> — DealOptionGroup, DealOptionItem</td></tr>
+        <tr><td>Merchant UI</td><td><code>deal_create_page.dart</code>, <code>deal_edit_page.dart</code></td></tr>
+        <tr><td>User Models</td><td><code>deal_model.dart</code> — DealOptionGroup, DealOptionItem</td></tr>
+        <tr><td>User UI</td><td><code>deal_detail_screen.dart</code> — _OptionGroupsSelector</td></tr>
+        <tr><td>Checkout</td><td><code>checkout_repository.dart</code>, <code>checkout_screen.dart</code></td></tr>
+      </table>
+    </div>
+
+
+    <!-- ══════════════════════════════════════════
+         USER APP
+    ══════════════════════════════════════════ -->
+
+    <!-- ── Deal Detail Page ───────────────────── -->
+    <div class="page" id="page-user-deal-detail">
+      <h2 class="page-title">Deal Detail Page</h2>
+      <p class="page-subtitle">The deal detail screen received multiple UI enhancements on 2026-03-13.</p>
+
+      <h3>Image Gallery</h3>
+      <p>The hero section now supports multiple images via a <code>PageView</code> with dot indicators. A gallery button opens a full-screen image viewer.</p>
+
+      <h3>Price Formula Row</h3>
+      <p>Below the deal price, a formula row shows: <code>$X reg price - $Y deal promotion</code>. The right side uses <code>Expanded</code> + <code>Flexible</code> wrapping to prevent overflow on narrow screens.</p>
+
+      <h3>Variant Selector</h3>
+      <p>When the merchant has multiple deals for the same store, a horizontal selector appears below the price section. Deals are sorted by <code>sort_order</code> and display <code>shortName</code> (falling back to the full title).</p>
+
+      <h3>Restaurant Info Section</h3>
+      <p>Now includes the merchant's <code>homepage_cover_url</code> as a banner image (130px height, rounded corners) above the store info.</p>
+
+      <h3>Applicable Stores Section</h3>
+      <ul style="margin: 8px 0 16px 20px;">
+        <li>Each store card now shows a cover photo at the top (from <code>homepage_cover_url</code>)</li>
+        <li><strong>Hidden when only 1 store:</strong> If <code>deal_applicable_stores</code> returns ≤ 1 active store, the entire section is not rendered</li>
+        <li>The query joins <code>homepage_cover_url</code> for multi-store list</li>
+      </ul>
+
+      <h3>Products Section</h3>
+      <p>Each product line shows quantity and subtotal when the <code>name::qty::subtotal</code> format is available. Products matching an option group display a "(Select X from Y)" label.</p>
+    </div>
+
+    <!-- ── Photo Gallery ──────────────────────── -->
+    <div class="page" id="page-user-photo-gallery">
+      <h2 class="page-title">Photo Gallery</h2>
+      <p class="page-subtitle">The merchant photo gallery was rewritten to combine merchant-uploaded photos with product images from <code>menu_items</code>.</p>
+
+      <h3>Filter Tabs</h3>
+      <table class="doc-table">
+        <tr><th>Tab</th><th>Source</th></tr>
+        <tr><td>All</td><td>Merchant photos + menu_items product photos</td></tr>
+        <tr><td>Products</td><td><code>menu_items</code> where <code>image_url IS NOT NULL</code></td></tr>
+        <tr><td>Environment</td><td>merchant_photos where <code>photo_type = 'environment'</code></td></tr>
+        <tr><td>Other</td><td>merchant_photos excluding product/environment/storefront/cover types</td></tr>
+        <tr><td>Merchant Uploads</td><td>All merchant_photos</td></tr>
+      </table>
+
+      <h3>Unified Display Model</h3>
+      <p>A <code>_DisplayPhoto</code> class unifies both data sources with fields: <code>url</code>, <code>sourceLabel</code>, <code>productName</code>, <code>price</code>.</p>
+
+      <h3>Product Photo Overlay</h3>
+      <p>For menu_items photos, a gradient overlay at the bottom shows the product name (left) and price (right). This appears in both the grid view and the full-screen viewer.</p>
+    </div>
+
+    <!-- ── Cart & Checkout ────────────────────── -->
+    <div class="page" id="page-user-cart">
+      <h2 class="page-title">Cart &amp; Checkout</h2>
+      <p class="page-subtitle">The deal detail bottom bar now includes an Add to Cart button alongside Buy Now.</p>
+
+      <h3>Bottom Bar Layout</h3>
+      <p>The bottom bar contains: Store icon | Cart icon (with badge) | Add to Cart (#FF9500 orange) | Buy Now</p>
+
+      <h3>Cart State</h3>
+      <table class="doc-table">
+        <tr><th>File</th><th>Role</th></tr>
+        <tr><td><code>cart_item_model.dart</code></td><td>Cart item data model (deal reference, quantity, selected options)</td></tr>
+        <tr><td><code>cart_provider.dart</code></td><td>Riverpod Notifier: addDeal, updateQuantity, remove, clear</td></tr>
+        <tr><td><code>cart_screen.dart</code></td><td>Full cart UI with quantity adjustment, removal, totals</td></tr>
+      </table>
+
+      <h3>Option Validation</h3>
+      <p>Both "Buy Now" and "Add to Cart" check that all option groups are fully selected before proceeding. Incomplete selections trigger a SnackBar warning.</p>
+    </div>
+
+    <!-- ── Coupon Store Snapshot ───────────────── -->
+    <div class="page" id="page-user-coupon-stores">
+      <h2 class="page-title">Coupon Store Snapshot</h2>
+      <p class="page-subtitle">When a user purchases a deal, the applicable stores are snapshotted into the order — preventing issues if stores are later removed from the deal.</p>
+
+      <h3>How It Works</h3>
+      <div class="flow-row">
+        <div class="flow-step">User purchases deal</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">BEFORE INSERT trigger</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Snapshot <code>deal_applicable_stores</code> → <code>orders.applicable_store_ids</code></div>
+      </div>
+
+      <h3>Database</h3>
+      <table class="doc-table">
+        <tr><th>Change</th><th>Details</th></tr>
+        <tr><td><code>orders.applicable_store_ids</code></td><td>New <code>uuid[]</code> column, populated by trigger</td></tr>
+        <tr><td>Backfill</td><td>Migration retroactively fills historical orders from current store data</td></tr>
+      </table>
+
+      <h3>Scan Validation</h3>
+      <p><code>merchant-scan/index.ts</code> checks the snapshot store list first. If <code>NULL</code> (old orders), it falls back to querying current active stores.</p>
+
+      <h3>Coupon Display</h3>
+      <p>Multi-store coupons display a list of applicable stores (name + address) using <code>applicableStoresProvider</code>.</p>
+    </div>
+
+    <!-- ── Responsive Layout Fixes ────────────── -->
+    <div class="page" id="page-user-responsive">
+      <h2 class="page-title">Responsive Layout Fixes</h2>
+      <p class="page-subtitle">A comprehensive audit across both apps fixed overflow issues on narrow screens.</p>
+
+      <h3>Key Fixes</h3>
+      <table class="doc-table">
+        <tr><th>Screen</th><th>Issue</th><th>Fix</th></tr>
+        <tr><td>Deal Detail — price row</td><td>RIGHT OVERFLOWED BY 16px</td><td>Wrapped with <code>Expanded</code> + <code>Flexible</code>, reduced font size &amp; spacing</td></tr>
+        <tr><td>Profile — GOLD MEMBER row</td><td>RIGHT OVERFLOWED BY 0.5px</td><td>Wrapped Text with <code>Flexible</code> + <code>TextOverflow.ellipsis</code></td></tr>
+      </table>
+
+      <h3>Pattern</h3>
+      <p>The standard fix for Row overflow is to wrap flexible-width children with <code>Expanded</code> or <code>Flexible</code>, and use <code>TextOverflow.ellipsis</code> with <code>maxLines: 1</code> for text that might exceed available width.</p>
+    </div>
+
+
+    <!-- ══════════════════════════════════════════
+         ADMIN & BACKEND
+    ══════════════════════════════════════════ -->
+
+    <!-- ── Admin Activate Logic ───────────────── -->
+    <div class="page" id="page-admin-activate">
+      <h2 class="page-title">Admin Activate Logic</h2>
+      <p class="page-subtitle">The admin portal's Activate button now only appears for deals in <code>pending</code> status.</p>
+
+      <h3>Before</h3>
+      <p>The Activate button showed for any deal where <code>!isActive</code>. This meant merchants who voluntarily deactivated a deal would see an Activate option in the admin panel — unintended.</p>
+
+      <h3>After</h3>
+      <p>Condition changed to <code>dealStatus === 'pending'</code>. Only new or recently-edited deals awaiting admin review show the Activate button.</p>
+
+      <table class="doc-table">
+        <tr><th>File</th><th>Change</th></tr>
+        <tr><td><code>deal-review-actions.tsx</code></td><td>Activate button condition: <code>!isActive</code> → <code>dealStatus === 'pending'</code></td></tr>
+      </table>
+    </div>
+
+    <!-- ── DB Migrations ──────────────────────── -->
+    <div class="page" id="page-db-migrations-0313">
+      <h2 class="page-title">DB Migrations (2026-03-13)</h2>
+      <p class="page-subtitle">Database changes deployed on March 13, 2026.</p>
+
+      <h3>20260312000003 — Deal Activation Trigger Fix</h3>
+      <table class="doc-table">
+        <tr><th>Function</th><th>Change</th></tr>
+        <tr><td><code>accept_deal_store()</code></td><td>WHERE clause: <code>IN ('pending_store_confirmation', 'declined')</code> — allows re-accepting a previously declined store</td></tr>
+        <tr><td><code>decline_deal_store()</code></td><td>WHERE clause: <code>IN ('pending_store_confirmation', 'active')</code> — allows declining an active store</td></tr>
+      </table>
+
+      <h3>20260313000001 — Order Store Snapshot</h3>
+      <table class="doc-table">
+        <tr><th>Change</th><th>Details</th></tr>
+        <tr><td><code>orders.applicable_store_ids uuid[]</code></td><td>New column to snapshot deal stores at purchase time</td></tr>
+        <tr><td>BEFORE INSERT trigger</td><td>Auto-populates from <code>deal_applicable_stores</code></td></tr>
+        <tr><td>Backfill</td><td>Updates existing orders with current store data</td></tr>
+      </table>
+
+      <h3>20260313000002 — Deal Option Groups</h3>
+      <table class="doc-table">
+        <tr><th>Change</th><th>Details</th></tr>
+        <tr><td><code>deal_option_groups</code></td><td>New table: name, select_min, select_max, sort_order. FK to deals (CASCADE)</td></tr>
+        <tr><td><code>deal_option_items</code></td><td>New table: name, price, sort_order. FK to groups (CASCADE)</td></tr>
+        <tr><td><code>orders.selected_options</code></td><td>New JSONB column for option snapshot at checkout</td></tr>
+        <tr><td>RLS</td><td>Public read, merchant write via deal→merchant_staff chain</td></tr>
+      </table>
+
+      <h3>deals.short_name</h3>
+      <p>New column: <code>short_name text CHECK(char_length &lt;= 10)</code></p>
     </div>
 
 

@@ -48,7 +48,7 @@ class StatsCard extends StatelessWidget {
     );
   }
 
-  // 正常内容布局
+  // 正常内容布局（移除固定 SizedBox，由 spaceBetween 自动分配间距，防止不同设备溢出）
   Widget _buildContent() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -69,8 +69,6 @@ class StatsCard extends StatelessWidget {
           ),
         ),
 
-        const SizedBox(height: 12),
-
         // 大数字
         Text(
           value,
@@ -80,9 +78,9 @@ class StatsCard extends StatelessWidget {
             color: color,
             height: 1.1,
           ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
-
-        const SizedBox(height: 4),
 
         // 标题标签
         Text(
@@ -99,7 +97,7 @@ class StatsCard extends StatelessWidget {
     );
   }
 
-  // 骨架屏占位（加载中）
+  // 骨架屏占位（加载中，与正常布局一致使用 spaceBetween 无固定间距）
   Widget _buildSkeleton() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -114,7 +112,6 @@ class StatsCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(10),
           ),
         ),
-        const SizedBox(height: 12),
         // 数字骨架
         Container(
           width: 60,
@@ -124,7 +121,6 @@ class StatsCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(6),
           ),
         ),
-        const SizedBox(height: 4),
         // 标题骨架
         Container(
           width: 80,

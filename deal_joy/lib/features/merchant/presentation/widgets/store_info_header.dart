@@ -47,6 +47,7 @@ class StoreInfoHeader extends StatelessWidget {
             children: [
               const Icon(Icons.star_rounded, size: 16, color: AppColors.primary),
               const SizedBox(width: 3),
+              // 评分数字短，不需要弹性
               Text(
                 avgRating.toStringAsFixed(1),
                 style: const TextStyle(
@@ -56,27 +57,22 @@ class StoreInfoHeader extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 4),
-              Text(
-                '$reviewCount reviews',
-                style: const TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: 13,
-                ),
-              ),
-              // 仅在有经营年数时显示
-              if (yearsInBusiness != null && yearsInBusiness! > 0) ...[
-                const Text(
-                  ' · ',
-                  style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
-                ),
-                Text(
-                  '${yearsInBusiness}yr',
+              // 评论数 + 经营年数合并到 Flexible，防止多字段叠加超出行宽
+              Flexible(
+                child: Text(
+                  [
+                    '$reviewCount reviews',
+                    if (yearsInBusiness != null && yearsInBusiness! > 0)
+                      '${yearsInBusiness}yr',
+                  ].join(' · '),
                   style: const TextStyle(
                     color: AppColors.textSecondary,
                     fontSize: 13,
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-              ],
+              ),
             ],
           ),
 

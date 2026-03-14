@@ -25,48 +25,52 @@ class OrderFilterBar extends ConsumerWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
         children: [
-          // 日期范围 Chip
-          _FilterChip(
-            label: filter.dateRangeLabel,
-            isActive: hasDateFilter,
-            icon: Icons.calendar_today_outlined,
-            onTap: () => _showDateRangePicker(context, ref, filter),
-            onClear: hasDateFilter
-                ? () => ref.read(orderFilterProvider.notifier).update(
-                      (f) => f.copyWith(
-                          clearDateFrom: true, clearDateTo: true),
-                    )
-                : null,
-          ),
-          const SizedBox(width: 8),
-
-          // Deal 筛选 Chip
-          dealsAsync.when(
-            data: (deals) => _FilterChip(
-              label: filter.dealTitle ?? 'All Deals',
-              isActive: hasDealFilter,
-              icon: Icons.local_offer_outlined,
-              onTap: () =>
-                  _showDealPicker(context, ref, filter, deals),
-              onClear: hasDealFilter
+          // 日期范围 Chip（用 Flexible 防止长文本溢出）
+          Flexible(
+            child: _FilterChip(
+              label: filter.dateRangeLabel,
+              isActive: hasDateFilter,
+              icon: Icons.calendar_today_outlined,
+              onTap: () => _showDateRangePicker(context, ref, filter),
+              onClear: hasDateFilter
                   ? () => ref.read(orderFilterProvider.notifier).update(
-                        (f) => f.copyWith(clearDeal: true),
+                        (f) => f.copyWith(
+                            clearDateFrom: true, clearDateTo: true),
                       )
                   : null,
             ),
-            loading: () => _FilterChip(
-              label: 'All Deals',
-              isActive: false,
-              icon: Icons.local_offer_outlined,
-              onTap: () {},
-              onClear: null,
-            ),
-            error: (err, st) => _FilterChip(
-              label: 'All Deals',
-              isActive: false,
-              icon: Icons.local_offer_outlined,
-              onTap: () {},
-              onClear: null,
+          ),
+          const SizedBox(width: 8),
+
+          // Deal 筛选 Chip（用 Flexible 防止长标题溢出）
+          Flexible(
+            child: dealsAsync.when(
+              data: (deals) => _FilterChip(
+                label: filter.dealTitle ?? 'All Deals',
+                isActive: hasDealFilter,
+                icon: Icons.local_offer_outlined,
+                onTap: () =>
+                    _showDealPicker(context, ref, filter, deals),
+                onClear: hasDealFilter
+                    ? () => ref.read(orderFilterProvider.notifier).update(
+                          (f) => f.copyWith(clearDeal: true),
+                        )
+                    : null,
+              ),
+              loading: () => _FilterChip(
+                label: 'All Deals',
+                isActive: false,
+                icon: Icons.local_offer_outlined,
+                onTap: () {},
+                onClear: null,
+              ),
+              error: (err, st) => _FilterChip(
+                label: 'All Deals',
+                isActive: false,
+                icon: Icons.local_offer_outlined,
+                onTap: () {},
+                onClear: null,
+              ),
             ),
           ),
 
