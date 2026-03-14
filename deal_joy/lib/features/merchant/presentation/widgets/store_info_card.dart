@@ -25,7 +25,10 @@ class StoreInfoCard extends StatelessWidget {
     final reviewCount = reviewStats?.totalCount ?? 0;
 
     return Container(
-      color: AppColors.surface,
+      decoration: const BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -133,6 +136,7 @@ class StoreInfoCard extends StatelessWidget {
       children: [
         const Icon(Icons.star_rounded, size: 16, color: AppColors.secondary),
         const SizedBox(width: 3),
+        // 评分数字固定不长，不需要弹性
         Text(
           avgRating.toStringAsFixed(1),
           style: const TextStyle(
@@ -142,50 +146,44 @@ class StoreInfoCard extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 4),
-        Text(
-          '$reviewCount reviews',
-          style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+        // 评价数 + 人均 + 经营年数整体放入 Flexible，超出则截断
+        Flexible(
+          child: Text(
+            [
+              '$reviewCount reviews',
+              if (merchant.pricePerPerson != null)
+                '\$${merchant.pricePerPerson!.toStringAsFixed(0)}/person',
+              if (merchant.yearsInBusiness != null &&
+                  merchant.yearsInBusiness! > 0)
+                'Est. ${merchant.establishedYear}',
+            ].join(' · '),
+            style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
-        if (merchant.pricePerPerson != null) ...[
-          const Text(' · ',
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
-          Text(
-            '\$${merchant.pricePerPerson!.toStringAsFixed(0)}/person',
-            style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
-          ),
-        ],
-        if (merchant.yearsInBusiness != null &&
-            merchant.yearsInBusiness! > 0) ...[
-          const Text(' · ',
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
-          Text(
-            'Est. ${merchant.establishedYear}',
-            style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
-          ),
-        ],
       ],
     );
   }
 
   Widget _buildTagChips() {
     return SizedBox(
-      height: 28,
+      height: 22,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: merchant.tags.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        separatorBuilder: (_, _) => const SizedBox(width: 6),
         itemBuilder: (_, i) => Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
           decoration: BoxDecoration(
-            color: AppColors.secondary.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(14),
+            color: AppColors.surfaceVariant,
+            borderRadius: BorderRadius.circular(4),
           ),
           child: Text(
             merchant.tags[i],
             style: const TextStyle(
-              fontSize: 12,
-              color: AppColors.secondary,
-              fontWeight: FontWeight.w500,
+              fontSize: 10,
+              color: AppColors.textSecondary,
             ),
           ),
         ),

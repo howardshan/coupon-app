@@ -277,6 +277,7 @@ class _MerchantReviewStatusPageState
             width: double.infinity,
             height: 52,
             child: ElevatedButton(
+              key: const ValueKey('review_status_dashboard_btn'),
               onPressed: () {
                 // 跳转到商家仪表盘（清除缓存让 redirect 重新检查状态）
                 MerchantStatusCache.clear();
@@ -402,6 +403,7 @@ class _MerchantReviewStatusPageState
             width: double.infinity,
             height: 52,
             child: ElevatedButton(
+              key: const ValueKey('review_status_resubmit_btn'),
               onPressed: () {
                 // 跳转到注册页（重提模式，跳过账号注册，预填已有数据）
                 GoRouter.of(context).go('/auth/register', extra: true);
@@ -524,6 +526,7 @@ class _MerchantReviewStatusPageState
             ),
             const SizedBox(height: 32),
             ElevatedButton.icon(
+              key: const ValueKey('review_status_retry_btn'),
               onPressed: () {
                 ref.read(merchantAuthProvider.notifier).refreshStatus();
               },

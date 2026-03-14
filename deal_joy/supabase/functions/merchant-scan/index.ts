@@ -145,7 +145,7 @@ async function handleVerify(
     return errorResponse('invalid_code', 'Please enter a valid voucher code');
   }
 
-  // 查询券码，JOIN deals 获取标题，JOIN users 获取用户名
+  // 查询券码，JOIN deals 获取标题，JOIN users 获取用户名，JOIN orders 获取门店快照
   const { data: coupon, error } = await supabase
     .from('coupons')
     .select(`
@@ -157,6 +157,10 @@ async function handleVerify(
       reverted_at,
       merchant_id,
       deal_id,
+      order_id,
+      orders (
+        applicable_store_ids
+      ),
       deals!inner (
         title
       ),
@@ -176,35 +180,15 @@ async function handleVerify(
     return errorResponse('not_found', 'Invalid voucher code');
   }
 
-  // 检查是否属于当前商家（支持多店通用 Deal）
-  if (coupon.merchant_id !== merchantId) {
-    // 查询 Deal 的 applicable_merchant_ids，判断是否支持跨店核销
-    const { data: dealInfo } = await supabase
-      .from('deals')
-      .select('applicable_merchant_ids')
-      .eq('id', coupon.deal_id)
-      .single();
-
-    const applicableIds = dealInfo?.applicable_merchant_ids as string[] | null;
-    // 如果 applicable_merchant_ids 为 NULL，仅限创建门店
-    // 如果非空，检查当前门店是否在列表中
-    if (!applicableIds || !applicableIds.includes(merchantId)) {
-      // 获取适用门店名称列表，给出友好提示
-      let validStoreNames = '';
-      if (applicableIds && applicableIds.length > 0) {
-        const { data: stores } = await supabase
-          .from('merchants')
-          .select('name')
-          .in('id', applicableIds);
-        validStoreNames = (stores ?? []).map((s: { name: string }) => s.name).join(', ');
-      }
-      return errorResponse(
-        'wrong_merchant',
-        validStoreNames
-          ? `This voucher is not valid at this location. Valid at: ${validStoreNames}`
-          : 'This voucher is not valid for your store',
-      );
-    }
+  // 检查门店是否有权核销此券（优先用购买时门店快照）
+  // deno-lint-ignore no-explicit-any
+  const orderData = (coupon as any).orders;
+  const snapshotStoreIds: string[] | null = orderData?.applicable_store_ids ?? null;
+  const storeCheckResult = await checkStoreRedemptionEligibility(
+    supabase, coupon.deal_id, merchantId, snapshotStoreIds
+  );
+  if (!storeCheckResult.allowed) {
+    return errorResponse('wrong_merchant', storeCheckResult.message ?? 'This voucher is not valid at this location.');
   }
 
   // 检查各种状态异常
@@ -295,10 +279,10 @@ async function handleRedeem(
     return errorResponse('invalid_request', 'coupon_id is required');
   }
 
-  // 查询券的当前状态
+  // 查询券的当前状态，JOIN orders 获取门店快照
   const { data: coupon, error: queryError } = await supabase
     .from('coupons')
-    .select('id, status, merchant_id, expires_at, redeemed_at, deal_id')
+    .select('id, status, merchant_id, expires_at, redeemed_at, deal_id, order_id, orders(applicable_store_ids)')
     .eq('id', couponId)
     .single();
 
@@ -306,18 +290,15 @@ async function handleRedeem(
     return errorResponse('not_found', 'Voucher not found', undefined, 404);
   }
 
-  // 安全检查：只能核销自己门店的券（支持多店通用 Deal）
-  if (coupon.merchant_id !== merchantId) {
-    const { data: dealInfo } = await supabase
-      .from('deals')
-      .select('applicable_merchant_ids')
-      .eq('id', coupon.deal_id)
-      .single();
-
-    const applicableIds = dealInfo?.applicable_merchant_ids as string[] | null;
-    if (!applicableIds || !applicableIds.includes(merchantId)) {
-      return errorResponse('wrong_merchant', 'This voucher is not valid for your store', undefined, 403);
-    }
+  // 安全检查：用购买时门店快照验证门店权限
+  // deno-lint-ignore no-explicit-any
+  const redeemOrderData = (coupon as any).orders;
+  const redeemSnapshotIds: string[] | null = redeemOrderData?.applicable_store_ids ?? null;
+  const storeCheckResult = await checkStoreRedemptionEligibility(
+    supabase, coupon.deal_id, merchantId, redeemSnapshotIds
+  );
+  if (!storeCheckResult.allowed) {
+    return errorResponse('wrong_merchant', storeCheckResult.message ?? 'This voucher is not valid for your store', undefined, 403);
   }
 
   // 状态检查
@@ -468,6 +449,84 @@ async function handleRevert(
   }
 
   return jsonResponse({ reverted_at: now, coupon_id: couponId });
+}
+
+// =============================================================
+// 辅助：验证门店是否有权核销此 Deal
+// 优先使用 orders.applicable_store_ids（购买时快照），
+// 如果为 NULL（历史订单），回退查 deal_applicable_stores 当前状态
+// 返回 { allowed: boolean, message?: string }
+// =============================================================
+async function checkStoreRedemptionEligibility(
+  supabase: ReturnType<typeof createClient>,
+  dealId: string,
+  merchantId: string,
+  snapshotStoreIds: string[] | null,
+): Promise<{ allowed: boolean; message?: string }> {
+
+  // ── 情况 1：有购买时快照 → 直接判断 ──
+  if (snapshotStoreIds && snapshotStoreIds.length > 0) {
+    if (snapshotStoreIds.includes(merchantId)) {
+      return { allowed: true };
+    }
+
+    // 不在快照中 → 查出快照中门店的名称提示用户
+    const { data: validStores } = await supabase
+      .from('merchants')
+      .select('name')
+      .in('id', snapshotStoreIds);
+
+    // deno-lint-ignore no-explicit-any
+    const names = (validStores ?? []).map((r: any) => r.name).filter(Boolean).join(', ');
+    return {
+      allowed: false,
+      message: names
+        ? `This voucher is not valid at this location. Valid at: ${names}`
+        : 'This voucher is not valid at this location.',
+    };
+  }
+
+  // ── 情况 2：无快照（历史订单）→ 回退查当前 active 门店 ──
+  const { data: activeStores } = await supabase
+    .from('deal_applicable_stores')
+    .select('store_id')
+    .eq('deal_id', dealId)
+    .eq('status', 'active');
+
+  if (!activeStores || activeStores.length === 0) {
+    // 没有 deal_applicable_stores 记录 → 单店 Deal，检查 merchant_id 是否匹配
+    const { data: deal } = await supabase
+      .from('deals')
+      .select('merchant_id')
+      .eq('id', dealId)
+      .single();
+
+    if (deal && deal.merchant_id === merchantId) {
+      return { allowed: true };
+    }
+    return { allowed: false, message: 'This voucher is not valid at this location.' };
+  }
+
+  // deno-lint-ignore no-explicit-any
+  const activeIds = activeStores.map((r: any) => r.store_id);
+  if (activeIds.includes(merchantId)) {
+    return { allowed: true };
+  }
+
+  // 查出 active 门店名称提示用户
+  const { data: storeNames } = await supabase
+    .from('merchants')
+    .select('name')
+    .in('id', activeIds);
+
+  // deno-lint-ignore no-explicit-any
+  const names = (storeNames ?? []).map((r: any) => r.name).filter(Boolean).join(', ');
+  return {
+    allowed: false,
+    message: names
+      ? `This voucher is not valid at this location. Valid at: ${names}`
+      : 'This voucher is not valid at this location.',
+  };
 }
 
 // =============================================================

@@ -157,7 +157,7 @@ class _PriceRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        // 现价
+        // 现价（固定宽度不截断，数字格式固定不会过长）
         Text(
           '\$${deal.discountPrice.toStringAsFixed(2)}',
           style: const TextStyle(
@@ -168,13 +168,17 @@ class _PriceRow extends StatelessWidget {
         ),
         const SizedBox(width: 6),
 
-        // 原价（删除线）
-        Text(
-          '\$${deal.originalPrice.toStringAsFixed(2)}',
-          style: const TextStyle(
-            fontSize: 12,
-            color: Color(0xFFBBBBBB),
-            decoration: TextDecoration.lineThrough,
+        // 原价（删除线），用 Flexible 防止与折扣标签一起超出
+        Flexible(
+          child: Text(
+            '\$${deal.originalPrice.toStringAsFixed(2)}',
+            style: const TextStyle(
+              fontSize: 12,
+              color: Color(0xFFBBBBBB),
+              decoration: TextDecoration.lineThrough,
+            ),
+            overflow: TextOverflow.ellipsis,
+            maxLines: 1,
           ),
         ),
         const SizedBox(width: 6),
@@ -215,26 +219,36 @@ class _StatsRow extends StatelessWidget {
         // 已售出
         const Icon(Icons.shopping_bag_outlined, size: 13, color: Color(0xFF999999)),
         const SizedBox(width: 3),
-        Text(
-          '${deal.totalSold} sold',
-          style: const TextStyle(fontSize: 12, color: Color(0xFF999999)),
+        // 用 Flexible 防止在宽度受限时溢出
+        Flexible(
+          child: Text(
+            '${deal.totalSold} sold',
+            style: const TextStyle(fontSize: 12, color: Color(0xFF999999)),
+            overflow: TextOverflow.ellipsis,
+            maxLines: 1,
+          ),
         ),
         const SizedBox(width: 14),
 
         // 库存
         const Icon(Icons.inventory_2_outlined, size: 13, color: Color(0xFF999999)),
         const SizedBox(width: 3),
-        Text(
-          deal.isUnlimited
-              ? 'Unlimited'
-              : deal.isSoldOut
-                  ? 'Sold Out'
-                  : '${deal.remainingStock} left',
-          style: TextStyle(
-            fontSize: 12,
-            color: deal.isSoldOut
-                ? const Color(0xFFE53935)
-                : const Color(0xFF999999),
+        // 库存文字（"Unlimited"、"Sold Out"、"xxx left"）用 Flexible 防止溢出
+        Flexible(
+          child: Text(
+            deal.isUnlimited
+                ? 'Unlimited'
+                : deal.isSoldOut
+                    ? 'Sold Out'
+                    : '${deal.remainingStock} left',
+            style: TextStyle(
+              fontSize: 12,
+              color: deal.isSoldOut
+                  ? const Color(0xFFE53935)
+                  : const Color(0xFF999999),
+            ),
+            overflow: TextOverflow.ellipsis,
+            maxLines: 1,
           ),
         ),
       ],

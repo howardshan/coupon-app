@@ -26,12 +26,17 @@ class MerchantPhotoModel {
         sortOrder: json['sort_order'] as int? ?? 0,
       );
 
-  /// 环境照片分类的英文展示名
+  /// 照片分类的英文展示名
   String get categoryLabel => switch (category) {
         'main_hall' => 'Main Hall',
         'entrance' => 'Entrance',
         'interior' => 'Interior',
         'private_room' => 'Private Room',
-        _ => photoType == 'storefront' ? 'Storefront' : 'Photo',
+        _ => switch (photoType) {
+            'storefront' => 'Storefront',
+            'environment' => 'Environment',
+            'license' => 'License',
+            _ => 'Photo',
+          },
       };
 }

@@ -167,6 +167,7 @@ class _StoreEditPageState extends ConsumerState<StoreEditPage> {
                     label: 'Store Name',
                     required: true,
                     child: TextFormField(
+                      key: const ValueKey('store_edit_name_field'),
                       controller: _nameController,
                       decoration: _inputDecoration('Enter store name'),
                       maxLength: 100,
@@ -188,6 +189,7 @@ class _StoreEditPageState extends ConsumerState<StoreEditPage> {
                     label: 'Description',
                     hint: 'Help customers know your store',
                     child: TextFormField(
+                      key: const ValueKey('store_edit_desc_field'),
                       controller: _descriptionController,
                       decoration: _inputDecoration(
                         'A brief introduction to your store...',
@@ -205,6 +207,7 @@ class _StoreEditPageState extends ConsumerState<StoreEditPage> {
                   child: _FormField(
                     label: 'Contact Phone',
                     child: TextFormField(
+                      key: const ValueKey('store_edit_phone_field'),
                       controller: _phoneController,
                       decoration: _inputDecoration('e.g. (214) 555-0100'),
                       keyboardType: TextInputType.phone,
@@ -230,6 +233,7 @@ class _StoreEditPageState extends ConsumerState<StoreEditPage> {
                     label: 'Store Address',
                     hint: 'Full address (street, city, state, zip)',
                     child: TextFormField(
+                      key: const ValueKey('store_edit_address_field'),
                       controller: _addressController,
                       decoration: _inputDecoration(
                         'e.g. 123 Main St, Dallas, TX 75201',
@@ -247,6 +251,7 @@ class _StoreEditPageState extends ConsumerState<StoreEditPage> {
                   width: double.infinity,
                   height: 52,
                   child: ElevatedButton(
+                    key: const ValueKey('store_edit_save_btn'),
                     onPressed: _isSaving ? null : _save,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFFFF6B35),

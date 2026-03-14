@@ -11,6 +11,7 @@ import '../../data/models/deal_model.dart';
 import '../../data/models/review_model.dart';
 import '../../domain/providers/deals_provider.dart';
 import '../../domain/providers/history_provider.dart';
+import '../../../cart/domain/providers/cart_provider.dart';
 
 class DealDetailScreen extends ConsumerWidget {
   final String dealId;
@@ -41,111 +42,579 @@ class DealDetailScreen extends ConsumerWidget {
 }
 
 // ── Main body ────────────────────────────────────────────────
-class _DealDetailBody extends ConsumerWidget {
+class _DealDetailBody extends ConsumerStatefulWidget {
   final DealModel deal;
 
   const _DealDetailBody({required this.deal});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_DealDetailBody> createState() => _DealDetailBodyState();
+}
+
+class _DealDetailBodyState extends ConsumerState<_DealDetailBody> {
+  // 图片画廊高度
+  static const _imageHeight = 280.0;
+  // 是否已收起（图片滚出视野）
+  bool _isCollapsed = false;
+
+  DealModel get deal => widget.deal;
+
+  /// 监听滚动通知，判断 SliverAppBar 是否已收起
+  bool _onScrollNotification(ScrollNotification notification) {
+    final statusBarHeight = MediaQuery.of(context).padding.top;
+    // 图片滚出阈值 = 图片高度 - 收起后的 toolbar 高度
+    final threshold = _imageHeight - kToolbarHeight - statusBarHeight;
+    final collapsed = notification.metrics.pixels >= threshold;
+    if (collapsed != _isCollapsed) {
+      setState(() => _isCollapsed = collapsed);
+    }
+    return false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: Stack(
-        children: [
-          CustomScrollView(
-            slivers: [
-              // Image gallery
-              SliverToBoxAdapter(child: _ImageGallery(imageUrls: deal.imageUrls)),
-
-              // Price section
-              SliverToBoxAdapter(child: _PriceSection(deal: deal)),
-
-              // Info section (title, sold, availability, refund)
-              SliverToBoxAdapter(child: _InfoSection(deal: deal)),
-
-              // Gray divider
-              const SliverToBoxAdapter(child: _SectionDivider()),
-
-              // Deal details (dishes + note)
-              SliverToBoxAdapter(child: _DishesSection(deal: deal)),
-
-              // Gray divider
-              const SliverToBoxAdapter(child: _SectionDivider()),
-
-              // Purchase notes
-              SliverToBoxAdapter(child: _PurchaseNotes(deal: deal)),
-
-              // Gray divider
-              const SliverToBoxAdapter(child: _SectionDivider()),
-
-              // Restaurant info
-              SliverToBoxAdapter(child: _RestaurantInfo(deal: deal)),
-
-              // Gray divider
-              const SliverToBoxAdapter(child: _SectionDivider()),
-
-              // Applicable stores
-              SliverToBoxAdapter(child: _ApplicableStores(deal: deal)),
-
-              // Gray divider
-              const SliverToBoxAdapter(child: _SectionDivider()),
-
-              // More from this store
-              SliverToBoxAdapter(
-                child: _MerchantDeals(
-                  merchantId: deal.merchantId,
-                  currentDealId: deal.id,
-                ),
-              ),
-
-              // Gray divider
-              const SliverToBoxAdapter(child: _SectionDivider()),
-
-              // Reviews
-              SliverToBoxAdapter(
-                child: _ReviewsSection(
-                  dealId: deal.id,
-                  dealRating: deal.rating,
-                  dealReviewCount: deal.reviewCount,
-                ),
-              ),
-
-              // Bottom padding for the fixed bottom bar
-              const SliverToBoxAdapter(child: SizedBox(height: 100)),
-            ],
-          ),
-
-          // Floating back / heart / share buttons
-          Positioned(
-            top: MediaQuery.of(context).padding.top + 8,
-            left: 12,
-            right: 12,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                _CircleButton(
-                  icon: Icons.arrow_back,
-                  onTap: () => context.pop(),
-                ),
-                Row(
+      body: NotificationListener<ScrollNotification>(
+        onNotification: _onScrollNotification,
+        child: CustomScrollView(
+          slivers: [
+            // 美团风格 SliverAppBar：展开时显示图片+浮动按钮，收起时显示搜索栏+操作按钮
+            SliverAppBar(
+              pinned: true,
+              expandedHeight: _imageHeight,
+              backgroundColor: _isCollapsed ? Colors.white : Colors.transparent,
+              surfaceTintColor: Colors.transparent,
+              elevation: _isCollapsed ? 0.5 : 0,
+              automaticallyImplyLeading: false,
+              // 收起后才显示标题栏
+              title: _isCollapsed ? _CollapsedHeaderBar(deal: deal) : null,
+              flexibleSpace: FlexibleSpaceBar(
+                background: Stack(
+                  fit: StackFit.expand,
                   children: [
-                    _SaveButton(dealId: deal.id),
-                    const SizedBox(width: 8),
-                    _CircleButton(
-                      icon: Icons.share_outlined,
-                      onTap: () => Share.share(
-                        '${deal.title} - \$${deal.discountPrice.toStringAsFixed(2)} '
-                        '(${deal.effectiveDiscountLabel}) on DealJoy!',
+                    // 图片画廊
+                    _ImageGallery(imageUrls: deal.imageUrls),
+                    // 展开状态下的浮动按钮（图片上方）
+                    Positioned(
+                      top: MediaQuery.of(context).padding.top + 8,
+                      left: 12,
+                      right: 12,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          _CircleButton(
+                            icon: Icons.arrow_back,
+                            onTap: () => context.pop(),
+                          ),
+                          Row(
+                            children: [
+                              _SaveButton(dealId: deal.id),
+                              const SizedBox(width: 8),
+                              _CircleButton(
+                                icon: Icons.share_outlined,
+                                onTap: () => Share.share(
+                                  '${deal.title} - \$${deal.discountPrice.toStringAsFixed(2)} '
+                                  '(${deal.effectiveDiscountLabel}) on DealJoy!',
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              _CircleButton(
+                                icon: Icons.more_horiz,
+                                onTap: () => _showMoreMenu(context),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ),
+              ),
+            ),
+
+          // Price section
+          SliverToBoxAdapter(child: _PriceSection(deal: deal)),
+
+          // Info section (title, sold, availability, refund)
+          SliverToBoxAdapter(child: _InfoSection(deal: deal)),
+
+          // Gray divider
+          const SliverToBoxAdapter(child: _SectionDivider()),
+
+          // 套餐横向选择器（吸顶，类似 store detail 的 tab 栏）
+          _StickyVariantSliver(deal: deal),
+
+          // Deal details (products + note)
+          SliverToBoxAdapter(child: _ProductsSection(deal: deal)),
+
+          // 选项组选择区（"几选几"功能）
+          if (deal.optionGroups.isNotEmpty)
+            SliverToBoxAdapter(child: _OptionGroupsSelector(deal: deal)),
+
+          // Gray divider
+          const SliverToBoxAdapter(child: _SectionDivider()),
+
+          // Purchase notes
+          SliverToBoxAdapter(child: _PurchaseNotes(deal: deal)),
+
+          // Gray divider
+          const SliverToBoxAdapter(child: _SectionDivider()),
+
+          // Restaurant info
+          SliverToBoxAdapter(child: _RestaurantInfo(deal: deal)),
+
+          // Gray divider
+          const SliverToBoxAdapter(child: _SectionDivider()),
+
+          // Applicable stores
+          SliverToBoxAdapter(child: _ApplicableStores(deal: deal)),
+
+          // Gray divider
+          const SliverToBoxAdapter(child: _SectionDivider()),
+
+          // More from this store
+          SliverToBoxAdapter(
+            child: _MerchantDeals(
+              merchantId: deal.merchantId,
+              currentDealId: deal.id,
+            ),
+          ),
+
+          // Gray divider
+          const SliverToBoxAdapter(child: _SectionDivider()),
+
+          // Reviews
+          SliverToBoxAdapter(
+            child: _ReviewsSection(
+              dealId: deal.id,
+              dealRating: deal.rating,
+              dealReviewCount: deal.reviewCount,
+            ),
+          ),
+
+          // Bottom padding for the fixed bottom bar
+          const SliverToBoxAdapter(child: SizedBox(height: 100)),
+        ],
+        ),
+      ),
+      bottomNavigationBar: _BottomBar(deal: deal),
+    );
+  }
+}
+
+/// 打开三个点菜单底部弹出框（美团风格）
+void _showMoreMenu(BuildContext context) {
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: Colors.white,
+    isScrollControlled: true,
+    constraints: BoxConstraints(
+      maxHeight: MediaQuery.of(context).size.height * 0.75,
+    ),
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+    ),
+    builder: (ctx) => _MoreMenuSheet(),
+  );
+}
+
+// ── 收起后的顶部栏（搜索框 + 操作按钮）───────────────────────
+class _CollapsedHeaderBar extends ConsumerWidget {
+  final DealModel deal;
+
+  const _CollapsedHeaderBar({required this.deal});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Row(
+      children: [
+        // 返回按钮
+        GestureDetector(
+          onTap: () => context.pop(),
+          child: const Icon(Icons.arrow_back, size: 22, color: AppColors.textPrimary),
+        ),
+        const Spacer(),
+        // 搜索按钮（点击跳转搜索页）
+        GestureDetector(
+          onTap: () => context.push('/search'),
+          child: const Padding(
+            padding: EdgeInsets.all(6),
+            child: Icon(Icons.search, size: 22, color: AppColors.textPrimary),
+          ),
+        ),
+        // 收藏按钮
+        _CollapsedSaveButton(dealId: deal.id),
+        // 分享按钮
+        GestureDetector(
+          onTap: () => Share.share(
+            '${deal.title} - \$${deal.discountPrice.toStringAsFixed(2)} '
+            '(${deal.effectiveDiscountLabel}) on DealJoy!',
+          ),
+          child: const Padding(
+            padding: EdgeInsets.all(6),
+            child: Icon(Icons.share_outlined, size: 20, color: AppColors.textPrimary),
+          ),
+        ),
+        // 三个点更多菜单
+        GestureDetector(
+          onTap: () => _showMoreMenu(context),
+          child: const Padding(
+            padding: EdgeInsets.all(6),
+            child: Icon(Icons.more_horiz, size: 22, color: AppColors.textPrimary),
+          ),
+        ),
+      ],
+    );
+  }
+
+}
+
+// ── 收起状态下的收藏按钮（无圆形背景）─────────────────────────
+class _CollapsedSaveButton extends ConsumerWidget {
+  final String dealId;
+
+  const _CollapsedSaveButton({required this.dealId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final savedIds = ref.watch(savedDealIdsProvider).valueOrNull ?? {};
+    final isSaved = savedIds.contains(dealId);
+
+    return GestureDetector(
+      onTap: () => ref.read(savedDealsNotifierProvider.notifier).toggle(dealId),
+      child: Padding(
+        padding: const EdgeInsets.all(6),
+        child: Icon(
+          isSaved ? Icons.favorite : Icons.favorite_border,
+          size: 20,
+          color: isSaved ? Colors.red : AppColors.textPrimary,
+        ),
+      ),
+    );
+  }
+}
+
+// ── 三个点更多菜单底部弹出框（美团风格）────────────────────────
+class _MoreMenuSheet extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final historyAsync = ref.watch(historyDealsProvider);
+    final savedIdsAsync = ref.watch(savedDealIdsProvider);
+
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 拖动指示条 + 关闭按钮
+            Row(
+              children: [
+                const Spacer(),
+                Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: GestureDetector(
+                      onTap: () => Navigator.pop(context),
+                      child: const Icon(Icons.close, size: 22, color: AppColors.textSecondary),
+                    ),
+                  ),
+                ),
               ],
+            ),
+            const SizedBox(height: 16),
+            // 快捷操作图标行
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _MenuIcon(
+                  icon: Icons.home_outlined,
+                  label: 'Home',
+                  onTap: () {
+                    final nav = GoRouter.of(context);
+                    Navigator.pop(context);
+                    nav.go('/home');
+                  },
+                ),
+                _MenuIcon(
+                  icon: Icons.store_outlined,
+                  label: 'Nearby',
+                  onTap: () {
+                    final nav = GoRouter.of(context);
+                    Navigator.pop(context);
+                    nav.push('/search');
+                  },
+                ),
+                _MenuIcon(
+                  icon: Icons.receipt_long_outlined,
+                  label: 'My Orders',
+                  onTap: () {
+                    final nav = GoRouter.of(context);
+                    Navigator.pop(context);
+                    nav.push('/orders');
+                  },
+                ),
+                _MenuIcon(
+                  icon: Icons.flag_outlined,
+                  label: 'Report',
+                  onTap: () {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Report submitted. Thank you!')),
+                    );
+                  },
+                ),
+                _MenuIcon(
+                  icon: Icons.error_outline,
+                  label: 'Report Error',
+                  onTap: () {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Error report submitted. Thank you!')),
+                    );
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+
+            // 浏览记录
+            historyAsync.when(
+              data: (deals) {
+                if (deals.isEmpty) return const SizedBox.shrink();
+                return _MenuDealSection(
+                  title: 'Browsing History',
+                  deals: deals.take(10).toList(),
+                  onViewAll: () {
+                    final nav = GoRouter.of(context);
+                    Navigator.pop(context);
+                    nav.push('/history');
+                  },
+                );
+              },
+              loading: () => const SizedBox.shrink(),
+              error: (_, __) => const SizedBox.shrink(),
+            ),
+
+            // 我的收藏
+            savedIdsAsync.when(
+              data: (ids) {
+                if (ids.isEmpty) return const SizedBox.shrink();
+                return _SavedDealsSection(
+                  dealIds: ids.take(10).toList(),
+                );
+              },
+              loading: () => const SizedBox.shrink(),
+              error: (_, __) => const SizedBox.shrink(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── 菜单中的 Deal 横滚区（浏览记录）──────────────────────────
+class _MenuDealSection extends StatelessWidget {
+  final String title;
+  final List<DealModel> deals;
+  final VoidCallback? onViewAll;
+
+  const _MenuDealSection({
+    required this.title,
+    required this.deals,
+    this.onViewAll,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 标题行
+        Row(
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const Spacer(),
+            if (onViewAll != null)
+              GestureDetector(
+                onTap: onViewAll,
+                child: const Row(
+                  children: [
+                    Text('View All', style: TextStyle(fontSize: 12, color: AppColors.textHint)),
+                    Icon(Icons.chevron_right, size: 16, color: AppColors.textHint),
+                  ],
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        // 横向滚动卡片
+        SizedBox(
+          height: 150,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: deals.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 10),
+            itemBuilder: (_, i) => _MenuDealCard(deal: deals[i]),
+          ),
+        ),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+}
+
+// ── 菜单中的单个 Deal 卡片 ─────────────────────────────────
+class _MenuDealCard extends StatelessWidget {
+  final DealModel deal;
+
+  const _MenuDealCard({required this.deal});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.pop(context);
+        context.push('/deals/${deal.id}');
+      },
+      child: SizedBox(
+        width: 110,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 图片
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: deal.imageUrls.isNotEmpty
+                  ? CachedNetworkImage(
+                      imageUrl: deal.imageUrls.first,
+                      width: 110,
+                      height: 88,
+                      fit: BoxFit.cover,
+                      errorWidget: (_, _, _) => Container(
+                        width: 110,
+                        height: 88,
+                        color: AppColors.surfaceVariant,
+                        child: const Icon(Icons.restaurant, size: 24, color: AppColors.textHint),
+                      ),
+                    )
+                  : Container(
+                      width: 110,
+                      height: 88,
+                      color: AppColors.surfaceVariant,
+                      child: const Icon(Icons.restaurant, size: 24, color: AppColors.textHint),
+                    ),
+            ),
+            const SizedBox(height: 6),
+            // 标题
+            Text(
+              deal.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 12, color: AppColors.textPrimary),
+            ),
+            const SizedBox(height: 2),
+            // 价格
+            Text(
+              '\$${deal.discountPrice.toStringAsFixed(2)}',
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+                color: AppColors.primary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── 我的收藏区（需要根据 ID 列表获取 deal 数据）──────────────
+class _SavedDealsSection extends ConsumerWidget {
+  final List<String> dealIds;
+
+  const _SavedDealsSection({required this.dealIds});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final dealsAsync = ref.watch(savedDealsListProvider);
+
+    return dealsAsync.when(
+      data: (deals) {
+        if (deals.isEmpty) return const SizedBox.shrink();
+        return _MenuDealSection(
+          title: 'My Favorites',
+          deals: deals.take(10).toList(),
+          onViewAll: () {
+            final nav = GoRouter.of(context);
+            Navigator.pop(context);
+            nav.push('/collection');
+          },
+        );
+      },
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+    );
+  }
+}
+
+// ── 菜单图标项 ──────────────────────────────────────────────
+class _MenuIcon extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _MenuIcon({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: AppColors.background,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, size: 24, color: AppColors.textPrimary),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11,
+              color: AppColors.textSecondary,
             ),
           ),
         ],
       ),
-      bottomNavigationBar: _BottomBar(deal: deal),
     );
   }
 }
@@ -244,16 +713,32 @@ class _ImageGalleryState extends State<_ImageGallery> {
   Widget build(BuildContext context) {
     final urls = widget.imageUrls;
     if (urls.isEmpty) {
-      return Container(
-        height: 280,
-        color: AppColors.surfaceVariant,
-        child: const Center(
-          child: Icon(Icons.restaurant, size: 64, color: AppColors.textHint),
-        ),
+      return Stack(
+        children: [
+          Container(
+            height: 280,
+            color: AppColors.surfaceVariant,
+            child: const Center(
+              child: Icon(Icons.restaurant, size: 64, color: AppColors.textHint),
+            ),
+          ),
+          // 底部白色圆角覆盖层
+          Positioned(
+            left: 0, right: 0, bottom: 0,
+            child: Container(
+              height: 16,
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+              ),
+            ),
+          ),
+        ],
       );
     }
 
     return SizedBox(
+      key: const ValueKey('deal_image_gallery'),
       height: 280,
       child: Stack(
         children: [
@@ -274,28 +759,162 @@ class _ImageGalleryState extends State<_ImageGallery> {
               ),
             ),
           ),
-          if (urls.length > 1)
-            Positioned(
-              bottom: 12,
-              right: 16,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.5),
-                  borderRadius: BorderRadius.circular(12),
+          // 底部白色圆角覆盖层（美团风格）
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: Container(
+              height: 16,
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+              ),
+            ),
+          ),
+          // 底部右侧：页码指示器 + 相册按钮
+          Positioned(
+            bottom: 28,
+            right: 16,
+            child: Row(
+              children: [
+                // 页码指示器（多图时才显示）
+                if (urls.length > 1)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.5),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      '${_currentPage + 1}/${urls.length}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                const SizedBox(width: 8),
+                // 相册按钮：点击打开全屏图片查看器
+                GestureDetector(
+                  onTap: () => _openFullscreenGallery(context, urls, _currentPage),
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.5),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.photo_library_outlined,
+                      color: Colors.white,
+                      size: 18,
+                    ),
+                  ),
                 ),
-                child: Text(
-                  '${_currentPage + 1}/${urls.length}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 打开全屏图片查看器（黑色背景，支持横向滑动，点击关闭）
+  void _openFullscreenGallery(
+      BuildContext context, List<String> urls, int initialPage) {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black,
+      builder: (ctx) => _FullscreenGalleryDialog(
+        imageUrls: urls,
+        initialPage: initialPage,
+      ),
+    );
+  }
+}
+
+// ── 全屏图片查看器 dialog ─────────────────────────────────────
+class _FullscreenGalleryDialog extends StatefulWidget {
+  final List<String> imageUrls;
+  final int initialPage;
+
+  const _FullscreenGalleryDialog({
+    required this.imageUrls,
+    required this.initialPage,
+  });
+
+  @override
+  State<_FullscreenGalleryDialog> createState() =>
+      _FullscreenGalleryDialogState();
+}
+
+class _FullscreenGalleryDialogState extends State<_FullscreenGalleryDialog> {
+  late int _currentPage;
+  late PageController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentPage = widget.initialPage;
+    _controller = PageController(initialPage: widget.initialPage);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      // 点击任意处关闭
+      onTap: () => Navigator.pop(context),
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: Stack(
+          children: [
+            // 横向滑动图片
+            PageView.builder(
+              controller: _controller,
+              itemCount: widget.imageUrls.length,
+              onPageChanged: (i) => setState(() => _currentPage = i),
+              itemBuilder: (_, i) => CachedNetworkImage(
+                imageUrl: widget.imageUrls[i],
+                fit: BoxFit.contain,
+                errorWidget: (_, _, _) => const Center(
+                  child: Icon(Icons.broken_image,
+                      size: 64, color: Colors.white54),
+                ),
+              ),
+            ),
+            // 顶部页码
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 12,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.55),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Text(
+                    '${_currentPage + 1} / ${widget.imageUrls.length}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ),
             ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -313,10 +932,9 @@ class _PriceSection extends StatelessWidget {
       color: Colors.white,
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.baseline,
-        textBaseline: TextBaseline.alphabetic,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // Dollar sign
+          // 折扣价 + 折扣标签
           const Text(
             '\$',
             style: TextStyle(
@@ -325,7 +943,6 @@ class _PriceSection extends StatelessWidget {
               fontWeight: FontWeight.bold,
             ),
           ),
-          // Discount price
           Text(
             deal.discountPrice.toStringAsFixed(2),
             style: const TextStyle(
@@ -335,8 +952,7 @@ class _PriceSection extends StatelessWidget {
               height: 1,
             ),
           ),
-          const SizedBox(width: 10),
-          // Discount label tag
+          const SizedBox(width: 8),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
             decoration: BoxDecoration(
@@ -352,36 +968,111 @@ class _PriceSection extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(width: 10),
-          // = original - savings
-          Text(
-            '= ',
-            style: TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 13,
-            ),
-          ),
-          Text(
-            '\$${deal.originalPrice.toStringAsFixed(0)}',
-            style: const TextStyle(
-              color: AppColors.textHint,
-              fontSize: 13,
-              decoration: TextDecoration.lineThrough,
-            ),
-          ),
-          Text(
-            ' - ',
-            style: TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 13,
-            ),
-          ),
-          Text(
-            '\$${deal.savingsAmount.toStringAsFixed(0)}',
-            style: const TextStyle(
-              color: AppColors.primary,
-              fontSize: 13,
-              fontWeight: FontWeight.bold,
+          const SizedBox(width: 6),
+          // 右侧公式区域（自适应宽度）
+          Expanded(
+            child: Row(
+              children: [
+                // = 号
+                const Text(
+                  '=',
+                  style: TextStyle(
+                    color: AppColors.textHint,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                // Reg Price 列（可点击弹出说明）
+                Flexible(
+                  child: GestureDetector(
+                    onTap: () {
+                      showDialog(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: const Text('Price Info'),
+                          content: const Text(
+                            'The regular price is provided by the merchant for comparison purposes and may not reflect the actual in-store or online retail price. '
+                            'It could represent the item\'s list price, suggested retail price, or a previously offered price. '
+                            'Due to regional and market variations, the regular price may differ from what you see at the time of purchase. '
+                            'This price is for reference only.',
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.of(ctx).pop(),
+                              child: const Text('Got it'),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                    child: Column(
+                      children: [
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: const [
+                            Text(
+                              'Reg Price',
+                              style: TextStyle(
+                                color: AppColors.textHint,
+                                fontSize: 10,
+                              ),
+                            ),
+                            SizedBox(width: 2),
+                            Icon(
+                              Icons.help_outline,
+                              size: 11,
+                              color: AppColors.textHint,
+                            ),
+                          ],
+                        ),
+                        Text(
+                          '\$${deal.originalPrice.toStringAsFixed(0)}',
+                          style: const TextStyle(
+                            color: Color(0xFF333333),
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                // - 号
+                const Text(
+                  '-',
+                  style: TextStyle(
+                    color: AppColors.textHint,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                // Deal Promotion 列
+                Flexible(
+                  child: Column(
+                    children: [
+                      const Text(
+                        'Deal Promotion',
+                        style: TextStyle(
+                          color: AppColors.textHint,
+                          fontSize: 10,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        '\$${(deal.originalPrice - deal.discountPrice).toStringAsFixed(0)}',
+                        style: const TextStyle(
+                          color: AppColors.primary,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -433,6 +1124,7 @@ class _InfoSection extends StatelessWidget {
               ),
             ],
           ),
+
           const SizedBox(height: 10),
 
           // Availability row
@@ -450,11 +1142,15 @@ class _InfoSection extends StatelessWidget {
                 ),
               ),
               if (deal.merchantHours != null) ...[
-                Text(
-                  '  ·  ${deal.merchantHours}',
-                  style: const TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 12,
+                Flexible(
+                  child: Text(
+                    '  ·  ${deal.merchantHours}',
+                    style: const TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 12,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ],
@@ -476,7 +1172,7 @@ class _InfoSection extends StatelessWidget {
                     color: AppColors.success, size: 15),
                 const SizedBox(width: 6),
                 const Text(
-                  'Risk-Free Refund',
+                  'Refund Anytime',
                   style: TextStyle(
                     color: AppColors.success,
                     fontWeight: FontWeight.w600,
@@ -489,21 +1185,214 @@ class _InfoSection extends StatelessWidget {
               ],
             ),
           ),
+
+          // Description（商家填写的描述）
+          if (deal.description.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text(
+              deal.description,
+              style: const TextStyle(
+                fontSize: 13,
+                color: AppColors.textSecondary,
+                height: 1.5,
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
+
 }
 
-// ── Dishes section + Note ────────────────────────────────────
-class _DishesSection extends StatelessWidget {
+// ── 套餐横向选择器（吸顶 Sliver）─────────────────────────────
+// 观察 merchantDealsProvider，有多个 deal 时渲染吸顶 header，否则渲染空 sliver
+const _kVariantHeight = 72.0; // 56 内容 + 8*2 上下 padding
+
+class _StickyVariantSliver extends ConsumerWidget {
   final DealModel deal;
 
-  const _DishesSection({required this.deal});
+  const _StickyVariantSliver({required this.deal});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final dealsAsync = ref.watch(merchantDealsProvider(
+      (merchantId: deal.merchantId, excludeDealId: ''),
+    ));
+
+    return dealsAsync.when(
+      data: (deals) {
+        if (deals.length <= 1) {
+          return const SliverToBoxAdapter(child: SizedBox.shrink());
+        }
+        return SliverPersistentHeader(
+          pinned: true,
+          delegate: _VariantSelectorDelegate(
+            deal: deal,
+            deals: deals,
+          ),
+        );
+      },
+      loading: () => const SliverToBoxAdapter(child: SizedBox.shrink()),
+      error: (_, __) => const SliverToBoxAdapter(child: SizedBox.shrink()),
+    );
+  }
+}
+
+// ── 套餐吸顶 Delegate ────────────────────────────────────────
+class _VariantSelectorDelegate extends SliverPersistentHeaderDelegate {
+  final DealModel deal;
+  final List<DealModel> deals;
+
+  _VariantSelectorDelegate({required this.deal, required this.deals});
+
+  @override
+  double get minExtent => _kVariantHeight;
+
+  @override
+  double get maxExtent => _kVariantHeight;
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+    final sorted = [...deals]..sort((a, b) {
+        if (a.sortOrder == null && b.sortOrder == null) return 0;
+        if (a.sortOrder == null) return 1;
+        if (b.sortOrder == null) return -1;
+        return a.sortOrder!.compareTo(b.sortOrder!);
+      });
+
+    // 2.5 卡可见
+    final screenWidth = MediaQuery.of(context).size.width;
+    final cardWidth = (screenWidth - 32 - 12) / 2.5;
+    const imageSize = 48.0;
+
+    final currentIndex = sorted.indexWhere((d) => d.id == deal.id);
+    final initialOffset = currentIndex > 0
+        ? (currentIndex * (cardWidth + 8)).clamp(0.0, double.infinity)
+        : 0.0;
+
+    return Container(
+      key: const ValueKey('deal_variant_selector'),
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: SizedBox(
+        height: 56,
+        child: ListView.separated(
+          controller: ScrollController(initialScrollOffset: initialOffset),
+          scrollDirection: Axis.horizontal,
+          itemCount: sorted.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 8),
+          itemBuilder: (_, i) {
+            final d = sorted[i];
+            final isCurrent = d.id == deal.id;
+            final displayName = (d.shortName != null &&
+                    d.shortName!.isNotEmpty)
+                ? d.shortName!
+                : (d.title.length > 8
+                    ? '${d.title.substring(0, 8)}…'
+                    : d.title);
+
+            return GestureDetector(
+              key: ValueKey('deal_variant_item_${d.id}'),
+              onTap: isCurrent
+                  ? null
+                  : () => context.push('/deals/${d.id}'),
+              child: Container(
+                width: cardWidth,
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: isCurrent
+                        ? AppColors.primary
+                        : AppColors.surfaceVariant,
+                    width: isCurrent ? 1.5 : 1,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    // 左侧小方图
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: d.imageUrls.isNotEmpty
+                          ? CachedNetworkImage(
+                              imageUrl: d.imageUrls.first,
+                              width: imageSize,
+                              height: imageSize,
+                              fit: BoxFit.cover,
+                              errorWidget: (_, _, _) => Container(
+                                width: imageSize,
+                                height: imageSize,
+                                color: AppColors.surfaceVariant,
+                                child: const Icon(Icons.restaurant,
+                                    size: 20, color: AppColors.textHint),
+                              ),
+                            )
+                          : Container(
+                              width: imageSize,
+                              height: imageSize,
+                              color: AppColors.surfaceVariant,
+                              child: const Icon(Icons.restaurant,
+                                  size: 20, color: AppColors.textHint),
+                            ),
+                    ),
+                    const SizedBox(width: 6),
+                    // 右侧名称 + 价格
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            displayName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: isCurrent
+                                  ? AppColors.primary
+                                  : AppColors.textPrimary,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '\$${d.discountPrice.toStringAsFixed(2)}',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: isCurrent
+                                  ? AppColors.primary
+                                  : AppColors.error,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  @override
+  bool shouldRebuild(_VariantSelectorDelegate oldDelegate) =>
+      oldDelegate.deal.id != deal.id || oldDelegate.deals.length != deals.length;
+}
+
+// ── Products section + Note ────────────────────────────────────
+class _ProductsSection extends StatelessWidget {
+  final DealModel deal;
+
+  const _ProductsSection({required this.deal});
 
   @override
   Widget build(BuildContext context) {
-    if (deal.dishes.isEmpty) return const SizedBox.shrink();
+    if (deal.products.isEmpty) return const SizedBox.shrink();
 
     return Container(
       color: Colors.white,
@@ -517,15 +1406,15 @@ class _DishesSection extends StatelessWidget {
           ),
           const SizedBox(height: 12),
 
-          // Dishes list
+          // Products list
           Container(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: AppColors.surfaceVariant),
             ),
             child: Column(
-              children: deal.dishes.asMap().entries.map((entry) {
-                final isLast = entry.key == deal.dishes.length - 1;
+              children: deal.products.asMap().entries.map((entry) {
+                final isLast = entry.key == deal.products.length - 1;
                 return Container(
                   padding: const EdgeInsets.symmetric(
                       horizontal: 16, vertical: 12),
@@ -542,7 +1431,35 @@ class _DishesSection extends StatelessWidget {
                     final name = parts[0];
                     final qty = parts.length > 1 ? parts[1] : '1';
                     final subtotal = parts.length > 2 ? parts[2] : '';
-                    // 构造右侧文字：×2 $30 或 ×1
+
+                    // 检查是否有对应的选项组（按名称匹配）
+                    final matchedGroup = deal.optionGroups.cast<DealOptionGroup?>().firstWhere(
+                      (g) => g!.name.toLowerCase() == name.toLowerCase(),
+                      orElse: () => null,
+                    );
+
+                    if (matchedGroup != null) {
+                      // 选项组产品行：selectMin == items.length 时只显示名称，否则 "Name (Select X from Y)"
+                      final totalItems = matchedGroup.items.length;
+                      final displayName = matchedGroup.selectMin == totalItems
+                          ? name
+                          : '$name (Select ${matchedGroup.selectMin} from $totalItems)';
+                      return Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              displayName,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    }
+
+                    // 普通产品行：显示 ×qty $subtotal
                     final suffix = subtotal.isNotEmpty ? '×$qty \$$subtotal' : '×$qty';
                     return Row(
                       children: [
@@ -570,8 +1487,8 @@ class _DishesSection extends StatelessWidget {
             ),
           ),
 
-          // Note
-          if (deal.description.isNotEmpty) ...[
+          // Usage Notes（商家填写的使用须知）
+          if (deal.usageNotes.isNotEmpty) ...[
             const SizedBox(height: 14),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -581,7 +1498,7 @@ class _DishesSection extends StatelessWidget {
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    'Note: ${deal.description}',
+                    'Note: ${deal.usageNotes}',
                     style: const TextStyle(
                       fontSize: 13,
                       color: AppColors.textSecondary,
@@ -595,6 +1512,211 @@ class _DishesSection extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+// ── 选项组选择器（"几选几"功能）───────────────────────────────
+class _OptionGroupsSelector extends ConsumerStatefulWidget {
+  final DealModel deal;
+  const _OptionGroupsSelector({required this.deal});
+
+  @override
+  ConsumerState<_OptionGroupsSelector> createState() => _OptionGroupsSelectorState();
+}
+
+class _OptionGroupsSelectorState extends ConsumerState<_OptionGroupsSelector> {
+  @override
+  void initState() {
+    super.initState();
+    // 初始化选项组选择状态（每个组初始化为空集合）
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final current = ref.read(dealOptionSelectionsProvider(widget.deal.id));
+      if (current.isEmpty) {
+        final initial = <String, Set<String>>{};
+        for (final group in widget.deal.optionGroups) {
+          initial[group.id] = {};
+        }
+        ref.read(dealOptionSelectionsProvider(widget.deal.id).notifier).state = initial;
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final selections = ref.watch(dealOptionSelectionsProvider(widget.deal.id));
+
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 标题
+          const Text(
+            'Customize Your Order',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 12),
+          // 每个选项组
+          ...widget.deal.optionGroups.map((group) => _buildGroup(group, selections)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGroup(DealOptionGroup group, Map<String, Set<String>> selections) {
+    final selected = selections[group.id] ?? {};
+    final isComplete = selected.length >= group.selectMin;
+
+    return Container(
+      key: ValueKey('option_group_${group.id}'),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.background,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isComplete
+              ? AppColors.primary.withValues(alpha: 0.3)
+              : const Color(0xFFE0E0E0),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 组标题和状态
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  group.name,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+              // 状态标签
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: isComplete
+                      ? AppColors.primary.withValues(alpha: 0.1)
+                      : const Color(0xFFF5F5F5),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '${selected.length}/${group.selectMin == group.selectMax ? group.selectMin : '${group.selectMin}-${group.selectMax}'}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: isComplete ? AppColors.primary : AppColors.textHint,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            group.displayLabel,
+            style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+          ),
+          const SizedBox(height: 8),
+          // 选项项列表
+          ...group.items.map((item) {
+            final isSelected = selected.contains(item.id);
+            return GestureDetector(
+              onTap: () => _toggleItem(group, item.id),
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? AppColors.primary.withValues(alpha: 0.08)
+                      : Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: isSelected
+                        ? AppColors.primary
+                        : const Color(0xFFE8E8E8),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    // 复选标记
+                    Icon(
+                      isSelected
+                          ? Icons.check_circle_rounded
+                          : Icons.circle_outlined,
+                      size: 20,
+                      color: isSelected
+                          ? AppColors.primary
+                          : AppColors.textHint,
+                    ),
+                    const SizedBox(width: 10),
+                    // 项名称
+                    Expanded(
+                      child: Text(
+                        item.name,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ),
+                    // 价格
+                    if (item.price > 0)
+                      Text(
+                        '\$${item.price.toStringAsFixed(2)}',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: isSelected
+                              ? AppColors.primary
+                              : AppColors.textSecondary,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  void _toggleItem(DealOptionGroup group, String itemId) {
+    final selections = Map<String, Set<String>>.from(
+      ref.read(dealOptionSelectionsProvider(widget.deal.id)),
+    );
+    final selected = Set<String>.from(selections[group.id] ?? {});
+
+    if (selected.contains(itemId)) {
+      selected.remove(itemId);
+    } else {
+      // 检查是否已达到 max
+      if (selected.length >= group.selectMax) {
+        // 如果 max=1，替换选择
+        if (group.selectMax == 1) {
+          selected.clear();
+          selected.add(itemId);
+        }
+        // 否则不允许继续添加
+        else {
+          return;
+        }
+      } else {
+        selected.add(itemId);
+      }
+    }
+    selections[group.id] = selected;
+    ref.read(dealOptionSelectionsProvider(widget.deal.id).notifier).state = selections;
   }
 }
 
@@ -717,6 +1839,20 @@ class _RestaurantInfo extends StatelessWidget {
             'Restaurant Info',
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
           ),
+          // 封面图（优先 homepageCoverUrl，降级用 logoUrl）
+          if (merchant.homepageCoverUrl != null && merchant.homepageCoverUrl!.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: CachedNetworkImage(
+                imageUrl: merchant.homepageCoverUrl!,
+                width: double.infinity,
+                height: 130,
+                fit: BoxFit.cover,
+                errorWidget: (_, _, _) => const SizedBox.shrink(),
+              ),
+            ),
+          ],
           const SizedBox(height: 14),
           Row(
             children: [
@@ -763,6 +1899,11 @@ class _RestaurantInfo extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
+                    // 连锁店显示品牌 Badge（品牌 Logo + 品牌名）
+                    if (merchant.isChainStore) ...[
+                      const SizedBox(height: 4),
+                      _DetailBrandBadge(merchant: merchant),
+                    ],
                     const SizedBox(height: 4),
                     Row(
                       children: [
@@ -876,128 +2017,171 @@ class _ApplicableStores extends StatelessWidget {
     final merchant = deal.merchant;
     if (merchant == null) return const SizedBox.shrink();
 
-    // 计算适用门店数量
-    final storeIds = deal.applicableMerchantIds;
-    final storeCount = (storeIds != null && storeIds.isNotEmpty)
-        ? storeIds.length
-        : 1;
+    // 从 deal_applicable_stores 表动态查询 active 门店数量
+    final activeStoreFuture = Supabase.instance.client
+        .from('deal_applicable_stores')
+        .select('id')
+        .eq('deal_id', deal.id)
+        .eq('status', 'active');
 
-    return Container(
-      color: Colors.white,
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    // 降级：优先用 RPC 返回的 activeStoreCount，其次用旧的 applicableMerchantIds 数组长度
+    final legacyStoreIds = deal.applicableMerchantIds;
+    final fallbackCount = deal.activeStoreCount ??
+        ((legacyStoreIds != null && legacyStoreIds.isNotEmpty)
+            ? legacyStoreIds.length
+            : 1);
+
+    // 只有1家门店时隐藏整个 section
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: activeStoreFuture,
+      builder: (context, snapshot) {
+        final storeCount = (snapshot.hasData && snapshot.data!.isNotEmpty)
+            ? snapshot.data!.length
+            : fallbackCount;
+
+        // 加上主门店共 storeCount+1?  不，deal_applicable_stores 已包含主门店
+        // 只有1家门店时不显示
+        if (storeCount <= 1) return const SizedBox.shrink();
+
+        return Container(
+          color: Colors.white,
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Applicable Stores',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Applicable Stores',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  Text(
+                    'Available at $storeCount ${storeCount == 1 ? 'location' : 'locations'}',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
               ),
-              Text(
-                '$storeCount ${storeCount == 1 ? 'Store' : 'Stores'}',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: AppColors.textSecondary,
-                ),
+              const SizedBox(height: 14),
+
+              // 主门店卡片始终显示
+              _buildStoreCard(context, merchant),
+
+              // 从 deal_applicable_stores 加载并显示其他 active 门店
+              _MultiStoreList(
+                dealId: deal.id,
+                dealDiscountPrice: deal.discountPrice,
+                dealDiscountPercent: deal.discountPercent,
+                primaryMerchantId: merchant.id,
               ),
             ],
           ),
-          const SizedBox(height: 14),
-
-          // 创建门店卡片（主门店始终显示）
-          _buildStoreCard(context, merchant),
-
-          // 多店时加载并显示其他门店
-          if (storeIds != null && storeIds.length > 1)
-            _MultiStoreList(
-              storeIds: storeIds.where((id) => id != merchant.id).toList(),
-            ),
-        ],
-      ),
+        );
+      },
     );
   }
 
   Widget _buildStoreCard(BuildContext context, MerchantSummary merchant) {
+    final coverUrl = merchant.homepageCoverUrl;
     return GestureDetector(
       onTap: () => context.push('/merchant/${merchant.id}'),
       child: Container(
-        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: AppColors.surfaceVariant),
         ),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Logo
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child:
-                  merchant.logoUrl != null && merchant.logoUrl!.isNotEmpty
-                      ? CachedNetworkImage(
-                          imageUrl: merchant.logoUrl!,
-                          width: 52,
-                          height: 52,
-                          fit: BoxFit.cover,
-                        )
-                      : Container(
-                          width: 52,
-                          height: 52,
-                          color: AppColors.surfaceVariant,
-                          child: const Icon(Icons.restaurant,
-                              color: AppColors.textHint),
-                        ),
-            ),
-            const SizedBox(width: 12),
-            // Info
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            // 封面图
+            if (coverUrl != null && coverUrl.isNotEmpty)
+              ClipRRect(
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                child: CachedNetworkImage(
+                  imageUrl: coverUrl,
+                  width: double.infinity,
+                  height: 100,
+                  fit: BoxFit.cover,
+                  errorWidget: (_, _, _) => const SizedBox.shrink(),
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
                 children: [
-                  Text(
-                    merchant.name,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                  // Logo
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child:
+                        merchant.logoUrl != null && merchant.logoUrl!.isNotEmpty
+                            ? CachedNetworkImage(
+                                imageUrl: merchant.logoUrl!,
+                                width: 52,
+                                height: 52,
+                                fit: BoxFit.cover,
+                              )
+                            : Container(
+                                width: 52,
+                                height: 52,
+                                color: AppColors.surfaceVariant,
+                                child: const Icon(Icons.restaurant,
+                                    color: AppColors.textHint),
+                              ),
                   ),
-                  const SizedBox(height: 3),
-                  if (merchant.address != null &&
-                      merchant.address!.isNotEmpty)
-                    Text(
-                      merchant.address!,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: AppColors.textSecondary,
+                  const SizedBox(width: 12),
+                  // Info
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          merchant.name,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 3),
+                        if (merchant.address != null &&
+                            merchant.address!.isNotEmpty)
+                          Text(
+                            merchant.address!,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: AppColors.textSecondary,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                      ],
+                    ),
+                  ),
+                  // Phone
+                  if (merchant.phone != null && merchant.phone!.isNotEmpty)
+                    GestureDetector(
+                      onTap: () => launchUrl(
+                        Uri.parse('tel:${merchant.phone}'),
+                        mode: LaunchMode.externalApplication,
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                      child: Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.1),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.phone,
+                            size: 18, color: AppColors.primary),
+                      ),
                     ),
                 ],
               ),
             ),
-            // Phone
-            if (merchant.phone != null && merchant.phone!.isNotEmpty)
-              GestureDetector(
-                onTap: () => launchUrl(
-                  Uri.parse('tel:${merchant.phone}'),
-                  mode: LaunchMode.externalApplication,
-                ),
-                child: Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.phone,
-                      size: 18, color: AppColors.primary),
-                ),
-              ),
           ],
         ),
       ),
@@ -1005,47 +2189,101 @@ class _ApplicableStores extends StatelessWidget {
   }
 }
 
-// 多店列表：异步加载其他适用门店的基本信息
+// 多店列表：从 deal_applicable_stores 表异步加载 active 门店，支持 per-store 折扣展示
 class _MultiStoreList extends StatelessWidget {
-  final List<String> storeIds;
+  final String dealId;
+  final double? dealDiscountPrice;   // deal 现价，用于计算各门店折扣
+  final int? dealDiscountPercent;    // 全局折扣%，当门店无独立原价时降级使用
+  final String primaryMerchantId;   // 主门店 ID，已在外部展示，此处跳过
 
-  const _MultiStoreList({required this.storeIds});
+  const _MultiStoreList({
+    required this.dealId,
+    required this.dealDiscountPrice,
+    required this.dealDiscountPercent,
+    required this.primaryMerchantId,
+  });
 
   @override
   Widget build(BuildContext context) {
-    if (storeIds.isEmpty) return const SizedBox.shrink();
-
     return FutureBuilder<List<Map<String, dynamic>>>(
+      // 查 deal_applicable_stores 表，join merchants 获取门店信息
       future: Supabase.instance.client
-          .from('merchants')
-          .select('id, name, address, logo_url, phone')
-          .inFilter('id', storeIds),
+          .from('deal_applicable_stores')
+          .select(
+            'store_id, store_original_price, '
+            'merchants!deal_applicable_stores_store_id_fkey(id, name, address, logo_url, phone, homepage_cover_url)',
+          )
+          .eq('deal_id', dealId)
+          .eq('status', 'active'),
       builder: (context, snapshot) {
         if (!snapshot.hasData || snapshot.data!.isEmpty) {
           return const SizedBox.shrink();
         }
 
-        final stores = snapshot.data!;
+        // 过滤掉主门店（已在上方单独展示）
+        final rows = snapshot.data!
+            .where((r) => (r['store_id'] as String? ?? '') != primaryMerchantId)
+            .toList();
+
+        if (rows.isEmpty) return const SizedBox.shrink();
+
         return Column(
-          children: stores.map((store) {
+          children: rows.map((row) {
+            final merchant = row['merchants'] as Map<String, dynamic>? ?? {};
+            final storeId = row['store_id'] as String? ?? '';
+            final logoUrl = merchant['logo_url'] as String? ?? '';
+            final coverUrl = merchant['homepage_cover_url'] as String? ?? '';
+            final name = merchant['name'] as String? ?? '';
+            final address = merchant['address'] as String? ?? '';
+            final phone = merchant['phone'] as String? ?? '';
+
+            // 计算门店折扣：优先用 store_original_price，否则降级用全局 discountPercent
+            final storeOriginalPrice = (row['store_original_price'] as num?)?.toDouble();
+            int? discountPct;
+            if (storeOriginalPrice != null &&
+                storeOriginalPrice > 0 &&
+                dealDiscountPrice != null) {
+              discountPct =
+                  ((storeOriginalPrice - dealDiscountPrice!) / storeOriginalPrice * 100)
+                      .round();
+            } else {
+              discountPct = dealDiscountPercent;
+            }
+
             return Padding(
               padding: const EdgeInsets.only(top: 8),
               child: GestureDetector(
-                onTap: () => context.push('/merchant/${store['id']}'),
+                onTap: () => context.push('/merchant/$storeId'),
                 child: Container(
-                  padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: AppColors.surfaceVariant),
                   ),
-                  child: Row(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      // 封面图
+                      if (coverUrl.isNotEmpty)
+                        ClipRRect(
+                          borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                          child: CachedNetworkImage(
+                            imageUrl: coverUrl,
+                            width: double.infinity,
+                            height: 100,
+                            fit: BoxFit.cover,
+                            errorWidget: (_, _, _) => const SizedBox.shrink(),
+                          ),
+                        ),
+                      Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Row(
+                    children: [
+                      // 门店 Logo
                       ClipRRect(
                         borderRadius: BorderRadius.circular(8),
-                        child: store['logo_url'] != null &&
-                                (store['logo_url'] as String).isNotEmpty
+                        child: logoUrl.isNotEmpty
                             ? CachedNetworkImage(
-                                imageUrl: store['logo_url'] as String,
+                                imageUrl: logoUrl,
                                 width: 44,
                                 height: 44,
                                 fit: BoxFit.cover,
@@ -1059,12 +2297,13 @@ class _MultiStoreList extends StatelessWidget {
                               ),
                       ),
                       const SizedBox(width: 12),
+                      // 门店名称 + 地址
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              store['name'] as String? ?? '',
+                              name,
                               style: const TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
@@ -1072,11 +2311,10 @@ class _MultiStoreList extends StatelessWidget {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
-                            if (store['address'] != null &&
-                                (store['address'] as String).isNotEmpty) ...[
+                            if (address.isNotEmpty) ...[
                               const SizedBox(height: 2),
                               Text(
-                                store['address'] as String,
+                                address,
                                 style: const TextStyle(
                                   fontSize: 11,
                                   color: AppColors.textSecondary,
@@ -1088,13 +2326,55 @@ class _MultiStoreList extends StatelessWidget {
                           ],
                         ),
                       ),
-                      const Icon(Icons.chevron_right,
-                          size: 20, color: AppColors.textHint),
+                      // 折扣 chip（绿色）+ 导航箭头
+                      if (discountPct != null && discountPct > 0) ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 7, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF22C55E).withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            '$discountPct% off',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF16A34A),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                      ],
+                      // 拨号按钮
+                      if (phone.isNotEmpty)
+                        GestureDetector(
+                          onTap: () => launchUrl(
+                            Uri.parse('tel:$phone'),
+                            mode: LaunchMode.externalApplication,
+                          ),
+                          child: Container(
+                            width: 32,
+                            height: 32,
+                            decoration: BoxDecoration(
+                              color: AppColors.primary.withValues(alpha: 0.1),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.phone,
+                                size: 16, color: AppColors.primary),
+                          ),
+                        )
+                      else
+                        const Icon(Icons.chevron_right,
+                            size: 20, color: AppColors.textHint),
                     ],
                   ),
                 ),
-              ),
-            );
+              ],
+            ),
+          ),
+        ),
+      );
           }).toList(),
         );
       },
@@ -1552,6 +2832,54 @@ class _BottomBar extends ConsumerWidget {
 
   const _BottomBar({required this.deal});
 
+  /// 校验选项组是否全部满足 selectMin 要求
+  List<String> _validateOptionSelections(Map<String, Set<String>> selections) {
+    final incomplete = <String>[];
+    for (final group in deal.optionGroups) {
+      final selected = selections[group.id] ?? {};
+      if (selected.length < group.selectMin) {
+        incomplete.add(group.name);
+      }
+    }
+    return incomplete;
+  }
+
+  /// 选项校验 + buy now
+  void _handleBuyNow(BuildContext context, WidgetRef ref, DealModel deal) {
+    // 校验选项组
+    if (deal.optionGroups.isNotEmpty) {
+      final selections = ref.read(dealOptionSelectionsProvider(deal.id));
+      final incomplete = _validateOptionSelections(selections);
+      if (incomplete.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Please complete: ${incomplete.join(', ')}'),
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+    }
+
+    final isBrandDeal = deal.applicableMerchantIds != null &&
+        deal.applicableMerchantIds!.isNotEmpty;
+
+    if (!isBrandDeal) {
+      context.push('/checkout/${deal.id}');
+      return;
+    }
+
+    // brand deal：弹出门店选择
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => _StorePickerSheet(deal: deal),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     if (deal.isExpired) {
@@ -1584,8 +2912,7 @@ class _BottomBar extends ConsumerWidget {
       );
     }
 
-    final isSaved =
-        (ref.watch(savedDealIdsProvider).valueOrNull ?? {}).contains(deal.id);
+    final cartCount = ref.watch(cartTotalCountProvider);
 
     return SafeArea(
       child: Container(
@@ -1605,11 +2932,11 @@ class _BottomBar extends ConsumerWidget {
         ),
         child: Row(
           children: [
-            // Store button
+            // Store 按钮
             GestureDetector(
               onTap: () => context.push('/merchant/${deal.merchantId}'),
               child: const SizedBox(
-                width: 56,
+                width: 48,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -1627,29 +2954,30 @@ class _BottomBar extends ConsumerWidget {
                 ),
               ),
             ),
-            // Save button
+            // 购物车图标（带 badge）
             GestureDetector(
-              onTap: () => ref
-                  .read(savedDealsNotifierProvider.notifier)
-                  .toggle(deal.id),
+              onTap: () => context.go('/cart'),
               child: SizedBox(
-                width: 56,
+                width: 48,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
-                      isSaved ? Icons.favorite : Icons.favorite_border,
-                      size: 22,
-                      color: isSaved ? AppColors.primary : AppColors.textSecondary,
+                    Badge(
+                      isLabelVisible: cartCount > 0,
+                      label: Text(
+                        '$cartCount',
+                        style: const TextStyle(fontSize: 10, color: Colors.white),
+                      ),
+                      backgroundColor: AppColors.primary,
+                      child: const Icon(Icons.shopping_cart_outlined,
+                          size: 22, color: AppColors.textSecondary),
                     ),
                     const SizedBox(height: 2),
-                    Text(
-                      'Save',
+                    const Text(
+                      'Cart',
                       style: TextStyle(
                         fontSize: 10,
-                        color: isSaved
-                            ? AppColors.primary
-                            : AppColors.textSecondary,
+                        color: AppColors.textSecondary,
                       ),
                     ),
                   ],
@@ -1657,10 +2985,58 @@ class _BottomBar extends ConsumerWidget {
               ),
             ),
             const SizedBox(width: 8),
-            // Buy Now button
+            // Add to Cart 按钮（橙色，截图色号 #FF9500）
             Expanded(
               child: GestureDetector(
-                onTap: () => context.push('/checkout/${deal.id}'),
+                onTap: () {
+                  // 校验选项组
+                  if (deal.optionGroups.isNotEmpty) {
+                    final selections = ref.read(dealOptionSelectionsProvider(deal.id));
+                    final incomplete = _validateOptionSelections(selections);
+                    if (incomplete.isNotEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Please complete: ${incomplete.join(', ')}'),
+                          duration: const Duration(seconds: 2),
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                      return;
+                    }
+                  }
+                  ref.read(cartProvider.notifier).addDeal(deal);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Added to cart'),
+                      duration: Duration(seconds: 1),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                },
+                child: Container(
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFF9500),
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  child: const Center(
+                    child: Text(
+                      'Add to Cart',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            // Buy Now 按钮（渐变橙红）
+            Expanded(
+              child: GestureDetector(
+                onTap: () => _handleBuyNow(context, ref, deal),
                 child: Container(
                   height: 48,
                   decoration: BoxDecoration(
@@ -1697,6 +3073,244 @@ class _BottomBar extends ConsumerWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+// ── 门店选择 Bottom Sheet（brand deal 购买时弹出）──────────────
+class _StorePickerSheet extends StatelessWidget {
+  final DealModel deal;
+
+  const _StorePickerSheet({required this.deal});
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: Supabase.instance.client
+          .from('deal_applicable_stores')
+          .select(
+            'store_id, store_original_price, '
+            'merchants!deal_applicable_stores_store_id_fkey(id, name, address, logo_url)',
+          )
+          .eq('deal_id', deal.id)
+          .eq('status', 'active'),
+      builder: (context, snapshot) {
+        final stores = snapshot.data ?? [];
+
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 拖拽条
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceVariant,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Select a Store',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Choose which location to purchase from',
+                  style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                ),
+                const SizedBox(height: 16),
+                if (!snapshot.hasData)
+                  const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: CircularProgressIndicator(),
+                  )
+                else if (stores.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Text(
+                      'No stores available',
+                      style: TextStyle(color: AppColors.textSecondary),
+                    ),
+                  )
+                else
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: MediaQuery.of(context).size.height * 0.4,
+                    ),
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: stores.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                      itemBuilder: (context, index) {
+                        final row = stores[index];
+                        final merchant =
+                            row['merchants'] as Map<String, dynamic>? ?? {};
+                        final storeId = row['store_id'] as String? ?? '';
+                        final name = merchant['name'] as String? ?? '';
+                        final address = merchant['address'] as String? ?? '';
+                        final logoUrl = merchant['logo_url'] as String? ?? '';
+
+                        final storeOrigPrice =
+                            (row['store_original_price'] as num?)?.toDouble();
+                        String? discountText;
+                        if (storeOrigPrice != null && storeOrigPrice > 0) {
+                          final pct = ((storeOrigPrice - deal.discountPrice) /
+                                  storeOrigPrice *
+                                  100)
+                              .round();
+                          if (pct > 0) discountText = '$pct% off';
+                        }
+
+                        return GestureDetector(
+                          onTap: () {
+                            Navigator.pop(context);
+                            context.push(
+                              '/checkout/${deal.id}?merchantId=$storeId',
+                            );
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                              border:
+                                  Border.all(color: AppColors.surfaceVariant),
+                            ),
+                            child: Row(
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: logoUrl.isNotEmpty
+                                      ? Image.network(
+                                          logoUrl,
+                                          width: 44,
+                                          height: 44,
+                                          fit: BoxFit.cover,
+                                        )
+                                      : Container(
+                                          width: 44,
+                                          height: 44,
+                                          color: AppColors.surfaceVariant,
+                                          child: const Icon(Icons.storefront,
+                                              size: 20,
+                                              color: AppColors.textHint),
+                                        ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        name,
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      if (address.isNotEmpty) ...[
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          address,
+                                          style: const TextStyle(
+                                            fontSize: 11,
+                                            color: AppColors.textSecondary,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                                if (discountText != null) ...[
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 7, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF22C55E)
+                                          .withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      discountText,
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: Color(0xFF16A34A),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                ],
+                                const Icon(Icons.chevron_right,
+                                    size: 20, color: AppColors.textHint),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// 详情页专用连锁品牌 Badge（品牌 Logo 16px + 品牌名，灰色小字）
+class _DetailBrandBadge extends StatelessWidget {
+  final MerchantSummary merchant;
+
+  const _DetailBrandBadge({required this.merchant});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // 品牌 Logo（16px 圆角）
+        if (merchant.brandLogoUrl != null) ...[
+          ClipRRect(
+            borderRadius: BorderRadius.circular(3),
+            child: Image.network(
+              merchant.brandLogoUrl!,
+              width: 16,
+              height: 16,
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stack) => const Icon(
+                Icons.business,
+                size: 14,
+                color: AppColors.textHint,
+              ),
+            ),
+          ),
+          const SizedBox(width: 5),
+        ],
+        // 品牌名称
+        Flexible(
+          child: Text(
+            merchant.brandName ?? '',
+            style: const TextStyle(
+              fontSize: 12,
+              color: AppColors.textHint,
+              fontWeight: FontWeight.w500,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
     );
   }
 }

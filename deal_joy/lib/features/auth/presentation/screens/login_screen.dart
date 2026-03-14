@@ -132,6 +132,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
                 // ---- 邮箱输入框（正则验证）----
                 AppTextField(
+                  key: const ValueKey('login_email_field'),
                   controller: _emailCtrl,
                   label: 'Email',
                   hint: 'you@example.com',
@@ -152,6 +153,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
                 // ---- 密码输入框（最小 8 位，show/hide 内置于 AppTextField）----
                 AppTextField(
+                  key: const ValueKey('login_password_field'),
                   controller: _passwordCtrl,
                   label: 'Password',
                   hint: '••••••••',
@@ -174,6 +176,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
+                    key: const ValueKey('login_forgot_password_btn'),
                     onPressed: () => context.push('/auth/forgot-password'),
                     style: TextButton.styleFrom(
                       foregroundColor: AppColors.primary,
@@ -286,6 +289,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           ),
                     ),
                     TextButton(
+                      key: const ValueKey('login_signup_btn'),
                       onPressed: () => context.push('/auth/register'),
                       style: TextButton.styleFrom(
                         foregroundColor: AppColors.primary,

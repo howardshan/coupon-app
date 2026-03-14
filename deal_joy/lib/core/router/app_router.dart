@@ -46,11 +46,16 @@ class _AuthChangeNotifier extends ChangeNotifier {
   }
 }
 
+// 分离 root navigator 和 shell navigator，避免 page key 冲突
+final _rootNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'root');
+final _shellNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'shell');
+
 final routerProvider = Provider<GoRouter>((ref) {
   final notifier = _AuthChangeNotifier(ref);
   ref.onDispose(notifier.dispose);
 
   return GoRouter(
+    navigatorKey: _rootNavigatorKey,
     initialLocation: '/splash',
     refreshListenable: notifier,
     redirect: (context, state) {
@@ -109,12 +114,37 @@ final routerProvider = Provider<GoRouter>((ref) {
 
       // Main shell with 4-tab bottom nav
       ShellRoute(
+        navigatorKey: _shellNavigatorKey,
         builder: (context, state, child) => MainScaffold(child: child),
         routes: [
-          GoRoute(path: '/home', builder: (_, _) => const HomeScreen()),
-          GoRoute(path: '/chat', builder: (_, _) => const ChatScreen()),
-          GoRoute(path: '/cart', builder: (_, _) => const CartScreen()),
-          GoRoute(path: '/profile', builder: (_, _) => const ProfileScreen()),
+          GoRoute(
+            path: '/home',
+            pageBuilder: (_, state) => const NoTransitionPage(
+              key: ValueKey('tab-home'),
+              child: HomeScreen(),
+            ),
+          ),
+          GoRoute(
+            path: '/chat',
+            pageBuilder: (_, state) => const NoTransitionPage(
+              key: ValueKey('tab-chat'),
+              child: ChatScreen(),
+            ),
+          ),
+          GoRoute(
+            path: '/cart',
+            pageBuilder: (_, state) => const NoTransitionPage(
+              key: ValueKey('tab-cart'),
+              child: CartScreen(),
+            ),
+          ),
+          GoRoute(
+            path: '/profile',
+            pageBuilder: (_, state) => const NoTransitionPage(
+              key: ValueKey('tab-profile'),
+              child: ProfileScreen(),
+            ),
+          ),
         ],
       ),
 
@@ -162,8 +192,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       // Checkout flow
       GoRoute(
         path: '/checkout/:dealId',
-        builder: (_, state) =>
-            CheckoutScreen(dealId: state.pathParameters['dealId']!),
+        builder: (_, state) => CheckoutScreen(
+          dealId: state.pathParameters['dealId']!,
+          purchasedMerchantId: state.uri.queryParameters['merchantId'],
+        ),
       ),
       GoRoute(
         path: '/order-success/:orderId',

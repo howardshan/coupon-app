@@ -52,6 +52,7 @@ class MetricCard extends StatelessWidget {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           // 顶部：图标 + 可选趋势箭头
           Row(
@@ -75,7 +76,6 @@ class MetricCard extends StatelessWidget {
                 ),
             ],
           ),
-          const SizedBox(height: 12),
           // 数值（大字体）
           Text(
             value,
@@ -85,8 +85,9 @@ class MetricCard extends StatelessWidget {
               color: Color(0xFF1A1A2E),
               height: 1.1,
             ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
-          const SizedBox(height: 4),
           // 标签
           Text(
             label,
@@ -96,6 +97,8 @@ class MetricCard extends StatelessWidget {
               color: Colors.grey[600],
               letterSpacing: 0.2,
             ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),

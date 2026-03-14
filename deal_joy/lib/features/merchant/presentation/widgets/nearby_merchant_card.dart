@@ -145,7 +145,7 @@ class NearbyMerchantCard extends StatelessWidget {
             // 星星图标
             const Icon(Icons.star, size: 14, color: AppColors.featuredBadge),
             const SizedBox(width: 3),
-            // 评分数字
+            // 评分数字短，不需要弹性
             Text(
               avgRating.toStringAsFixed(1),
               style: const TextStyle(
@@ -155,30 +155,22 @@ class NearbyMerchantCard extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 4),
-            // 评价数
-            Text(
-              '$reviewCount reviews',
-              style: const TextStyle(
-                fontSize: 12,
-                color: AppColors.textSecondary,
-              ),
-            ),
-            // 距离（若有）
-            if (distanceMiles != null) ...[
-              const SizedBox(width: 6),
-              const Text(
-                '·',
-                style: TextStyle(color: AppColors.textSecondary),
-              ),
-              const SizedBox(width: 6),
-              Text(
-                '${distanceMiles.toStringAsFixed(1)} mi',
+            // 评价数 + 距离合并到 Flexible，防止多字段叠加超出行宽
+            Flexible(
+              child: Text(
+                [
+                  '$reviewCount reviews',
+                  if (distanceMiles != null)
+                    '${distanceMiles.toStringAsFixed(1)} mi',
+                ].join(' · '),
                 style: const TextStyle(
                   fontSize: 12,
                   color: AppColors.textSecondary,
                 ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
-            ],
+            ),
           ],
         ),
         const SizedBox(height: 3),

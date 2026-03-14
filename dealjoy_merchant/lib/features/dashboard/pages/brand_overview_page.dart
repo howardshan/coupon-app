@@ -36,6 +36,7 @@ class BrandOverviewPage extends ConsumerWidget {
               Text('Failed to load: $err'),
               const SizedBox(height: 12),
               ElevatedButton(
+                key: const ValueKey('brand_overview_retry_btn'),
                 onPressed: () =>
                     ref.read(brandOverviewProvider.notifier).refresh(),
                 child: const Text('Retry'),
@@ -157,7 +158,7 @@ class _BrandStatsGrid extends StatelessWidget {
           physics: const NeverScrollableScrollPhysics(),
           mainAxisSpacing: 8,
           crossAxisSpacing: 8,
-          childAspectRatio: 1.3,
+          childAspectRatio: 1.1,
           children: [
             _StatTile(
               icon: Icons.shopping_bag_outlined,
@@ -223,16 +224,20 @@ class _StatTile extends StatelessWidget {
         padding: const EdgeInsets.all(10),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: color, size: 22),
-            const SizedBox(height: 4),
+            Icon(icon, color: color, size: 20),
+            const SizedBox(height: 2),
             Text(value,
                 style: TextStyle(
-                    fontSize: 18,
+                    fontSize: 16,
                     fontWeight: FontWeight.bold,
-                    color: color)),
+                    color: color),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis),
             Text(label,
                 style: Theme.of(context).textTheme.bodySmall,
+                maxLines: 1,
                 overflow: TextOverflow.ellipsis),
           ],
         ),
@@ -483,22 +488,20 @@ class _RankingTile extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 4),
-                  Row(
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 4,
                     children: [
                       _MiniStat(Icons.shopping_bag_outlined,
                           '${store.totalOrders}'),
-                      const SizedBox(width: 12),
                       _MiniStat(
                           Icons.attach_money,
                           '\$${store.totalRevenue.toStringAsFixed(0)}'),
-                      const SizedBox(width: 12),
                       _MiniStat(Icons.star, store.avgRating.toStringAsFixed(1)),
-                      if (store.refundRate > 10) ...[
-                        const SizedBox(width: 12),
+                      if (store.refundRate > 10)
                         _MiniStat(Icons.warning_amber,
                             '${store.refundRate.toStringAsFixed(0)}%',
                             color: Colors.red),
-                      ],
                     ],
                   ),
                 ],

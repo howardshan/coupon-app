@@ -14,6 +14,7 @@ import '../providers/deals_provider.dart';
 import '../../store/providers/store_provider.dart';
 import '../../menu/models/menu_item.dart';
 import '../../menu/widgets/menu_item_picker.dart';
+import '../../menu/providers/menu_provider.dart';
 
 // ============================================================
 // DealCreatePage — Deal创建/编辑页面（ConsumerStatefulWidget）
@@ -35,6 +36,7 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
   // Step 1: 基本信息
   final _step1Key = GlobalKey<FormState>();
   late final TextEditingController _titleController;
+  late final TextEditingController _shortNameController;
   late final TextEditingController _descriptionController;
   late final TextEditingController _usageNotesController;
 
@@ -65,9 +67,16 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
   // Step 4b: 多店适用（仅连锁店显示）
   bool _isMultiStore = false;
   final Set<String> _selectedStoreIds = {};
+  // 品牌管理员预确认的门店（打勾 = 已确认该门店有此菜品，审核通过后直接 active）
+  final Set<String> _confirmedStoreIds = {};
+
+  // Step 1: 选项组（"几选几"功能）
+  List<DealOptionGroup> _optionGroups = [];
 
   // Step 5: 图片
   final List<XFile> _selectedImages = [];
+  // 使用须知附带图片
+  final List<XFile> _usageNoteImageFiles = [];
   bool _isSubmitting = false;
 
   static const _dayOptions = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -89,6 +98,17 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
         .join('\n');
   }
 
+  // 生成结构化 dishes 数组（"name::qty::subtotal" 格式，用户端直接解析展示）
+  List<String> get _dishesData {
+    if (_selectedMenuItems.isEmpty) return [];
+    return _selectedMenuItems.map((s) {
+      final name = s.menuItem.name;
+      final qty = s.quantity;
+      final subtotal = ((s.menuItem.price ?? 0) * qty).toStringAsFixed(0);
+      return '$name::$qty::$subtotal';
+    }).toList();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -96,6 +116,7 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
 
     // 若为编辑模式，回填数据
     _titleController       = TextEditingController(text: deal?.title ?? '');
+    _shortNameController   = TextEditingController(text: deal?.shortName ?? '');
     _descriptionController = TextEditingController(text: deal?.description ?? '');
     _usageNotesController  = TextEditingController(text: deal?.usageNotes ?? '');
     _stockController       = TextEditingController(
@@ -118,12 +139,16 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
       if (deal.usageDays.isNotEmpty) {
         _selectedDays.addAll(deal.usageDays);
       }
+      if (deal.optionGroups.isNotEmpty) {
+        _optionGroups = List.of(deal.optionGroups);
+      }
     }
   }
 
   @override
   void dispose() {
     _titleController.dispose();
+    _shortNameController.dispose();
     _descriptionController.dispose();
     _usageNotesController.dispose();
     _stockController.dispose();
@@ -227,10 +252,13 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
       }
 
       // 构造 Deal 对象
-      final deal = MerchantDeal(
+      var deal = MerchantDeal(
         id:              widget.editDeal?.id ?? '',
         merchantId:      merchantId,
         title:           _titleController.text.trim(),
+        shortName:       _shortNameController.text.trim().isEmpty
+            ? null
+            : _shortNameController.text.trim(),
         description:     _descriptionController.text.trim(),
         category:        category,
         originalPrice:   _originalPrice,
@@ -242,6 +270,7 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
         isActive:        false,
         dealStatus:      DealStatus.pending,
         packageContents: _packageContentsText,
+        dishes:          _dishesData,
         usageNotes:      _usageNotesController.text.trim(),
         validityType:    _validityType,
         expiresAt:       expiresAt,
@@ -257,10 +286,32 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
         applicableMerchantIds: _isMultiStore && _selectedStoreIds.isNotEmpty
             ? _selectedStoreIds.toList()
             : null,
+        // 门店预确认数据，格式：[{ store_id, pre_confirmed }]，传给 Edge Function 用于写 deal_applicable_stores
+        storeConfirmations: _isMultiStore && _selectedStoreIds.isNotEmpty
+            ? _selectedStoreIds.map((id) => {
+                'store_id': id,
+                'pre_confirmed': _confirmedStoreIds.contains(id),
+              }).toList()
+            : null,
+        optionGroups:    _optionGroups,
         images:          widget.editDeal?.images ?? [],
         createdAt:       widget.editDeal?.createdAt ?? DateTime.now(),
         updatedAt:       DateTime.now(),
       );
+
+      // 上传使用须知附图（先上传到 Storage 拿 URL）
+      if (_usageNoteImageFiles.isNotEmpty) {
+        final service = ref.read(dealsServiceProvider);
+        final urls = <String>[];
+        for (final file in _usageNoteImageFiles) {
+          final url = await service.uploadUsageNoteImage(
+            merchantId: merchantId,
+            file: file,
+          );
+          urls.add(url);
+        }
+        deal = deal.copyWith(usageNoteImages: urls);
+      }
 
       MerchantDeal savedDeal;
 
@@ -307,8 +358,8 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
   // 图片选择
   // --------------------------------------------------------
   Future<void> _pickImage() async {
-    if (_selectedImages.length >= 5) {
-      _showSnack('Maximum 5 images allowed');
+    if (_selectedImages.length >= 9) {
+      _showSnack('Maximum 9 images allowed');
       return;
     }
 
@@ -327,6 +378,32 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
 
   void _removeImage(int index) {
     setState(() => _selectedImages.removeAt(index));
+  }
+
+  // --------------------------------------------------------
+  // 使用须知图片选择
+  // --------------------------------------------------------
+  Future<void> _pickUsageNoteImage() async {
+    if (_usageNoteImageFiles.length >= 5) {
+      _showSnack('Maximum 5 usage note images allowed');
+      return;
+    }
+
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1200,
+      maxHeight: 1200,
+      imageQuality: 85,
+    );
+
+    if (picked != null) {
+      setState(() => _usageNoteImageFiles.add(picked));
+    }
+  }
+
+  void _removeUsageNoteImage(int index) {
+    setState(() => _usageNoteImageFiles.removeAt(index));
   }
 
   // --------------------------------------------------------
@@ -374,6 +451,7 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
                   // 继续/提交按钮
                   Expanded(
                     child: ElevatedButton(
+                      key: const ValueKey('deal_create_submit_btn'),
                       onPressed: _isSubmitting
                           ? null
                           : () {
@@ -462,6 +540,7 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
           children: [
             // 标题
             _buildTextField(
+              fieldKey: const ValueKey('deal_create_title_field'),
               controller: _titleController,
               label: 'Deal Title',
               hint: 'e.g. 2-Person BBQ Set for 2',
@@ -469,6 +548,21 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
               validator: (v) {
                 if (v == null || v.trim().isEmpty) return 'Title is required';
                 if (v.trim().length < 5) return 'Title must be at least 5 characters';
+                return null;
+              },
+            ),
+            const SizedBox(height: 16),
+
+            // 短名称（最多10字符，用于变体选择器展示）
+            _buildTextField(
+              fieldKey: const ValueKey('deal_short_name_field'),
+              controller: _shortNameController,
+              label: 'Short Name (max 10 chars)',
+              hint: 'Used in variant selector',
+              maxLength: 10,
+              validator: (v) {
+                if (v == null || v.trim().isEmpty) return 'Short name is required';
+                if (v.trim().length > 10) return 'Short name must be 10 characters or less';
                 return null;
               },
             ),
@@ -514,6 +608,7 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
 
             // 描述
             _buildTextField(
+              fieldKey: const ValueKey('deal_create_desc_field'),
               controller: _descriptionController,
               label: 'Description',
               hint: 'Describe what customers will get...',
@@ -532,17 +627,110 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
             _buildPackageContentsSection(),
             const SizedBox(height: 16),
 
+            // 选项组（"几选几"功能）
+            _sectionLabel('Option Groups (Optional)'),
+            const SizedBox(height: 4),
+            const Text(
+              'Let customers pick items from groups, e.g. "Pick 3 from 8 main courses"',
+              style: TextStyle(fontSize: 12, color: Color(0xFF999999)),
+            ),
+            const SizedBox(height: 8),
+            _buildOptionGroupsSection(),
+            const SizedBox(height: 16),
+
             // 使用须知
             _buildTextField(
+              fieldKey: const ValueKey('deal_create_usage_notes_field'),
               controller: _usageNotesController,
               label: 'Usage Notes (Optional)',
               hint: 'e.g. Reservation required 24 hours in advance',
               maxLines: 3,
               maxLength: 500,
             ),
+
+            // 使用须知附图
+            const SizedBox(height: 8),
+            _buildUsageNoteImagesSection(),
           ],
         ),
       ),
+    );
+  }
+
+  // 使用须知附图区域
+  Widget _buildUsageNoteImagesSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Usage Note Photos (Optional)',
+          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Color(0xFF333333)),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Add photos to help explain purchase/usage notes',
+          style: TextStyle(fontSize: 12, color: Color(0xFF999999)),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            // 已选图片
+            for (int i = 0; i < _usageNoteImageFiles.length; i++)
+              Stack(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.file(
+                      File(_usageNoteImageFiles[i].path),
+                      width: 80,
+                      height: 80,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  Positioned(
+                    top: 2,
+                    right: 2,
+                    child: GestureDetector(
+                      onTap: () => _removeUsageNoteImage(i),
+                      child: Container(
+                        decoration: const BoxDecoration(
+                          color: Colors.black54,
+                          shape: BoxShape.circle,
+                        ),
+                        padding: const EdgeInsets.all(2),
+                        child: const Icon(Icons.close, size: 14, color: Colors.white),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            // 添加按钮
+            if (_usageNoteImageFiles.length < 5)
+              GestureDetector(
+                onTap: _pickUsageNoteImage,
+                child: Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF5F5F5),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFDDDDDD), style: BorderStyle.solid),
+                  ),
+                  child: const Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.add_photo_alternate_outlined, size: 24, color: Color(0xFF999999)),
+                      SizedBox(height: 2),
+                      Text('Add', style: TextStyle(fontSize: 11, color: Color(0xFF999999))),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ],
     );
   }
 
@@ -698,6 +886,473 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
   }
 
   // ============================================================
+  // 选项组编辑区域
+  // ============================================================
+  Widget _buildOptionGroupsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 已添加的选项组列表
+        ..._optionGroups.asMap().entries.map((entry) {
+          final groupIdx = entry.key;
+          final group = entry.value;
+          return Container(
+            key: ValueKey('deal_option_group_$groupIdx'),
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFE0E0E0)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 组标题行
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${group.name} (${group.displayLabel})',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF333333),
+                        ),
+                      ),
+                    ),
+                    // 编辑按钮
+                    GestureDetector(
+                      onTap: () => _editOptionGroup(groupIdx),
+                      child: const Icon(Icons.edit_outlined,
+                          size: 18, color: Color(0xFFFF6B35)),
+                    ),
+                    const SizedBox(width: 8),
+                    // 删除按钮
+                    GestureDetector(
+                      onTap: () => setState(() =>
+                          _optionGroups = List.of(_optionGroups)..removeAt(groupIdx)),
+                      child: const Icon(Icons.delete_outline,
+                          size: 18, color: Color(0xFFE53935)),
+                    ),
+                  ],
+                ),
+                if (group.items.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  // 选项项列表
+                  ...group.items.map((item) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Row(
+                      children: [
+                        const Text('• ', style: TextStyle(color: Color(0xFF666666))),
+                        Expanded(
+                          child: Text(
+                            item.name,
+                            style: const TextStyle(fontSize: 13, color: Color(0xFF666666)),
+                          ),
+                        ),
+                        Text(
+                          '\$${item.price.toStringAsFixed(2)}',
+                          style: const TextStyle(fontSize: 13, color: Color(0xFF666666)),
+                        ),
+                      ],
+                    ),
+                  )),
+                ],
+              ],
+            ),
+          );
+        }),
+
+        // 添加选项组按钮
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            key: const ValueKey('deal_option_add_group_btn'),
+            onPressed: _addOptionGroup,
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text('Add Option Group'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFFFF6B35),
+              side: const BorderSide(color: Color(0xFFFF6B35)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // 添加新选项组
+  void _addOptionGroup() {
+    _showOptionGroupDialog(
+      onSave: (group) {
+        setState(() => _optionGroups = [..._optionGroups, group]);
+      },
+    );
+  }
+
+  // 编辑选项组
+  void _editOptionGroup(int index) {
+    _showOptionGroupDialog(
+      existingGroup: _optionGroups[index],
+      onSave: (group) {
+        setState(() {
+          final updated = List<DealOptionGroup>.of(_optionGroups);
+          updated[index] = group;
+          _optionGroups = updated;
+        });
+      },
+    );
+  }
+
+  // 选项组编辑弹窗
+  void _showOptionGroupDialog({
+    DealOptionGroup? existingGroup,
+    required void Function(DealOptionGroup) onSave,
+  }) {
+    final nameController = TextEditingController(text: existingGroup?.name ?? '');
+    final selectCountController = TextEditingController(
+        text: existingGroup?.selectMin.toString() ?? '1');
+    // 可编辑的选项项列表
+    List<DealOptionItem> items = existingGroup?.items.toList() ?? [];
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: Text(existingGroup != null ? 'Edit Option Group' : 'Add Option Group'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 组名
+                  TextField(
+                    key: const ValueKey('deal_option_group_name_field'),
+                    controller: nameController,
+                    decoration: const InputDecoration(
+                      labelText: 'Group Name',
+                      hintText: 'e.g. Main Course',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // 选几个（固定数量）
+                  TextField(
+                    key: const ValueKey('deal_option_select_min_field'),
+                    controller: selectCountController,
+                    decoration: const InputDecoration(
+                      labelText: 'Select Count',
+                      hintText: 'e.g. 2',
+                      border: OutlineInputBorder(),
+                    ),
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  ),
+                  const SizedBox(height: 16),
+                  // 选项项标题
+                  const Text('Items', style: TextStyle(
+                    fontSize: 14, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 8),
+                  // 选项项列表
+                  ...items.asMap().entries.map((entry) {
+                    final itemIdx = entry.key;
+                    final item = entry.value;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            flex: 3,
+                            child: Text(item.name,
+                                style: const TextStyle(fontSize: 13)),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            flex: 2,
+                            child: Text('\$${item.price.toStringAsFixed(2)}',
+                                style: const TextStyle(fontSize: 13)),
+                          ),
+                          // 编辑选项项
+                          GestureDetector(
+                            onTap: () {
+                              _showOptionItemEditDialog(
+                                existingItem: item,
+                                onSave: (updated) {
+                                  setDialogState(() {
+                                    items = List.of(items);
+                                    items[itemIdx] = updated;
+                                  });
+                                },
+                              );
+                            },
+                            child: const Icon(Icons.edit_outlined,
+                                size: 16, color: Color(0xFF999999)),
+                          ),
+                          const SizedBox(width: 4),
+                          // 删除选项项
+                          GestureDetector(
+                            onTap: () => setDialogState(() =>
+                                items = List.of(items)..removeAt(itemIdx)),
+                            child: const Icon(Icons.close,
+                                size: 16, color: Color(0xFFE53935)),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                  // 添加选项项按钮（从菜单选择）
+                  TextButton.icon(
+                    key: const ValueKey('deal_option_add_item_btn'),
+                    onPressed: () {
+                      _showMenuItemSelectorForOption(
+                        existingItems: items,
+                        onSave: (item) {
+                          setDialogState(() => items = [...items, item]);
+                        },
+                      );
+                    },
+                    icon: const Icon(Icons.add, size: 16),
+                    label: const Text('Add Item'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: const Color(0xFFFF6B35),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final name = nameController.text.trim();
+                if (name.isEmpty) return;
+                final count = int.tryParse(selectCountController.text) ?? 1;
+                if (count < 1) return;
+
+                // 给选项项设置 sortOrder
+                final sortedItems = items.asMap().entries.map((e) =>
+                    e.value.copyWith(sortOrder: e.key)).toList();
+
+                onSave(DealOptionGroup(
+                  id: existingGroup?.id,
+                  name: name,
+                  selectMin: count,
+                  selectMax: count,
+                  sortOrder: 0,
+                  items: sortedItems,
+                ));
+                Navigator.pop(ctx);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFFF6B35),
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    // 释放 controllers
+    // 注：AlertDialog 关闭后 controllers 会被 GC 回收
+  }
+
+  // 从菜单中选择选项项（底部弹窗）
+  void _showMenuItemSelectorForOption({
+    required List<DealOptionItem> existingItems,
+    required void Function(DealOptionItem) onSave,
+  }) {
+    // 已选项名称集合，避免重复添加
+    final existingNames = existingItems.map((e) => e.name).toSet();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.6,
+          maxChildSize: 0.85,
+          minChildSize: 0.3,
+          expand: false,
+          builder: (_, scrollController) {
+            return Column(
+              children: [
+                // 标题栏
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Select from Menu',
+                          style: TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.w600)),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.pop(ctx),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                // 菜品列表（用 Consumer 响应式监听，避免 ref.read 只读一次导致 loading）
+                Expanded(
+                  child: Consumer(builder: (_, cRef, __) {
+                  final menuAsync = cRef.watch(activeMenuItemsProvider);
+                  return menuAsync.when(
+                    loading: () => const Center(
+                        child: CircularProgressIndicator(
+                            color: Color(0xFFFF6B35))),
+                    error: (e, _) => Center(child: Text('Error: $e')),
+                    data: (items) {
+                      if (items.isEmpty) {
+                        return const Center(
+                          child: Text('No active menu items',
+                              style: TextStyle(color: Color(0xFF999999))),
+                        );
+                      }
+                      return ListView.separated(
+                        controller: scrollController,
+                        padding: const EdgeInsets.all(12),
+                        itemCount: items.length,
+                        separatorBuilder: (_, _) => const SizedBox(height: 6),
+                        itemBuilder: (_, i) {
+                          final item = items[i];
+                          final alreadyAdded = existingNames.contains(item.name);
+                          return ListTile(
+                            leading: ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: SizedBox(
+                                width: 44, height: 44,
+                                child: item.imageUrl != null &&
+                                        item.imageUrl!.isNotEmpty
+                                    ? Image.network(item.imageUrl!,
+                                        fit: BoxFit.cover)
+                                    : Container(
+                                        color: Colors.grey.shade100,
+                                        child: const Icon(Icons.restaurant,
+                                            size: 20, color: Colors.grey)),
+                              ),
+                            ),
+                            title: Text(item.name,
+                                style: const TextStyle(fontSize: 14)),
+                            subtitle: Text(
+                              item.price != null
+                                  ? '\$${item.price!.toStringAsFixed(2)}'
+                                  : 'No price',
+                              style: const TextStyle(
+                                  fontSize: 13, color: Color(0xFF666666)),
+                            ),
+                            trailing: alreadyAdded
+                                ? const Icon(Icons.check_circle,
+                                    color: Colors.green, size: 20)
+                                : const Icon(Icons.add_circle_outline,
+                                    color: Color(0xFFFF6B35), size: 20),
+                            onTap: alreadyAdded
+                                ? null
+                                : () {
+                                    onSave(DealOptionItem(
+                                      name: item.name,
+                                      price: item.price ?? 0,
+                                    ));
+                                    Navigator.pop(ctx);
+                                  },
+                          );
+                        },
+                      );
+                    },
+                  );
+                  }),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // 选项项编辑弹窗（仅编辑已有项的名称和价格）
+  void _showOptionItemEditDialog({
+    required DealOptionItem existingItem,
+    required void Function(DealOptionItem) onSave,
+  }) {
+    final nameController = TextEditingController(text: existingItem.name);
+    final priceController = TextEditingController(
+        text: existingItem.price.toStringAsFixed(2));
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Edit Item'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              key: const ValueKey('deal_option_item_name_field'),
+              controller: nameController,
+              decoration: const InputDecoration(
+                labelText: 'Item Name',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              key: const ValueKey('deal_option_item_price_field'),
+              controller: priceController,
+              decoration: const InputDecoration(
+                labelText: 'Price',
+                prefixText: '\$ ',
+                border: OutlineInputBorder(),
+              ),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final name = nameController.text.trim();
+              final price = double.tryParse(priceController.text) ?? 0;
+              if (name.isEmpty) return;
+
+              onSave(DealOptionItem(
+                id: existingItem.id,
+                name: name,
+                price: price,
+              ));
+              Navigator.pop(ctx);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFFF6B35),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ============================================================
   // Step 2: 价格
   // ============================================================
   Step _buildStep2() {
@@ -763,6 +1418,7 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
 
             // 现价（手动输入）
             TextFormField(
+              key: const ValueKey('deal_create_discount_price_field'),
               initialValue: _dealPrice?.toStringAsFixed(2),
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               inputFormatters: [
@@ -835,6 +1491,7 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
             // 库存数量输入（unlimited 时禁用）
             if (!_isUnlimited)
               TextFormField(
+                key: const ValueKey('deal_create_stock_field'),
                 controller: _stockController,
                 enabled: !_isUnlimited,
                 keyboardType: TextInputType.number,
@@ -972,6 +1629,7 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
 
   Widget _buildDaysAfterPurchaseInput() {
     return TextFormField(
+      key: const ValueKey('deal_create_validity_days_field'),
       controller: _validityDaysController,
       keyboardType: TextInputType.number,
       inputFormatters: [FilteringTextInputFormatter.digitsOnly],
@@ -1048,6 +1706,7 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
 
             // 每人限用数量
             _buildTextField(
+              fieldKey: const ValueKey('deal_create_max_per_person_field'),
               controller: _maxPerPersonController,
               label: 'Max Per Person (Optional)',
               hint: 'Leave empty for no limit',
@@ -1196,6 +1855,19 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
                     return Column(
                       children: [
                         const Divider(height: 16),
+                        // 说明文字
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Text(
+                            'Select stores and confirm which locations carry this item. '
+                            'Confirmed locations go live immediately after platform review. '
+                            'Unconfirmed locations receive a pending notification.',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF666666),
+                            ),
+                          ),
+                        ),
                         // 全选按钮
                         Row(
                           mainAxisAlignment: MainAxisAlignment.end,
@@ -1224,33 +1896,83 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
                             ),
                           ],
                         ),
-                        ...stores.map((store) => CheckboxListTile(
-                              key: ValueKey('deal_store_checkbox_${store.id}'),
-                              dense: true,
-                              contentPadding: EdgeInsets.zero,
-                              activeColor: const Color(0xFFFF6B35),
-                              title: Text(store.name,
-                                  style: const TextStyle(fontSize: 14)),
-                              subtitle: store.address != null &&
-                                      store.address!.isNotEmpty
-                                  ? Text(store.address!,
-                                      style: const TextStyle(
-                                          fontSize: 12,
-                                          color: Color(0xFF999999)),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis)
-                                  : null,
-                              value: _selectedStoreIds.contains(store.id),
-                              onChanged: (v) {
-                                setState(() {
-                                  if (v == true) {
-                                    _selectedStoreIds.add(store.id);
-                                  } else {
-                                    _selectedStoreIds.remove(store.id);
-                                  }
-                                });
-                              },
-                            )),
+                        ...stores.map((store) {
+                              final isSelected = _selectedStoreIds.contains(store.id);
+                              final isConfirmed = _confirmedStoreIds.contains(store.id);
+                              return Column(
+                                children: [
+                                  CheckboxListTile(
+                                    key: ValueKey('deal_store_checkbox_${store.id}'),
+                                    dense: true,
+                                    contentPadding: EdgeInsets.zero,
+                                    activeColor: const Color(0xFFFF6B35),
+                                    title: Text(store.name,
+                                        style: const TextStyle(fontSize: 14)),
+                                    subtitle: store.address != null &&
+                                            store.address!.isNotEmpty
+                                        ? Text(store.address!,
+                                            style: const TextStyle(
+                                                fontSize: 12,
+                                                color: Color(0xFF999999)),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis)
+                                        : null,
+                                    value: isSelected,
+                                    onChanged: (v) {
+                                      setState(() {
+                                        if (v == true) {
+                                          _selectedStoreIds.add(store.id);
+                                        } else {
+                                          _selectedStoreIds.remove(store.id);
+                                          _confirmedStoreIds.remove(store.id);
+                                        }
+                                      });
+                                    },
+                                  ),
+                                  // 选中后显示预确认行
+                                  if (isSelected)
+                                    Padding(
+                                      padding: const EdgeInsets.only(left: 16, bottom: 6, right: 4),
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            isConfirmed
+                                                ? Icons.check_circle
+                                                : Icons.radio_button_unchecked,
+                                            size: 16,
+                                            color: isConfirmed
+                                                ? const Color(0xFF4CAF50)
+                                                : const Color(0xFF999999),
+                                          ),
+                                          const SizedBox(width: 6),
+                                          Expanded(
+                                            child: GestureDetector(
+                                              onTap: () => setState(() {
+                                                if (isConfirmed) {
+                                                  _confirmedStoreIds.remove(store.id);
+                                                } else {
+                                                  _confirmedStoreIds.add(store.id);
+                                                }
+                                              }),
+                                              child: Text(
+                                                isConfirmed
+                                                    ? 'Confirmed — carries this item'
+                                                    : 'Tap to confirm this location carries this item',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: isConfirmed
+                                                      ? const Color(0xFF4CAF50)
+                                                      : const Color(0xFF999999),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                ],
+                              );
+                            }),
                       ],
                     );
                   },
@@ -1310,7 +2032,7 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
           ],
 
           // 添加图片按钮
-          if (_selectedImages.length < 5)
+          if (_selectedImages.length < 9)
             InkWell(
               onTap: _pickImage,
               child: Container(
@@ -1338,7 +2060,7 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
                     Text(
                       _selectedImages.isEmpty
                           ? 'Add Cover Image'
-                          : 'Add More Photos (${_selectedImages.length}/5)',
+                          : 'Add More Photos (${_selectedImages.length}/9)',
                       style: TextStyle(
                         fontSize: 13,
                         color: _selectedImages.isEmpty
@@ -1375,8 +2097,10 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
     TextInputType? keyboardType,
     List<TextInputFormatter>? inputFormatters,
     FormFieldValidator<String>? validator,
+    Key? fieldKey,
   }) {
     return TextFormField(
+      key: fieldKey,
       controller: controller,
       maxLines: maxLines ?? 1,
       maxLength: maxLength,

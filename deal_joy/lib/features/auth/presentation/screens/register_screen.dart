@@ -177,6 +177,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
                 // ---- Username 字段 ----
                 AppTextField(
+                  key: const ValueKey('register_username_field'),
                   controller: _usernameCtrl,
                   label: 'Username',
                   hint: 'e.g. john_doe123',
@@ -202,6 +203,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
                 // ---- Full Name 字段 ----
                 AppTextField(
+                  key: const ValueKey('register_full_name_field'),
                   controller: _fullNameCtrl,
                   label: 'Full Name',
                   hint: 'John Doe',
@@ -217,6 +219,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
                 // ---- Email 字段 ----
                 AppTextField(
+                  key: const ValueKey('register_email_field'),
                   controller: _emailCtrl,
                   label: 'Email',
                   hint: 'you@example.com',
@@ -236,6 +239,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
                 // ---- Password 字段 + 强度指示器 ----
                 AppTextField(
+                  key: const ValueKey('register_password_field'),
                   controller: _passwordCtrl,
                   label: 'Password',
                   hint: '••••••••',
@@ -249,6 +253,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
                 // ---- Confirm Password 字段 ----
                 AppTextField(
+                  key: const ValueKey('register_confirm_password_field'),
                   controller: _confirmPasswordCtrl,
                   label: 'Confirm Password',
                   hint: '••••••••',

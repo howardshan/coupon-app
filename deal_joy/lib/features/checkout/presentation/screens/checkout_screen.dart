@@ -19,8 +19,9 @@ const _paymentMethods = [
 
 class CheckoutScreen extends ConsumerStatefulWidget {
   final String dealId;
+  final String? purchasedMerchantId; // brand deal 用户选择的门店 ID
 
-  const CheckoutScreen({super.key, required this.dealId});
+  const CheckoutScreen({super.key, required this.dealId, this.purchasedMerchantId});
 
   @override
   ConsumerState<CheckoutScreen> createState() => _CheckoutScreenState();
@@ -110,12 +111,37 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     try {
       final repo = ref.read(checkoutRepositoryProvider);
 
+      // 构建选项组快照（如果 deal 有选项组）
+      final deal = ref.read(dealDetailProvider(widget.dealId)).valueOrNull;
+      List<Map<String, dynamic>>? selectedOptions;
+      if (deal != null && deal.optionGroups.isNotEmpty) {
+        final selections = ref.read(dealOptionSelectionsProvider(deal.id));
+        selectedOptions = deal.optionGroups.map((group) {
+          final selectedIds = selections[group.id] ?? {};
+          final selectedItems = group.items
+              .where((item) => selectedIds.contains(item.id))
+              .map((item) => {
+                    'item_id': item.id,
+                    'item_name': item.name,
+                    'price': item.price,
+                  })
+              .toList();
+          return {
+            'group_id': group.id,
+            'group_name': group.name,
+            'items': selectedItems,
+          };
+        }).toList();
+      }
+
       final result = await repo.checkout(
         userId: userId,
         dealId: widget.dealId,
         quantity: _quantity,
         total: total,
         promoCode: _promoResult?.code, // P0 fix: 传递优惠码给服务端验证
+        purchasedMerchantId: widget.purchasedMerchantId,
+        selectedOptions: selectedOptions,
       );
 
       if (mounted) context.go('/order-success/${result.orderId}');
@@ -140,10 +166,12 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         content: Text(message),
         actions: [
           TextButton(
+            key: const ValueKey('checkout_change_payment_btn'),
             onPressed: () => Navigator.pop(ctx),
             child: const Text('Change Payment Method'),
           ),
           ElevatedButton(
+            key: const ValueKey('checkout_retry_btn'),
             onPressed: () {
               Navigator.pop(ctx);
               // 重新计算 total 后重试
@@ -420,6 +448,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                         children: [
                           Expanded(
                             child: TextField(
+                              key: const ValueKey('checkout_coupon_field'),
                               controller: _couponCtrl,
                               textCapitalization: TextCapitalization.characters,
                               decoration: InputDecoration(
@@ -439,6 +468,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                             height: 52,
                             width: 80,
                             child: ElevatedButton(
+                              key: const ValueKey('checkout_apply_coupon_btn'),
                               onPressed: _isValidatingCoupon
                                   ? null
                                   : () => _applyCoupon(subtotal),

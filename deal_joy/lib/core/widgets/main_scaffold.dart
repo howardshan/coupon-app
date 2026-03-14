@@ -32,39 +32,35 @@ class MainScaffold extends ConsumerWidget {
         ],
       ),
       bottomNavigationBar: NavigationBar(
+        height: 60,
         selectedIndex: currentIndex,
         onDestinationSelected: (index) {
           switch (index) {
-            case 0:
-              context.go('/home');
-            case 1:
-              context.go('/chat');
-            case 2:
-              context.go('/cart');
-            case 3:
-              context.go('/profile');
+            case 0: context.go('/home');
+            case 1: context.go('/chat');
+            case 2: context.go('/cart');
+            case 3: context.go('/profile');
           }
         },
-        indicatorColor: AppColors.primary.withValues(alpha: 0.12),
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home, color: AppColors.primary),
+            selectedIcon: Icon(Icons.home),
             label: 'Deals',
           ),
           NavigationDestination(
             icon: Icon(Icons.chat_bubble_outline),
-            selectedIcon: Icon(Icons.chat_bubble, color: AppColors.primary),
+            selectedIcon: Icon(Icons.chat_bubble),
             label: 'Chat',
           ),
           NavigationDestination(
             icon: Icon(Icons.shopping_cart_outlined),
-            selectedIcon: Icon(Icons.shopping_cart, color: AppColors.primary),
+            selectedIcon: Icon(Icons.shopping_cart),
             label: 'Cart',
           ),
           NavigationDestination(
             icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person, color: AppColors.primary),
+            selectedIcon: Icon(Icons.person),
             label: 'Profile',
           ),
         ],
@@ -134,6 +130,7 @@ class _EmailVerificationBannerState extends State<_EmailVerificationBanner> {
               ),
               if (!_sent)
                 TextButton(
+                  key: const ValueKey('scaffold_resend_otp_btn'),
                   onPressed: _sending ? null : _resend,
                   child: _sending
                       ? const SizedBox(

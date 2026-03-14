@@ -46,6 +46,7 @@ class CouponScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 16),
                 ElevatedButton(
+                  key: const ValueKey('coupon_retry_btn'),
                   onPressed: () =>
                       ref.invalidate(couponDetailProvider(couponId)),
                   child: const Text('Retry'),
@@ -382,106 +383,163 @@ class _DealInfoSection extends StatelessWidget {
 }
 
 // ──────────────────────────────────────────────
-// 商户信息区域
+// 商户信息区域（支持多门店展示）
 // ──────────────────────────────────────────────
-class _MerchantInfoSection extends StatelessWidget {
+class _MerchantInfoSection extends ConsumerWidget {
   final CouponModel coupon;
 
   const _MerchantInfoSection({required this.coupon});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // 优先使用购买时快照，回退到旧的 applicableMerchantIds
+    final storeIds = coupon.applicableStoreIds ?? coupon.applicableMerchantIds;
+    final isMultiStore = storeIds != null && storeIds.length > 1;
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Merchant',
+            isMultiStore ? 'Valid Locations' : 'Merchant',
             style: Theme.of(context)
                 .textTheme
                 .titleSmall
                 ?.copyWith(color: AppColors.textSecondary),
           ),
           const SizedBox(height: 8),
-          if (coupon.merchantName != null)
-            Row(
-              children: [
-                const Icon(Icons.store, size: 18, color: AppColors.primary),
-                const SizedBox(width: 8),
-                Text(
-                  coupon.merchantName!,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 15,
-                  ),
-                ),
-              ],
-            ),
-          if (coupon.merchantAddress != null) ...[
-            const SizedBox(height: 6),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Icon(Icons.location_on_outlined,
-                    size: 18, color: AppColors.textSecondary),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    coupon.merchantAddress!,
-                    style: const TextStyle(
-                        color: AppColors.textSecondary, fontSize: 14),
-                  ),
-                ),
-              ],
-            ),
-          ],
-          if (coupon.merchantPhone != null) ...[
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                const Icon(Icons.phone_outlined,
-                    size: 18, color: AppColors.textSecondary),
-                const SizedBox(width: 8),
-                Text(
-                  coupon.merchantPhone!,
-                  style: const TextStyle(
-                      color: AppColors.textSecondary, fontSize: 14),
-                ),
-              ],
-            ),
-          ],
-          // 多店通用提示
-          if (coupon.applicableMerchantIds != null &&
-              coupon.applicableMerchantIds!.length > 1) ...[
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: AppColors.primary.withAlpha(15),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: AppColors.primary.withAlpha(40),
-                ),
-              ),
-              child: Row(
+
+          // 多门店：展示所有可用门店的名称和地址
+          if (isMultiStore)
+            _MultiStoreList(storeIds: storeIds)
+          else ...[
+            // 单店：保持原有展示
+            if (coupon.merchantName != null)
+              Row(
                 children: [
-                  const Icon(Icons.storefront,
-                      size: 16, color: AppColors.primary),
-                  const SizedBox(width: 6),
-                  Text(
-                    'Valid at ${coupon.applicableMerchantIds!.length} locations',
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      color: AppColors.primary,
+                  const Icon(Icons.store, size: 18, color: AppColors.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      coupon.merchantName!,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ],
               ),
-            ),
+            if (coupon.merchantAddress != null) ...[
+              const SizedBox(height: 6),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.location_on_outlined,
+                      size: 18, color: AppColors.textSecondary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      coupon.merchantAddress!,
+                      style: const TextStyle(
+                          color: AppColors.textSecondary, fontSize: 14),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            if (coupon.merchantPhone != null) ...[
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  const Icon(Icons.phone_outlined,
+                      size: 18, color: AppColors.textSecondary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      coupon.merchantPhone!,
+                      style: const TextStyle(
+                          color: AppColors.textSecondary, fontSize: 14),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ],
         ],
+      ),
+    );
+  }
+}
+
+// ──────────────────────────────────────────────
+// 多门店列表（异步加载门店名称+地址）
+// ──────────────────────────────────────────────
+class _MultiStoreList extends ConsumerWidget {
+  final List<String> storeIds;
+
+  const _MultiStoreList({required this.storeIds});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final storesAsync = ref.watch(applicableStoresProvider(storeIds));
+
+    return storesAsync.when(
+      loading: () => const Padding(
+        padding: EdgeInsets.symmetric(vertical: 8),
+        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+      ),
+      error: (_, __) => Text(
+        'Valid at ${storeIds.length} locations',
+        style: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
+      ),
+      data: (stores) => Column(
+        children: stores.map((store) => Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withAlpha(10),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.primary.withAlpha(30)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.storefront, size: 18, color: AppColors.primary),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        store['name'] ?? '',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                      ),
+                      if ((store['address'] ?? '').isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          store['address']!,
+                          style: const TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        )).toList(),
       ),
     );
   }
@@ -605,10 +663,12 @@ class _ActionButtonsState extends ConsumerState<_ActionButtons> {
         ),
         actions: [
           TextButton(
+            key: const ValueKey('coupon_refund_cancel_btn'),
             onPressed: () => Navigator.of(ctx).pop(false),
             child: const Text('Cancel'),
           ),
           ElevatedButton(
+            key: const ValueKey('coupon_refund_confirm_btn'),
             onPressed: () => Navigator.of(ctx).pop(true),
             style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.error,
@@ -669,10 +729,12 @@ class _ActionButtonsState extends ConsumerState<_ActionButtons> {
         ),
         actions: [
           TextButton(
+            key: const ValueKey('coupon_gift_cancel_btn'),
             onPressed: () => Navigator.of(ctx).pop(false),
             child: const Text('Cancel'),
           ),
           ElevatedButton(
+            key: const ValueKey('coupon_send_gift_btn'),
             onPressed: () {
               if (formKey.currentState!.validate()) {
                 Navigator.of(ctx).pop(true);

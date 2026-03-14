@@ -5,6 +5,53 @@ import 'package:shimmer/shimmer.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../deals/data/models/deal_model.dart';
 
+/// 连锁品牌 Badge（品牌 Logo + 品牌名，紧凑小字样式）
+class _V2BrandBadge extends StatelessWidget {
+  final MerchantSummary merchant;
+
+  const _V2BrandBadge({required this.merchant});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // 品牌 Logo（14px 圆角）
+        if (merchant.brandLogoUrl != null) ...[
+          ClipRRect(
+            borderRadius: BorderRadius.circular(3),
+            child: Image.network(
+              merchant.brandLogoUrl!,
+              width: 14,
+              height: 14,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => const Icon(
+                Icons.business,
+                size: 12,
+                color: AppColors.textHint,
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+        ],
+        // 品牌名称
+        Flexible(
+          child: Text(
+            merchant.brandName ?? '',
+            style: const TextStyle(
+              fontSize: 11,
+              color: AppColors.textHint,
+              fontWeight: FontWeight.w500,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 /// V2 Deal 水平卡片
 /// 相比 DealCardHorizontal 增加了：
 /// - 120x90 图片（更大）
@@ -18,7 +65,8 @@ class DealCardV2 extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dishesPreview = deal.dishes.take(3).join(', ');
+    // 只取产品名称（去掉 ::qty::subtotal 后缀）
+    final productsPreview = deal.products.take(3).map((p) => p.split('::').first).join(', ');
 
     return GestureDetector(
       onTap: () => context.push('/deals/${deal.id}'),
@@ -37,7 +85,7 @@ class DealCardV2 extends StatelessWidget {
             _buildImage(),
             const SizedBox(width: 12),
             // 右侧：文字信息（高度与图片对齐，避免 Spacer 在无界约束下崩溃）
-            Expanded(child: SizedBox(height: 90, child: _buildInfo(dishesPreview))),
+            Expanded(child: SizedBox(height: 90, child: _buildInfo(productsPreview))),
           ],
         ),
       ),
@@ -145,7 +193,7 @@ class DealCardV2 extends StatelessWidget {
     );
   }
 
-  Widget _buildInfo(String dishesPreview) {
+  Widget _buildInfo(String productsPreview) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -163,10 +211,16 @@ class DealCardV2 extends StatelessWidget {
         ),
         const SizedBox(height: 3),
 
+        // 连锁店品牌 Badge（品牌 Logo + 品牌名）
+        if (deal.merchant?.isChainStore == true) ...[
+          _V2BrandBadge(merchant: deal.merchant!),
+          const SizedBox(height: 3),
+        ],
+
         // 菜品预览
-        if (dishesPreview.isNotEmpty)
+        if (productsPreview.isNotEmpty)
           Text(
-            dishesPreview,
+            productsPreview,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
@@ -179,50 +233,56 @@ class DealCardV2 extends StatelessWidget {
         Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            // 现价
-            Text(
-              '\$${deal.discountPrice.toStringAsFixed(0)}',
-              style: const TextStyle(
-                color: AppColors.error,
-                fontWeight: FontWeight.bold,
-                fontSize: 18,
-              ),
-            ),
-            const SizedBox(width: 4),
-            // 折扣
-            if (deal.effectiveDiscountLabel.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 1),
-                child: Text(
-                  deal.effectiveDiscountLabel,
-                  style: const TextStyle(
-                    color: AppColors.secondary,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
+            // 左侧价格区域（可收缩）
+            Flexible(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  // 现价
+                  Text(
+                    '\$${deal.discountPrice.toStringAsFixed(0)}',
+                    style: const TextStyle(
+                      color: AppColors.error,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                    ),
                   ),
-                ),
-              ),
-            const SizedBox(width: 4),
-            // 原价删除线
-            Padding(
-              padding: const EdgeInsets.only(bottom: 2),
-              child: Text(
-                '\$${deal.originalPrice.toStringAsFixed(0)}',
-                style: const TextStyle(
-                  color: AppColors.textHint,
-                  fontSize: 11,
-                  decoration: TextDecoration.lineThrough,
-                ),
+                  const SizedBox(width: 4),
+                  // 折扣
+                  if (deal.effectiveDiscountLabel.isNotEmpty)
+                    Flexible(
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 1),
+                        child: Text(
+                          deal.effectiveDiscountLabel,
+                          style: const TextStyle(
+                            color: AppColors.secondary,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ),
+                  const SizedBox(width: 4),
+                  // 原价删除线
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 2),
+                    child: Text(
+                      '\$${deal.originalPrice.toStringAsFixed(0)}',
+                      style: const TextStyle(
+                        color: AppColors.textHint,
+                        fontSize: 11,
+                        decoration: TextDecoration.lineThrough,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-            const Spacer(),
-            // 销量 + Buy
-            Text(
-              '${deal.totalSold}+ sold',
-              style: const TextStyle(
-                  fontSize: 11, color: AppColors.textSecondary),
-            ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 6),
+            // Buy 按钮
             Container(
               padding:
                   const EdgeInsets.symmetric(horizontal: 14, vertical: 5),

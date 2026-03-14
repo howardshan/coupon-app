@@ -1,0 +1,1471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DealJoy Docs</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #22263a;
+      --border: #2e3350;
+      --accent: #6c63ff;
+      --accent2: #a78bfa;
+      --text: #e2e8f0;
+      --text-muted: #8892b0;
+      --text-dim: #4a5568;
+      --green: #10b981;
+      --yellow: #f59e0b;
+      --red: #ef4444;
+      --blue: #3b82f6;
+      --sidebar-width: 264px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    /* ─── TOP BAR ─────────────────────────────── */
+    .topbar {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: 52px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 20px;
+      z-index: 100;
+      gap: 10px;
+    }
+    .topbar-logo {
+      font-size: 17px;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .topbar-sep { color: var(--text-dim); }
+    .topbar-title { color: var(--text-muted); font-size: 13px; }
+
+    /* ─── LAYOUT ──────────────────────────────── */
+    .layout {
+      display: flex;
+      padding-top: 52px;
+      min-height: 100vh;
+    }
+
+    /* ─── SIDEBAR (LEFT) ──────────────────────── */
+    .sidebar {
+      width: var(--sidebar-width);
+      flex-shrink: 0;
+      position: sticky;
+      top: 52px;
+      height: calc(100vh - 52px);
+      overflow-y: auto;
+      border-right: 1px solid var(--border);
+      padding: 20px 0 40px;
+      background: var(--surface);
+    }
+    .sidebar::-webkit-scrollbar { width: 4px; }
+    .sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    /* nav groups */
+    .nav-group { margin-bottom: 4px; }
+    .nav-group-label {
+      padding: 10px 16px 4px;
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+    }
+    /* L1 — module level */
+    .nav-l1 {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 6px 16px;
+      color: var(--text-muted);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      border-left: 2px solid transparent;
+      transition: all 0.14s;
+      user-select: none;
+    }
+    .nav-l1:hover { color: var(--text); background: var(--surface2); }
+    .nav-l1.active { color: var(--accent2); background: rgba(108,99,255,.08); border-left-color: var(--accent); }
+    /* L2 — subsection header (not clickable as page, just a label) */
+    .nav-l2-label {
+      padding: 8px 16px 3px 28px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-top: 4px;
+    }
+    /* L3 — leaf page items */
+    .nav-l3 {
+      display: block;
+      padding: 5px 16px 5px 36px;
+      color: var(--text-muted);
+      font-size: 12.5px;
+      cursor: pointer;
+      border-left: 2px solid transparent;
+      transition: all 0.14s;
+      user-select: none;
+    }
+    .nav-l3:hover { color: var(--text); background: var(--surface2); }
+    .nav-l3.active { color: var(--accent2); background: rgba(108,99,255,.08); border-left-color: var(--accent); }
+
+    /* ─── CONTENT (RIGHT) ─────────────────────── */
+    .content {
+      flex: 1;
+      padding: 48px 72px;
+      max-width: 900px;
+      min-height: calc(100vh - 52px);
+      overflow-y: auto;
+    }
+    .content::-webkit-scrollbar { width: 6px; }
+    .content::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    /* ─── PAGE SECTIONS ───────────────────────── */
+    .page { display: none; }
+    .page.active { display: block; }
+
+    /* ─── TYPOGRAPHY ──────────────────────────── */
+    h1 {
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 8px;
+      letter-spacing: -0.5px;
+    }
+    .page-subtitle {
+      color: var(--text-muted);
+      font-size: 15px;
+      margin-bottom: 40px;
+      line-height: 1.6;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 24px;
+    }
+    h2 {
+      font-size: 17px;
+      font-weight: 600;
+      color: var(--text);
+      margin: 36px 0 14px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    h3 {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--accent2);
+      margin: 22px 0 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+    }
+    p { color: var(--text-muted); margin-bottom: 12px; font-size: 13.5px; }
+    ul { color: var(--text-muted); margin: 8px 0 12px 20px; font-size: 13.5px; }
+    li { margin-bottom: 4px; }
+
+    /* ─── BADGES ──────────────────────────────── */
+    .badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 2px 9px; border-radius: 20px;
+      font-size: 11px; font-weight: 600; letter-spacing: 0.03em;
+    }
+    .badge-green  { background: rgba(16,185,129,.14);  color: var(--green); }
+    .badge-yellow { background: rgba(245,158,11,.14);  color: var(--yellow); }
+    .badge-red    { background: rgba(239,68,68,.14);   color: var(--red); }
+    .badge-blue   { background: rgba(59,130,246,.14);  color: var(--blue); }
+    .badge-purple { background: rgba(108,99,255,.14);  color: var(--accent2); }
+    .badge-gray   { background: rgba(100,116,139,.14); color: var(--text-muted); }
+
+    /* ─── CARD ────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px 22px;
+      margin-bottom: 14px;
+    }
+    .card-title {
+      font-size: 13.5px; font-weight: 600; color: var(--text);
+      margin-bottom: 7px; display: flex; align-items: center; gap: 9px;
+    }
+    .card p { margin-bottom: 0; }
+
+    /* ─── FLOW ────────────────────────────────── */
+    .flow {
+      display: flex; flex-wrap: wrap; align-items: center;
+      gap: 6px; margin: 14px 0;
+    }
+    .flow-step {
+      background: var(--surface2); border: 1px solid var(--border);
+      padding: 6px 13px; border-radius: 6px;
+      font-size: 12.5px; color: var(--text);
+    }
+    .flow-arrow { color: var(--text-dim); font-size: 12px; }
+
+    /* ─── STATUS GRID ─────────────────────────── */
+    .status-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(175px, 1fr));
+      gap: 10px; margin: 14px 0;
+    }
+    .status-card {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 8px; padding: 13px 15px;
+    }
+    .status-name { font-size: 11.5px; font-weight: 600; font-family: monospace; margin-bottom: 5px; }
+    .status-desc { font-size: 12px; color: var(--text-muted); }
+
+    /* ─── TABLE ───────────────────────────────── */
+    table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 13px; }
+    th {
+      background: var(--surface2); color: var(--text-muted);
+      font-weight: 600; font-size: 10.5px; letter-spacing: 0.07em;
+      text-transform: uppercase; padding: 9px 13px;
+      text-align: left; border-bottom: 1px solid var(--border);
+    }
+    td {
+      padding: 9px 13px; border-bottom: 1px solid var(--border);
+      color: var(--text-muted); vertical-align: top;
+    }
+    td:first-child { color: var(--text); font-weight: 500; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(255,255,255,.02); }
+
+    /* ─── CODE ────────────────────────────────── */
+    code {
+      background: var(--surface2); border: 1px solid var(--border);
+      padding: 2px 6px; border-radius: 4px;
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      font-size: 11.5px; color: var(--accent2);
+    }
+
+    /* ─── CALLOUT ─────────────────────────────── */
+    .callout {
+      border-radius: 8px; padding: 13px 16px; margin: 18px 0;
+      display: flex; gap: 11px; align-items: flex-start;
+    }
+    .callout-info    { background: rgba(59,130,246,.07);  border: 1px solid rgba(59,130,246,.2); }
+    .callout-warn    { background: rgba(245,158,11,.07);  border: 1px solid rgba(245,158,11,.2); }
+    .callout-success { background: rgba(16,185,129,.07);  border: 1px solid rgba(16,185,129,.2); }
+    .callout-error   { background: rgba(239,68,68,.07);   border: 1px solid rgba(239,68,68,.2); }
+    .callout-icon { font-size: 15px; flex-shrink: 0; margin-top: 1px; }
+    .callout-body { font-size: 13px; color: var(--text-muted); }
+    .callout-body strong { color: var(--text); }
+
+    /* ─── HOME PAGE ───────────────────────────── */
+    .home-hero { margin-bottom: 40px; }
+    .home-hero h1 { font-size: 32px; margin-bottom: 10px; }
+    .home-hero p { font-size: 15px; }
+    .module-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 14px; margin-top: 20px;
+    }
+    .module-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; padding: 18px 20px;
+      cursor: pointer; transition: all 0.18s; text-decoration: none;
+    }
+    .module-card:hover {
+      border-color: var(--accent); transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(108,99,255,.12);
+    }
+    .module-card.disabled { opacity: .4; cursor: default; pointer-events: none; }
+    .module-icon { font-size: 22px; margin-bottom: 10px; }
+    .module-name { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 5px; }
+    .module-desc { font-size: 12px; color: var(--text-muted); line-height: 1.5; }
+  </style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div class="topbar">
+  <span class="topbar-logo">DealJoy</span>
+  <span class="topbar-sep">/</span>
+  <span class="topbar-title">Documentation</span>
+</div>
+
+<div class="layout">
+
+  <!-- ══════════════════════════════════════════
+       SIDEBAR  (LEFT)
+  ══════════════════════════════════════════ -->
+  <div class="sidebar">
+
+    <div class="nav-group">
+      <div class="nav-group-label">Getting Started</div>
+      <div class="nav-l1 active" onclick="navigate('home')">🏠 Overview</div>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-group-label">Brand Multi-Store</div>
+
+      <div class="nav-l1" onclick="navigate('bms-overview')">Introduction</div>
+
+      <!-- Subsection: Manage Brand -->
+      <div class="nav-l2-label">Manage Brand</div>
+      <div class="nav-l3" onclick="navigate('bms-create-brand')">Create Brand</div>
+      <div class="nav-l3" onclick="navigate('bms-add-store')">Add Store</div>
+      <div class="nav-l3" onclick="navigate('bms-delete-store')">Delete Store</div>
+      <div class="nav-l3" onclick="navigate('bms-manage-store')">Manage Store</div>
+      <div class="nav-l3" onclick="navigate('bms-auth')">Manage Authentication</div>
+
+      <!-- Subsection: Manage Deal -->
+      <div class="nav-l2-label">Manage Deal</div>
+      <div class="nav-l3" onclick="navigate('bms-create-deal')">Create a Brand Deal</div>
+      <div class="nav-l3" onclick="navigate('bms-store-confirm')">Store Confirmation</div>
+      <div class="nav-l3" onclick="navigate('bms-manage-deal')">Manage a Deal</div>
+      <div class="nav-l3" onclick="navigate('bms-cancel-deal')">Cancel a Deal</div>
+      <div class="nav-l3" onclick="navigate('bms-redeem')">Redeem Deal</div>
+
+      <!-- Subsection: Merchant App UI -->
+      <div class="nav-l2-label">Merchant App UI</div>
+      <div class="nav-l3" onclick="navigate('bms-brand-manage-ui')">Brand Management Page</div>
+      <div class="nav-l3" onclick="navigate('bms-dashboard-entries')">Dashboard Entries</div>
+      <div class="nav-l3" onclick="navigate('bms-store-confirm-ui')">Store Confirm Flow (App)</div>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-group-label">Deal Management</div>
+      <div class="nav-l1" onclick="navigate('deal-edit-clone')">Edit as Clone</div>
+      <div class="nav-l1" onclick="navigate('deal-sort-shortname')">Sort Order &amp; Short Name</div>
+      <div class="nav-l1" onclick="navigate('deal-dishes-format')">Products Data Format</div>
+      <div class="nav-l1" onclick="navigate('deal-option-groups')">Option Groups (Pick X)</div>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-group-label">User App</div>
+      <div class="nav-l1" onclick="navigate('user-deal-detail')">Deal Detail Page</div>
+      <div class="nav-l1" onclick="navigate('user-photo-gallery')">Photo Gallery</div>
+      <div class="nav-l1" onclick="navigate('user-cart')">Cart &amp; Checkout</div>
+      <div class="nav-l1" onclick="navigate('user-coupon-stores')">Coupon Store Snapshot</div>
+      <div class="nav-l1" onclick="navigate('user-responsive')">Responsive Layout Fixes</div>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-group-label">Admin &amp; Backend</div>
+      <div class="nav-l1" onclick="navigate('admin-activate')">Admin Activate Logic</div>
+      <div class="nav-l1" onclick="navigate('db-migrations-0313')">DB Migrations (03-13)</div>
+    </div>
+
+  </div><!-- /sidebar -->
+
+
+  <!-- ══════════════════════════════════════════
+       CONTENT  (RIGHT)
+  ══════════════════════════════════════════ -->
+  <div class="content">
+
+    <!-- ── HOME ─────────────────────────────── -->
+    <div class="page active" id="page-home">
+      <div class="home-hero">
+        <h1>DealJoy Docs</h1>
+        <p>Technical documentation for the DealJoy platform — user app, merchant app, and Supabase backend.</p>
+      </div>
+      <h2>Modules</h2>
+      <div class="module-grid">
+        <div class="module-card" onclick="navigate('bms-overview')">
+          <div class="module-icon">🏪</div>
+          <div class="module-name">Brand Multi-Store</div>
+          <div class="module-desc">Multi-location deal creation, per-store confirmation flow, redemption rules.</div>
+        </div>
+        <div class="module-card disabled">
+          <div class="module-icon">🔐</div>
+          <div class="module-name">Auth</div>
+          <div class="module-desc">Email / password + Google Sign-In. Coming soon.</div>
+        </div>
+        <div class="module-card disabled">
+          <div class="module-icon">🎟️</div>
+          <div class="module-name">Checkout & Payments</div>
+          <div class="module-desc">Stripe payment flow, instant refund policy. Coming soon.</div>
+        </div>
+        <div class="module-card disabled">
+          <div class="module-icon">📊</div>
+          <div class="module-name">Merchant Dashboard</div>
+          <div class="module-desc">Analytics, earnings, reviews. Coming soon.</div>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- ── BMS: INTRODUCTION ─────────────────── -->
+    <div class="page" id="page-bms-overview">
+      <h1>Brand Multi-Store</h1>
+      <p class="page-subtitle">Allows a brand admin to create a single Deal that applies across multiple store locations, with each store independently confirming participation and linking its own menu item.</p>
+
+      <h2>How It Works</h2>
+      <div class="flow">
+        <div class="flow-step">Brand Admin creates brand</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Adds store locations</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Creates a brand Deal</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Platform approves</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Stores confirm participation</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Deal goes live per store</div>
+      </div>
+
+      <h2>Store Statuses</h2>
+      <div class="status-grid">
+        <div class="status-card">
+          <div class="status-name" style="color:var(--green)">active</div>
+          <div class="status-desc">Store confirmed. Deal is live and visible to users at this location.</div>
+        </div>
+        <div class="status-card">
+          <div class="status-name" style="color:var(--yellow)">pending_store_confirmation</div>
+          <div class="status-desc">Waiting for the store owner to accept or decline. 48-hour window.</div>
+        </div>
+        <div class="status-card">
+          <div class="status-name" style="color:var(--red)">declined</div>
+          <div class="status-desc">Store declined or auto-timed out. Deal not shown at this location.</div>
+        </div>
+        <div class="status-card">
+          <div class="status-name" style="color:var(--text-dim)">removed</div>
+          <div class="status-desc">Store exited after going active, or was kicked out by brand admin.</div>
+        </div>
+      </div>
+
+      <h2>Key Tables</h2>
+      <table>
+        <tr><th>Table / Field</th><th>Purpose</th></tr>
+        <tr><td><code>brands</code></td><td>Brand entity. One brand can have many store locations.</td></tr>
+        <tr><td><code>brand_admins</code></td><td>Users with admin rights over a specific brand.</td></tr>
+        <tr><td><code>merchants</code></td><td>Individual store location. Has a <code>brand_id</code> FK when part of a chain.</td></tr>
+        <tr><td><code>deal_applicable_stores</code></td><td>Central join table. One row per deal × store. Tracks per-store status, price snapshot, confirmation and removal metadata.</td></tr>
+        <tr><td><code>deals.store_confirmations</code></td><td>JSONB set by brand admin at creation. <code>[{store_id, pre_confirmed}]</code>. Drives the activation trigger.</td></tr>
+      </table>
+
+      <div class="callout callout-info">
+        <span class="callout-icon">ℹ️</span>
+        <div class="callout-body"><strong>Legacy field:</strong> <code>deals.applicable_merchant_ids UUID[]</code> is kept for backward compatibility. Do not remove.</div>
+      </div>
+    </div>
+
+
+    <!-- ══════════════════════════════════════════
+         MANAGE BRAND
+    ══════════════════════════════════════════ -->
+
+    <!-- ── CREATE BRAND ──────────────────────── -->
+    <div class="page" id="page-bms-create-brand">
+      <h1>Create Brand</h1>
+      <p class="page-subtitle">A brand represents a chain or franchise umbrella. Creating a brand is the first step before adding store locations or creating brand-wide deals.</p>
+
+      <h2>Who Can Create a Brand</h2>
+      <p>Any authenticated merchant user can create a brand. After creation, the creator is automatically assigned as the brand admin (<code>brand_admins</code> table).</p>
+
+      <h2>Creation Flow</h2>
+      <div class="flow">
+        <div class="flow-step">Merchant opens Brand Setup screen</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Fills in brand name, logo, description</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Submits → <code>POST /merchant-store</code> (brand action)</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Row inserted into <code>brands</code></div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Creator added to <code>brand_admins</code></div>
+      </div>
+
+      <h2>Required Fields</h2>
+      <table>
+        <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+        <tr><td>name</td><td>TEXT</td><td>Brand display name shown on deal cards and store pages.</td></tr>
+        <tr><td>logo_url</td><td>TEXT</td><td>URL to brand logo (uploaded via Supabase Storage).</td></tr>
+        <tr><td>description</td><td>TEXT</td><td>Short brand bio shown on the brand profile page.</td></tr>
+      </table>
+
+      <h2>Optional Fields</h2>
+      <table>
+        <tr><th>Field</th><th>Description</th></tr>
+        <tr><td>website_url</td><td>Brand's official website.</td></tr>
+        <tr><td>cover_image_url</td><td>Banner image for the brand profile page.</td></tr>
+        <tr><td>contact_email</td><td>Support contact shown to store owners.</td></tr>
+      </table>
+
+      <div class="callout callout-success">
+        <span class="callout-icon">✅</span>
+        <div class="callout-body"><strong>After creation:</strong> The brand admin can immediately add store locations and begin creating brand-wide deals. No platform approval is required for brand creation.</div>
+      </div>
+    </div>
+
+
+    <!-- ── ADD STORE ──────────────────────────── -->
+    <div class="page" id="page-bms-add-store">
+      <h1>Add Store</h1>
+      <p class="page-subtitle">Add a physical store location to the brand. Each store is an independent merchant record linked to the brand via <code>brand_id</code>.</p>
+
+      <h2>Two Ways to Add a Store</h2>
+      <div class="card">
+        <div class="card-title">A. Invite an existing merchant</div>
+        <p>If the store is already registered on DealJoy as an independent merchant, the brand admin sends an invitation. The store owner accepts, and their <code>merchants.brand_id</code> is set to this brand.</p>
+      </div>
+      <div class="card">
+        <div class="card-title">B. Create a new store directly</div>
+        <p>Brand admin fills in the new store's details (name, address, phone, hours, location coordinates). A new <code>merchants</code> row is created with <code>brand_id</code> already set. A login credential is generated or sent to the store manager.</p>
+      </div>
+
+      <h2>Required Store Fields</h2>
+      <table>
+        <tr><th>Field</th><th>Description</th></tr>
+        <tr><td>name</td><td>Store location name (e.g. "Downtown Dallas")</td></tr>
+        <tr><td>address</td><td>Full street address</td></tr>
+        <tr><td>city</td><td>City — used in <code>search_deals_by_city()</code> filtering</td></tr>
+        <tr><td>lat / lng</td><td>Coordinates — used in <code>search_deals_nearby()</code> radius filtering</td></tr>
+        <tr><td>phone</td><td>Contact number shown to users</td></tr>
+      </table>
+
+      <h2>After Adding</h2>
+      <p>The store appears in the brand admin's store list. It can now be selected when creating a new brand deal. If the store has an existing user account, they will see the brand in their merchant app immediately.</p>
+
+      <div class="callout callout-warn">
+        <span class="callout-icon">⚠️</span>
+        <div class="callout-body"><strong>Coordinates matter:</strong> Stores without <code>lat/lng</code> will not appear in GPS-based deal searches. Always set coordinates when adding a store.</div>
+      </div>
+    </div>
+
+
+    <!-- ── DELETE STORE ───────────────────────── -->
+    <div class="page" id="page-bms-delete-store">
+      <h1>Delete Store</h1>
+      <p class="page-subtitle">Remove a store location from the brand. This is a high-impact action with cascading effects on active deals and coupons.</p>
+
+      <h2>What "Delete" Means</h2>
+      <p>Deleting a store from the brand removes it from all brand-wide deals it was participating in. This is equivalent to kicking the store out of all active deals at once.</p>
+
+      <h2>Cascade Effects</h2>
+      <table>
+        <tr><th>Affected area</th><th>What happens</th></tr>
+        <tr><td><code>deal_applicable_stores</code></td><td>All rows for this store with <code>deal_scope = 'brand_multi_store'</code> and status <code>active</code> or <code>pending</code> are updated to <code>removed</code>. <code>removed_at</code> is recorded.</td></tr>
+        <tr><td>Active deals</td><td>If removing this store causes any deal's active store count to drop to 0, that deal is automatically set to <code>is_active = false</code>.</td></tr>
+        <tr><td>Existing coupons</td><td>Coupons purchased before <code>removed_at</code> can still be redeemed at this store. See <a onclick="navigate('bms-redeem')" style="color:var(--accent2);cursor:pointer">Redeem Deal</a>.</td></tr>
+        <tr><td>Store-only deals</td><td>Any deals the store created independently are NOT affected.</td></tr>
+        <tr><td><code>merchants.brand_id</code></td><td>Set to <code>NULL</code>. The store becomes an independent merchant again.</td></tr>
+      </table>
+
+      <h2>Soft Delete vs Hard Delete</h2>
+      <div class="card">
+        <div class="card-title">Recommended: Soft remove (set brand_id = NULL)</div>
+        <p>The store's merchant record is kept. Historical orders, coupons, and reviews remain intact. The store simply loses its brand affiliation and is removed from future brand deals.</p>
+      </div>
+      <div class="card">
+        <div class="card-title">Hard delete (DELETE merchants row)</div>
+        <p>Cascades to delete ALL data for this store. Only use if the store was created in error and has no real orders.</p>
+      </div>
+
+      <div class="callout callout-error">
+        <span class="callout-icon">🚨</span>
+        <div class="callout-body"><strong>Irreversible:</strong> Once a store is removed from the brand, all its deal_applicable_stores records are set to removed. These cannot be re-activated. A new deal creation is required to bring the store back into a deal.</div>
+      </div>
+    </div>
+
+
+    <!-- ── MANAGE STORE ───────────────────────── -->
+    <div class="page" id="page-bms-manage-store">
+      <h1>Manage Store</h1>
+      <p class="page-subtitle">Brand admins can view and edit the details of any store location within their brand.</p>
+
+      <h2>Editable Store Fields</h2>
+      <table>
+        <tr><th>Field</th><th>Effect of change</th></tr>
+        <tr><td>name</td><td>Immediately reflected on deal cards and store detail pages.</td></tr>
+        <tr><td>address / city</td><td>Affects city-based deal search results immediately.</td></tr>
+        <tr><td>lat / lng</td><td>Affects GPS-based deal search results immediately.</td></tr>
+        <tr><td>phone / hours</td><td>Shown to users on the store detail page.</td></tr>
+        <tr><td>logo_url</td><td>Store avatar shown in deal applicable stores list.</td></tr>
+        <tr><td>homepage_cover_url</td><td>Banner image on the store detail page.</td></tr>
+      </table>
+
+      <h2>Store Status</h2>
+      <p>A brand admin can temporarily suspend a store location by setting <code>merchants.is_active = false</code>. A suspended store's active deals are not removed — they remain in <code>deal_applicable_stores</code> — but the store will not appear in user-facing search results.</p>
+
+      <h2>Menu Management</h2>
+      <p>Brand admins can view but not edit a store's menu items. Menu items are managed by the store owner themselves (<code>menu_items</code> table, scoped by <code>merchant_id</code>). This is intentional — each store controls its own pricing.</p>
+
+      <div class="callout callout-info">
+        <span class="callout-icon">ℹ️</span>
+        <div class="callout-body"><strong>store_original_price snapshot:</strong> Even if a store later changes a menu item's price, the discount displayed to users remains calculated from the price at Accept time. Editing menu prices does not affect live deals.</div>
+      </div>
+    </div>
+
+
+    <!-- ── MANAGE AUTH ────────────────────────── -->
+    <div class="page" id="page-bms-auth">
+      <h1>Manage Authentication</h1>
+      <p class="page-subtitle">Control who has admin access to the brand and who can log in as a store manager for each location.</p>
+
+      <h2>Role Overview</h2>
+      <table>
+        <tr><th>Role</th><th>Table</th><th>Capabilities</th></tr>
+        <tr>
+          <td><span class="badge badge-purple">Brand Admin</span></td>
+          <td><code>brand_admins</code></td>
+          <td>Create / edit / delete stores, create brand deals, manage all store confirmations, kick stores out of deals.</td>
+        </tr>
+        <tr>
+          <td><span class="badge badge-blue">Store Manager</span></td>
+          <td><code>merchants.user_id</code></td>
+          <td>Accept / decline deal invitations, scan QR codes for redemption, manage their store's menu items and hours.</td>
+        </tr>
+      </table>
+
+      <h2>Adding a Brand Admin</h2>
+      <div class="flow">
+        <div class="flow-step">Current brand admin opens Admin Management</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Enters new admin's email or user ID</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Row inserted into <code>brand_admins (brand_id, user_id)</code></div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">New admin can immediately manage the brand</div>
+      </div>
+
+      <h2>Removing a Brand Admin</h2>
+      <p>Delete the corresponding row from <code>brand_admins</code>. The user's Supabase auth account is not affected — they simply lose brand admin permissions. The last admin cannot remove themselves (enforced by backend validation).</p>
+
+      <h2>Changing a Store's Login</h2>
+      <p>Each store location has one associated login account (<code>merchants.user_id</code>). To transfer store ownership:</p>
+      <div class="flow">
+        <div class="flow-step">New manager creates a DealJoy account</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Brand admin updates <code>merchants.user_id</code> to new user's UUID</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Old account loses access to that store</div>
+      </div>
+
+      <h2>RLS Enforcement</h2>
+      <table>
+        <tr><th>Action</th><th>Who is allowed (enforced by RLS)</th></tr>
+        <tr><td>Read deal_applicable_stores for a store</td><td>The store's own user_id OR a brand admin for that brand</td></tr>
+        <tr><td>Update deal_applicable_stores (accept/decline)</td><td>The store's own user_id only</td></tr>
+        <tr><td>Insert into brand_admins</td><td>Existing brand admin for that brand (via Edge Function, service role)</td></tr>
+        <tr><td>Update merchants.brand_id</td><td>Brand admin (via Edge Function, service role)</td></tr>
+      </table>
+
+      <div class="callout callout-warn">
+        <span class="callout-icon">⚠️</span>
+        <div class="callout-body"><strong>Never store credentials in the app.</strong> All auth is handled by Supabase Auth (JWT tokens). The merchant app uses <code>supabase.auth.signIn()</code> and the JWT is validated server-side.</div>
+      </div>
+    </div>
+
+
+    <!-- ══════════════════════════════════════════
+         MANAGE DEAL
+    ══════════════════════════════════════════ -->
+
+    <!-- ── CREATE A BRAND DEAL ────────────────── -->
+    <div class="page" id="page-bms-create-deal">
+      <h1>Create a Brand Deal</h1>
+      <p class="page-subtitle">Brand admins create a single Deal and designate which store locations participate, with optional per-store pre-confirmation.</p>
+
+      <h2>Creation Flow</h2>
+      <div class="flow">
+        <div class="flow-step">Brand Admin opens Deal Create</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Fills title, price, images, expiry</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Selects participating stores</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Toggles pre-confirm per store</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Submits → <code>POST /merchant-deals</code></div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Platform reviews & approves</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Activation trigger fires</div>
+      </div>
+
+      <h2>Pre-confirmed vs Pending</h2>
+      <table>
+        <tr><th>Pre-confirmed toggle</th><th>Store status after platform approval</th><th>User can see deal at this store?</th></tr>
+        <tr>
+          <td><span class="badge badge-green">✓ Confirmed</span></td>
+          <td><code>active</code> immediately</td>
+          <td>Yes — right away</td>
+        </tr>
+        <tr>
+          <td><span class="badge badge-yellow">○ Pending</span></td>
+          <td><code>pending_store_confirmation</code></td>
+          <td>No — until store accepts</td>
+        </tr>
+      </table>
+
+      <h2>What the Backend Receives</h2>
+      <table>
+        <tr><th>Field</th><th>Type</th><th>Note</th></tr>
+        <tr><td><code>store_confirmations</code></td><td><code>[{store_id, pre_confirmed}]</code></td><td>New format. Saved to <code>deals.store_confirmations</code>. Drives the activation trigger.</td></tr>
+        <tr><td><code>applicable_merchant_ids</code></td><td><code>UUID[]</code></td><td>Legacy. All stores, regardless of pre-confirm state.</td></tr>
+        <tr><td><code>deal_type</code></td><td><code>voucher</code> or <code>regular</code></td><td>Controls checkout flow.</td></tr>
+        <tr><td><code>deal_category_id</code></td><td>UUID</td><td>Links to the brand's deal category.</td></tr>
+      </table>
+
+      <h2>Activation Trigger</h2>
+      <p>When a platform admin approves the deal (<code>deal_status → active</code>), the PostgreSQL trigger <code>on_deal_activated</code> automatically inserts rows into <code>deal_applicable_stores</code> for each store in <code>store_confirmations</code>.</p>
+
+      <div class="callout callout-success">
+        <span class="callout-icon">✅</span>
+        <div class="callout-body"><strong>No manual follow-up needed.</strong> Once the platform approves, the trigger handles all store record creation automatically.</div>
+      </div>
+    </div>
+
+
+    <!-- ── STORE CONFIRMATION ──────────────────── -->
+    <div class="page" id="page-bms-store-confirm">
+      <h1>Store Confirmation</h1>
+      <p class="page-subtitle">When a deal is approved and a store is not pre-confirmed, the store owner goes through an Accept or Decline flow with a 48-hour window.</p>
+
+      <h2>Notification → Review → Decide</h2>
+      <div class="flow">
+        <div class="flow-step">Platform approves deal</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step"><code>pending_store_confirmation</code> record created</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Store owner sees badge in merchant app</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Opens Store Deal Confirm page</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Accept or Decline</div>
+      </div>
+
+      <h2>Accept</h2>
+      <p>Store owner taps Accept → calls <code>PATCH /merchant-deals/:id/store-confirm</code> with <code>action: "accept"</code>. The RPC <code>accept_deal_store()</code> runs:</p>
+      <table>
+        <tr><th>Field set</th><th>Value</th></tr>
+        <tr><td><code>status</code></td><td><code>active</code></td></tr>
+        <tr><td><code>menu_item_id</code></td><td>Selected menu item UUID</td></tr>
+        <tr><td><code>store_original_price</code></td><td>Snapshot of <code>menu_items.price</code> at Accept time</td></tr>
+        <tr><td><code>confirmed_by / confirmed_at</code></td><td>Current user + timestamp</td></tr>
+      </table>
+
+      <h2>Decline</h2>
+      <p>Store owner taps Decline → <code>action: "decline"</code> → RPC <code>decline_deal_store()</code> → status set to <code>declined</code>. Irreversible.</p>
+
+      <h2>48-Hour Auto-Timeout</h2>
+      <p>A pg_cron job runs every hour. Any <code>pending_store_confirmation</code> record older than 48 hours is automatically set to <code>declined</code>.</p>
+      <table>
+        <tr><th>Job name</th><th>Schedule</th><th>Condition</th></tr>
+        <tr><td><code>auto-decline-pending-stores</code></td><td>Every hour (<code>0 * * * *</code>)</td><td><code>created_at &lt; NOW() − 48h</code></td></tr>
+      </table>
+
+      <h2>Menu Item Matching</h2>
+      <p>The Store Deal Confirm page automatically searches the store's menu for an item matching the deal title by name. Two scenarios:</p>
+      <table>
+        <tr><th>Scenario</th><th>UI shown</th></tr>
+        <tr><td>Menu item found</td><td>Item name, price, and calculated discount %. Accept button enabled.</td></tr>
+        <tr><td>Menu item not found</td><td>Warning banner + "Add to Menu" button (pre-fills item name). Accept requires adding item first.</td></tr>
+      </table>
+
+      <h2>Per-Store Discount Formula</h2>
+      <div class="card">
+        <div class="card-title">Shown on user-facing deal card after Accept</div>
+        <p><code>((store_original_price − deal.discount_price) / store_original_price × 100).round()%</code></p>
+      </div>
+
+      <div class="callout callout-info">
+        <span class="callout-icon">ℹ️</span>
+        <div class="callout-body">Adding to menu and tapping Accept are two separate steps. This prevents stores from going live without a proper menu entry in place.</div>
+      </div>
+    </div>
+
+
+    <!-- ── MANAGE A DEAL ──────────────────────── -->
+    <div class="page" id="page-bms-manage-deal">
+      <h1>Manage a Deal</h1>
+      <p class="page-subtitle">After a deal is live, brand admins can monitor participation, view store statuses, and update deal details.</p>
+
+      <h2>Deal Dashboard View</h2>
+      <p>For each brand deal, the admin can see:</p>
+      <table>
+        <tr><th>Metric</th><th>Source</th></tr>
+        <tr><td>Active stores count</td><td><code>deal_applicable_stores</code> WHERE <code>status = 'active'</code></td></tr>
+        <tr><td>Pending stores count</td><td><code>deal_applicable_stores</code> WHERE <code>status = 'pending_store_confirmation'</code></td></tr>
+        <tr><td>Declined stores count</td><td><code>deal_applicable_stores</code> WHERE <code>status = 'declined'</code></td></tr>
+        <tr><td>Total sold (brand-wide)</td><td><code>deals.total_sold</code> (updated by trigger when coupons are created)</td></tr>
+        <tr><td>Revenue</td><td><code>orders</code> table filtered by deal_id</td></tr>
+      </table>
+
+      <h2>Editable Deal Fields</h2>
+      <table>
+        <tr><th>Field</th><th>Can edit after active?</th><th>Notes</th></tr>
+        <tr><td>title / description</td><td>Yes</td><td>Changes reflected immediately on deal cards</td></tr>
+        <tr><td>image_urls</td><td>Yes</td><td>Replace images at any time</td></tr>
+        <tr><td>expires_at</td><td>Yes</td><td>Can extend expiry but not retroactively shorten (would strand sold coupons)</td></tr>
+        <tr><td>discount_price</td><td>No</td><td>Price changes require cancelling and re-creating the deal to avoid sold-coupon inconsistencies</td></tr>
+        <tr><td>store_confirmations</td><td>No</td><td>Adding new stores to a live deal is not supported in this version</td></tr>
+      </table>
+
+      <h2>User-Facing Display</h2>
+      <p>On the deal detail page, users see:</p>
+      <ul>
+        <li><strong>"Available at X locations"</strong> — live count from <code>deal_applicable_stores</code> WHERE <code>status = 'active'</code></li>
+        <li>A list of active store cards, each showing its address and per-store discount chip</li>
+        <li>Stores with <code>pending</code>, <code>declined</code>, or <code>removed</code> status are hidden from users</li>
+      </ul>
+
+      <h2>Search & Discovery</h2>
+      <p>The deal appears in city and GPS search results only when at least one active store is within the search area. Both RPC functions (<code>search_deals_by_city</code>, <code>search_deals_nearby</code>) enforce this via an EXISTS subquery on <code>deal_applicable_stores</code>.</p>
+    </div>
+
+
+    <!-- ── CANCEL A DEAL ──────────────────────── -->
+    <div class="page" id="page-bms-cancel-deal">
+      <h1>Cancel a Deal</h1>
+      <p class="page-subtitle">Deals can be cancelled at the brand level (entire deal taken down) or at the store level (one location exits while others stay live).</p>
+
+      <h2>Brand-Level Cancellation</h2>
+      <p>Brand admin cancels the entire deal. Sets <code>deals.is_active = false</code> and <code>deal_status = 'inactive'</code>. The deal disappears from all search results and deal detail pages.</p>
+      <div class="card">
+        <div class="card-title">⚠️ Effect on sold coupons</div>
+        <p>Coupons already purchased continue to exist. Users can request a refund through the standard refund flow. The deal card in the user's coupon list will show as "Expired / Cancelled."</p>
+      </div>
+
+      <h2>Store-Level Exit — Voluntary</h2>
+      <p>A store owner can choose to leave a deal they are currently active in.</p>
+      <div class="flow">
+        <div class="flow-step">Store owner taps "Leave Deal"</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step"><code>action: "remove"</code></div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">RPC <code>remove_deal_store()</code></div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Status → <code>removed</code>, <code>removed_at</code> recorded</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">If last active store → deal auto-deactivated</div>
+      </div>
+
+      <h2>Store-Level Kick — By Brand Admin</h2>
+      <p>Brand admin removes a specific store from a specific deal, or removes a store from the brand entirely (which batch-removes from all deals).</p>
+      <table>
+        <tr><th>Action</th><th>Scope</th><th>What's updated</th></tr>
+        <tr><td>Kick from one deal</td><td>Single <code>deal_applicable_stores</code> row</td><td><code>status → removed</code>, <code>removed_by</code>, <code>removed_at</code></td></tr>
+        <tr><td>Remove store from brand</td><td>All <code>brand_multi_store</code> rows for this store</td><td>Same fields, bulk update</td></tr>
+      </table>
+
+      <h2>Coupon Redemption After Cancellation</h2>
+      <table>
+        <tr><th>Scenario</th><th>Coupon still redeemable at cancelled store?</th></tr>
+        <tr><td>Coupon purchased BEFORE <code>removed_at</code></td><td>✅ Yes — purchase predates the exit</td></tr>
+        <tr><td>Coupon purchased AFTER <code>removed_at</code></td><td>❌ No — should not be possible if deal was properly deactivated</td></tr>
+        <tr><td>Brand-level cancellation (is_active = false)</td><td>❌ No new purchases possible; existing coupons refunded or honoured per refund policy</td></tr>
+      </table>
+
+      <div class="callout callout-warn">
+        <span class="callout-icon">⚠️</span>
+        <div class="callout-body"><strong>Auto-deactivation:</strong> <code>remove_deal_store()</code> counts active stores after every removal. If the count hits 0, the deal is automatically deactivated — no manual step needed.</div>
+      </div>
+    </div>
+
+
+    <!-- ── REDEEM DEAL ─────────────────────────── -->
+    <div class="page" id="page-bms-redeem">
+      <h1>Redeem Deal</h1>
+      <p class="page-subtitle">How the merchant scan function validates a coupon QR code at a specific store location, accounting for per-store participation status and exit timing.</p>
+
+      <h2>Redemption Flow</h2>
+      <div class="flow">
+        <div class="flow-step">User shows QR code</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Merchant scans → <code>POST /merchant-scan/verify</code></div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Lookup <code>deal_applicable_stores</code> by <code>deal_id + store_id</code></div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Status + timestamp check</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Allow or reject</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Confirm → <code>POST /merchant-scan/redeem</code></div>
+      </div>
+
+      <h2>Decision Table</h2>
+      <table>
+        <tr><th>Store status</th><th>Extra condition</th><th>Result</th></tr>
+        <tr>
+          <td><span class="badge badge-green">active</span></td>
+          <td>—</td>
+          <td>✅ Allow</td>
+        </tr>
+        <tr>
+          <td><span class="badge badge-gray">removed</span></td>
+          <td><code>coupon.created_at &lt; removed_at</code></td>
+          <td>✅ Allow (purchased before exit)</td>
+        </tr>
+        <tr>
+          <td><span class="badge badge-gray">removed</span></td>
+          <td><code>coupon.created_at ≥ removed_at</code></td>
+          <td>❌ Reject — show other active locations</td>
+        </tr>
+        <tr>
+          <td><span class="badge badge-red">declined</span></td>
+          <td>—</td>
+          <td>❌ Reject</td>
+        </tr>
+        <tr>
+          <td><span class="badge badge-yellow">pending_store_confirmation</span></td>
+          <td>—</td>
+          <td>❌ Reject</td>
+        </tr>
+        <tr>
+          <td>No record</td>
+          <td>—</td>
+          <td>❌ Reject — not applicable at this location</td>
+        </tr>
+      </table>
+
+      <h2>Purchase Time Field</h2>
+      <p>The purchase timestamp used in comparisons is <code>coupons.created_at</code> — the exact moment the coupon row was inserted when the user completed checkout.</p>
+
+      <h2>What Happens on Successful Redeem</h2>
+      <table>
+        <tr><th>Field updated</th><th>Value</th></tr>
+        <tr><td><code>coupons.status</code></td><td><code>used</code></td></tr>
+        <tr><td><code>coupons.used_at</code></td><td>Current timestamp</td></tr>
+        <tr><td><code>coupons.verified_by</code></td><td>Scanning merchant's user ID</td></tr>
+        <tr><td><code>deals.total_sold</code></td><td>Incremented by 1 (trigger)</td></tr>
+      </table>
+
+      <h2>Error Messages Shown to Merchant</h2>
+      <table>
+        <tr><th>Code</th><th>Message</th></tr>
+        <tr><td><code>not_applicable</code></td><td>"This voucher is not valid at this location."</td></tr>
+        <tr><td><code>store_removed</code></td><td>"This voucher is not valid here. Valid at: [list of active store names]."</td></tr>
+        <tr><td><code>already_used</code></td><td>"This voucher has already been redeemed."</td></tr>
+        <tr><td><code>expired</code></td><td>"This voucher has expired."</td></tr>
+      </table>
+
+      <div class="callout callout-info">
+        <span class="callout-icon">ℹ️</span>
+        <div class="callout-body"><strong>Two-step scan:</strong> Verify first (shows deal info to merchant for visual confirmation), then Redeem (marks coupon as used). This prevents accidental redemptions.</div>
+      </div>
+    </div>
+
+    <!-- ── BRAND MANAGEMENT PAGE (UI) ──────────── -->
+    <div class="page" id="page-bms-brand-manage-ui">
+      <h1>Brand Management Page</h1>
+      <p class="page-subtitle">The Brand Management page uses a grid card layout with 5 entries, replacing the old 3-tab design. Only visible to brand admins.</p>
+
+      <h2>Grid Card Layout</h2>
+      <p>The page displays a 2-column grid of cards. Each card navigates to a dedicated sub-page via go_router child routes under <code>/brand-manage</code>.</p>
+      <table>
+        <tr><th>Card</th><th>Icon</th><th>Route</th><th>Description</th></tr>
+        <tr><td>Brand Info</td><td>business</td><td><code>/brand-manage/info</code></td><td>Edit brand name, logo, description, and other brand details.</td></tr>
+        <tr><td>Stores</td><td>store</td><td><code>/brand-manage/stores</code></td><td>View, add (by email), and remove store locations under the brand.</td></tr>
+        <tr><td>Admins</td><td>admin_panel_settings</td><td><code>/brand-manage/admins</code></td><td>Invite or remove brand admin users.</td></tr>
+        <tr><td>Deals</td><td>local_offer</td><td><code>/brand-manage/deals</code></td><td>View brand-wide deals only (multi-store). Single-store deals are filtered out.</td></tr>
+        <tr><td>Overview</td><td>dashboard</td><td><code>/brand-overview</code></td><td>Brand-level analytics and performance overview.</td></tr>
+      </table>
+
+      <h2>Brand Deals Filtering</h2>
+      <p>The Deals card navigates to <code>DealsListPage</code> with <code>brandOnly: true</code>. This filters deals to only show those with <code>applicableMerchantIds</code> (non-empty), ensuring single-store deals are excluded. The page title changes to "Brand Deals".</p>
+
+      <h2>Route Registration</h2>
+      <div class="card">
+        <div class="card-title">go_router child routes</div>
+        <p><code>/brand-manage</code> — BrandManagePage (grid)</p>
+        <p><code>/brand-manage/info</code> — BrandInfoPage</p>
+        <p><code>/brand-manage/stores</code> — BrandStoresPage</p>
+        <p><code>/brand-manage/admins</code> — BrandAdminsPage</p>
+        <p><code>/brand-manage/deals</code> — DealsListPage (brandOnly: true)</p>
+      </div>
+
+      <h2>Access Control</h2>
+      <p>The Brand Management entry is only visible when <code>storeProvider</code> returns <code>isBrandAdmin: true</code>. Non-brand merchants never see this option in the Dashboard or navigation.</p>
+    </div>
+
+
+    <!-- ── DASHBOARD ENTRIES ─────────────────────── -->
+    <div class="page" id="page-bms-dashboard-entries">
+      <h1>Dashboard Entries</h1>
+      <p class="page-subtitle">The merchant Dashboard provides two entry points for brand multi-store features: a Quick Action shortcut and a pending deals banner.</p>
+
+      <h2>Brand Quick Action</h2>
+      <p>A "Brand" button appears in the Dashboard Quick Actions grid (shortcut_grid.dart). It is only visible to brand admins (<code>isBrandAdmin</code> from <code>storeProvider</code>).</p>
+      <table>
+        <tr><th>Property</th><th>Value</th></tr>
+        <tr><td>Icon</td><td><code>Icons.business_outlined</code></td></tr>
+        <tr><td>Color</td><td>Brown</td></tr>
+        <tr><td>Label</td><td>"Brand"</td></tr>
+        <tr><td>Route</td><td><code>/brand-manage</code></td></tr>
+        <tr><td>Visibility</td><td>Brand admin only</td></tr>
+      </table>
+
+      <h2>Pending Brand Deals Banner</h2>
+      <p>An orange banner appears at the top of the Dashboard when there are pending brand deals that require the current store's confirmation.</p>
+      <div class="flow">
+        <div class="flow-step"><code>pendingStoreDealsProvider</code> queries <code>deal_applicable_stores</code></div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Filters: <code>store_id = current store</code>, <code>status = pending_store_confirmation</code></div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Joins <code>deals</code> table for deal title, price, brand info</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Shows count badge: "X deals need your confirmation"</div>
+      </div>
+      <p>Tapping the banner opens a bottom sheet listing each pending deal. Each item navigates to:</p>
+      <div class="card">
+        <div class="card-title">Route</div>
+        <p><code>/deals/confirm/:dealId</code> → <code>StoreDealConfirmPage</code></p>
+        <p>Passes <code>extra</code>: <code>{ title, price, brand_name }</code></p>
+      </div>
+
+      <div class="callout callout-info">
+        <span class="callout-icon">ℹ️</span>
+        <div class="callout-body"><strong>No banner if no pending deals:</strong> The banner is completely hidden when <code>pendingStoreDealsProvider</code> returns an empty list. Brand admins who pre-confirmed all stores will not see this banner.</div>
+      </div>
+    </div>
+
+
+    <!-- ── STORE CONFIRM FLOW (APP) ──────────────── -->
+    <div class="page" id="page-bms-store-confirm-ui">
+      <h1>Store Confirm Flow (App)</h1>
+      <p class="page-subtitle">The <code>StoreDealConfirmPage</code> is the merchant app screen where a store owner accepts or declines a pending brand deal, with menu item matching.</p>
+
+      <h2>Entry Points</h2>
+      <table>
+        <tr><th>Entry</th><th>Where</th></tr>
+        <tr><td>Dashboard pending banner → bottom sheet → tap deal</td><td><code>/deals/confirm/:dealId</code></td></tr>
+        <tr><td>Brand Deals list → tap pending deal</td><td><code>/deals/confirm/:dealId</code></td></tr>
+      </table>
+
+      <h2>Page Layout</h2>
+      <p>The page displays:</p>
+      <ul>
+        <li><strong>Deal info header</strong> — deal title, deal price, brand name</li>
+        <li><strong>Menu item match</strong> — searches the store's <code>menu_items</code> for a name match with the deal title</li>
+        <li><strong>Accept / Decline buttons</strong> — calls <code>PATCH /merchant-deals/:id/store-confirm</code></li>
+      </ul>
+
+      <h2>Key Implementation Detail</h2>
+      <div class="card">
+        <div class="card-title">store_id vs merchant_id</div>
+        <p>The page queries <code>deal_applicable_stores</code> using <code>.eq('store_id', merchantId)</code> — not <code>.eq('merchant_id', ...)</code>. The table column is <code>store_id</code>, which holds the merchant's UUID. This was a bug fix applied during implementation.</p>
+      </div>
+
+      <h2>Accept Flow</h2>
+      <div class="flow">
+        <div class="flow-step">Store owner reviews deal</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Menu item matched (or added manually)</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Taps Accept</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step"><code>action: "accept"</code>, <code>menu_item_id</code>, <code>store_original_price</code></div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">RPC <code>accept_deal_store()</code> → status = <code>active</code></div>
+      </div>
+
+      <h2>Decline Flow</h2>
+      <div class="flow">
+        <div class="flow-step">Store owner taps Decline</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step"><code>action: "decline"</code></div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">RPC <code>decline_deal_store()</code> → status = <code>declined</code></div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Irreversible</div>
+      </div>
+
+      <div class="callout callout-warn">
+        <span class="callout-icon">⚠️</span>
+        <div class="callout-body"><strong>48-hour window:</strong> Stores that do not respond within 48 hours are automatically declined by a pg_cron job. The pending banner will disappear after auto-decline.</div>
+      </div>
+    </div>
+
+
+    <!-- ══════════════════════════════════════════
+         DEAL MANAGEMENT
+    ══════════════════════════════════════════ -->
+
+    <!-- ── Edit as Clone ──────────────────────── -->
+    <div class="page" id="page-deal-edit-clone">
+      <h2 class="page-title">Edit as Clone</h2>
+      <p class="page-subtitle">When a merchant edits a deal, the system clones it instead of updating in place. This preserves purchase history and triggers a fresh admin review.</p>
+
+      <h3>How It Works</h3>
+      <p>The <code>merchant-deals</code> Edge Function PATCH handler distinguishes two scenarios:</p>
+
+      <table class="doc-table">
+        <tr><th>Scenario</th><th>Behavior</th></tr>
+        <tr><td>Stock-only change (<code>total_stock</code>, <code>remaining_stock</code>)</td><td>Updates the existing deal row in place. No new deal is created.</td></tr>
+        <tr><td>Sort-order-only change (<code>sort_order_only: true</code>)</td><td>Updates <code>sort_order</code> in place. Used by drag-reorder.</td></tr>
+        <tr><td>Any other field change</td><td>Clones the deal: creates a new row with <code>status = pending</code>, copies <code>deal_images</code> and <code>deal_applicable_stores</code>, then sets the original deal to <code>inactive</code>.</td></tr>
+      </table>
+
+      <h3>Clone Process</h3>
+      <div class="flow-row">
+        <div class="flow-step">Merchant submits edit</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">PATCH <code>/merchant-deals</code></div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">New deal row (pending)</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Copy images &amp; stores</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Old deal → inactive</div>
+      </div>
+
+      <div class="callout callout-info">
+        <span class="callout-icon">ℹ️</span>
+        <div class="callout-body">If the deal has <code>option_groups</code>, they are also cloned to the new deal. If the edit payload includes new <code>option_groups</code>, those replace the cloned groups.</div>
+      </div>
+
+      <h3>Key Files</h3>
+      <table class="doc-table">
+        <tr><th>File</th><th>Change</th></tr>
+        <tr><td><code>merchant-deals/index.ts</code></td><td><code>handleUpdateDeal</code> — clone logic, stock-only bypass, sort_order_only bypass</td></tr>
+      </table>
+    </div>
+
+    <!-- ── Sort Order & Short Name ────────────── -->
+    <div class="page" id="page-deal-sort-shortname">
+      <h2 class="page-title">Sort Order &amp; Short Name</h2>
+      <p class="page-subtitle">Merchants can drag-reorder their deals and set a short display name (≤10 characters) used in the user app's variant selector.</p>
+
+      <h3>Sort Order (Drag Reorder)</h3>
+      <p>The merchant app's "All" tab in <code>deals_list_page.dart</code> uses a <code>ReorderableListView</code> with drag handles. On reorder, a batch update is sent to the backend.</p>
+
+      <div class="flow-row">
+        <div class="flow-step">Merchant drags deal</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step"><code>DealsNotifier.reorderDeals()</code></div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">PATCH <code>/merchant-deals/reorder</code></div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Batch update <code>sort_order</code></div>
+      </div>
+
+      <h3>Short Name</h3>
+      <p>A deal can have a <code>short_name</code> (max 10 characters, enforced by DB <code>CHECK</code> constraint). In the user app's deal detail page, the variant selector shows <code>shortName</code> first, falling back to the full deal title.</p>
+
+      <table class="doc-table">
+        <tr><th>Layer</th><th>Details</th></tr>
+        <tr><td>DB</td><td><code>deals.short_name text CHECK(char_length &lt;= 10)</code></td></tr>
+        <tr><td>Edge Function</td><td>CREATE accepts <code>short_name</code>; PATCH whitelist includes <code>short_name</code>, <code>sort_order</code></td></tr>
+        <tr><td>Merchant App</td><td><code>deal_create_page.dart</code> Step 0 — short_name input field</td></tr>
+        <tr><td>User App</td><td><code>deal_detail_screen.dart</code> — variant selector shows shortName</td></tr>
+      </table>
+    </div>
+
+    <!-- ── Products Data Format ───────────────── -->
+    <div class="page" id="page-deal-dishes-format">
+      <h2 class="page-title">Products Data Format</h2>
+      <p class="page-subtitle">Deals store their included products in a structured string format that carries quantity and price data.</p>
+
+      <div class="callout callout-warn">
+        <span class="callout-icon">⚠️</span>
+        <div class="callout-body"><strong>Naming note:</strong> The DB column is still called <code>dishes</code> for backward compatibility. In all Dart code, the field has been renamed to <code>products</code>.</div>
+      </div>
+
+      <h3>Format</h3>
+      <p>The <code>deals.dishes</code> column is a <code>text[]</code> array. Each element follows one of two formats:</p>
+      <table class="doc-table">
+        <tr><th>Format</th><th>Example</th><th>Description</th></tr>
+        <tr><td><code>name</code></td><td><code>"Smoked Brisket"</code></td><td>Legacy format — name only, no price</td></tr>
+        <tr><td><code>name::qty::subtotal</code></td><td><code>"Smoked Brisket::2::30"</code></td><td>New format — includes quantity and subtotal</td></tr>
+      </table>
+
+      <h3>Parsing (User App)</h3>
+      <p><code>DealModel._parseProducts()</code> splits each string by <code>::</code>. If 3 parts exist, it extracts <code>(name, qty, subtotal)</code>. The deal detail page renders each line as:</p>
+      <p style="font-family: monospace; background: var(--surface2); padding: 8px 12px; border-radius: 6px; margin: 8px 0;">Smoked Brisket &nbsp;&nbsp;&nbsp; ×2 &nbsp; $30</p>
+
+      <h3>Merchant App: Building the Data</h3>
+      <p>In <code>deal_create_page.dart</code>, the <code>_dishesData</code> getter constructs the array from selected menu items:</p>
+      <pre style="background: var(--surface2); padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 13px; margin: 8px 0;">_selectedMenuItems.map((s) {
+  final name = s.menuItem.name;
+  final qty = s.quantity;
+  final subtotal = ((s.menuItem.price ?? 0) * qty).toStringAsFixed(0);
+  return '$name::$qty::$subtotal';
+}).toList();</pre>
+
+      <h3>Global Rename: dishes → products</h3>
+      <table class="doc-table">
+        <tr><th>File</th><th>Change</th></tr>
+        <tr><td><code>deal_model.dart</code></td><td><code>dishes</code> → <code>products</code>, <code>_parseDishes</code> → <code>_parseProducts</code></td></tr>
+        <tr><td><code>deal_detail_screen.dart</code></td><td><code>_DishesSection</code> → <code>_ProductsSection</code></td></tr>
+        <tr><td><code>deal_card_horizontal.dart</code></td><td><code>dishesPreview</code> → <code>productsPreview</code></td></tr>
+        <tr><td><code>deal_card_v2.dart</code></td><td><code>dishesPreview</code> → <code>productsPreview</code></td></tr>
+        <tr><td><code>menu_tab.dart / menu_section.dart</code></td><td>"Signature Dishes" → "Signature Products"</td></tr>
+        <tr><td><code>photo_gallery_screen.dart</code></td><td>Filter label "Dishes" → "Products"</td></tr>
+      </table>
+    </div>
+
+    <!-- ── Option Groups ──────────────────────── -->
+    <div class="page" id="page-deal-option-groups">
+      <h2 class="page-title">Option Groups (Pick X from Y)</h2>
+      <p class="page-subtitle">Deals can have option groups that let customers choose items — e.g., "Pick 1 Main Course from 3 options".</p>
+
+      <h3>Database Schema</h3>
+      <table class="doc-table">
+        <tr><th>Table</th><th>Key Columns</th><th>Notes</th></tr>
+        <tr><td><code>deal_option_groups</code></td><td><code>deal_id</code>, <code>name</code>, <code>select_min</code>, <code>select_max</code>, <code>sort_order</code></td><td>FK to deals with CASCADE delete</td></tr>
+        <tr><td><code>deal_option_items</code></td><td><code>group_id</code>, <code>name</code>, <code>price</code>, <code>sort_order</code></td><td>FK to deal_option_groups with CASCADE delete</td></tr>
+        <tr><td><code>orders.selected_options</code></td><td>JSONB</td><td>Snapshot of customer's selections at purchase time</td></tr>
+      </table>
+
+      <h3>RLS Policy</h3>
+      <ul style="margin: 8px 0 16px 20px;">
+        <li>Everyone can read (SELECT) option groups and items</li>
+        <li>Merchants can INSERT / UPDATE / DELETE via <code>deal → merchant_staff</code> chain</li>
+      </ul>
+
+      <h3>Merchant App Flow</h3>
+      <div class="flow-row">
+        <div class="flow-step">Deal Create/Edit → "Option Groups" section</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Add Option Group dialog</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Select items from menu</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Set Select Count</div>
+      </div>
+      <p>The "Add Item" button inside the option group dialog opens a bottom sheet listing all active menu items. Selecting an item auto-fills the name and price. Already-added items show a green checkmark and cannot be re-added.</p>
+
+      <h3>User App Flow</h3>
+      <p>The deal detail page renders an <code>_OptionGroupsSelector</code> widget below the products section. Each group shows its items as selectable chips.</p>
+      <table class="doc-table">
+        <tr><th>Mode</th><th>Behavior</th></tr>
+        <tr><td><code>selectMax = 1</code></td><td>Single-select (radio-like): tapping a new item replaces the previous selection</td></tr>
+        <tr><td><code>selectMax &gt; 1</code></td><td>Multi-select: tapping toggles selection, capped at max</td></tr>
+      </table>
+      <p>The bottom bar's "Buy Now" and "Add to Cart" buttons validate that all option groups are fully selected. If not, a SnackBar prompts the user.</p>
+
+      <h3>Checkout Snapshot</h3>
+      <p>At payment time, the selected options are serialized as JSONB and stored in <code>orders.selected_options</code>:</p>
+      <pre style="background: var(--surface2); padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 13px; margin: 8px 0;">[{
+  "group_id": "uuid",
+  "group_name": "Main Course",
+  "items": [{
+    "item_id": "uuid",
+    "item_name": "Grilled Salmon",
+    "price": 18.00
+  }]
+}]</pre>
+
+      <h3>Key Files</h3>
+      <table class="doc-table">
+        <tr><th>Layer</th><th>Files</th></tr>
+        <tr><td>Migration</td><td><code>20260313000002_deal_option_groups.sql</code></td></tr>
+        <tr><td>Edge Function</td><td><code>merchant-deals/index.ts</code> — insertOptionGroups, cloneOptionGroups</td></tr>
+        <tr><td>Merchant Models</td><td><code>merchant_deal.dart</code> — DealOptionGroup, DealOptionItem</td></tr>
+        <tr><td>Merchant UI</td><td><code>deal_create_page.dart</code>, <code>deal_edit_page.dart</code></td></tr>
+        <tr><td>User Models</td><td><code>deal_model.dart</code> — DealOptionGroup, DealOptionItem</td></tr>
+        <tr><td>User UI</td><td><code>deal_detail_screen.dart</code> — _OptionGroupsSelector</td></tr>
+        <tr><td>Checkout</td><td><code>checkout_repository.dart</code>, <code>checkout_screen.dart</code></td></tr>
+      </table>
+    </div>
+
+
+    <!-- ══════════════════════════════════════════
+         USER APP
+    ══════════════════════════════════════════ -->
+
+    <!-- ── Deal Detail Page ───────────────────── -->
+    <div class="page" id="page-user-deal-detail">
+      <h2 class="page-title">Deal Detail Page</h2>
+      <p class="page-subtitle">The deal detail screen received multiple UI enhancements on 2026-03-13.</p>
+
+      <h3>Image Gallery</h3>
+      <p>The hero section now supports multiple images via a <code>PageView</code> with dot indicators. A gallery button opens a full-screen image viewer.</p>
+
+      <h3>Price Formula Row</h3>
+      <p>Below the deal price, a formula row shows: <code>$X reg price - $Y deal promotion</code>. The right side uses <code>Expanded</code> + <code>Flexible</code> wrapping to prevent overflow on narrow screens.</p>
+
+      <h3>Variant Selector</h3>
+      <p>When the merchant has multiple deals for the same store, a horizontal selector appears below the price section. Deals are sorted by <code>sort_order</code> and display <code>shortName</code> (falling back to the full title).</p>
+
+      <h3>Restaurant Info Section</h3>
+      <p>Now includes the merchant's <code>homepage_cover_url</code> as a banner image (130px height, rounded corners) above the store info.</p>
+
+      <h3>Applicable Stores Section</h3>
+      <ul style="margin: 8px 0 16px 20px;">
+        <li>Each store card now shows a cover photo at the top (from <code>homepage_cover_url</code>)</li>
+        <li><strong>Hidden when only 1 store:</strong> If <code>deal_applicable_stores</code> returns ≤ 1 active store, the entire section is not rendered</li>
+        <li>The query joins <code>homepage_cover_url</code> for multi-store list</li>
+      </ul>
+
+      <h3>Products Section</h3>
+      <p>Each product line shows quantity and subtotal when the <code>name::qty::subtotal</code> format is available. Products matching an option group display a "(Select X from Y)" label.</p>
+    </div>
+
+    <!-- ── Photo Gallery ──────────────────────── -->
+    <div class="page" id="page-user-photo-gallery">
+      <h2 class="page-title">Photo Gallery</h2>
+      <p class="page-subtitle">The merchant photo gallery was rewritten to combine merchant-uploaded photos with product images from <code>menu_items</code>.</p>
+
+      <h3>Filter Tabs</h3>
+      <table class="doc-table">
+        <tr><th>Tab</th><th>Source</th></tr>
+        <tr><td>All</td><td>Merchant photos + menu_items product photos</td></tr>
+        <tr><td>Products</td><td><code>menu_items</code> where <code>image_url IS NOT NULL</code></td></tr>
+        <tr><td>Environment</td><td>merchant_photos where <code>photo_type = 'environment'</code></td></tr>
+        <tr><td>Other</td><td>merchant_photos excluding product/environment/storefront/cover types</td></tr>
+        <tr><td>Merchant Uploads</td><td>All merchant_photos</td></tr>
+      </table>
+
+      <h3>Unified Display Model</h3>
+      <p>A <code>_DisplayPhoto</code> class unifies both data sources with fields: <code>url</code>, <code>sourceLabel</code>, <code>productName</code>, <code>price</code>.</p>
+
+      <h3>Product Photo Overlay</h3>
+      <p>For menu_items photos, a gradient overlay at the bottom shows the product name (left) and price (right). This appears in both the grid view and the full-screen viewer.</p>
+    </div>
+
+    <!-- ── Cart & Checkout ────────────────────── -->
+    <div class="page" id="page-user-cart">
+      <h2 class="page-title">Cart &amp; Checkout</h2>
+      <p class="page-subtitle">The deal detail bottom bar now includes an Add to Cart button alongside Buy Now.</p>
+
+      <h3>Bottom Bar Layout</h3>
+      <p>The bottom bar contains: Store icon | Cart icon (with badge) | Add to Cart (#FF9500 orange) | Buy Now</p>
+
+      <h3>Cart State</h3>
+      <table class="doc-table">
+        <tr><th>File</th><th>Role</th></tr>
+        <tr><td><code>cart_item_model.dart</code></td><td>Cart item data model (deal reference, quantity, selected options)</td></tr>
+        <tr><td><code>cart_provider.dart</code></td><td>Riverpod Notifier: addDeal, updateQuantity, remove, clear</td></tr>
+        <tr><td><code>cart_screen.dart</code></td><td>Full cart UI with quantity adjustment, removal, totals</td></tr>
+      </table>
+
+      <h3>Option Validation</h3>
+      <p>Both "Buy Now" and "Add to Cart" check that all option groups are fully selected before proceeding. Incomplete selections trigger a SnackBar warning.</p>
+    </div>
+
+    <!-- ── Coupon Store Snapshot ───────────────── -->
+    <div class="page" id="page-user-coupon-stores">
+      <h2 class="page-title">Coupon Store Snapshot</h2>
+      <p class="page-subtitle">When a user purchases a deal, the applicable stores are snapshotted into the order — preventing issues if stores are later removed from the deal.</p>
+
+      <h3>How It Works</h3>
+      <div class="flow-row">
+        <div class="flow-step">User purchases deal</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">BEFORE INSERT trigger</div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step">Snapshot <code>deal_applicable_stores</code> → <code>orders.applicable_store_ids</code></div>
+      </div>
+
+      <h3>Database</h3>
+      <table class="doc-table">
+        <tr><th>Change</th><th>Details</th></tr>
+        <tr><td><code>orders.applicable_store_ids</code></td><td>New <code>uuid[]</code> column, populated by trigger</td></tr>
+        <tr><td>Backfill</td><td>Migration retroactively fills historical orders from current store data</td></tr>
+      </table>
+
+      <h3>Scan Validation</h3>
+      <p><code>merchant-scan/index.ts</code> checks the snapshot store list first. If <code>NULL</code> (old orders), it falls back to querying current active stores.</p>
+
+      <h3>Coupon Display</h3>
+      <p>Multi-store coupons display a list of applicable stores (name + address) using <code>applicableStoresProvider</code>.</p>
+    </div>
+
+    <!-- ── Responsive Layout Fixes ────────────── -->
+    <div class="page" id="page-user-responsive">
+      <h2 class="page-title">Responsive Layout Fixes</h2>
+      <p class="page-subtitle">A comprehensive audit across both apps fixed overflow issues on narrow screens.</p>
+
+      <h3>Key Fixes</h3>
+      <table class="doc-table">
+        <tr><th>Screen</th><th>Issue</th><th>Fix</th></tr>
+        <tr><td>Deal Detail — price row</td><td>RIGHT OVERFLOWED BY 16px</td><td>Wrapped with <code>Expanded</code> + <code>Flexible</code>, reduced font size &amp; spacing</td></tr>
+        <tr><td>Profile — GOLD MEMBER row</td><td>RIGHT OVERFLOWED BY 0.5px</td><td>Wrapped Text with <code>Flexible</code> + <code>TextOverflow.ellipsis</code></td></tr>
+      </table>
+
+      <h3>Pattern</h3>
+      <p>The standard fix for Row overflow is to wrap flexible-width children with <code>Expanded</code> or <code>Flexible</code>, and use <code>TextOverflow.ellipsis</code> with <code>maxLines: 1</code> for text that might exceed available width.</p>
+    </div>
+
+
+    <!-- ══════════════════════════════════════════
+         ADMIN & BACKEND
+    ══════════════════════════════════════════ -->
+
+    <!-- ── Admin Activate Logic ───────────────── -->
+    <div class="page" id="page-admin-activate">
+      <h2 class="page-title">Admin Activate Logic</h2>
+      <p class="page-subtitle">The admin portal's Activate button now only appears for deals in <code>pending</code> status.</p>
+
+      <h3>Before</h3>
+      <p>The Activate button showed for any deal where <code>!isActive</code>. This meant merchants who voluntarily deactivated a deal would see an Activate option in the admin panel — unintended.</p>
+
+      <h3>After</h3>
+      <p>Condition changed to <code>dealStatus === 'pending'</code>. Only new or recently-edited deals awaiting admin review show the Activate button.</p>
+
+      <table class="doc-table">
+        <tr><th>File</th><th>Change</th></tr>
+        <tr><td><code>deal-review-actions.tsx</code></td><td>Activate button condition: <code>!isActive</code> → <code>dealStatus === 'pending'</code></td></tr>
+      </table>
+    </div>
+
+    <!-- ── DB Migrations ──────────────────────── -->
+    <div class="page" id="page-db-migrations-0313">
+      <h2 class="page-title">DB Migrations (2026-03-13)</h2>
+      <p class="page-subtitle">Database changes deployed on March 13, 2026.</p>
+
+      <h3>20260312000003 — Deal Activation Trigger Fix</h3>
+      <table class="doc-table">
+        <tr><th>Function</th><th>Change</th></tr>
+        <tr><td><code>accept_deal_store()</code></td><td>WHERE clause: <code>IN ('pending_store_confirmation', 'declined')</code> — allows re-accepting a previously declined store</td></tr>
+        <tr><td><code>decline_deal_store()</code></td><td>WHERE clause: <code>IN ('pending_store_confirmation', 'active')</code> — allows declining an active store</td></tr>
+      </table>
+
+      <h3>20260313000001 — Order Store Snapshot</h3>
+      <table class="doc-table">
+        <tr><th>Change</th><th>Details</th></tr>
+        <tr><td><code>orders.applicable_store_ids uuid[]</code></td><td>New column to snapshot deal stores at purchase time</td></tr>
+        <tr><td>BEFORE INSERT trigger</td><td>Auto-populates from <code>deal_applicable_stores</code></td></tr>
+        <tr><td>Backfill</td><td>Updates existing orders with current store data</td></tr>
+      </table>
+
+      <h3>20260313000002 — Deal Option Groups</h3>
+      <table class="doc-table">
+        <tr><th>Change</th><th>Details</th></tr>
+        <tr><td><code>deal_option_groups</code></td><td>New table: name, select_min, select_max, sort_order. FK to deals (CASCADE)</td></tr>
+        <tr><td><code>deal_option_items</code></td><td>New table: name, price, sort_order. FK to groups (CASCADE)</td></tr>
+        <tr><td><code>orders.selected_options</code></td><td>New JSONB column for option snapshot at checkout</td></tr>
+        <tr><td>RLS</td><td>Public read, merchant write via deal→merchant_staff chain</td></tr>
+      </table>
+
+      <h3>deals.short_name</h3>
+      <p>New column: <code>short_name text CHECK(char_length &lt;= 10)</code></p>
+    </div>
+
+
+  </div><!-- /content -->
+</div><!-- /layout -->
+
+<script>
+  function navigate(pageId) {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.nav-l1, .nav-l3').forEach(n => n.classList.remove('active'));
+
+    const page = document.getElementById('page-' + pageId);
+    if (page) page.classList.add('active');
+
+    // 高亮匹配的导航项
+    document.querySelectorAll('.nav-l1, .nav-l3').forEach(n => {
+      if (n.getAttribute('onclick') === `navigate('${pageId}')`) {
+        n.classList.add('active');
+      }
+    });
+
+    // 滚动内容区回顶部
+    document.querySelector('.content').scrollTop = 0;
+    window.scrollTo(0, 0);
+  }
+</script>
+
+</body>
+</html>

@@ -158,6 +158,116 @@ class DealImage {
 }
 
 // ============================================================
+// DealOptionItem — 选项项（如 "Grilled Salmon"）
+// ============================================================
+class DealOptionItem {
+  const DealOptionItem({
+    this.id,
+    required this.name,
+    required this.price,
+    this.sortOrder = 0,
+  });
+
+  final String? id;
+  final String name;
+  final double price;
+  final int sortOrder;
+
+  factory DealOptionItem.fromJson(Map<String, dynamic> json) {
+    return DealOptionItem(
+      id:        json['id'] as String?,
+      name:      json['name'] as String? ?? '',
+      price:     (json['price'] as num?)?.toDouble() ?? 0,
+      sortOrder: json['sort_order'] as int? ?? 0,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    if (id != null) 'id': id,
+    'name': name,
+    'price': price,
+    'sort_order': sortOrder,
+  };
+
+  DealOptionItem copyWith({String? id, String? name, double? price, int? sortOrder}) {
+    return DealOptionItem(
+      id:        id ?? this.id,
+      name:      name ?? this.name,
+      price:     price ?? this.price,
+      sortOrder: sortOrder ?? this.sortOrder,
+    );
+  }
+}
+
+// ============================================================
+// DealOptionGroup — 选项组（如 "Main Course: pick 3 from 8"）
+// ============================================================
+class DealOptionGroup {
+  const DealOptionGroup({
+    this.id,
+    required this.name,
+    required this.selectMin,
+    required this.selectMax,
+    this.sortOrder = 0,
+    this.items = const [],
+  });
+
+  final String? id;
+  final String name;
+  final int selectMin;
+  final int selectMax;
+  final int sortOrder;
+  final List<DealOptionItem> items;
+
+  factory DealOptionGroup.fromJson(Map<String, dynamic> json) {
+    final itemsJson = json['deal_option_items'] as List<dynamic>? ?? [];
+    return DealOptionGroup(
+      id:        json['id'] as String?,
+      name:      json['name'] as String? ?? '',
+      selectMin: json['select_min'] as int? ?? 1,
+      selectMax: json['select_max'] as int? ?? 1,
+      sortOrder: json['sort_order'] as int? ?? 0,
+      items: itemsJson
+          .map((e) => DealOptionItem.fromJson(e as Map<String, dynamic>))
+          .toList()
+        ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder)),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    if (id != null) 'id': id,
+    'name': name,
+    'select_min': selectMin,
+    'select_max': selectMax,
+    'sort_order': sortOrder,
+    'items': items.map((e) => e.toJson()).toList(),
+  };
+
+  DealOptionGroup copyWith({
+    String? id,
+    String? name,
+    int? selectMin,
+    int? selectMax,
+    int? sortOrder,
+    List<DealOptionItem>? items,
+  }) {
+    return DealOptionGroup(
+      id:        id ?? this.id,
+      name:      name ?? this.name,
+      selectMin: selectMin ?? this.selectMin,
+      selectMax: selectMax ?? this.selectMax,
+      sortOrder: sortOrder ?? this.sortOrder,
+      items:     items ?? this.items,
+    );
+  }
+
+  /// 显示标签：selectMin == items.length 时只显示组名，否则 "Select X from Y"
+  String get displayLabel => selectMin == items.length
+      ? '$name'
+      : 'Select $selectMin from ${items.length}';
+}
+
+// ============================================================
 // MerchantDeal — 完整 Deal 数据模型
 // 对应 deals 表（含新增字段）
 // ============================================================
@@ -192,6 +302,11 @@ class MerchantDeal {
     this.publishedAt,
     this.dealCategoryId,
     this.applicableMerchantIds,
+    this.storeConfirmations,
+    this.shortName,
+    this.usageNoteImages = const [],
+    this.dishes = const [],
+    this.optionGroups = const [],
   });
 
   /// Deal ID
@@ -242,6 +357,9 @@ class MerchantDeal {
   /// 使用须知
   final String usageNotes;
 
+  /// 使用须知附带的图片/视频 URL 列表
+  final List<String> usageNoteImages;
+
   /// 有效期类型
   final ValidityType validityType;
 
@@ -271,6 +389,19 @@ class MerchantDeal {
 
   /// 适用门店 ID 列表（null = 仅本店，非空 = 多店通用）
   final List<String>? applicableMerchantIds;
+
+  /// 门店预确认数据（brand_multi_store deal 创建时传给 Edge Function）
+  /// 格式：[{ 'store_id': 'uuid', 'pre_confirmed': true/false }]
+  final List<Map<String, dynamic>>? storeConfirmations;
+
+  /// 短名称（最多10字符，用于变体选择器展示）
+  final String? shortName;
+
+  /// 菜品列表（格式："name::qty::subtotal"），用于用户端展示每行价格
+  final List<String> dishes;
+
+  /// 选项组列表（"几选几"功能）
+  final List<DealOptionGroup> optionGroups;
 
   /// 图片列表（含主图）
   final List<DealImage> images;
@@ -326,6 +457,17 @@ class MerchantDeal {
   // 序列化/反序列化
   // --------------------------------------------------------
 
+  /// 解析选项组列表
+  static List<DealOptionGroup> _parseOptionGroups(Map<String, dynamic> json) {
+    final raw = json['deal_option_groups'] as List<dynamic>?;
+    if (raw == null || raw.isEmpty) return [];
+    final list = raw
+        .map((e) => DealOptionGroup.fromJson(e as Map<String, dynamic>))
+        .toList()
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+    return list;
+  }
+
   /// 从 Edge Function 返回的 JSON 构造
   factory MerchantDeal.fromJson(Map<String, dynamic> json) {
     // 图片列表：可能来自 join 结果（deal_images 数组）
@@ -352,6 +494,10 @@ class MerchantDeal {
       dealStatus:      DealStatus.fromString(json['deal_status'] as String?),
       packageContents: json['package_contents'] as String? ?? '',
       usageNotes:      json['usage_notes'] as String? ?? '',
+      usageNoteImages: (json['usage_note_images'] as List<dynamic>?)
+          ?.map((e) => e?.toString() ?? '')
+          .where((s) => s.isNotEmpty)
+          .toList() ?? [],
       validityType:    ValidityType.fromString(json['validity_type'] as String?),
       expiresAt:       json['expires_at'] != null
           ? DateTime.parse(json['expires_at'] as String)
@@ -363,7 +509,7 @@ class MerchantDeal {
           .toList() ?? [],
       maxPerPerson:    json['max_per_person'] as int?,
       isStackable:     json['is_stackable'] as bool? ?? true,
-      reviewNotes:     json['review_notes'] as String?,
+      reviewNotes:     json['rejection_reason'] as String? ?? json['review_notes'] as String?,
       publishedAt:     json['published_at'] != null
           ? DateTime.parse(json['published_at'] as String)
           : null,
@@ -372,6 +518,10 @@ class MerchantDeal {
           ?.map((e) => e?.toString() ?? '')
           .where((s) => s.isNotEmpty)
           .toList(),
+      storeConfirmations: null, // 后端不返回此字段，仅用于创建时传参
+      shortName:       json['short_name'] as String?,
+      dishes:          List<String>.from(json['dishes'] as List? ?? []),
+      optionGroups:    _parseOptionGroups(json),
       images:          imagesSorted,
       createdAt:       json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
@@ -394,6 +544,7 @@ class MerchantDeal {
         'expires_at':       expiresAt.toIso8601String(),
         'package_contents': packageContents,
         'usage_notes':      usageNotes,
+        'usage_note_images': usageNoteImages,
         'validity_type':    validityType.value,
         'validity_days':    validityDays,
         'usage_days':       usageDays,
@@ -402,6 +553,13 @@ class MerchantDeal {
         'deal_category_id': dealCategoryId,
         if (applicableMerchantIds != null)
           'applicable_merchant_ids': applicableMerchantIds,
+        if (storeConfirmations != null)
+          'store_confirmations': storeConfirmations,
+        if (shortName != null)
+          'short_name': shortName,
+        'dishes': dishes,
+        if (optionGroups.isNotEmpty)
+          'option_groups': optionGroups.map((g) => g.toJson()).toList(),
       };
 
   /// 复制并修改部分字段
@@ -422,6 +580,7 @@ class MerchantDeal {
     DealStatus? dealStatus,
     String? packageContents,
     String? usageNotes,
+    List<String>? usageNoteImages,
     ValidityType? validityType,
     DateTime? expiresAt,
     int? validityDays,
@@ -432,6 +591,10 @@ class MerchantDeal {
     DateTime? publishedAt,
     String? dealCategoryId,
     List<String>? applicableMerchantIds,
+    List<Map<String, dynamic>>? storeConfirmations,
+    String? shortName,
+    List<String>? dishes,
+    List<DealOptionGroup>? optionGroups,
     List<DealImage>? images,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -453,6 +616,7 @@ class MerchantDeal {
       dealStatus:      dealStatus ?? this.dealStatus,
       packageContents: packageContents ?? this.packageContents,
       usageNotes:      usageNotes ?? this.usageNotes,
+      usageNoteImages: usageNoteImages ?? this.usageNoteImages,
       validityType:    validityType ?? this.validityType,
       expiresAt:       expiresAt ?? this.expiresAt,
       validityDays:    validityDays ?? this.validityDays,
@@ -463,6 +627,10 @@ class MerchantDeal {
       publishedAt:     publishedAt ?? this.publishedAt,
       dealCategoryId:  dealCategoryId ?? this.dealCategoryId,
       applicableMerchantIds: applicableMerchantIds ?? this.applicableMerchantIds,
+      storeConfirmations: storeConfirmations ?? this.storeConfirmations,
+      shortName:       shortName ?? this.shortName,
+      dishes:          dishes ?? this.dishes,
+      optionGroups:    optionGroups ?? this.optionGroups,
       images:          images ?? this.images,
       createdAt:       createdAt ?? this.createdAt,
       updatedAt:       updatedAt ?? this.updatedAt,

@@ -48,7 +48,7 @@ class DealTemplate {
     this.isStackable = true,
     this.validityType = 'fixed_date',
     this.validityDays,
-    this.refundPolicy = 'Risk-Free Refund within 7 days',
+    this.refundPolicy = 'Refund anytime before use, refund when expired',
     this.imageUrls = const [],
     this.dealType = 'regular',
     this.badgeText,
@@ -95,7 +95,7 @@ class DealTemplate {
       validityType: json['validity_type'] as String? ?? 'fixed_date',
       validityDays: (json['validity_days'] as num?)?.toInt(),
       refundPolicy: json['refund_policy'] as String? ??
-          'Risk-Free Refund within 7 days',
+          'Refund anytime before use, refund when expired',
       imageUrls: (json['image_urls'] as List<dynamic>?)
               ?.map((e) => e.toString())
               .toList() ??

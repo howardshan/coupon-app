@@ -1,3 +1,70 @@
+// ============================================================
+// DealOptionItem — 选项项（用户端）
+// ============================================================
+class DealOptionItem {
+  final String id;
+  final String name;
+  final double price;
+  final int sortOrder;
+
+  const DealOptionItem({
+    required this.id,
+    required this.name,
+    required this.price,
+    this.sortOrder = 0,
+  });
+
+  factory DealOptionItem.fromJson(Map<String, dynamic> json) => DealOptionItem(
+    id:        json['id'] as String? ?? '',
+    name:      json['name'] as String? ?? '',
+    price:     (json['price'] as num?)?.toDouble() ?? 0,
+    sortOrder: json['sort_order'] as int? ?? 0,
+  );
+}
+
+// ============================================================
+// DealOptionGroup — 选项组（用户端）
+// ============================================================
+class DealOptionGroup {
+  final String id;
+  final String name;
+  final int selectMin;
+  final int selectMax;
+  final int sortOrder;
+  final List<DealOptionItem> items;
+
+  const DealOptionGroup({
+    required this.id,
+    required this.name,
+    required this.selectMin,
+    required this.selectMax,
+    this.sortOrder = 0,
+    this.items = const [],
+  });
+
+  factory DealOptionGroup.fromJson(Map<String, dynamic> json) {
+    final itemsJson = json['deal_option_items'] as List<dynamic>? ?? [];
+    final items = itemsJson
+        .map((e) => DealOptionItem.fromJson(e as Map<String, dynamic>))
+        .toList()
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+    return DealOptionGroup(
+      id:        json['id'] as String? ?? '',
+      name:      json['name'] as String? ?? '',
+      selectMin: json['select_min'] as int? ?? 1,
+      selectMax: json['select_max'] as int? ?? 1,
+      sortOrder: json['sort_order'] as int? ?? 0,
+      items:     items,
+    );
+  }
+
+  /// 显示标签，如 "Pick 3 from 8"
+  String get displayLabel => 'Pick $selectMin${selectMin != selectMax ? '-$selectMax' : ''} from ${items.length}';
+}
+
+// ============================================================
+// DealModel
+// ============================================================
 class DealModel {
   final String id;
   final String merchantId;
@@ -9,7 +76,7 @@ class DealModel {
   final int discountPercent;
   final String discountLabel; // e.g. "40% OFF", "BUY 1 GET 1"
   final List<String> imageUrls;
-  final List<String> dishes; // included dishes list
+  final List<String> products; // included products list
   final double rating;
   final int reviewCount;
   final int totalSold;
@@ -30,8 +97,16 @@ class DealModel {
   final String? dealCategoryId;
   final String? badgeText; // 自定义角标，如 "Best Value"
   final int? sortOrder; // 首页展示排序，NULL 表示不展示
-  // 多店通用：适用门店 ID 列表（null = 仅创建门店）
+  // 多店通用：适用门店 ID 列表（null = 仅创建门店，直接表查询时才有）
   final List<String>? applicableMerchantIds;
+  // RPC 搜索结果：active 门店数（search_deals_nearby/search_deals_by_city 返回）
+  final int? activeStoreCount;
+  // 套餐短名称（用于变体选择器横向展示）
+  final String? shortName;
+  // 商家填写的使用须知
+  final String usageNotes;
+  // 选项组（"几选几"功能，如 "Side: pick 2 from 4"）
+  final List<DealOptionGroup> optionGroups;
 
   const DealModel({
     required this.id,
@@ -44,14 +119,14 @@ class DealModel {
     required this.discountPercent,
     this.discountLabel = '',
     required this.imageUrls,
-    this.dishes = const [],
+    this.products = const [],
     this.rating = 0.0,
     this.reviewCount = 0,
     this.totalSold = 0,
     required this.stockLimit,
     required this.expiresAt,
     this.isFeatured = false,
-    this.refundPolicy = 'Risk-Free Refund within 7 days',
+    this.refundPolicy = 'Refund anytime before use, refund when expired',
     this.lat,
     this.lng,
     this.address,
@@ -64,6 +139,10 @@ class DealModel {
     this.badgeText,
     this.sortOrder,
     this.applicableMerchantIds,
+    this.activeStoreCount,
+    this.shortName,
+    this.usageNotes = '',
+    this.optionGroups = const [],
   });
 
   factory DealModel.fromJson(Map<String, dynamic> json) => DealModel(
@@ -78,7 +157,7 @@ class DealModel {
             ((1 - (json['discount_price'] as num) / (json['original_price'] as num)) * 100).round(),
         discountLabel: json['discount_label'] as String? ?? '',
         imageUrls: List<String>.from(json['image_urls'] as List? ?? []),
-        dishes: _parseDishes(json),
+        products: _parseProducts(json),
         rating: (json['rating'] as num?)?.toDouble() ?? 0.0,
         reviewCount: json['review_count'] as int? ?? 0,
         totalSold: json['total_sold'] as int? ?? 0,
@@ -86,7 +165,7 @@ class DealModel {
         expiresAt: DateTime.parse(json['expires_at'] as String),
         isFeatured: json['is_featured'] as bool? ?? false,
         refundPolicy: json['refund_policy'] as String? ??
-            'Risk-Free Refund within 7 days',
+            'Refund anytime before use, refund when expired',
         lat: (json['lat'] as num?)?.toDouble(),
         lng: (json['lng'] as num?)?.toDouble(),
         address: json['address'] as String?,
@@ -103,6 +182,10 @@ class DealModel {
             ?.map((e) => e?.toString() ?? '')
             .where((s) => s.isNotEmpty)
             .toList(),
+        activeStoreCount: null, // 直接表查询不返回此字段
+        shortName: json['short_name'] as String?,
+        usageNotes: json['usage_notes'] as String? ?? '',
+        optionGroups: _parseOptionGroups(json),
       );
 
   // RPC 搜索结果（search_deals_nearby / search_deals_by_city）解析
@@ -136,14 +219,13 @@ class DealModel {
         dealCategoryId: json['deal_category_id'] as String?,
         badgeText: json['badge_text'] as String?,
         sortOrder: json['sort_order'] as int?,
-        applicableMerchantIds: (json['applicable_merchant_ids'] as List?)
-            ?.map((e) => e?.toString() ?? '')
-            .where((s) => s.isNotEmpty)
-            .toList(),
+        applicableMerchantIds: null, // RPC 不再返回此字段，改为 active_store_count
+        activeStoreCount: (json['active_store_count'] as num?)?.toInt(),
+        shortName: json['short_name'] as String?,
       );
 
-  /// 解析菜品列表：优先读 dishes 数组，为空时从 package_contents 文本按行解析
-  static List<String> _parseDishes(Map<String, dynamic> json) {
+  /// 解析产品列表：优先读 products 数组，为空时从 package_contents 文本按行解析
+  static List<String> _parseProducts(Map<String, dynamic> json) {
     final raw = json['dishes'] as List? ?? [];
     if (raw.isNotEmpty) return List<String>.from(raw);
     // fallback: 从 package_contents 文本按行拆分
@@ -173,6 +255,17 @@ class DealModel {
         })
         .where((line) => line.isNotEmpty)
         .toList();
+  }
+
+  /// 解析选项组列表
+  static List<DealOptionGroup> _parseOptionGroups(Map<String, dynamic> json) {
+    final raw = json['deal_option_groups'] as List<dynamic>?;
+    if (raw == null || raw.isEmpty) return [];
+    final list = raw
+        .map((e) => DealOptionGroup.fromJson(e as Map<String, dynamic>))
+        .toList()
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+    return list;
   }
 
   bool get isExpired => DateTime.now().isAfter(expiresAt);

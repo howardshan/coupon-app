@@ -165,6 +165,7 @@ class _EmailFormView extends StatelessWidget {
 
           // 邮箱输入框
           AppTextField(
+            key: const ValueKey('forgot_password_email_field'),
             controller: emailCtrl,
             label: 'Email',
             hint: 'you@example.com',

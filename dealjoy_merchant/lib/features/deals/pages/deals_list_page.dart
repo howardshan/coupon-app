@@ -15,7 +15,10 @@ import '../widgets/deal_card.dart';
 // DealsListPage — Deal列表主页（ConsumerWidget）
 // ============================================================
 class DealsListPage extends ConsumerWidget {
-  const DealsListPage({super.key});
+  const DealsListPage({super.key, this.brandOnly = false});
+
+  /// true = 只显示品牌多店 Deal（applicableMerchantIds 非空）
+  final bool brandOnly;
 
   // 打开分类管理 BottomSheet
   void _showCategoryManager(BuildContext context, WidgetRef ref) {
@@ -32,7 +35,7 @@ class DealsListPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return DefaultTabController(
-      length: 4,
+      length: 5,
       child: Scaffold(
         backgroundColor: const Color(0xFFF8F9FA),
         appBar: AppBar(
@@ -48,9 +51,9 @@ class DealsListPage extends ConsumerWidget {
               }
             },
           ),
-          title: const Text(
-            'My Deals',
-            style: TextStyle(
+          title: Text(
+            brandOnly ? 'Brand Deals' : 'My Deals',
+            style: const TextStyle(
               color: Color(0xFF1A1A1A),
               fontSize: 18,
               fontWeight: FontWeight.w600,
@@ -78,6 +81,8 @@ class DealsListPage extends ConsumerWidget {
             ),
           ],
           bottom: const TabBar(
+            isScrollable: true,
+            tabAlignment: TabAlignment.start,
             labelColor: Color(0xFFFF6B35),
             unselectedLabelColor: Color(0xFF999999),
             indicatorColor: Color(0xFFFF6B35),
@@ -89,19 +94,22 @@ class DealsListPage extends ConsumerWidget {
               Tab(text: 'Active'),
               Tab(text: 'Inactive'),
               Tab(text: 'Pending'),
+              Tab(text: 'Declined'),
             ],
           ),
         ),
         body: TabBarView(
           children: [
             // All — 全部 Deal（无筛选）
-            _DealTabView(filter: null, ref: ref),
+            _DealTabView(filter: null, ref: ref, brandOnly: brandOnly),
             // Active — 已上架
-            _DealTabView(filter: DealStatus.active, ref: ref),
+            _DealTabView(filter: DealStatus.active, ref: ref, brandOnly: brandOnly),
             // Inactive — 已下架
-            _DealTabView(filter: DealStatus.inactive, ref: ref),
+            _DealTabView(filter: DealStatus.inactive, ref: ref, brandOnly: brandOnly),
             // Pending — 待审核
-            _DealTabView(filter: DealStatus.pending, ref: ref),
+            _DealTabView(filter: DealStatus.pending, ref: ref, brandOnly: brandOnly),
+            // Declined — 已拒绝的品牌 Deal
+            const _DeclinedDealsTab(),
           ],
         ),
 
@@ -124,13 +132,17 @@ class DealsListPage extends ConsumerWidget {
 
 // ============================================================
 // 单个 Tab 视图（对应一种筛选状态）
+// filter == null 时为 All tab，启用拖拽排序
 // ============================================================
 class _DealTabView extends ConsumerWidget {
-  const _DealTabView({required this.filter, required this.ref});
+  const _DealTabView({required this.filter, required this.ref, this.brandOnly = false});
 
-  /// null = All（不筛选）
+  /// null = All（不筛选），其他 tab 不支持拖拽
   final DealStatus? filter;
   final WidgetRef ref;
+
+  /// 只显示品牌多店 Deal
+  final bool brandOnly;
 
   @override
   Widget build(BuildContext context, WidgetRef consumerRef) {
@@ -143,15 +155,50 @@ class _DealTabView extends ConsumerWidget {
         onRetry: () => consumerRef.read(dealsProvider.notifier).refresh(),
       ),
       data: (deals) {
+        // 品牌模式：只显示多店 Deal
+        var source = brandOnly
+            ? deals.where((d) => d.applicableMerchantIds != null && d.applicableMerchantIds!.isNotEmpty).toList()
+            : deals;
         // 按状态筛选
         final filtered = filter == null
-            ? deals
-            : deals.where((d) => d.dealStatus == filter).toList();
+            ? source
+            : source.where((d) => d.dealStatus == filter).toList();
 
         if (filtered.isEmpty) {
           return _EmptyView(filter: filter);
         }
 
+        // All tab（filter == null）：使用可拖拽排序列表
+        if (filter == null) {
+          return RefreshIndicator(
+            color: const Color(0xFFFF6B35),
+            onRefresh: () => consumerRef.read(dealsProvider.notifier).refresh(),
+            child: ReorderableListView.builder(
+              padding: const EdgeInsets.only(top: 8, bottom: 100),
+              itemCount: filtered.length,
+              // 拖拽完成回调：调用 provider 更新 sort_order
+              onReorder: (oldIndex, newIndex) {
+                consumerRef.read(dealsProvider.notifier).reorderDeals(
+                  oldIndex: oldIndex,
+                  newIndex: newIndex,
+                  deals: filtered,
+                );
+              },
+              // 每个 item 必须有唯一 Key，ReorderableListView 要求
+              itemBuilder: (context, index) {
+                final deal = filtered[index];
+                return _ReorderableDealRow(
+                  key: ValueKey(deal.id),
+                  index: index,
+                  deal: deal,
+                  onTap: () => context.push('/deals/${deal.id}'),
+                );
+              },
+            ),
+          );
+        }
+
+        // 其他 tab：普通 ListView，不支持拖拽
         return RefreshIndicator(
           color: const Color(0xFFFF6B35),
           onRefresh: () => consumerRef.read(dealsProvider.notifier).refresh(),
@@ -169,6 +216,52 @@ class _DealTabView extends ConsumerWidget {
           ),
         );
       },
+    );
+  }
+}
+
+// ============================================================
+// 可拖拽的 Deal 行（All tab 专用）
+// 在 DealCard 右侧叠加拖拽手柄图标
+// index 由 ReorderableListView.builder 的 itemBuilder 传入
+// ============================================================
+class _ReorderableDealRow extends StatelessWidget {
+  const _ReorderableDealRow({
+    super.key,
+    required this.index,
+    required this.deal,
+    required this.onTap,
+  });
+
+  /// 当前行在列表中的位置，ReorderableDragStartListener 必须
+  final int index;
+  final MerchantDeal deal;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      alignment: Alignment.centerRight,
+      children: [
+        // Deal 卡片（保持原有 UI 不变）
+        DealCard(
+          deal: deal,
+          onTap: onTap,
+        ),
+        // 拖拽手柄：使用 ReorderableDragStartListener 激活拖拽
+        Positioned(
+          right: 12,
+          child: ReorderableDragStartListener(
+            index: index,
+            child: const Icon(
+              Icons.drag_handle,
+              key: ValueKey('deal_list_drag_handle'),
+              color: Color(0xFFBBBBBB),
+              size: 24,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -387,6 +480,167 @@ class _ErrorView extends StatelessWidget {
 }
 
 // ============================================================
+// Declined Tab — 展示被拒绝的品牌 Deal 列表
+// 数据来源：declinedStoreDealsProvider（不来自 dealsProvider）
+// ============================================================
+class _DeclinedDealsTab extends ConsumerWidget {
+  const _DeclinedDealsTab();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final declinedAsync = ref.watch(declinedStoreDealsProvider);
+
+    return declinedAsync.when(
+      // 加载中显示进度指示器
+      loading: () => const Center(child: CircularProgressIndicator()),
+      // 出错显示错误提示
+      error: (e, _) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.cloud_off_rounded, size: 64, color: Color(0xFFCCCCCC)),
+              const SizedBox(height: 16),
+              const Text(
+                'Failed to load declined deals',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF333333),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                e.toString(),
+                style: const TextStyle(fontSize: 13, color: Color(0xFF999999)),
+                textAlign: TextAlign.center,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+      ),
+      data: (deals) {
+        // 空列表显示空状态
+        if (deals.isEmpty) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.block_outlined,
+                    size: 72,
+                    color: Color(0xFFDDDDDD),
+                  ),
+                  SizedBox(height: 16),
+                  Text(
+                    'No Declined Deals',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF333333),
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    'Brand deals you have declined will appear here.',
+                    style: TextStyle(fontSize: 13, color: Color(0xFF999999)),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        // 渲染 Deal 列表
+        return ListView.separated(
+          padding: const EdgeInsets.only(top: 8, bottom: 100),
+          itemCount: deals.length,
+          separatorBuilder: (_, i) => Divider(height: 1, color: Colors.grey.shade100),
+          itemBuilder: (context, index) {
+            final row = deals[index];
+            final dealId = row['deal_id'] as String? ?? '';
+
+            // 解析嵌套的 deals join 结果
+            final dealData = row['deals'] as Map<String, dynamic>? ?? {};
+            final title = dealData['title'] as String? ?? 'Untitled Deal';
+            final price = (dealData['discount_price'] as num?)?.toDouble() ?? 0.0;
+
+            // 解析品牌名称（双重嵌套）
+            final merchantData = dealData['merchants'] as Map<String, dynamic>? ?? {};
+            final brandName = merchantData['name'] as String? ?? 'Brand';
+
+            // 解析 deal 图片（优先 is_primary，否则取 sort_order 最小的）
+            final dealImages = (dealData['deal_images'] as List<dynamic>?) ?? [];
+            String? imageUrl;
+            if (dealImages.isNotEmpty) {
+              final primary = dealImages.firstWhere(
+                (img) => img['is_primary'] == true,
+                orElse: () => dealImages.first,
+              );
+              imageUrl = primary['image_url'] as String?;
+            }
+
+            return ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              leading: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: SizedBox(
+                  width: 48,
+                  height: 48,
+                  child: imageUrl != null && imageUrl.isNotEmpty
+                      ? Image.network(
+                          imageUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Container(
+                            color: const Color(0xFFF5F5F5),
+                            child: const Icon(Icons.local_offer_outlined, size: 20, color: Color(0xFF9E9E9E)),
+                          ),
+                        )
+                      : Container(
+                          color: const Color(0xFFF5F5F5),
+                          child: const Icon(Icons.local_offer_outlined, size: 20, color: Color(0xFF9E9E9E)),
+                        ),
+                ),
+              ),
+              title: Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF1A1A2E),
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              subtitle: Text(
+                '$brandName · \$${price.toStringAsFixed(2)}',
+                style: const TextStyle(fontSize: 12, color: Color(0xFF666666)),
+              ),
+              trailing: const Icon(Icons.chevron_right, color: Color(0xFF9E9E9E)),
+              // 点击跳转到 Deal 确认页
+              onTap: () => context.push(
+                '/deals/confirm/$dealId',
+                extra: {
+                  'title': title,
+                  'price': price,
+                  'brand_name': brandName,
+                },
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+// ============================================================
 // 分类管理 BottomSheet
 // ============================================================
 class _CategoryManagerSheet extends ConsumerStatefulWidget {
@@ -514,6 +768,7 @@ class _CategoryManagerSheetState extends ConsumerState<_CategoryManagerSheet> {
       builder: (ctx) => AlertDialog(
         title: const Text('New Category'),
         content: TextField(
+          key: const ValueKey('deals_list_new_category_field'),
           controller: controller,
           autofocus: true,
           decoration: const InputDecoration(
@@ -566,6 +821,7 @@ class _CategoryManagerSheetState extends ConsumerState<_CategoryManagerSheet> {
       builder: (ctx) => AlertDialog(
         title: const Text('Edit Category'),
         content: TextField(
+          key: const ValueKey('deals_list_edit_category_field'),
           controller: controller,
           autofocus: true,
           decoration: const InputDecoration(

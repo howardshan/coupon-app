@@ -52,19 +52,62 @@ class StoreDetailRepository {
   }
 
   /// 获取商家活跃 deals（仅未过期的）
+  /// 同时包含：1) merchant_id = 当前门店的 deal  2) 通过 deal_applicable_stores 关联到当前门店的 brand deal
   Future<List<DealModel>> fetchActiveDeals(String merchantId) async {
     try {
-      final data = await _client
+      // 1. 查询 merchant_id = 当前门店的 deal
+      final ownData = await _client
           .from('deals')
           .select('*, merchants(id, name, logo_url, phone, brand_id, brands(name, logo_url))')
           .eq('merchant_id', merchantId)
           .eq('is_active', true)
           .gt('expires_at', DateTime.now().toIso8601String())
+          // sort_order 优先（null 排最后），再按 is_featured、total_sold 降序
+          .order('sort_order', ascending: true, nullsFirst: false)
           .order('is_featured', ascending: false)
           .order('total_sold', ascending: false);
-      return (data as List)
+      final ownDeals = (ownData as List)
           .map((d) => DealModel.fromJson(d as Map<String, dynamic>))
           .toList();
+      // 2. 查询通过 deal_applicable_stores 关联到当前门店的 brand deal（仅 active）
+      final dasData = await _client
+          .from('deal_applicable_stores')
+          .select('deal_id, status')
+          .eq('store_id', merchantId);
+      final activeDealIds = <String>{};
+      final declinedDealIds = <String>{};
+      for (final r in (dasData as List)) {
+        final dealId = r['deal_id'] as String;
+        final status = r['status'] as String? ?? '';
+        if (status == 'active') {
+          activeDealIds.add(dealId);
+        } else if (status == 'declined') {
+          declinedDealIds.add(dealId);
+        }
+      }
+
+      // 过滤掉门店已 declined 的 ownDeals（门店创建者但已 withdraw 的情况）
+      ownDeals.removeWhere((d) => declinedDealIds.contains(d.id));
+      final remainingOwnIds = ownDeals.map((d) => d.id).toSet();
+
+      // 加载关联的 active brand deal（排除已在 ownDeals 中的）
+      final linkedDealIds = activeDealIds
+          .where((id) => !remainingOwnIds.contains(id))
+          .toList();
+
+      if (linkedDealIds.isNotEmpty) {
+        final linkedData = await _client
+            .from('deals')
+            .select('*, merchants(id, name, logo_url, phone, brand_id, brands(name, logo_url))')
+            .inFilter('id', linkedDealIds)
+            .eq('is_active', true)
+            .gt('expires_at', DateTime.now().toIso8601String());
+        for (final d in (linkedData as List)) {
+          ownDeals.add(DealModel.fromJson(d as Map<String, dynamic>));
+        }
+      }
+
+      return ownDeals;
     } on PostgrestException catch (e) {
       throw AppException(
         'Failed to load store deals: ${e.message}',

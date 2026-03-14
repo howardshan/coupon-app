@@ -32,10 +32,10 @@ class MenuSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Signature Dishes 区块
+          // Signature Products 区块
           if (signature.isNotEmpty) ...[
             _SectionHeader(
-              title: 'Signature Dishes',
+              title: 'Signature Products',
               count: signature.length,
             ),
             const SizedBox(height: 10),

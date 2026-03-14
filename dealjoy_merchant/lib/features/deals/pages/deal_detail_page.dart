@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/merchant_deal.dart';
 import '../providers/deals_provider.dart';
 import '../widgets/deal_status_badge.dart';
@@ -321,10 +322,71 @@ class _DealDetailView extends StatelessWidget {
                       value: deal.usageNotes,
                     ),
                   ],
+
+                  // 使用须知附带的图片
+                  if (deal.usageNoteImages.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    const Divider(height: 1, color: Color(0xFFEEEEEE)),
+                    const SizedBox(height: 12),
+                    const Row(
+                      children: [
+                        Icon(Icons.photo_library_outlined, size: 16, color: Color(0xFF999999)),
+                        SizedBox(width: 6),
+                        Text('Attached Photos', style: TextStyle(fontSize: 13, color: Color(0xFF999999))),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      height: 100,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: deal.usageNoteImages.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 8),
+                        itemBuilder: (context, index) {
+                          final url = deal.usageNoteImages[index];
+                          return GestureDetector(
+                            onTap: () => showDialog(
+                              context: context,
+                              builder: (_) => _FullScreenImageViewer(
+                                images: deal.usageNoteImages,
+                                initialIndex: index,
+                              ),
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: CachedNetworkImage(
+                                imageUrl: url,
+                                width: 100,
+                                height: 100,
+                                fit: BoxFit.cover,
+                                placeholder: (_, __) => Container(
+                                  width: 100, height: 100,
+                                  color: const Color(0xFFF5F5F5),
+                                  child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                                ),
+                                errorWidget: (_, __, ___) => Container(
+                                  width: 100, height: 100,
+                                  color: const Color(0xFFF5F5F5),
+                                  child: const Icon(Icons.broken_image, color: Color(0xFFCCCCCC)),
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
             const SizedBox(height: 12),
+
+            // 门店审批状态卡片（仅多门店 brand deal 显示）
+            if (deal.applicableMerchantIds != null &&
+                deal.applicableMerchantIds!.isNotEmpty) ...[
+              _StoreStatusCard(dealId: deal.id),
+              const SizedBox(height: 12),
+            ],
 
             // 统计卡片
             _InfoCard(
@@ -413,37 +475,72 @@ class _StatusBanner extends StatelessWidget {
               height: 1.4,
             ),
           ),
-          // 拒绝原因（仅 rejected 状态显示）
-          if (!isPending && deal.reviewNotes != null && deal.reviewNotes!.isNotEmpty) ...[
+          // 驳回历史记录（从 deal_rejections 表异步加载）
+          if (!isPending) ...[
             const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Rejection Reason:',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFFE53935),
+            FutureBuilder<List<Map<String, dynamic>>>(
+              future: Supabase.instance.client
+                  .from('deal_rejections')
+                  .select('id, reason, created_at')
+                  .eq('deal_id', deal.id)
+                  .order('created_at', ascending: false),
+              builder: (context, snapshot) {
+                final records = snapshot.data ?? [];
+                // 无历史记录时降级显示 reviewNotes
+                if (records.isEmpty && deal.reviewNotes != null && deal.reviewNotes!.isNotEmpty) {
+                  return Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(6),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    deal.reviewNotes!,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: Color(0xFF555555),
-                      height: 1.4,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Rejection Reason:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFFE53935))),
+                        const SizedBox(height: 4),
+                        Text(deal.reviewNotes!, style: const TextStyle(fontSize: 13, color: Color(0xFF555555), height: 1.4)),
+                      ],
                     ),
-                  ),
-                ],
-              ),
+                  );
+                }
+                if (records.isEmpty) return const SizedBox.shrink();
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: records.map((r) {
+                    final reason = r['reason'] as String? ?? '';
+                    final createdAt = r['created_at'] != null
+                        ? DateTime.parse(r['created_at'] as String).toLocal()
+                        : null;
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 6),
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text('Rejection Reason:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFFE53935))),
+                              if (createdAt != null)
+                                Text(
+                                  '${createdAt.month}/${createdAt.day}/${createdAt.year} ${createdAt.hour}:${createdAt.minute.toString().padLeft(2, '0')}',
+                                  style: const TextStyle(fontSize: 11, color: Color(0xFF999999)),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(reason, style: const TextStyle(fontSize: 13, color: Color(0xFF555555), height: 1.4)),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                );
+              },
             ),
           ],
         ],
@@ -594,19 +691,22 @@ class _DetailRow extends StatelessWidget {
       children: [
         Icon(icon, size: 16, color: const Color(0xFF999999)),
         const SizedBox(width: 8),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              label,
-              style: const TextStyle(fontSize: 11, color: Color(0xFF999999)),
-            ),
-            const SizedBox(height: 1),
-            Text(
-              value,
-              style: const TextStyle(fontSize: 13, color: Color(0xFF333333)),
-            ),
-          ],
+        // Expanded 确保 Column 内的长文本（如可用日期、使用须知）不超出 Row 宽度
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(fontSize: 11, color: Color(0xFF999999)),
+              ),
+              const SizedBox(height: 1),
+              Text(
+                value,
+                style: const TextStyle(fontSize: 13, color: Color(0xFF333333)),
+              ),
+            ],
+          ),
         ),
       ],
     );
@@ -660,7 +760,112 @@ class _ActionButtons extends StatefulWidget {
 class _ActionButtonsState extends State<_ActionButtons> {
   bool _isLoading = false;
 
+  // 判断当前用户是否为 deal 的创建者
+  Future<bool> _isMyDeal() async {
+    final supabase = Supabase.instance.client;
+    final user = supabase.auth.currentUser;
+    if (user == null) return false;
+    final merchant = await supabase
+        .from('merchants')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+    if (merchant == null) return false;
+    return merchant['id'] == widget.deal.merchantId;
+  }
+
+  // 非创建者门店：通过 store-confirm decline 退出 deal
+  Future<void> _withdrawFromDeal() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Withdraw from this Deal?'),
+        content: const Text(
+          'Your store will no longer participate in this deal. You can reconsider and rejoin later from the deal confirmation page.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel', style: TextStyle(color: Color(0xFF999999))),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF757575),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Withdraw'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() => _isLoading = true);
+    try {
+      final supabase = Supabase.instance.client;
+      final user = supabase.auth.currentUser;
+      final merchant = await supabase
+          .from('merchants')
+          .select('id')
+          .eq('user_id', user!.id)
+          .maybeSingle();
+      final merchantId = merchant!['id'] as String;
+
+      // 调用 store-confirm decline（必须用 PATCH 方法）
+      final response = await supabase.functions.invoke(
+        'merchant-deals/${widget.deal.id}/store-confirm',
+        method: HttpMethod.patch,
+        body: {'action': 'decline'},
+        headers: {'X-Merchant-Id': merchantId},
+      );
+
+      if (response.status != 200) {
+        final data = response.data;
+        String msg = 'Request failed (${response.status})';
+        if (data is Map && data.containsKey('error')) {
+          msg = data['error'] as String;
+        }
+        throw Exception(msg);
+      }
+
+      if (!mounted) return;
+      // 刷新 deals 列表
+      widget.ref.invalidate(dealsProvider);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('You have withdrawn from this deal.'),
+          backgroundColor: Color(0xFF757575),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      // 返回上一页
+      if (mounted) context.pop();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed: $e'),
+          backgroundColor: const Color(0xFFE53935),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
   Future<void> _toggleStatus(bool activate) async {
+    // 非创建者门店尝试 deactivate 时，改用 withdraw 流程
+    if (!activate) {
+      final myDeal = await _isMyDeal();
+      if (!myDeal) {
+        return _withdrawFromDeal();
+      }
+    }
+
     // 显示确认对话框
     final confirmed = await showDialog<bool>(
       context: context,
@@ -781,6 +986,7 @@ class _ActionButtonsState extends State<_ActionButtons> {
         // 上架按钮（仅 inactive 状态显示）
         if (deal.canActivate)
           ElevatedButton.icon(
+            key: const ValueKey('deal_detail_toggle_active_btn'),
             onPressed: _isLoading ? null : () => _toggleStatus(true),
             icon: _isLoading
                 ? const SizedBox(
@@ -809,6 +1015,7 @@ class _ActionButtonsState extends State<_ActionButtons> {
         // 下架按钮（仅 active 状态显示）
         if (deal.canDeactivate) ...[
           ElevatedButton.icon(
+            key: const ValueKey('deal_detail_toggle_active_btn'),
             onPressed: _isLoading ? null : () => _toggleStatus(false),
             icon: _isLoading
                 ? const SizedBox(
@@ -839,6 +1046,7 @@ class _ActionButtonsState extends State<_ActionButtons> {
         if (deal.dealStatus == DealStatus.inactive) ...[
           const SizedBox(height: 10),
           OutlinedButton.icon(
+            key: const ValueKey('deal_detail_delete_btn'),
             onPressed: _isLoading ? null : _deleteDeal,
             icon: const Icon(Icons.delete_outline_rounded, size: 18),
             label: const Text(
@@ -856,6 +1064,293 @@ class _ActionButtonsState extends State<_ActionButtons> {
           ),
         ],
       ],
+    );
+  }
+}
+
+// ============================================================
+// 门店审批状态卡片（brand multi-store deal）
+// ============================================================
+class _StoreStatusCard extends StatefulWidget {
+  const _StoreStatusCard({required this.dealId});
+
+  final String dealId;
+
+  @override
+  State<_StoreStatusCard> createState() => _StoreStatusCardState();
+}
+
+class _StoreStatusCardState extends State<_StoreStatusCard> {
+  List<Map<String, dynamic>>? _stores;
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadStoreStatus();
+  }
+
+  // 查询 deal_applicable_stores 获取各门店审批状态
+  Future<void> _loadStoreStatus() async {
+    try {
+      final data = await Supabase.instance.client
+          .from('deal_applicable_stores')
+          .select('store_id, status, confirmed_at, merchants!deal_applicable_stores_store_id_fkey(name, logo_url)')
+          .eq('deal_id', widget.dealId)
+          .order('created_at');
+      setState(() {
+        _stores = List<Map<String, dynamic>>.from(data);
+        _loading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const _InfoCard(
+        title: 'Store Status',
+        child: Center(
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: CircularProgressIndicator(color: Color(0xFFFF6B35)),
+          ),
+        ),
+      );
+    }
+
+    if (_error != null) {
+      return _InfoCard(
+        title: 'Store Status',
+        child: Text('Failed to load: $_error',
+            style: const TextStyle(color: Color(0xFF999999), fontSize: 13)),
+      );
+    }
+
+    final stores = _stores ?? [];
+    if (stores.isEmpty) {
+      return const _InfoCard(
+        title: 'Store Status',
+        child: Text('No stores assigned.',
+            style: TextStyle(color: Color(0xFF999999), fontSize: 13)),
+      );
+    }
+
+    // 统计各状态数量
+    int activeCount = 0, pendingCount = 0, declinedCount = 0, removedCount = 0;
+    for (final s in stores) {
+      switch (s['status'] as String? ?? '') {
+        case 'active':
+          activeCount++;
+        case 'pending_store_confirmation':
+          pendingCount++;
+        case 'declined':
+          declinedCount++;
+        case 'removed':
+          removedCount++;
+      }
+    }
+
+    return _InfoCard(
+      title: 'Store Status',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 状态汇总标签
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            children: [
+              if (activeCount > 0)
+                _StatusChip(label: 'Approved', count: activeCount, color: const Color(0xFF4CAF50)),
+              if (pendingCount > 0)
+                _StatusChip(label: 'Pending', count: pendingCount, color: const Color(0xFFF9A825)),
+              if (declinedCount > 0)
+                _StatusChip(label: 'Declined', count: declinedCount, color: const Color(0xFFE53935)),
+              if (removedCount > 0)
+                _StatusChip(label: 'Removed', count: removedCount, color: const Color(0xFF757575)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // 门店列表
+          ...stores.map((s) {
+            final merchant = s['merchants'] as Map<String, dynamic>? ?? {};
+            final name = merchant['name'] as String? ?? 'Unknown Store';
+            final status = s['status'] as String? ?? '';
+            final confirmedAt = s['confirmed_at'] != null
+                ? DateTime.parse(s['confirmed_at'] as String).toLocal()
+                : null;
+
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                children: [
+                  // 状态图标
+                  _statusIcon(status),
+                  const SizedBox(width: 10),
+                  // 门店名
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          name,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF333333),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (confirmedAt != null)
+                          Text(
+                            '${confirmedAt.month}/${confirmedAt.day}/${confirmedAt.year}',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Color(0xFF999999),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  // 状态标签
+                  _statusBadge(status),
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _statusIcon(String status) {
+    return switch (status) {
+      'active' => const Icon(Icons.check_circle, size: 20, color: Color(0xFF4CAF50)),
+      'pending_store_confirmation' => const Icon(Icons.hourglass_top_rounded, size: 20, color: Color(0xFFF9A825)),
+      'declined' => const Icon(Icons.cancel, size: 20, color: Color(0xFFE53935)),
+      'removed' => const Icon(Icons.remove_circle, size: 20, color: Color(0xFF757575)),
+      _ => const Icon(Icons.help_outline, size: 20, color: Color(0xFF999999)),
+    };
+  }
+
+  Widget _statusBadge(String status) {
+    final (label, color) = switch (status) {
+      'active' => ('Approved', const Color(0xFF4CAF50)),
+      'pending_store_confirmation' => ('Pending', const Color(0xFFF9A825)),
+      'declined' => ('Declined', const Color(0xFFE53935)),
+      'removed' => ('Removed', const Color(0xFF757575)),
+      _ => ('Unknown', const Color(0xFF999999)),
+    };
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: color,
+        ),
+      ),
+    );
+  }
+}
+
+// ── 状态汇总标签 ─────────────────────────────────────────────
+
+class _StatusChip extends StatelessWidget {
+  const _StatusChip({
+    required this.label,
+    required this.count,
+    required this.color,
+  });
+
+  final String label;
+  final int count;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        '$label: $count',
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: color,
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================
+// 全屏图片查看器（支持左右滑动）
+// ============================================================
+class _FullScreenImageViewer extends StatelessWidget {
+  const _FullScreenImageViewer({
+    required this.images,
+    required this.initialIndex,
+  });
+
+  final List<String> images;
+  final int initialIndex;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog.fullscreen(
+      backgroundColor: Colors.black,
+      child: Stack(
+        children: [
+          // 图片 PageView
+          PageView.builder(
+            controller: PageController(initialPage: initialIndex),
+            itemCount: images.length,
+            itemBuilder: (_, index) => InteractiveViewer(
+              child: Center(
+                child: CachedNetworkImage(
+                  imageUrl: images[index],
+                  fit: BoxFit.contain,
+                  placeholder: (c, u) => const Center(
+                    child: CircularProgressIndicator(color: Colors.white),
+                  ),
+                  errorWidget: (c, u, e) => const Icon(
+                    Icons.broken_image,
+                    color: Colors.white54,
+                    size: 48,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          // 关闭按钮
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 8,
+            right: 12,
+            child: IconButton(
+              icon: const Icon(Icons.close, color: Colors.white, size: 28),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

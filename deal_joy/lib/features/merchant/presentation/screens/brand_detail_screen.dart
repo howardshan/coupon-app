@@ -28,6 +28,7 @@ class BrandDetailScreen extends ConsumerWidget {
               Text('Failed to load brand', style: Theme.of(context).textTheme.bodyLarge),
               const SizedBox(height: 16),
               ElevatedButton(
+                key: const ValueKey('brand_detail_retry_btn'),
                 onPressed: () => ref.invalidate(brandDetailProvider(brandId)),
                 child: const Text('Retry'),
               ),

@@ -200,3 +200,9 @@ final savedDealsNotifierProvider =
     NotifierProvider<SavedDealsNotifier, AsyncValue<void>>(
       SavedDealsNotifier.new,
     );
+
+// ---- 选项组选择状态 Provider ----
+// 存储每个 deal 的选项选择：dealId -> { groupId: Set<itemId> }
+// 用于在 deal 详情页的 _OptionGroupsSelector 和 _BottomBar 之间共享状态
+final dealOptionSelectionsProvider =
+    StateProvider.family<Map<String, Set<String>>, String>((ref, dealId) => {});

@@ -183,18 +183,22 @@ class _StorefrontHeader extends StatelessWidget {
                         Row(
                           children: [
                             if (store.category != null) ...[
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withValues(alpha: 0.2),
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Text(
-                                  store.category!,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w500,
+                              Flexible(
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: 0.2),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    store.category!,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
                               ),
@@ -636,36 +640,38 @@ class _PhotosContent extends StatelessWidget {
                   : _PhotoPlaceholder(size: 64),
             ),
             const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Row(
-                  children: [
-                    Text(
-                      'Storefront',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                        color: Color(0xFF333333),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    children: [
+                      Text(
+                        'Storefront',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: Color(0xFF333333),
+                        ),
                       ),
-                    ),
-                    SizedBox(width: 4),
-                    Text(
-                      '*',
-                      style: TextStyle(color: Color(0xFFFF6B35), fontSize: 14),
-                    ),
-                  ],
-                ),
-                Text(
-                  storefrontUrl != null ? 'Uploaded' : 'Not uploaded',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: storefrontUrl != null
-                        ? const Color(0xFF4CAF50)
-                        : const Color(0xFFFF6B35),
+                      SizedBox(width: 4),
+                      Text(
+                        '*',
+                        style: TextStyle(color: Color(0xFFFF6B35), fontSize: 14),
+                      ),
+                    ],
                   ),
-                ),
-              ],
+                  Text(
+                    storefrontUrl != null ? 'Uploaded' : 'Not uploaded',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: storefrontUrl != null
+                          ? const Color(0xFF4CAF50)
+                          : const Color(0xFFFF6B35),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -673,16 +679,20 @@ class _PhotosContent extends StatelessWidget {
         // 环境照和菜品照计数
         Row(
           children: [
-            _PhotoCountBadge(
-              label: 'Environment',
-              count: envCount,
-              max: 10,
+            Expanded(
+              child: _PhotoCountBadge(
+                label: 'Environment',
+                count: envCount,
+                max: 10,
+              ),
             ),
             const SizedBox(width: 12),
-            _PhotoCountBadge(
-              label: 'Products',
-              count: productCount,
-              max: 10,
+            Expanded(
+              child: _PhotoCountBadge(
+                label: 'Products',
+                count: productCount,
+                max: 10,
+              ),
             ),
           ],
         ),
@@ -801,15 +811,19 @@ class _HoursContent extends StatelessWidget {
                 ),
               ),
               // 营业时间
-              Text(
-                h.displayText,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: h.isClosed
-                      ? const Color(0xFFBBBBBB)
-                      : const Color(0xFF333333),
-                  fontWeight:
-                      h.isClosed ? FontWeight.w400 : FontWeight.w500,
+              Expanded(
+                child: Text(
+                  h.displayText,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: h.isClosed
+                        ? const Color(0xFFBBBBBB)
+                        : const Color(0xFF333333),
+                    fontWeight:
+                        h.isClosed ? FontWeight.w400 : FontWeight.w500,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],

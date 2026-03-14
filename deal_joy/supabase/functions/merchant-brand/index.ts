@@ -270,6 +270,57 @@ Deno.serve(async (req: Request) => {
     ) {
       const body = await req.json();
 
+      // 通过 email 查找门店 owner，再关联
+      if (body.email && !body.merchant_id) {
+        // 先通过 email 找到 auth user
+        const { data: userData, error: userError } = await supabaseAdmin
+          .auth.admin.listUsers();
+
+        if (userError) {
+          return errorResponse(`Failed to lookup user: ${userError.message}`);
+        }
+
+        const targetUser = (userData?.users ?? []).find(
+          (u: { email?: string }) => u.email === body.email
+        );
+
+        if (!targetUser) {
+          return errorResponse(`No user found with email: ${body.email}`, 404);
+        }
+
+        // 查找该用户拥有的门店
+        const { data: userStores, error: storeError } = await supabaseAdmin
+          .from("merchants")
+          .select("id, name, address, brand_id")
+          .eq("user_id", targetUser.id);
+
+        if (storeError || !userStores || userStores.length === 0) {
+          return errorResponse(`No store found for user: ${body.email}`, 404);
+        }
+
+        // 检查门店是否已属于其他品牌
+        const store = userStores[0];
+        if (store.brand_id && store.brand_id !== auth.brandId) {
+          return errorResponse("This store already belongs to another brand");
+        }
+        if (store.brand_id === auth.brandId) {
+          return errorResponse("This store is already in your brand");
+        }
+
+        // 关联门店到品牌
+        const { data, error } = await supabaseAdmin
+          .from("merchants")
+          .update({ brand_id: auth.brandId })
+          .eq("id", store.id)
+          .select("id, name, address")
+          .single();
+
+        if (error) {
+          return errorResponse(`Failed to add store: ${error.message}`);
+        }
+        return jsonResponse({ store: data });
+      }
+
       if (body.merchant_id) {
         // 关联现有门店（更新 brand_id）
         const { data, error } = await supabaseAdmin
@@ -362,6 +413,24 @@ Deno.serve(async (req: Request) => {
               // 多店 deal 已无可用门店但原店仍在，保持 active
             }
           }
+        }
+      }
+
+      // 同步更新 deal_applicable_stores 表：将该门店所有 active/pending 记录标记为 removed（品牌踢出）
+      const { data: dasRecords } = await supabaseAdmin
+        .from("deal_applicable_stores")
+        .select("deal_id")
+        .eq("store_id", storeId)
+        .in("status", ["active", "pending_store_confirmation"]);
+
+      if (dasRecords && dasRecords.length > 0) {
+        for (const record of dasRecords) {
+          await supabaseAdmin.rpc("remove_deal_store", {
+            p_deal_id: record.deal_id,
+            p_store_id: storeId,
+            p_user_id: user.id,
+            p_removed_reason: "brand_kicked",
+          });
         }
       }
 

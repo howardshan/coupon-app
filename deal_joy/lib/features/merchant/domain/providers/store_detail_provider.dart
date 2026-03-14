@@ -18,32 +18,32 @@ final storeDetailRepositoryProvider = Provider<StoreDetailRepository>((ref) {
 // ── 商家详情（含照片+营业时间）─────────────────────────────
 
 final merchantDetailInfoProvider =
-    FutureProvider.family<MerchantDetailModel, String>((ref, merchantId) async {
+    FutureProvider.autoDispose.family<MerchantDetailModel, String>((ref, merchantId) async {
   return ref.watch(storeDetailRepositoryProvider).fetchMerchantDetail(merchantId);
 });
 
 // ── 商家活跃 Deals ──────────────────────────────────────────
 
 final merchantActiveDealsProvider =
-    FutureProvider.family<List<DealModel>, String>((ref, merchantId) async {
+    FutureProvider.autoDispose.family<List<DealModel>, String>((ref, merchantId) async {
   return ref.watch(storeDetailRepositoryProvider).fetchActiveDeals(merchantId);
 });
 
 // ── Deal 分类列表 ─────────────────────────────────────────────
 
 final dealCategoriesProvider =
-    FutureProvider.family<List<DealCategoryModel>, String>((ref, merchantId) async {
+    FutureProvider.autoDispose.family<List<DealCategoryModel>, String>((ref, merchantId) async {
   return ref.watch(storeDetailRepositoryProvider).fetchDealCategories(merchantId);
 });
 
 // ── 当前选中的 Deal 分类（null = All）─────────────────────────
 
 final selectedDealCategoryProvider =
-    StateProvider.family<String?, String>((ref, merchantId) => null);
+    StateProvider.autoDispose.family<String?, String>((ref, merchantId) => null);
 
 // ── 按分类筛选后的 Deals（分 voucher 和 regular）──────────────
 
-final filteredDealsProvider = Provider.family<
+final filteredDealsProvider = Provider.autoDispose.family<
     ({List<DealModel> vouchers, List<DealModel> regulars}), String>(
   (ref, merchantId) {
     final dealsAsync = ref.watch(merchantActiveDealsProvider(merchantId));
@@ -70,7 +70,7 @@ final filteredDealsProvider = Provider.family<
 // ── 菜品列表（按 category 分组）─────────────────────────────
 
 final menuItemsProvider =
-    FutureProvider.family<Map<String, List<MenuItemModel>>, String>((
+    FutureProvider.autoDispose.family<Map<String, List<MenuItemModel>>, String>((
   ref,
   merchantId,
 ) async {
@@ -86,7 +86,7 @@ final menuItemsProvider =
 // ── 设施信息 ────────────────────────────────────────────────
 
 final facilitiesProvider =
-    FutureProvider.family<List<StoreFacilityModel>, String>((
+    FutureProvider.autoDispose.family<List<StoreFacilityModel>, String>((
   ref,
   merchantId,
 ) async {
@@ -96,19 +96,19 @@ final facilitiesProvider =
 // ── 评价统计 ────────────────────────────────────────────────
 
 final reviewStatsProvider =
-    FutureProvider.family<ReviewStatsModel, String>((ref, merchantId) async {
+    FutureProvider.autoDispose.family<ReviewStatsModel, String>((ref, merchantId) async {
   return ref.watch(storeDetailRepositoryProvider).fetchReviewStats(merchantId);
 });
 
 // ── 评价列表（支持分页）─────────────────────────────────────
 
-final merchantReviewsProvider = AsyncNotifierProvider.family<
+final merchantReviewsProvider = AsyncNotifierProvider.autoDispose.family<
     MerchantReviewsNotifier, List<ReviewModel>, String>(
   MerchantReviewsNotifier.new,
 );
 
 class MerchantReviewsNotifier
-    extends FamilyAsyncNotifier<List<ReviewModel>, String> {
+    extends AutoDisposeFamilyAsyncNotifier<List<ReviewModel>, String> {
   int _page = 0;
   bool _hasMore = true;
 
@@ -138,7 +138,7 @@ class MerchantReviewsNotifier
 
 // ── 同品牌其他门店 ──────────────────────────────────────────
 
-final sameBrandStoresProvider = FutureProvider.family<
+final sameBrandStoresProvider = FutureProvider.autoDispose.family<
     List<Map<String, dynamic>>, ({String brandId, String merchantId})>(
   (ref, params) async {
     return ref.watch(storeDetailRepositoryProvider).fetchSameBrandStores(
@@ -150,7 +150,7 @@ final sameBrandStoresProvider = FutureProvider.family<
 
 // ── 附近推荐商家 ────────────────────────────────────────────
 
-final nearbyMerchantsProvider = FutureProvider.family<
+final nearbyMerchantsProvider = FutureProvider.autoDispose.family<
     List<Map<String, dynamic>>, ({String merchantId, double lat, double lng})>(
   (ref, params) async {
     return ref.watch(storeDetailRepositoryProvider).fetchNearbyMerchants(
