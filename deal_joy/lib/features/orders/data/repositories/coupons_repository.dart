@@ -5,12 +5,13 @@ import '../../../../core/errors/app_exception.dart';
 import '../models/coupon_model.dart';
 
 /// Supabase 查询中携带 deals、merchants、orders 的 select 字符串
+/// orders 需指定 FK：coupons 与 orders 存在双向关系，用 orders!coupons_order_id_fkey 消除歧义
 const _couponSelect =
     'id, order_id, user_id, deal_id, merchant_id, qr_code, status, '
     'expires_at, used_at, created_at, gifted_from, verified_by, '
     'deals(id, title, description, image_urls, refund_policy, '
     'merchants(name, logo_url, address, phone)), '
-    'orders(applicable_store_ids)';
+    'orders!coupons_order_id_fkey(applicable_store_ids)';
 
 class CouponsRepository {
   final SupabaseClient _client;
