@@ -257,7 +257,7 @@ class StoreService {
   ) async {
     await _ensureFreshSession();
     final response = await _supabase.functions.invoke(
-      _functionName,
+      '$_functionName/hours',
       method: HttpMethod.put,
       body: {
         'hours': hours.map((h) => h.toJson()).toList(),

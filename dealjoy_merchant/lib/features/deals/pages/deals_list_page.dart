@@ -132,11 +132,12 @@ class DealsListPage extends ConsumerWidget {
 
 // ============================================================
 // 单个 Tab 视图（对应一种筛选状态）
+// filter == null 时为 All tab，启用拖拽排序
 // ============================================================
 class _DealTabView extends ConsumerWidget {
   const _DealTabView({required this.filter, required this.ref, this.brandOnly = false});
 
-  /// null = All（不筛选）
+  /// null = All（不筛选），其他 tab 不支持拖拽
   final DealStatus? filter;
   final WidgetRef ref;
 
@@ -167,6 +168,37 @@ class _DealTabView extends ConsumerWidget {
           return _EmptyView(filter: filter);
         }
 
+        // All tab（filter == null）：使用可拖拽排序列表
+        if (filter == null) {
+          return RefreshIndicator(
+            color: const Color(0xFFFF6B35),
+            onRefresh: () => consumerRef.read(dealsProvider.notifier).refresh(),
+            child: ReorderableListView.builder(
+              padding: const EdgeInsets.only(top: 8, bottom: 100),
+              itemCount: filtered.length,
+              // 拖拽完成回调：调用 provider 更新 sort_order
+              onReorder: (oldIndex, newIndex) {
+                consumerRef.read(dealsProvider.notifier).reorderDeals(
+                  oldIndex: oldIndex,
+                  newIndex: newIndex,
+                  deals: filtered,
+                );
+              },
+              // 每个 item 必须有唯一 Key，ReorderableListView 要求
+              itemBuilder: (context, index) {
+                final deal = filtered[index];
+                return _ReorderableDealRow(
+                  key: ValueKey(deal.id),
+                  index: index,
+                  deal: deal,
+                  onTap: () => context.push('/deals/${deal.id}'),
+                );
+              },
+            ),
+          );
+        }
+
+        // 其他 tab：普通 ListView，不支持拖拽
         return RefreshIndicator(
           color: const Color(0xFFFF6B35),
           onRefresh: () => consumerRef.read(dealsProvider.notifier).refresh(),
@@ -184,6 +216,52 @@ class _DealTabView extends ConsumerWidget {
           ),
         );
       },
+    );
+  }
+}
+
+// ============================================================
+// 可拖拽的 Deal 行（All tab 专用）
+// 在 DealCard 右侧叠加拖拽手柄图标
+// index 由 ReorderableListView.builder 的 itemBuilder 传入
+// ============================================================
+class _ReorderableDealRow extends StatelessWidget {
+  const _ReorderableDealRow({
+    super.key,
+    required this.index,
+    required this.deal,
+    required this.onTap,
+  });
+
+  /// 当前行在列表中的位置，ReorderableDragStartListener 必须
+  final int index;
+  final MerchantDeal deal;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      alignment: Alignment.centerRight,
+      children: [
+        // Deal 卡片（保持原有 UI 不变）
+        DealCard(
+          deal: deal,
+          onTap: onTap,
+        ),
+        // 拖拽手柄：使用 ReorderableDragStartListener 激活拖拽
+        Positioned(
+          right: 12,
+          child: ReorderableDragStartListener(
+            index: index,
+            child: const Icon(
+              Icons.drag_handle,
+              key: ValueKey('deal_list_drag_handle'),
+              color: Color(0xFFBBBBBB),
+              size: 24,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

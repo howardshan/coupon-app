@@ -40,6 +40,25 @@ final couponDetailProvider =
   return ref.watch(couponsRepositoryProvider).fetchCouponDetail(couponId);
 });
 
+/// 根据门店 ID 列表查询门店基本信息（名称+地址），用于券详情页展示可用门店
+final applicableStoresProvider =
+    FutureProvider.family<List<Map<String, String>>, List<String>>((ref, storeIds) async {
+  if (storeIds.isEmpty) return [];
+  final client = ref.watch(supabaseClientProvider);
+  final data = await client
+      .from('merchants')
+      .select('id, name, address')
+      .inFilter('id', storeIds);
+  return (data as List).map((e) {
+    final m = e as Map<String, dynamic>;
+    return {
+      'id': m['id'] as String? ?? '',
+      'name': m['name'] as String? ?? '',
+      'address': m['address'] as String? ?? '',
+    };
+  }).toList();
+});
+
 /// 退款操作 Notifier
 class RefundNotifier extends AsyncNotifier<void> {
   @override

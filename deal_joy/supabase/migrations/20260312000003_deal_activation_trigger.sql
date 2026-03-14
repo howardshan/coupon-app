@@ -97,7 +97,7 @@ BEGIN
     confirmed_at         = NOW()
   WHERE deal_id  = p_deal_id
     AND store_id = p_store_id
-    AND status   = 'pending_store_confirmation';
+    AND status IN ('pending_store_confirmation', 'declined');
 
   -- 返回当前 active 门店数
   SELECT COUNT(*) INTO v_active_count
@@ -123,7 +123,7 @@ BEGIN
     confirmed_at = NOW()
   WHERE deal_id  = p_deal_id
     AND store_id = p_store_id
-    AND status   = 'pending_store_confirmation';
+    AND status IN ('pending_store_confirmation', 'active');
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 

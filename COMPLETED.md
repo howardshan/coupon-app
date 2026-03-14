@@ -118,6 +118,42 @@
   - `dealjoy_merchant/lib/features/deals/pages/store_deal_confirm_page.dart`
   - `dealjoy_merchant/lib/features/dashboard/pages/dashboard_page.dart` — `_PendingBrandDealsBanner`
 
+#### Brand 鉴权 + 门店切换 ✅
+- 状态：已完成，品牌管理员识别、门店切换、默认门店逻辑测试通过
+- 改动内容：
+  - `resolveAuth()` 品牌管理员检测（brand_admins 表）+ 角色映射
+  - 默认 merchantId 优先使用用户自己拥有的门店，而非品牌下第一家
+  - StoreSelector 门店切换组件（品牌管理员专用）
+  - Dashboard ShortcutGrid 品牌入口（仅 `isBrandAdmin` 可见）
+- 受保护文件：
+  - `deal_joy/supabase/functions/_shared/auth.ts` — `resolveAuth()` 品牌管理员检测逻辑、角色权限映射、默认 merchantId 选择
+  - `dealjoy_merchant/lib/features/store/widgets/store_selector.dart`（整个文件）
+  - `dealjoy_merchant/lib/features/store/providers/store_provider.dart` — `isBrandAdmin`、`switchStore()` 逻辑
+  - `dealjoy_merchant/lib/features/dashboard/widgets/shortcut_grid.dart` — Brand 入口条件判断
+
+#### Brand Logo 上传 + 客户端展示 ✅
+- 状态：已完成，商家端品牌 Logo 上传、客户端 Chain 标识 + 品牌 Badge 展示测试通过
+- 改动内容：
+  - Brand Info 页面支持品牌 Logo 上传（image_picker → Supabase Storage `merchant-photos/brand-logos/`）
+  - 客户端 DealCard 图片右上角 Chain 标识（品牌 Logo 16px + "Chain" 文字，半透明黑底）
+  - 客户端 DealCard 信息区品牌 Badge（品牌 Logo 14px + 品牌名，连锁店显示）
+  - 客户端 DealDetailScreen、DealCardHorizontal、DealCardV2 品牌 Badge
+- 受保护文件：
+  - `dealjoy_merchant/lib/features/store/pages/brand_info_page.dart` — `_pickAndUploadLogo()` Logo 上传逻辑
+  - `deal_joy/lib/features/deals/presentation/widgets/deal_card.dart` — `_DealCardBrandBadge`、Chain 标识（`isChainStore` 判断 + Positioned badge）
+  - `deal_joy/lib/features/deals/presentation/screens/deal_detail_screen.dart` — `_DetailBrandBadge`
+  - `deal_joy/lib/features/merchant/presentation/widgets/deal_card_horizontal.dart` — `_HorizontalBrandBadge`
+  - `deal_joy/lib/features/merchant/presentation/widgets/deal_card_v2.dart` — `_V2BrandBadge`
+  - `deal_joy/lib/features/deals/data/models/deal_model.dart` — `MerchantSummary.isChainStore`、`brandLogoUrl`、`brandName` 字段
+
+#### 首页固定头部 ✅
+- 状态：已完成，城市选择器 + 通知图标始终固定在顶部
+- 改动内容：
+  - SliverAppBar 重构：城市+通知从 FlexibleSpaceBar 移至 `title`（始终固定）
+  - 搜索栏移至 `bottom: PreferredSize`
+- 受保护文件：
+  - `deal_joy/lib/features/deals/presentation/screens/home_screen.dart` — SliverAppBar `title`（城市+通知）、`bottom`（搜索栏）结构
+
 ---
 
 ### Admin 管理端（admin/）
@@ -139,6 +175,7 @@
 | 2026-03-12 | 多店 Deal 门店确认机制全部实施完成 | Claude |
 | 2026-03-12 | Brand Management 改版 + 门店确认入口 + Brand Deals 过滤 | Claude |
 | 2026-03-13 | Brand Deal 创建/审批/客户端展示 — RPC 类型修复 + 商家详情页关联查询 + provider autoDispose | Claude |
+| 2026-03-13 | Brand 鉴权/门店切换 + Logo 上传/客户端展示 + 首页固定头部 — 全部加入保护清单 | Claude |
 
 ---
 

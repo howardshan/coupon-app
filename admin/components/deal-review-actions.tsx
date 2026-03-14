@@ -63,8 +63,8 @@ export default function DealReviewActions({ dealId, isActive, dealStatus }: Deal
   return (
     <div className="flex flex-col items-end gap-3">
       <div className="flex items-center gap-2">
-        {/* Activate 按钮：inactive / rejected / pending 状态显示 */}
-        {!isActive && (
+        {/* Activate 按钮：仅 pending 状态显示（商家自行下架的 inactive 不需要 admin 激活） */}
+        {dealStatus === 'pending' && (
           <button
             type="button"
             onClick={handleActivate}

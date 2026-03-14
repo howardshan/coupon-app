@@ -116,6 +116,14 @@ Deno.serve(async (req: Request) => {
     }
 
     // ----------------------------------------------------------
+    // PATCH /merchant-deals/reorder — 批量更新 sort_order
+    // ----------------------------------------------------------
+    if (req.method === "PATCH" && dealId === "reorder" && !subPath) {
+      const body = await req.json();
+      return await handleBatchReorder(supabaseAdmin, merchantId, body);
+    }
+
+    // ----------------------------------------------------------
     // PATCH /merchant-deals/:id/status — 上下架切换
     // ----------------------------------------------------------
     if (req.method === "PATCH" && dealId && subPath === "status") {
@@ -255,6 +263,7 @@ async function handleGetDeals(
     deal_status,
     package_contents,
     usage_notes,
+    usage_note_images,
     usage_days,
     max_per_person,
     is_stackable,
@@ -272,6 +281,19 @@ async function handleGetDeals(
       image_url,
       sort_order,
       is_primary
+    ),
+    deal_option_groups (
+      id,
+      name,
+      select_min,
+      select_max,
+      sort_order,
+      deal_option_items (
+        id,
+        name,
+        price,
+        sort_order
+      )
     )
   `;
 
@@ -400,6 +422,7 @@ async function handleCreateDeal(
     deal_status:      "pending",
     package_contents: String(body.package_contents ?? ""),
     usage_notes:      String(body.usage_notes ?? ""),
+    usage_note_images: (body.usage_note_images as string[]) ?? [],
     usage_days:       (body.usage_days as string[]) ?? [],
     max_per_person:   body.max_per_person ? Number(body.max_per_person) : null,
     is_stackable:     body.is_stackable !== undefined ? Boolean(body.is_stackable) : true,
@@ -414,6 +437,7 @@ async function handleCreateDeal(
     deal_category_id: body.deal_category_id ?? null,
     deal_type:        body.deal_type ? String(body.deal_type) : "regular",
     badge_text:       body.badge_text ? String(body.badge_text) : null,
+    short_name:       body.short_name ? String(body.short_name).slice(0, 10) : null,
     // 多店通用：保持向后兼容，同时支持新的 store_confirmations 格式
     applicable_merchant_ids: body.applicable_merchant_ids ?? null,
     // 门店预确认列表，格式：[{ store_id, pre_confirmed }]
@@ -432,12 +456,17 @@ async function handleCreateDeal(
     return errorResponse(error.message, 500);
   }
 
+  // 插入选项组和选项项
+  if (body.option_groups && Array.isArray(body.option_groups)) {
+    await insertOptionGroups(admin, deal.id, body.option_groups as OptionGroupInput[]);
+  }
+
   return jsonResponse({ deal }, 201);
 }
 
 // =============================================================
 // PATCH /merchant-deals/:id
-// 更新 deal，修改后状态重置为 pending（需重新审核）
+// 编辑 deal：仅修改库存时原地更新，其他修改视为克隆（新建 deal + 旧 deal 下架）
 // =============================================================
 async function handleUpdateDeal(
   admin: ReturnType<typeof createClient>,
@@ -445,10 +474,10 @@ async function handleUpdateDeal(
   dealId: string,
   body: Record<string, unknown>
 ): Promise<Response> {
-  // 验证所有权
+  // 验证所有权，读取旧 deal 完整信息
   const { data: existing, error: fetchError } = await admin
     .from("deals")
-    .select("id, merchant_id, deal_status")
+    .select("*")
     .eq("id", dealId)
     .single();
 
@@ -474,40 +503,148 @@ async function handleUpdateDeal(
     }
   }
 
-  // 构建更新数据（只更新传入的字段）
-  const updateData: Record<string, unknown> = {
-    deal_status: "pending",  // 修改后重置为待审核
-    is_active:   false,      // 下架，等重新审核通过
-    updated_at:  new Date().toISOString(),
-  };
-
   const updatableFields = [
     "title", "description", "category", "original_price", "discount_price",
-    "stock_limit", "expires_at", "package_contents", "usage_notes",
+    "stock_limit", "expires_at", "package_contents", "usage_notes", "usage_note_images",
     "usage_days", "max_per_person", "is_stackable", "validity_type",
     "validity_days", "discount_label", "refund_policy", "image_urls", "dishes",
-    "deal_category_id", "deal_type", "badge_text",
+    "deal_category_id", "deal_type", "badge_text", "short_name", "sort_order",
     "applicable_merchant_ids",
   ];
 
-  for (const field of updatableFields) {
-    if (body[field] !== undefined) {
-      updateData[field] = body[field];
+  // sort_order 或 short_name 变更：原地更新，不克隆不重审
+  if (body.sort_order_only === true) {
+    const updatePayload: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (body.sort_order !== undefined) updatePayload.sort_order = Number(body.sort_order);
+    if (body.short_name !== undefined) updatePayload.short_name = body.short_name ? String(body.short_name).slice(0, 10) : null;
+
+    const { data: deal, error } = await admin
+      .from("deals")
+      .update(updatePayload)
+      .eq("id", dealId)
+      .select()
+      .single();
+
+    if (error) return errorResponse(error.message, 500);
+    return jsonResponse({ deal });
+  }
+
+  // 前端显式传 stock_only=true 表示仅修改库存，原地更新不克隆不重审
+  if (body.stock_only === true) {
+    const { data: deal, error } = await admin
+      .from("deals")
+      .update({
+        stock_limit: body.stock_limit !== undefined ? Number(body.stock_limit) : existing.stock_limit,
+        updated_at:  new Date().toISOString(),
+      })
+      .eq("id", dealId)
+      .select()
+      .single();
+
+    if (error) return errorResponse(error.message, 500);
+    return jsonResponse({ deal });
+  }
+
+  // 非仅库存修改：克隆新 deal，旧 deal 下架
+  // 1. 构建新 deal 数据（从旧 deal 复制，应用修改）
+  const cloneFields = [
+    "merchant_id", "title", "description", "category",
+    "original_price", "discount_price", "image_urls",
+    "stock_limit", "discount_label", "dishes", "merchant_hours",
+    "usage_days", "max_per_person", "is_stackable", "validity_type",
+    "validity_days", "refund_policy", "package_contents", "usage_notes", "usage_note_images",
+    "deal_category_id", "deal_type", "badge_text",
+    "applicable_merchant_ids", "store_confirmations",
+    "lat", "lng", "address", "expires_at", "sort_order", "short_name",
+  ];
+
+  const newDealData: Record<string, unknown> = {
+    deal_status: "pending",
+    is_active:   false,
+    created_at:  new Date().toISOString(),
+    updated_at:  new Date().toISOString(),
+  };
+
+  // 先从旧 deal 复制所有可克隆字段
+  for (const field of cloneFields) {
+    if (existing[field] !== undefined && existing[field] !== null) {
+      newDealData[field] = existing[field];
     }
   }
 
-  const { data: deal, error } = await admin
+  // 再应用用户传入的修改（覆盖旧值）
+  for (const field of updatableFields) {
+    if (body[field] !== undefined) {
+      newDealData[field] = body[field];
+    }
+  }
+
+  // 2. 插入新 deal
+  const { data: newDeal, error: insertError } = await admin
     .from("deals")
-    .update(updateData)
-    .eq("id", dealId)
+    .insert(newDealData)
     .select()
     .single();
 
-  if (error) {
-    return errorResponse(error.message, 500);
+  if (insertError) {
+    return errorResponse(insertError.message, 500);
   }
 
-  return jsonResponse({ deal });
+  // 3. 复制 deal_images 到新 deal
+  const { data: oldImages } = await admin
+    .from("deal_images")
+    .select("image_url, sort_order, is_primary")
+    .eq("deal_id", dealId);
+
+  if (oldImages && oldImages.length > 0) {
+    const newImages = oldImages.map((img: { image_url: string; sort_order: number; is_primary: boolean }) => ({
+      deal_id:    newDeal.id,
+      image_url:  img.image_url,
+      sort_order: img.sort_order,
+      is_primary: img.is_primary,
+    }));
+    await admin.from("deal_images").insert(newImages);
+  }
+
+  // 4. 复制 deal_applicable_stores 到新 deal（保留门店确认状态）
+  const { data: oldStores } = await admin
+    .from("deal_applicable_stores")
+    .select("store_id, status, menu_item_id, store_original_price, confirmed_by, confirmed_at")
+    .eq("deal_id", dealId);
+
+  if (oldStores && oldStores.length > 0) {
+    const newStores = oldStores.map((s: Record<string, unknown>) => ({
+      deal_id:              newDeal.id,
+      store_id:             s.store_id,
+      status:               s.status,
+      menu_item_id:         s.menu_item_id,
+      store_original_price: s.store_original_price,
+      confirmed_by:         s.confirmed_by,
+      confirmed_at:         s.confirmed_at,
+    }));
+    await admin.from("deal_applicable_stores").insert(newStores);
+  }
+
+  // 5. 复制或更新选项组到新 deal
+  if (body.option_groups && Array.isArray(body.option_groups)) {
+    // 前端传了新的选项组，直接使用
+    await insertOptionGroups(admin, newDeal.id, body.option_groups as OptionGroupInput[]);
+  } else {
+    // 没传选项组，从旧 deal 复制
+    await cloneOptionGroups(admin, dealId, newDeal.id);
+  }
+
+  // 6. 旧 deal 下架标记为 inactive
+  await admin
+    .from("deals")
+    .update({
+      is_active:   false,
+      deal_status: "inactive",
+      updated_at:  new Date().toISOString(),
+    })
+    .eq("id", dealId);
+
+  return jsonResponse({ deal: newDeal });
 }
 
 // =============================================================
@@ -576,6 +713,46 @@ async function handleToggleStatus(
   }
 
   return jsonResponse({ deal, new_status: newStatus });
+}
+
+// =============================================================
+// PATCH /merchant-deals/reorder — 批量更新 sort_order
+// body: { items: [{ id: string, sort_order: number }] }
+// =============================================================
+async function handleBatchReorder(
+  admin: ReturnType<typeof createClient>,
+  merchantId: string,
+  body: { items?: { id: string; sort_order: number }[] }
+): Promise<Response> {
+  const items = body.items;
+  if (!items || !Array.isArray(items) || items.length === 0) {
+    return errorResponse("items array is required", 400);
+  }
+
+  // 验证所有 deal 都属于该商家
+  const dealIds = items.map((i) => i.id);
+  const { data: deals } = await admin
+    .from("deals")
+    .select("id")
+    .eq("merchant_id", merchantId)
+    .in("id", dealIds);
+
+  const ownedIds = new Set((deals ?? []).map((d: { id: string }) => d.id));
+  const unauthorized = dealIds.filter((id) => !ownedIds.has(id));
+  if (unauthorized.length > 0) {
+    return errorResponse(`Access denied for deals: ${unauthorized.join(", ")}`, 403);
+  }
+
+  // 逐个更新 sort_order
+  const now = new Date().toISOString();
+  for (const item of items) {
+    await admin
+      .from("deals")
+      .update({ sort_order: item.sort_order, updated_at: now })
+      .eq("id", item.id);
+  }
+
+  return jsonResponse({ updated: items.length });
 }
 
 // =============================================================
@@ -845,7 +1022,7 @@ async function syncDealImageUrls(
 // 模板字段列表（从请求体提取）
 const TEMPLATE_FIELDS = [
   "title", "description", "category", "original_price", "discount_price",
-  "discount_label", "stock_limit", "package_contents", "usage_notes",
+  "discount_label", "stock_limit", "package_contents", "usage_notes", "usage_note_images",
   "usage_days", "max_per_person", "is_stackable", "validity_type",
   "validity_days", "refund_policy", "image_urls", "dishes",
   "deal_type", "badge_text", "deal_category_id",
@@ -883,6 +1060,7 @@ function templateToDealPayload(
     stock_limit: template.stock_limit ?? 100,
     package_contents: template.package_contents ?? "",
     usage_notes: template.usage_notes ?? "",
+    usage_note_images: template.usage_note_images ?? [],
     usage_days: template.usage_days ?? [],
     max_per_person: template.max_per_person ?? null,
     is_stackable: template.is_stackable ?? true,
@@ -1184,4 +1362,98 @@ async function handleDeleteTemplate(
   }
 
   return jsonResponse({ success: true, deleted_id: templateId });
+}
+
+// =============================================================
+// 选项组辅助函数
+// =============================================================
+
+// 选项组输入类型
+interface OptionItemInput {
+  name: string;
+  price: number;
+  sort_order?: number;
+}
+
+interface OptionGroupInput {
+  name: string;
+  select_min: number;
+  select_max: number;
+  sort_order?: number;
+  items?: OptionItemInput[];
+}
+
+// 插入选项组和选项项
+async function insertOptionGroups(
+  admin: ReturnType<typeof createClient>,
+  dealId: string,
+  groups: OptionGroupInput[],
+) {
+  for (let gi = 0; gi < groups.length; gi++) {
+    const g = groups[gi];
+    const { data: group, error: groupErr } = await admin
+      .from("deal_option_groups")
+      .insert({
+        deal_id:    dealId,
+        name:       g.name,
+        select_min: g.select_min ?? 1,
+        select_max: g.select_max ?? 1,
+        sort_order: g.sort_order ?? gi,
+      })
+      .select("id")
+      .single();
+
+    if (groupErr || !group) continue;
+
+    if (g.items && g.items.length > 0) {
+      const itemRows = g.items.map((item, ii) => ({
+        group_id:   group.id,
+        name:       item.name,
+        price:      item.price ?? 0,
+        sort_order: item.sort_order ?? ii,
+      }));
+      await admin.from("deal_option_items").insert(itemRows);
+    }
+  }
+}
+
+// 克隆选项组从旧 deal 到新 deal
+async function cloneOptionGroups(
+  admin: ReturnType<typeof createClient>,
+  oldDealId: string,
+  newDealId: string,
+) {
+  const { data: oldGroups } = await admin
+    .from("deal_option_groups")
+    .select("name, select_min, select_max, sort_order, deal_option_items(name, price, sort_order)")
+    .eq("deal_id", oldDealId);
+
+  if (!oldGroups || oldGroups.length === 0) return;
+
+  for (const og of oldGroups) {
+    const { data: newGroup } = await admin
+      .from("deal_option_groups")
+      .insert({
+        deal_id:    newDealId,
+        name:       og.name,
+        select_min: og.select_min,
+        select_max: og.select_max,
+        sort_order: og.sort_order,
+      })
+      .select("id")
+      .single();
+
+    if (!newGroup) continue;
+
+    const items = (og as Record<string, unknown>).deal_option_items as Array<Record<string, unknown>> | undefined;
+    if (items && items.length > 0) {
+      const newItems = items.map((item) => ({
+        group_id:   newGroup.id,
+        name:       item.name,
+        price:      item.price,
+        sort_order: item.sort_order,
+      }));
+      await admin.from("deal_option_items").insert(newItems);
+    }
+  }
 }

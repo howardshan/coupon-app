@@ -5,6 +5,54 @@ import 'package:shimmer/shimmer.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../data/models/deal_model.dart';
 
+/// 连锁品牌 Badge（品牌 Logo + 品牌名，紧凑小字样式）
+/// 仅在 merchant.isChainStore == true 时使用
+class _DealCardBrandBadge extends StatelessWidget {
+  final MerchantSummary merchant;
+
+  const _DealCardBrandBadge({required this.merchant});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // 品牌 Logo（14px 圆角）
+        if (merchant.brandLogoUrl != null) ...[
+          ClipRRect(
+            borderRadius: BorderRadius.circular(3),
+            child: Image.network(
+              merchant.brandLogoUrl!,
+              width: 14,
+              height: 14,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => const Icon(
+                Icons.business,
+                size: 12,
+                color: AppColors.textHint,
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+        ],
+        // 品牌名称
+        Flexible(
+          child: Text(
+            merchant.brandName ?? '',
+            style: const TextStyle(
+              fontSize: 11,
+              color: AppColors.textHint,
+              fontWeight: FontWeight.w500,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class DealCard extends StatelessWidget {
   final DealModel deal;
 
@@ -87,7 +135,48 @@ class DealCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                if (deal.isFeatured)
+                // 右上角：连锁品牌标识 > Featured
+                if (deal.merchant?.isChainStore == true)
+                  Positioned(
+                    top: 10,
+                    right: 10,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withAlpha(153),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (deal.merchant!.brandLogoUrl != null) ...[
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(3),
+                              child: Image.network(
+                                deal.merchant!.brandLogoUrl!,
+                                width: 16,
+                                height: 16,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => const Icon(
+                                  Icons.business, size: 14, color: Colors.white,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                          ],
+                          const Text(
+                            'Chain',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                else if (deal.isFeatured)
                   Positioned(
                     top: 10,
                     right: 10,
@@ -117,14 +206,22 @@ class DealCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (deal.merchant != null)
+                  if (deal.merchant != null) ...[
                     Text(
                       deal.merchant!.name,
                       style: const TextStyle(
                         color: AppColors.textSecondary,
                         fontSize: 12,
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
+                    // 连锁店显示品牌 Badge（品牌 Logo + 品牌名）
+                    if (deal.merchant!.isChainStore) ...[
+                      const SizedBox(height: 3),
+                      _DealCardBrandBadge(merchant: deal.merchant!),
+                    ],
+                  ],
                   const SizedBox(height: 4),
                   Text(
                     deal.title,

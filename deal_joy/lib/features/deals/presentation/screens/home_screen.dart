@@ -77,121 +77,122 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             },
             child: CustomScrollView(
               slivers: [
-                // Sticky header
+                // Sticky header — 城市+消息固定在顶部，搜索栏在 bottom
                 SliverAppBar(
                   pinned: true,
-                  backgroundColor: AppColors.background.withValues(alpha: 0.95),
+                  floating: false,
+                  backgroundColor: AppColors.accent,
                   surfaceTintColor: Colors.transparent,
-                  expandedHeight: 120,
-                  flexibleSpace: FlexibleSpaceBar(
-                    background: SafeArea(
-                      child: Column(
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                            child: Row(
-                              children: [
-                                GestureDetector(
-                                  onTap: () => setState(() {
-                                    _locationMenuOpen = !_locationMenuOpen;
-                                    _selectionLevel = 'state';
-                                    final loc = ref.read(selectedLocationProvider);
-                                    _pendingState = loc.state;
-                                    _pendingMetro = loc.metro;
-                                  }),
-                                  child: Row(
-                                    children: [
-                                      Icon(
-                                        ref.watch(isNearMeProvider)
-                                            ? Icons.my_location
-                                            : Icons.location_on,
-                                        color: AppColors.primary,
-                                        size: 20,
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        ref.watch(isNearMeProvider)
-                                            ? 'Near Me'
-                                            : '${location.city}, TX',
-                                        style: const TextStyle(
-                                          fontSize: 17,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 2),
-                                      AnimatedRotation(
-                                        turns: _locationMenuOpen ? 0.5 : 0,
-                                        duration: const Duration(
-                                          milliseconds: 200,
-                                        ),
-                                        child: const Icon(
-                                          Icons.expand_more,
-                                          color: AppColors.textSecondary,
-                                          size: 18,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const Spacer(),
-                                Stack(
-                                  children: [
-                                    IconButton(
-                                      icon: const Icon(
-                                        Icons.notifications_outlined,
-                                      ),
-                                      onPressed: () {},
-                                    ),
-                                    Positioned(
-                                      top: 10,
-                                      right: 10,
-                                      child: Container(
-                                        width: 8,
-                                        height: 8,
-                                        decoration: const BoxDecoration(
-                                          color: AppColors.primary,
-                                          shape: BoxShape.circle,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                            child: TextField(
-                              key: const ValueKey('home_search_field'),
-                              controller: _searchCtrl,
-                              decoration: InputDecoration(
-                                hintText: 'Search deals, restaurants...',
-                                prefixIcon: const Icon(
-                                  Icons.search,
-                                  color: AppColors.textHint,
-                                ),
-                                suffixIcon: _searchCtrl.text.isNotEmpty
-                                    ? IconButton(
-                                        icon: const Icon(Icons.clear, size: 18),
-                                        onPressed: () {
-                                          _searchCtrl.clear();
-                                          ref
-                                                  .read(
-                                                    searchQueryProvider
-                                                        .notifier,
-                                                  )
-                                                  .state =
-                                              '';
-                                        },
-                                      )
-                                    : null,
+                  toolbarHeight: 48,
+                  titleSpacing: 0,
+                  // 城市选择 + 消息图标（始终固定在顶部）
+                  title: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Row(
+                      children: [
+                        GestureDetector(
+                          onTap: () => setState(() {
+                            _locationMenuOpen = !_locationMenuOpen;
+                            _selectionLevel = 'state';
+                            final loc = ref.read(selectedLocationProvider);
+                            _pendingState = loc.state;
+                            _pendingMetro = loc.metro;
+                          }),
+                          child: Row(
+                            children: [
+                              Icon(
+                                ref.watch(isNearMeProvider)
+                                    ? Icons.my_location
+                                    : Icons.location_on,
+                                color: AppColors.primary,
+                                size: 20,
                               ),
-                              onChanged: (v) =>
-                                  ref.read(searchQueryProvider.notifier).state =
-                                      v,
-                            ),
+                              const SizedBox(width: 4),
+                              Text(
+                                ref.watch(isNearMeProvider)
+                                    ? 'Near Me'
+                                    : '${location.city}, TX',
+                                style: const TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                              const SizedBox(width: 2),
+                              AnimatedRotation(
+                                turns: _locationMenuOpen ? 0.5 : 0,
+                                duration: const Duration(milliseconds: 200),
+                                child: const Icon(
+                                  Icons.expand_more,
+                                  color: AppColors.textSecondary,
+                                  size: 18,
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
+                        ),
+                        const Spacer(),
+                        Stack(
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.notifications_outlined),
+                              onPressed: () {},
+                            ),
+                            Positioned(
+                              top: 10,
+                              right: 10,
+                              child: Container(
+                                width: 8,
+                                height: 8,
+                                decoration: const BoxDecoration(
+                                  color: AppColors.primary,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  // 搜索栏固定在城市行下方
+                  bottom: PreferredSize(
+                    preferredSize: const Size.fromHeight(44),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+                      child: TextField(
+                        key: const ValueKey('home_search_field'),
+                        controller: _searchCtrl,
+                        style: const TextStyle(fontSize: 14),
+                        decoration: InputDecoration(
+                          hintText: 'Search deals, restaurants...',
+                          hintStyle: const TextStyle(fontSize: 14),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 8),
+                          isDense: true,
+                          prefixIcon: const Icon(
+                            Icons.search,
+                            color: AppColors.textHint,
+                            size: 20,
+                          ),
+                          prefixIconConstraints: const BoxConstraints(
+                            minWidth: 36,
+                            minHeight: 36,
+                          ),
+                          suffixIcon: _searchCtrl.text.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(Icons.clear, size: 18),
+                                  onPressed: () {
+                                    _searchCtrl.clear();
+                                    ref
+                                        .read(searchQueryProvider.notifier)
+                                        .state = '';
+                                  },
+                                )
+                              : null,
+                        ),
+                        onChanged: (v) =>
+                            ref.read(searchQueryProvider.notifier).state = v,
                       ),
                     ),
                   ),
@@ -895,6 +896,7 @@ class _LargeDealCard extends ConsumerWidget {
                         color: AppColors.textSecondary,
                       ),
                       const SizedBox(width: 4),
+                      // 距离文字：固定宽度，防止过长撑破行
                       _DistanceText(deal: deal),
                       const SizedBox(width: 6),
                       const Text(
@@ -902,11 +904,16 @@ class _LargeDealCard extends ConsumerWidget {
                         style: TextStyle(color: AppColors.textSecondary),
                       ),
                       const SizedBox(width: 6),
-                      Text(
-                        deal.category,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          color: AppColors.textSecondary,
+                      // 分类标签：用 Flexible 包裹，超长时截断
+                      Flexible(
+                        child: Text(
+                          deal.category,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: AppColors.textSecondary,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ],
@@ -1317,11 +1324,16 @@ class _MerchantCard extends StatelessWidget {
                         const Icon(Icons.phone,
                             size: 14, color: AppColors.textSecondary),
                         const SizedBox(width: 4),
-                        Text(
-                          merchant.phone!,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: AppColors.textSecondary,
+                        // 电话号码可能较长，用 Flexible 防止溢出
+                        Flexible(
+                          child: Text(
+                            merchant.phone!,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textSecondary,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ],

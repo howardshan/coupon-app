@@ -235,6 +235,8 @@ class _DealSelectorSheet extends StatelessWidget {
                       fontWeight: FontWeight.bold,
                       fontSize: 14,
                     ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                   trailing: SizedBox(
                     width: 70,

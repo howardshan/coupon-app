@@ -51,9 +51,9 @@ class _MenuTabState extends ConsumerState<MenuTab>
 
     return CustomScrollView(
       slivers: [
-        // Signature Dishes 横滑
+        // Signature Products 横滑
         if (signature.isNotEmpty) ...[
-          _buildSectionHeader('Signature Dishes', signature.length),
+          _buildSectionHeader('Signature Products', signature.length),
           SliverToBoxAdapter(
             child: SizedBox(
               height: 180,

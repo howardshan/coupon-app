@@ -111,6 +111,29 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     try {
       final repo = ref.read(checkoutRepositoryProvider);
 
+      // 构建选项组快照（如果 deal 有选项组）
+      final deal = ref.read(dealDetailProvider(widget.dealId)).valueOrNull;
+      List<Map<String, dynamic>>? selectedOptions;
+      if (deal != null && deal.optionGroups.isNotEmpty) {
+        final selections = ref.read(dealOptionSelectionsProvider(deal.id));
+        selectedOptions = deal.optionGroups.map((group) {
+          final selectedIds = selections[group.id] ?? {};
+          final selectedItems = group.items
+              .where((item) => selectedIds.contains(item.id))
+              .map((item) => {
+                    'item_id': item.id,
+                    'item_name': item.name,
+                    'price': item.price,
+                  })
+              .toList();
+          return {
+            'group_id': group.id,
+            'group_name': group.name,
+            'items': selectedItems,
+          };
+        }).toList();
+      }
+
       final result = await repo.checkout(
         userId: userId,
         dealId: widget.dealId,
@@ -118,6 +141,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         total: total,
         promoCode: _promoResult?.code, // P0 fix: 传递优惠码给服务端验证
         purchasedMerchantId: widget.purchasedMerchantId,
+        selectedOptions: selectedOptions,
       );
 
       if (mounted) context.go('/order-success/${result.orderId}');

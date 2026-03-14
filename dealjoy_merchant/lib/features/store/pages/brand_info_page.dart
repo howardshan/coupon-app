@@ -3,6 +3,8 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../providers/store_provider.dart';
 import '../models/brand_info.dart';
 
@@ -16,9 +18,11 @@ class BrandInfoPage extends ConsumerStatefulWidget {
 class _BrandInfoPageState extends ConsumerState<BrandInfoPage> {
   bool _isEditing = false;
   bool _isSaving = false;
+  bool _isUploadingLogo = false;
   late TextEditingController _nameCtrl;
   late TextEditingController _descCtrl;
   BrandInfo? _brand;
+  final _picker = ImagePicker();
 
   static const _primaryOrange = Color(0xFFFF6B35);
 
@@ -94,31 +98,64 @@ class _BrandInfoPageState extends ConsumerState<BrandInfoPage> {
                   ),
                   child: Row(
                     children: [
-                      Container(
-                        width: 64,
-                        height: 64,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFFF3E0),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: brand.logoUrl != null && brand.logoUrl!.isNotEmpty
-                            ? ClipRRect(
+                      // 品牌 Logo（点击可更换）
+                      GestureDetector(
+                        onTap: _isUploadingLogo ? null : _pickAndUploadLogo,
+                        child: Stack(
+                          children: [
+                            Container(
+                              width: 64,
+                              height: 64,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFFF3E0),
                                 borderRadius: BorderRadius.circular(12),
-                                child: Image.network(
-                                  brand.logoUrl!,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => const Icon(
-                                    Icons.business,
-                                    color: _primaryOrange,
-                                    size: 32,
-                                  ),
-                                ),
-                              )
-                            : const Icon(
-                                Icons.business,
-                                color: _primaryOrange,
-                                size: 32,
                               ),
+                              child: _isUploadingLogo
+                                  ? const Center(
+                                      child: SizedBox(
+                                        width: 24, height: 24,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: _primaryOrange,
+                                        ),
+                                      ),
+                                    )
+                                  : brand.logoUrl != null && brand.logoUrl!.isNotEmpty
+                                      ? ClipRRect(
+                                          borderRadius: BorderRadius.circular(12),
+                                          child: Image.network(
+                                            brand.logoUrl!,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (_, __, ___) => const Icon(
+                                              Icons.business,
+                                              color: _primaryOrange,
+                                              size: 32,
+                                            ),
+                                          ),
+                                        )
+                                      : const Icon(
+                                          Icons.business,
+                                          color: _primaryOrange,
+                                          size: 32,
+                                        ),
+                            ),
+                            // 相机小图标
+                            Positioned(
+                              right: -2, bottom: -2,
+                              child: Container(
+                                width: 22, height: 22,
+                                decoration: BoxDecoration(
+                                  color: _primaryOrange,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: Colors.white, width: 2),
+                                ),
+                                child: const Icon(
+                                  Icons.camera_alt, size: 12, color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                       const SizedBox(width: 16),
                       Expanded(
@@ -259,6 +296,61 @@ class _BrandInfoPageState extends ConsumerState<BrandInfoPage> {
         },
       ),
     );
+  }
+
+  // 选择并上传品牌 Logo
+  Future<void> _pickAndUploadLogo() async {
+    final picked = await _picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 512,
+      maxHeight: 512,
+      imageQuality: 85,
+    );
+    if (picked == null) return;
+
+    setState(() => _isUploadingLogo = true);
+    try {
+      final supabase = Supabase.instance.client;
+      final brandId = _brand?.id;
+      if (brandId == null) throw Exception('Brand ID not found');
+
+      // 上传到 Supabase Storage
+      final ext = picked.path.split('.').last;
+      final path = 'brand-logos/$brandId.$ext';
+      final bytes = await picked.readAsBytes();
+
+      await supabase.storage.from('merchant-photos').uploadBinary(
+        path,
+        bytes,
+        fileOptions: const FileOptions(upsert: true),
+      );
+
+      final logoUrl = supabase.storage
+          .from('merchant-photos')
+          .getPublicUrl(path);
+
+      // 更新品牌 logo_url
+      final service = ref.read(storeServiceProvider);
+      await service.updateBrand(logoUrl: logoUrl);
+      ref.invalidate(storeProvider);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Brand logo updated'),
+            backgroundColor: Color(0xFF2E7D32),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Upload failed: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isUploadingLogo = false);
+    }
   }
 
   // 保存品牌信息到后端

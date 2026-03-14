@@ -106,6 +106,23 @@ class DealsNotifier extends AsyncNotifier<List<MerchantDeal>> {
   }
 
   // ----------------------------------------------------------
+  // 仅更新库存（不克隆、不重审）
+  // ----------------------------------------------------------
+  Future<void> updateStockOnly(String dealId, int stockLimit) async {
+    final current = state.valueOrNull ?? [];
+    try {
+      final updated = await _service.updateStockOnly(dealId, stockLimit);
+      final finalList = current
+          .map((d) => d.id == dealId ? updated : d)
+          .toList();
+      state = AsyncValue.data(finalList);
+    } catch (e, st) {
+      state = AsyncValue.error(e, st);
+      rethrow;
+    }
+  }
+
+  // ----------------------------------------------------------
   // 上下架切换
   //    乐观更新：先更新本地状态，失败时回滚
   // ----------------------------------------------------------
@@ -210,6 +227,50 @@ class DealsNotifier extends AsyncNotifier<List<MerchantDeal>> {
       );
     } catch (e, st) {
       // 失败回滚
+      state = AsyncValue.data(current);
+      state = AsyncValue.error(e, st);
+      rethrow;
+    }
+  }
+
+  // ----------------------------------------------------------
+  // 拖拽重排 Deal 顺序（仅限 All tab）
+  //    oldIndex/newIndex: ReorderableListView 回调的旧/新索引
+  //    deals: 当前 All tab 展示的完整列表（已含品牌筛选）
+  //    拖拽完成后乐观更新本地，再调 Edge Function 持久化
+  // ----------------------------------------------------------
+  Future<void> reorderDeals({
+    required int oldIndex,
+    required int newIndex,
+    required List<MerchantDeal> deals,
+  }) async {
+    // ReorderableListView 的 newIndex 在向下移动时需要 -1 修正
+    final adjustedNew = newIndex > oldIndex ? newIndex - 1 : newIndex;
+
+    // 构建重新排序后的列表
+    final reordered = List<MerchantDeal>.from(deals);
+    final item = reordered.removeAt(oldIndex);
+    reordered.insert(adjustedNew, item);
+
+    // 乐观更新本地 state（保持 dealsProvider 总列表顺序与 All tab 一致）
+    final current = state.valueOrNull ?? [];
+    // 用重排后列表的顺序重建总列表（其他 tab 的 deal 不受影响）
+    final reorderedIds = reordered.map((d) => d.id).toList();
+    final reorderedSet = reorderedIds.toSet();
+    final others = current.where((d) => !reorderedSet.contains(d.id)).toList();
+    state = AsyncValue.data([...reordered, ...others]);
+
+    // 构建批量更新参数：sort_order 从 0 开始递增
+    final items = reordered
+        .asMap()
+        .entries
+        .map((e) => {'id': e.value.id, 'sort_order': e.key})
+        .toList();
+
+    try {
+      await _service.batchReorder(items);
+    } catch (e, st) {
+      // 失败时回滚
       state = AsyncValue.data(current);
       state = AsyncValue.error(e, st);
       rethrow;

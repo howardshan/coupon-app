@@ -1,11 +1,11 @@
 # DealJoy Widget Key 对照表
 
-> 本次共添加 **77 个 ValueKey**（deal_joy 32 个 + dealjoy_merchant 45 个）
+> 本次共添加 **81 个 ValueKey**（deal_joy 34 个 + dealjoy_merchant 47 个）
 > 命名规则：`页面缩写_功能_btn/field`
 
 ---
 
-## 客户端（deal_joy）— 32 个 Key
+## 客户端（deal_joy）— 34 个 Key
 
 ### Auth 模块
 
@@ -68,6 +68,13 @@
 |----------|-----------|------|------|
 | `review_comment_field` | TextField | reviews/screens/write_review_screen.dart | 评价内容输入 |
 
+### Deal 详情页（新增 2 个）
+
+| Key 名称 | Widget 类型 | 文件 | 功能 |
+|----------|-----------|------|------|
+| `deal_image_gallery` | IconButton | deals/screens/deal_detail_screen.dart | 查看全部图片按钮 |
+| `deal_variant_selector` | Widget | deals/screens/deal_detail_screen.dart | 同商家套餐横向选择器 |
+
 ### Core
 
 | Key 名称 | Widget 类型 | 文件 | 功能 |
@@ -76,7 +83,7 @@
 
 ---
 
-## 商家端（dealjoy_merchant）— 45 个新增 Key + 6 个已有 Key
+## 商家端（dealjoy_merchant）— 47 个新增 Key + 6 个已有 Key
 
 ### 已有 Key（本次未修改）
 
@@ -140,7 +147,7 @@
 | `deal_detail_toggle_active_btn` | ElevatedButton | deals/deal_detail_page.dart | 激活/停用 Deal |
 | `deal_detail_delete_btn` | ElevatedButton | deals/deal_detail_page.dart | 删除 Deal |
 
-### Deal 确认 / 列表（新增 4 个）
+### Deal 确认 / 列表（新增 4 个 + 2 个）
 
 | Key 名称 | Widget 类型 | 文件 | 功能 |
 |----------|-----------|------|------|
@@ -148,6 +155,8 @@
 | `deal_confirm_accept_btn` | ElevatedButton | deals/store_deal_confirm_page.dart | 接受品牌 Deal |
 | `deals_list_new_category_field` | TextField | deals/deals_list_page.dart | 新建分类名 |
 | `deals_list_edit_category_field` | TextField | deals/deals_list_page.dart | 编辑分类名 |
+| `deal_short_name_field` | TextFormField | deals/deal_create_page.dart, deal_edit_page.dart | Deal 简称输入（≤10字符） |
+| `deal_list_drag_handle` | Icon | deals/deals_list_page.dart | 拖拽排序手柄 |
 
 ### Scan 模块（新增 3 个）
 

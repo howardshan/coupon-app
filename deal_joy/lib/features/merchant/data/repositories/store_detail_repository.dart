@@ -62,6 +62,8 @@ class StoreDetailRepository {
           .eq('merchant_id', merchantId)
           .eq('is_active', true)
           .gt('expires_at', DateTime.now().toIso8601String())
+          // sort_order 优先（null 排最后），再按 is_featured、total_sold 降序
+          .order('sort_order', ascending: true, nullsFirst: false)
           .order('is_featured', ascending: false)
           .order('total_sold', ascending: false);
       final ownDeals = (ownData as List)

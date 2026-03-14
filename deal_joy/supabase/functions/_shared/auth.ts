@@ -257,8 +257,13 @@ export async function resolveAuth(
     }
     merchantId = headerMerchantId;
   } else {
-    // 默认使用第一个可访问的门店
-    merchantId = merchantIds[0];
+    // 默认优先使用用户自己拥有的门店，否则用第一个可访问的
+    const ownedId = ownedStores && ownedStores.length > 0
+      ? ownedStores[0].id
+      : null;
+    merchantId = ownedId && merchantIds.includes(ownedId)
+      ? ownedId
+      : merchantIds[0];
   }
 
   // 5. 生成权限列表
