@@ -112,7 +112,7 @@ export default async function OrderDetailPage({
             <div>
               <dt className="text-gray-500">Deal</dt>
               <dd className="font-medium text-gray-900 mt-0.5">
-                {deal ? (<Link href={`/deals/${deal.id}`} className="text-blue-600 hover:underline">{deal.title}</Link>) : '—'}
+                {deal ? (<Link href={`/deals/${deal.id}?returnTo=${encodeURIComponent(`/orders/${order.id}`)}`} className="text-blue-600 hover:underline">{deal.title}</Link>) : '—'}
               </dd>
             </div>
             <div>

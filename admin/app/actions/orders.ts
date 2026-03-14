@@ -21,31 +21,83 @@ async function requireAdmin() {
 
 export type OrdersListPayload = {
   orders: any[] | null
+  totalCount: number
   redeemedMerchantNames: Record<string, string>
   fetchError: string | null
   refundCount: number
+  merchantsForFilter: { id: string; name: string }[]
 }
 
-/** 供订单总览「局部搜索」使用：按关键词拉取订单列表，不触发整页刷新 */
-export async function getOrdersList(searchQ?: string): Promise<OrdersListPayload> {
+export type OrdersListFilters = {
+  q?: string
+  status?: string[]
+  merchantId?: string
+  dateFrom?: string
+  dateTo?: string
+  amountMin?: number
+  amountMax?: number
+  sort?: 'date_desc' | 'date_asc' | 'amount_desc' | 'amount_asc'
+  page?: number
+  limit?: number
+}
+
+const DEFAULT_LIMIT = 20
+const MAX_LIMIT = 100
+
+/** 订单列表：支持关键词、状态/商家/日期/金额筛选、排序、分页；URL 持久化 */
+export async function getOrdersList(filters: OrdersListFilters = {}): Promise<OrdersListPayload> {
   const supabase = await requireAdmin()
   const adminSupabase = getServiceRoleClient()
 
-  const q = searchQ?.trim() ?? ''
+  const q = filters.q?.trim() ?? ''
+  const status = filters.status?.length ? filters.status : null
+  const merchantId = filters.merchantId?.trim() || null
+  const dateFrom = filters.dateFrom || null
+  const dateTo = filters.dateTo || null
+  const amountMin = filters.amountMin
+  const amountMax = filters.amountMax
+  const sort = filters.sort ?? 'date_desc'
+  const page = Math.max(1, filters.page ?? 1)
+  const limit = Math.min(MAX_LIMIT, Math.max(1, filters.limit ?? DEFAULT_LIMIT))
+  const offset = (page - 1) * limit
+
   let orders: any[] | null = null
+  let totalCount = 0
   let fetchError: string | null = null
 
-  if (q !== '') {
-    const { data, error } = await supabase.rpc('get_admin_orders_search', { search_q: q })
-    if (error) {
-      fetchError = error.message
-    } else {
-      orders = data ?? null
+  if (q !== '' || status || merchantId || dateFrom || dateTo || amountMin != null || amountMax != null) {
+    const rpcParams: Record<string, unknown> = {
+      search_q: q || null,
+      p_merchant_id: merchantId || null,
+      p_status: status || null,
+      p_date_from: dateFrom || null,
+      p_date_to: dateTo || null,
+      p_amount_min: amountMin ?? null,
+      p_amount_max: amountMax ?? null,
+      p_sort: sort,
+      p_limit: limit,
+      p_offset: offset,
     }
+    const [listRes, countRes] = await Promise.all([
+      supabase.rpc('get_admin_orders_search', rpcParams),
+      supabase.rpc('get_admin_orders_count', {
+        search_q: q || null,
+        p_merchant_id: merchantId || null,
+        p_status: status || null,
+        p_date_from: dateFrom || null,
+        p_date_to: dateTo || null,
+        p_amount_min: amountMin ?? null,
+        p_amount_max: amountMax ?? null,
+      }),
+    ])
+    if (listRes.error) fetchError = listRes.error.message
+    else orders = listRes.data ?? null
+    if (countRes.data != null) totalCount = Number(countRes.data)
   } else {
-    const { data, error } = await adminSupabase
+    let query = adminSupabase
       .from('orders')
-      .select(`
+      .select(
+        `
         id,
         order_number,
         total_amount,
@@ -55,16 +107,44 @@ export async function getOrdersList(searchQ?: string): Promise<OrdersListPayload
         refund_rejected_at,
         created_at,
         users ( email ),
-        deals ( title, merchants ( name ) ),
+        deals ( id, title, merchants ( name ) ),
         coupons!fk_orders_coupon_id ( redeemed_at_merchant_id, expires_at )
-      `)
-      .order('created_at', { ascending: false })
-      .limit(100)
-    if (error) {
-      fetchError = error.message
-    } else {
-      orders = data
+        `,
+        { count: 'exact' }
+      )
+
+    if (merchantId) {
+      query = query.eq('deals.merchant_id', merchantId)
     }
+    if (status && status.length > 0) {
+      query = query.in('status', status)
+    }
+    if (dateFrom) {
+      query = query.gte('created_at', dateFrom)
+    }
+    if (dateTo) {
+      const endOfDay = new Date(dateTo)
+      endOfDay.setHours(23, 59, 59, 999)
+      query = query.lte('created_at', endOfDay.toISOString())
+    }
+    if (amountMin != null) {
+      query = query.gte('total_amount', amountMin)
+    }
+    if (amountMax != null) {
+      query = query.lte('total_amount', amountMax)
+    }
+
+    const ascending = sort === 'date_asc' || sort === 'amount_asc'
+    if (sort === 'amount_asc' || sort === 'amount_desc') {
+      query = query.order('total_amount', { ascending }).order('created_at', { ascending: false })
+    } else {
+      query = query.order('created_at', { ascending })
+    }
+
+    const { data, error, count } = await query.range(offset, offset + limit - 1)
+    if (error) fetchError = error.message
+    else orders = data
+    if (count != null) totalCount = count
   }
 
   const redeemedMerchantIds = new Set<string>()
@@ -93,7 +173,35 @@ export async function getOrdersList(searchQ?: string): Promise<OrdersListPayload
 
   const refundCount = orders?.filter((o: { status: string }) => o.status === 'refund_requested').length ?? 0
 
-  return { orders, redeemedMerchantNames, fetchError, refundCount }
+  const { data: ordersWithDeals } = await adminSupabase
+    .from('orders')
+    .select('deal_id')
+    .limit(500)
+  const dealIds = [...new Set((ordersWithDeals ?? []).map((r: { deal_id: string }) => r.deal_id).filter(Boolean))]
+  let merchantsForFilterList: { id: string; name: string }[] = []
+  if (dealIds.length > 0) {
+    const { data: dealRows } = await adminSupabase
+      .from('deals')
+      .select('merchant_id')
+      .in('id', dealIds)
+    const merchantIds = new Set<string>((dealRows ?? []).map((r: { merchant_id: string }) => r.merchant_id).filter(Boolean))
+    if (merchantIds.size > 0) {
+      const { data: names } = await adminSupabase
+        .from('merchants')
+        .select('id, name')
+        .in('id', Array.from(merchantIds))
+        .order('name')
+      merchantsForFilterList = names ?? []
+    }
+  }
+  return {
+    orders,
+    totalCount,
+    redeemedMerchantNames,
+    fetchError,
+    refundCount,
+    merchantsForFilter: merchantsForFilterList,
+  }
 }
 
 /** 管理员通过退款：调用 create-refund Edge Function 执行 Stripe 退款并更新订单/券/支付状态 */

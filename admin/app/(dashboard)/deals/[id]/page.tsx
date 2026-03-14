@@ -4,12 +4,23 @@ import Link from 'next/link'
 import DealReviewActions from '@/components/deal-review-actions'
 import RejectionHistory from '@/components/rejection-history'
 
+/** 只允许回到订单相关页，避免开放重定向 */
+function isValidReturnTo(returnTo: string | null | undefined): boolean {
+  if (!returnTo || typeof returnTo !== 'string') return false
+  const path = returnTo.startsWith('/') ? returnTo : `/${returnTo}`
+  return path === '/orders' || path.startsWith('/orders/') || path.startsWith('/orders?')
+}
+
 export default async function DealReviewPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>
+  searchParams: Promise<{ returnTo?: string }>
 }) {
   const { id } = await params
+  const { returnTo } = await searchParams
+  const backHref = isValidReturnTo(returnTo) ? returnTo! : '/deals'
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   const { data: profile } = await supabase.from('users').select('role').eq('id', user!.id).single()
@@ -35,8 +46,8 @@ export default async function DealReviewPage({
     return (
       <div>
         <p className="text-gray-500">Deal not found.</p>
-        <Link href="/deals" className="mt-3 inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 bg-white text-gray-700 shadow-sm hover:bg-gray-50 transition-colors">
-          ← Back to Deals
+        <Link href={backHref} className="mt-3 inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 bg-white text-gray-700 shadow-sm hover:bg-gray-50 transition-colors">
+          ← Back
         </Link>
       </div>
     )
@@ -72,8 +83,8 @@ export default async function DealReviewPage({
     <div>
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <Link href="/deals" className="mb-3 inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 bg-white text-gray-700 shadow-sm hover:bg-gray-50 transition-colors">
-            ← Back to Deals
+          <Link href={backHref} className="mb-3 inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 bg-white text-gray-700 shadow-sm hover:bg-gray-50 transition-colors">
+            ← Back
           </Link>
           <h1 className="text-2xl font-bold text-gray-900">Deal Review</h1>
         </div>
