@@ -111,6 +111,25 @@ export default function OrdersPageClient({
     })
   }, [router])
 
+  const clearFilters = useCallback(() => {
+    startTransition(() => {
+      router.replace('/orders')
+    })
+  }, [router])
+
+  const hasFilters = useMemo(() => {
+    const q = searchParams.get('q')
+    const status = searchParams.get('status')
+    const merchant = searchParams.get('merchant')
+    const dateFrom = searchParams.get('date_from')
+    const dateTo = searchParams.get('date_to')
+    const amountMin = searchParams.get('amount_min')
+    const amountMax = searchParams.get('amount_max')
+    const sort = searchParams.get('sort')
+    const pageNum = parseInt(searchParams.get('page') ?? '1', 10)
+    return !!(q?.trim() || status || merchant || dateFrom || dateTo || amountMin || amountMax || (sort && sort !== 'date_desc') || pageNum > 1)
+  }, [searchParams])
+
   const totalCount = initialTotalCount
   const page = initialPage
   const limit = initialLimit
@@ -219,6 +238,16 @@ export default function OrdersPageClient({
               ))}
             </select>
           </label>
+          {hasFilters && (
+            <button
+              type="button"
+              onClick={clearFilters}
+              disabled={isPending}
+              className="px-3 py-2 text-sm font-medium border border-gray-300 rounded-lg bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors"
+            >
+              Clear filters
+            </button>
+          )}
           {isPending && (
             <span className="text-gray-500 text-sm py-2">Updating…</span>
           )}
