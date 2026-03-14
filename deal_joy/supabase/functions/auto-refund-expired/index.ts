@@ -64,7 +64,8 @@ Deno.serve(async (req) => {
     // -------------------------------------------------------------
     // 查询两类待退款订单：
     // A) 过期 24 小时的 unused 订单（原逻辑）
-    // B) 闭店标记为 refund_requested 的订单（新增）
+    // B) 用户已申请退款、且券已过期超过 24 小时的 refund_requested 订单（过期后自动审批通过）
+    const expiredThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const { data: expiredOrders, error: queryErr1 } = await supabaseAdmin
       .from('orders')
       .select(`
@@ -78,19 +79,23 @@ Deno.serve(async (req) => {
         )
       `)
       .eq('status', 'unused')
-      .lt('deals.expires_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+      .lt('deals.expires_at', expiredThreshold)
       .limit(BATCH_SIZE);
 
-    const { data: closedStoreOrders, error: queryErr2 } = await supabaseAdmin
+    const { data: pendingRefundExpiredOrders, error: queryErr2 } = await supabaseAdmin
       .from('orders')
       .select(`
         id,
         payment_intent_id,
         total_amount,
         status,
-        deal_id
+        deal_id,
+        deals!inner (
+          expires_at
+        )
       `)
       .eq('status', 'refund_requested')
+      .lt('deals.expires_at', expiredThreshold)
       .limit(BATCH_SIZE);
 
     const queryErr = queryErr1 || queryErr2;
@@ -98,7 +103,7 @@ Deno.serve(async (req) => {
     const seen = new Set<string>();
     const eligibleOrders = [
       ...(expiredOrders ?? []),
-      ...(closedStoreOrders ?? []),
+      ...(pendingRefundExpiredOrders ?? []),
     ].filter((o) => {
       if (seen.has(o.id)) return false;
       seen.add(o.id);

@@ -2,22 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import OrderRefundButtons from '@/components/order-refund-buttons'
-
-const STATUS_STYLES: Record<string, string> = {
-  unused: 'bg-blue-100 text-blue-700',
-  used: 'bg-gray-100 text-gray-600',
-  refunded: 'bg-purple-100 text-purple-700',
-  refund_requested: 'bg-orange-100 text-orange-700',
-  expired: 'bg-red-100 text-red-700',
-}
-
-const STATUS_LABELS: Record<string, string> = {
-  unused: 'Unused',
-  used: 'Used',
-  refunded: 'Refunded',
-  refund_requested: 'Refund Requested',
-  expired: 'Expired',
-}
+import { getOrderDetailStatusTags, STATUS_STYLES, STATUS_LABELS } from '@/lib/order-display-status'
 
 export default async function OrderDetailPage({
   params,
@@ -46,9 +31,10 @@ export default async function OrderDetailPage({
       updated_at,
       refund_requested_at,
       refunded_at,
+      refund_rejected_at,
       users ( id, email ),
       deals ( id, title, discount_price, applicable_merchant_ids, merchants ( id, name ) ),
-      coupons ( redeemed_at_merchant_id )
+      coupons!fk_orders_coupon_id ( redeemed_at_merchant_id, expires_at )
     `)
     .eq('id', id)
     .single()
@@ -59,9 +45,17 @@ export default async function OrderDetailPage({
   const merchant = Array.isArray(deal?.merchants) ? deal.merchants[0] : deal?.merchants
   const customer = order.users as any
 
-  // 核销门店信息
-  const coupons = order.coupons as any[] | null
-  const redeemedMerchantId = coupons?.[0]?.redeemed_at_merchant_id
+  // 核销门店信息 + 券过期时间（用于多维度状态）
+  const raw = order.coupons
+  const first = Array.isArray(raw) ? raw[0] : raw
+  const redeemedMerchantId = first?.redeemed_at_merchant_id
+  const orderForDisplay = {
+    status: order.status as string,
+    refund_rejected_at: (order as { refund_rejected_at?: string | null }).refund_rejected_at,
+    coupon_expires_at: first?.expires_at ?? null,
+    deals: order.deals as { expires_at?: string | null } | null,
+  }
+  const detailStatusTags = getOrderDetailStatusTags(orderForDisplay)
   let redeemedMerchantName: string | null = null
   if (redeemedMerchantId) {
     const { data: rm } = await supabase.from('merchants').select('name').eq('id', redeemedMerchantId).single()
@@ -91,13 +85,25 @@ export default async function OrderDetailPage({
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Status</h2>
           <div className="flex items-center gap-3 flex-wrap">
-            <span className={`px-3 py-1 rounded-full text-sm font-medium ${STATUS_STYLES[order.status as string] ?? STATUS_STYLES.used}`}>
-              {STATUS_LABELS[order.status as string] ?? order.status}
-            </span>
+            {detailStatusTags.map((tag) => (
+              <span
+                key={tag}
+                className={`px-3 py-1 rounded-full text-sm font-medium ${STATUS_STYLES[tag] ?? STATUS_STYLES.used}`}
+              >
+                {STATUS_LABELS[tag] ?? tag}
+              </span>
+            ))}
             {order.status === 'refund_requested' && (
               <OrderRefundButtons orderId={order.id} initialStatus={order.status} />
             )}
           </div>
+          {(detailStatusTags.includes('pending_refund') || detailStatusTags.includes('expired')) && (
+            <p className="text-sm text-gray-500 mt-3">
+              {detailStatusTags.includes('pending_refund')
+                ? 'Auto-refund in progress (runs hourly).'
+                : 'Coupon expired; will be auto-refunded 24h after expiry.'}
+            </p>
+          )}
         </div>
 
         <div className="bg-white rounded-xl border border-gray-200 p-6">
@@ -166,7 +172,8 @@ export default async function OrderDetailPage({
           <p className="text-sm text-gray-900">{customer?.email ?? '—'}</p>
         </div>
 
-        {(order.refund_reason != null || order.refund_requested_at != null || order.refunded_at != null) && (
+        {/* Refund info (if any) */}
+        {(order.refund_reason != null || order.refund_requested_at != null || order.refunded_at != null || (order as { refund_rejected_at?: string | null }).refund_rejected_at != null) && (
           <div className="bg-white rounded-xl border border-gray-200 p-6">
             <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Refund</h2>
             <dl className="space-y-2 text-sm">
@@ -178,6 +185,12 @@ export default async function OrderDetailPage({
               )}
               {order.refunded_at != null && (
                 <div><dt className="text-gray-500">Refunded at</dt><dd className="text-gray-900 mt-0.5">{new Date(order.refunded_at).toLocaleString()}</dd></div>
+              )}
+              {(order as { refund_rejected_at?: string | null }).refund_rejected_at != null && (
+                <div>
+                  <dt className="text-gray-500">Rejected at</dt>
+                  <dd className="text-gray-900 mt-0.5">{new Date((order as { refund_rejected_at: string }).refund_rejected_at).toLocaleString()}</dd>
+                </div>
               )}
             </dl>
           </div>

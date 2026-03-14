@@ -1,7 +1,7 @@
 // =============================================================
 // Edge Function: merchant-orders
 // 路由：
-//   GET /merchant-orders          — 分页订单列表（支持 status/date/deal 筛选）
+//   GET/POST /merchant-orders     — 分页订单列表（POST 时从 body 取 access_token 与分页参数，避免网关脱敏 query）
 //   GET /merchant-orders/export   — 导出 CSV
 //   GET /merchant-orders/:id      — 单个订单详情（含完整时间线）
 // 认证：Bearer JWT（merchant 用户，通过 auth.uid() 关联 merchants 表）
@@ -14,7 +14,7 @@ import { resolveAuth, requirePermission } from "../_shared/auth.ts";
 // CORS headers
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-merchant-id',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-merchant-id, x-app-bearer',
   'Access-Control-Allow-Methods': 'GET, POST, PATCH, OPTIONS',
 };
 
@@ -50,43 +50,50 @@ serve(async (req: Request) => {
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
   const anonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
 
-  // 用 user JWT 鉴权：验证 merchant 身份
-  const authHeader = req.headers.get('Authorization');
-  if (!authHeader?.startsWith('Bearer ')) {
-    return errorResponse('Missing authorization header', 'unauthorized', 401);
-  }
-  const userJwt = authHeader.replace('Bearer ', '');
-
-  // 用 user JWT 初始化客户端，用于鉴权校验
-  const userClient = createClient(supabaseUrl, anonKey, {
-    global: { headers: { Authorization: `Bearer ${userJwt}` } },
-  });
-
-  // 验证 JWT 合法性并获取 user
-  const { data: { user }, error: userError } = await userClient.auth.getUser();
-  if (userError || !user) {
-    return errorResponse('Invalid or expired token', 'unauthorized', 401);
-  }
-
-  // 统一鉴权
-  const serviceClient = createClient(supabaseUrl, serviceRoleKey);
-  let auth;
-  try {
-    auth = await resolveAuth(serviceClient, user.id, req.headers);
-  } catch (e) {
-    return errorResponse((e as Error).message, 'unauthorized', 403);
-  }
-  requirePermission(auth, 'orders');
-
-  const merchantId = auth.merchantId;
-
-  // 解析路径（Supabase 实际 pathname 为 /functions/v1/merchant-orders 或 /functions/v1/merchant-orders/export 或 /functions/v1/merchant-orders/:id）
+  // 解析 URL 与路径
   const url = new URL(req.url);
   const pathname = url.pathname;
   const match = pathname.match(/\/merchant-orders\/?(.*)$/);
   const suffix = match ? match[1].replace(/^\/|\/$/g, '') : '';
   const pathParts = suffix ? suffix.split('/') : [];
   const subPath = pathParts[0] ?? '';
+
+  // 列表路由若为 POST：从 body 取 access_token 与分页参数（网关可能脱敏 query/header）
+  let listBody: Record<string, unknown> | null = null;
+  if (req.method === 'POST' && subPath === '') {
+    listBody = await req.json().catch(() => ({})) as Record<string, unknown>;
+  }
+  const bodyToken = (listBody?.access_token != null ? String(listBody.access_token).trim() : '') || '';
+  const queryToken = url.searchParams.get('access_token')?.trim() ?? '';
+  const customToken = req.headers.get('x-app-bearer')?.trim() ?? '';
+  const authHeader = req.headers.get('Authorization') ?? req.headers.get('authorization');
+  const headerToken = authHeader?.replace(/^\s*Bearer\s+/i, '')?.trim() ?? '';
+  const userJwt = bodyToken || queryToken || customToken || headerToken;
+
+  if (!userJwt) {
+    return errorResponse('Missing authorization (header, query access_token, or body access_token)', 'unauthorized', 401);
+  }
+
+  // 使用 getClaims(token) 校验 JWT 并取用户 id，不依赖请求头（网关可能不转发 Authorization）
+  const userClient = createClient(supabaseUrl, anonKey);
+  const { data: claimsData, error: claimsError } = await userClient.auth.getClaims(userJwt);
+  if (claimsError || !claimsData?.claims?.sub) {
+    console.error('[merchant-orders] getClaims failed', { error: claimsError?.message });
+    return errorResponse('Invalid or expired token', 'unauthorized', 401);
+  }
+  const userId = claimsData.claims.sub as string;
+
+  // 统一鉴权
+  const serviceClient = createClient(supabaseUrl, serviceRoleKey);
+  let auth;
+  try {
+    auth = await resolveAuth(serviceClient, userId, req.headers);
+  } catch (e) {
+    return errorResponse((e as Error).message, 'unauthorized', 403);
+  }
+  requirePermission(auth, 'orders');
+
+  const merchantId = auth.merchantId;
 
   // ----------------------------------------------------------------
   // 路由分发
@@ -103,29 +110,44 @@ serve(async (req: Request) => {
     return await handleOrderTransfers(req, serviceClient, auth, transferId);
   }
 
-  // 订单详情（subPath 是 UUID）
-  if (subPath && subPath !== '') {
-    return await handleDetail(serviceClient, merchantId, subPath);
+  // 订单详情（path 为 merchant-orders/:id 或 query 带 ?id=）
+  const detailIdFromPath = subPath && subPath !== '' ? subPath : null;
+  const detailIdFromQuery = url.searchParams.get('id')?.trim() ?? null;
+  const orderIdForDetail = detailIdFromPath || detailIdFromQuery;
+  if (orderIdForDetail) {
+    return await handleDetail(serviceClient, merchantId, orderIdForDetail);
   }
 
-  // 订单列表（默认）
-  return await handleList(serviceClient, merchantId, url.searchParams);
+  // 订单列表（默认）：POST 时用 body 参数，GET 时用 query
+  return await handleList(serviceClient, merchantId, listBody ?? url.searchParams);
 });
 
 // =============================================================
-// handleList — 分页订单列表
+// handleList — 分页订单列表（params 来自 GET query 或 POST body）
 // =============================================================
+function getParam(
+  params: URLSearchParams | Record<string, unknown>,
+  key: string,
+): string | null {
+  if (params instanceof URLSearchParams) {
+    return params.get(key) ?? null;
+  }
+  const v = params[key];
+  if (v == null) return null;
+  return String(v).trim() || null;
+}
+
 async function handleList(
   client: ReturnType<typeof createClient>,
   merchantId: string,
-  params: URLSearchParams,
+  params: URLSearchParams | Record<string, unknown>,
 ): Promise<Response> {
-  const status = params.get('status') ?? null;
-  const dateFrom = params.get('date_from') ?? null;
-  const dateTo = params.get('date_to') ?? null;
-  const dealId = params.get('deal_id') ?? null;
-  const page = Math.max(parseInt(params.get('page') ?? '1', 10), 1);
-  const perPage = Math.min(Math.max(parseInt(params.get('per_page') ?? '20', 10), 1), 100);
+  const status = getParam(params, 'status');
+  const dateFrom = getParam(params, 'date_from');
+  const dateTo = getParam(params, 'date_to');
+  const dealId = getParam(params, 'deal_id');
+  const page = Math.max(parseInt(getParam(params, 'page') ?? '1', 10), 1);
+  const perPage = Math.min(Math.max(parseInt(getParam(params, 'per_page') ?? '20', 10), 1), 100);
 
   // 调用数据库函数 get_merchant_orders
   const { data, error } = await client.rpc('get_merchant_orders', {
@@ -187,6 +209,7 @@ async function handleDetail(
       updated_at,
       refund_requested_at,
       refunded_at,
+      refund_rejected_at,
       deals!inner (
         id,
         title,
@@ -321,6 +344,7 @@ async function handleDetail(
       updated_at: order.updated_at,
       refund_requested_at: order.refund_requested_at ?? null,
       refunded_at: order.refunded_at ?? null,
+      refund_rejected_at: order.refund_rejected_at ?? null,
       // 时间线
       timeline,
     },

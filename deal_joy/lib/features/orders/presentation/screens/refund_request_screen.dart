@@ -47,14 +47,18 @@ class _RefundRequestScreenState extends ConsumerState<RefundRequestScreen> {
   }
 
   Widget _buildBody(BuildContext context, OrderModel order) {
-    // 已退款或已申请退款的订单
     if (order.isRefunded) {
       return _RefundedStatus(order: order);
+    }
+    if (order.isRefundFailed) {
+      return _RefundFailedStatus(order: order);
     }
     if (order.isRefundRequested) {
       return _ProcessingStatus(order: order);
     }
-    // 不可退款
+    if (order.isRefundRejected) {
+      return _RefundRejectedStatus(order: order);
+    }
     if (!order.canRefund) {
       return _CannotRefund(order: order);
     }
@@ -263,7 +267,9 @@ class _RefundRequestScreenState extends ConsumerState<RefundRequestScreen> {
     if (success) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Refund requested successfully!'),
+          content: Text(
+            'Refund request submitted. We will review and notify you once processed.',
+          ),
           backgroundColor: AppColors.success,
         ),
       );
@@ -311,7 +317,7 @@ class _OrderSummaryCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Qty: ${order.quantity}',
+                  'Qty: ${order.quantity}${order.orderNumber != null && order.orderNumber!.isNotEmpty ? ' · #${order.orderNumber}' : ''}',
                   style: const TextStyle(
                     color: AppColors.textSecondary,
                     fontSize: 13,
@@ -412,6 +418,94 @@ class _RefundedStatus extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               '\$${order.totalAmount.toStringAsFixed(2)} has been refunded to your original payment method.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 15,
+              ),
+            ),
+            const SizedBox(height: 24),
+            AppButton(
+              label: 'Back to Orders',
+              onPressed: () => context.go('/orders'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── 退款失败状态 ───────────────────────────────────
+class _RefundFailedStatus extends StatelessWidget {
+  final OrderModel order;
+
+  const _RefundFailedStatus({required this.order});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline, size: 80, color: AppColors.error),
+            const SizedBox(height: 16),
+            const Text(
+              'Refund Failed',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'We could not process your refund. Please contact support.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 15,
+              ),
+            ),
+            const SizedBox(height: 24),
+            AppButton(
+              label: 'Back to Orders',
+              onPressed: () => context.go('/orders'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── 退款被拒绝状态 ─────────────────────────────────
+class _RefundRejectedStatus extends StatelessWidget {
+  final OrderModel order;
+
+  const _RefundRejectedStatus({required this.order});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.cancel_outlined, size: 80, color: AppColors.warning),
+            const SizedBox(height: 16),
+            const Text(
+              'Refund Rejected',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Your refund request was not approved. This order remains valid.',
               textAlign: TextAlign.center,
               style: const TextStyle(
                 color: AppColors.textSecondary,

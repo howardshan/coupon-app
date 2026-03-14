@@ -43,8 +43,34 @@ class OrdersService {
   // Edge Function 名称
   static const String _functionName = 'merchant-orders';
 
+  /// 确保 session 有效（functions.invoke 不会自动刷新 token）
+  Future<void> _ensureFreshSession() async {
+    final session = _supabase.auth.currentSession;
+    if (session == null) return;
+    try {
+      await _supabase.auth.refreshSession();
+    } catch (_) {
+      // refresh 失败则继续使用现有 token
+    }
+  }
+
+  /// 请求头：用自定义头传 JWT（网关可能不转发 Authorization 到 Edge Function）
+  Map<String, String> get _authHeaders {
+    final session = _supabase.auth.currentSession;
+    if (session?.accessToken != null) {
+      return {
+        'Authorization': 'Bearer ${session!.accessToken}',
+        'x-app-bearer': session.accessToken!,
+      };
+    }
+    return {};
+  }
+
+  /// 当前 session 的 access token（供 URL query 传参，解决网关不转发 header 导致 401）
+  String? get _accessToken => _supabase.auth.currentSession?.accessToken;
+
   // =============================================================
-  // fetchOrders — 分页获取订单列表
+  // fetchOrders — 分页获取订单列表（POST + body 传 token，避免网关脱敏 query/header）
   // =============================================================
   /// 获取当前商家的订单列表，支持筛选和分页
   /// 抛出 [OrdersException] 如果请求失败
@@ -54,32 +80,36 @@ class OrdersService {
     int perPage = 20,
   }) async {
     try {
-      // 构造查询参数
-      final params = <String, String>{
-        'page': page.toString(),
-        'per_page': perPage.toString(),
-      };
+      await _ensureFreshSession();
 
-      if (filter != null) {
-        final statusParam = filter.statusParam;
-        if (statusParam != null) params['status'] = statusParam;
-        if (filter.dateFrom != null) {
-          params['date_from'] = _formatDate(filter.dateFrom!);
-        }
-        if (filter.dateTo != null) {
-          params['date_to'] = _formatDate(filter.dateTo!);
-        }
-        if (filter.dealId != null) params['deal_id'] = filter.dealId!;
+      final token = _accessToken;
+      if (token == null || token.isEmpty) {
+        throw const OrdersException(
+          code: 'unauthorized',
+          message: 'Not signed in. Please sign in and retry.',
+        );
       }
 
-      final queryString = _buildQueryString(params);
-      final path = queryString.isEmpty
-          ? _functionName
-          : '$_functionName?$queryString';
+      // POST body：access_token + 分页/筛选参数
+      final body = <String, dynamic>{
+        'access_token': token,
+        'page': page,
+        'per_page': perPage,
+      };
+      if (filter != null) {
+        final statusParam = filter.statusParam;
+        if (statusParam != null) body['status'] = statusParam;
+        if (filter.dateFrom != null) body['date_from'] = _formatDate(filter.dateFrom!);
+        if (filter.dateTo != null) body['date_to'] = _formatDate(filter.dateTo!);
+        if (filter.dealId != null) body['deal_id'] = filter.dealId!;
+      }
 
+      // 不显式设置 Content-Type，避免 SDK 在 header+body 同时存在时发空 body（类似 supabase-js #31098）
       final response = await _supabase.functions.invoke(
-        path,
-        method: HttpMethod.get,
+        _functionName,
+        method: HttpMethod.post,
+        headers: _authHeaders,
+        body: body,
       );
 
       final data = _parseResponse(response);
@@ -127,11 +157,16 @@ class OrdersService {
   /// 抛出 [OrdersException] 如果请求失败或订单不存在
   Future<MerchantOrderDetail> fetchOrderDetail(String orderId) async {
     try {
-      // 使用 query 参数 ?id= 调用，避免 path 被平台截断导致 404
-      final pathWithQuery = '$_functionName?id=${Uri.encodeComponent(orderId)}';
+      await _ensureFreshSession();
+      // 使用 query 参数 ?id= 调用，避免 path 被平台截断导致 404；access_token 解决网关不转发 header 导致 401
+      final token = _accessToken;
+      final pathWithQuery = token != null && token.isNotEmpty
+          ? '$_functionName?id=${Uri.encodeComponent(orderId)}&access_token=${Uri.encodeComponent(token)}'
+          : '$_functionName?id=${Uri.encodeComponent(orderId)}';
       final response = await _supabase.functions.invoke(
         pathWithQuery,
         method: HttpMethod.get,
+        headers: _authHeaders,
       );
 
       final data = _parseResponse(response);
@@ -190,6 +225,10 @@ class OrdersService {
         if (filter.dealId != null) params['deal_id'] = filter.dealId!;
       }
 
+      await _ensureFreshSession();
+      final token = _accessToken;
+      if (token != null && token.isNotEmpty) params['access_token'] = token;
+
       final queryString = _buildQueryString(params);
       final path = queryString.isEmpty
           ? '$_functionName/export'
@@ -198,6 +237,7 @@ class OrdersService {
       final response = await _supabase.functions.invoke(
         path,
         method: HttpMethod.get,
+        headers: _authHeaders,
       );
 
       // CSV 响应直接是文本

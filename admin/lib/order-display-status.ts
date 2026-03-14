@@ -4,12 +4,37 @@
  */
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 
+/** 状态徽章样式（与详情页、列表一致） */
+export const STATUS_STYLES: Record<string, string> = {
+  unused: 'bg-blue-100 text-blue-700',
+  used: 'bg-gray-100 text-gray-600',
+  refunded: 'bg-purple-100 text-purple-700',
+  refund_requested: 'bg-orange-100 text-orange-700',
+  refund_failed: 'bg-red-100 text-red-700',
+  refund_rejected: 'bg-amber-100 text-amber-700',
+  expired: 'bg-red-100 text-red-700',
+  pending_refund: 'bg-amber-100 text-amber-700',
+};
+
+/** 状态展示文案 */
+export const STATUS_LABELS: Record<string, string> = {
+  unused: 'Unused',
+  used: 'Used',
+  refunded: 'Refunded',
+  refund_requested: 'Refund Requested',
+  refund_failed: 'Refund Failed',
+  refund_rejected: 'Refund Rejected',
+  expired: 'Expired',
+  pending_refund: 'Pending Refund',
+};
+
 export type OrderForDisplayStatus = {
   status: string
   deals?: { expires_at?: string | null } | null
   coupon_expires_at?: string | null
-  /** RPC 搜索返回的 deal 下可能有 expires_at */
   deal_expires_at?: string | null
+  /** 管理员拒绝退款时写入，详情页展示 Refund Rejected */
+  refund_rejected_at?: string | null
 }
 
 export function getOrderDisplayStatus(order: OrderForDisplayStatus): string {
@@ -41,6 +66,7 @@ export function getOrderDetailStatusTags(order: OrderForDisplayStatus): string[]
   // 1. 使用维度：始终有一个主状态
   if (order.status === 'unused') {
     tags.push('unused')
+    if (order.refund_rejected_at) tags.push('refund_rejected')
   } else if (order.status === 'used') {
     tags.push('used')
     return tags
@@ -49,6 +75,9 @@ export function getOrderDetailStatusTags(order: OrderForDisplayStatus): string[]
     return tags
   } else if (order.status === 'refund_requested') {
     tags.push('refund_requested')
+    return tags
+  } else if (order.status === 'refund_failed') {
+    tags.push('refund_failed')
     return tags
   }
 

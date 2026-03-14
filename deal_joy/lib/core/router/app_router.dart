@@ -16,6 +16,7 @@ import '../../features/deals/presentation/screens/saved_deals_screen.dart';
 import '../../features/orders/presentation/screens/orders_screen.dart';
 import '../../features/orders/presentation/screens/coupon_screen.dart';
 import '../../features/orders/presentation/screens/coupons_screen.dart';
+import '../../features/orders/presentation/screens/order_detail_screen.dart';
 import '../../features/orders/presentation/screens/refund_request_screen.dart';
 import '../../features/profile/presentation/screens/profile_screen.dart';
 import '../../features/reviews/presentation/screens/write_review_screen.dart';
@@ -211,6 +212,13 @@ final routerProvider = Provider<GoRouter>((ref) {
 
       // Orders (standalone, accessible from profile)
       GoRoute(path: '/orders', builder: (_, _) => const OrdersScreen()),
+
+      // Order detail (single order)
+      GoRoute(
+        path: '/order/:orderId',
+        builder: (_, state) =>
+            OrderDetailScreen(orderId: state.pathParameters['orderId']!),
+      ),
 
       // Saved deals (collection)
       GoRoute(path: '/collection', builder: (_, _) => const SavedDealsScreen()),
