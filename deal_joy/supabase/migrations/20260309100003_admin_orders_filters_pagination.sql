@@ -56,7 +56,7 @@ BEGIN
     OR d.title ILIKE '%' || search_q || '%'
   ))
   AND (p_merchant_id IS NULL OR d.merchant_id = p_merchant_id)
-  AND (p_status IS NULL OR array_length(p_status, 1) IS NULL OR o.status = ANY(p_status))
+  AND (p_status IS NULL OR array_length(p_status, 1) IS NULL OR o.status::text = ANY(p_status))
   AND (p_date_from IS NULL OR o.created_at >= p_date_from)
   AND (p_date_to IS NULL OR o.created_at < (p_date_to + interval '1 day'))
   AND (p_amount_min IS NULL OR o.total_amount >= p_amount_min)
@@ -103,7 +103,7 @@ BEGIN
     OR d.title ILIKE '%' || search_q || '%'
   ))
   AND (p_merchant_id IS NULL OR d.merchant_id = p_merchant_id)
-  AND (p_status IS NULL OR array_length(p_status, 1) IS NULL OR o.status = ANY(p_status))
+  AND (p_status IS NULL OR array_length(p_status, 1) IS NULL OR o.status::text = ANY(p_status))
   AND (p_date_from IS NULL OR o.created_at >= p_date_from)
   AND (p_date_to IS NULL OR o.created_at < (p_date_to + interval '1 day'))
   AND (p_amount_min IS NULL OR o.total_amount >= p_amount_min)
