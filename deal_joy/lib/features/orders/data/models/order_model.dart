@@ -18,6 +18,8 @@ class OrderModel {
   final DateTime? couponExpiresAt;
   /// 订单号，用于区分同一 deal 的多次购买
   final String? orderNumber;
+  /// 是否已完成 Stripe capture（true = 已扣款；false = 预授权未扣款）
+  final bool isCaptured;
 
   const OrderModel({
     required this.id,
@@ -36,6 +38,7 @@ class OrderModel {
     this.deal,
     this.couponExpiresAt,
     this.orderNumber,
+    this.isCaptured = true,
   });
 
   factory OrderModel.fromJson(Map<String, dynamic> json) {
@@ -65,6 +68,7 @@ class OrderModel {
             ? DateTime.parse(json['refund_rejected_at'] as String)
             : null,
         orderNumber: json['order_number'] as String?,
+        isCaptured: json['is_captured'] as bool? ?? true,
         deal: json['deals'] != null
             ? DealSummary.fromJson(json['deals'] as Map<String, dynamic>)
             : null,
