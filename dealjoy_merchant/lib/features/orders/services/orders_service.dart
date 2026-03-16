@@ -306,6 +306,132 @@ class OrdersService {
   }
 
   // =============================================================
+  // fetchAdminRefundRequests — 管理员获取退款申请列表
+  // =============================================================
+  /// 管理员获取退款申请列表（调用 admin-refund Edge Function）
+  /// [status] 传 null 时默认 'pending_admin'，传 'all' 获取全部
+  Future<Map<String, dynamic>> fetchAdminRefundRequests({
+    String? status,
+    int page = 1,
+    int perPage = 20,
+  }) async {
+    try {
+      await _ensureFreshSession();
+
+      final token = _accessToken;
+      if (token == null || token.isEmpty) {
+        throw const OrdersException(
+          code: 'unauthorized',
+          message: 'Not signed in. Please sign in and retry.',
+        );
+      }
+
+      final params = <String, String>{
+        'page': page.toString(),
+        'per_page': perPage.toString(),
+        'access_token': token,
+      };
+      if (status != null) params['status'] = status;
+
+      final queryString = _buildQueryString(params);
+      final path = 'admin-refund?$queryString';
+
+      final response = await _supabase.functions.invoke(
+        path,
+        method: HttpMethod.get,
+        headers: _authHeaders,
+      );
+
+      final data = _parseResponse(response);
+
+      if (data['error'] != null) {
+        throw OrdersException(
+          code: data['error'] as String,
+          message: data['message'] as String? ?? 'Failed to fetch admin refund requests',
+        );
+      }
+
+      return data;
+    } on OrdersException {
+      rethrow;
+    } on FunctionException catch (e) {
+      final body = _tryParseBody(e.details);
+      throw OrdersException(
+        code: body?['error'] as String? ?? 'network_error',
+        message: body?['message'] as String? ?? 'Network error. Please try again.',
+      );
+    } catch (e) {
+      if (e is OrdersException) rethrow;
+      throw const OrdersException(
+        code: 'network_error',
+        message: 'Network error. Please check your connection.',
+      );
+    }
+  }
+
+  // =============================================================
+  // adminDecideRefundRequest — 管理员审批退款申请
+  // =============================================================
+  /// 管理员最终审批退款申请
+  /// [action] 传 'approve' 批准，传 'reject' 拒绝
+  /// [reason] 拒绝时填写原因（必填）
+  Future<void> adminDecideRefundRequest({
+    required String refundRequestId,
+    required String action,
+    String? reason,
+  }) async {
+    try {
+      await _ensureFreshSession();
+
+      final token = _accessToken;
+      if (token == null || token.isEmpty) {
+        throw const OrdersException(
+          code: 'unauthorized',
+          message: 'Not signed in. Please sign in and retry.',
+        );
+      }
+
+      final body = <String, dynamic>{
+        'action': action,
+        'access_token': token,
+        if (reason != null) 'reason': reason,
+      };
+
+      final path = 'admin-refund/$refundRequestId?access_token=${Uri.encodeComponent(token)}';
+
+      final response = await _supabase.functions.invoke(
+        path,
+        method: HttpMethod.patch,
+        headers: _authHeaders,
+        body: body,
+      );
+
+      final data = _parseResponse(response);
+
+      if (data['error'] != null) {
+        throw OrdersException(
+          code: data['error'] as String,
+          message: data['message'] as String? ?? 'Failed to process admin decision',
+        );
+      }
+    } on OrdersException {
+      rethrow;
+    } on FunctionException catch (e) {
+      final body = _tryParseBody(e.details);
+      throw OrdersException(
+        code: body?['error'] as String? ?? 'network_error',
+        message: body?['message'] as String? ?? 'Failed to process admin decision.',
+      );
+    } catch (e) {
+      if (e is OrdersException) rethrow;
+      throw const OrdersException(
+        code: 'network_error',
+        message: 'Network error. Please check your connection.',
+      );
+    }
+  }
+
+  // =============================================================
   // 私有工具方法
   // =============================================================
 

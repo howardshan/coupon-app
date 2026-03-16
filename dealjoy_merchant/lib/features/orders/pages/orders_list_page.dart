@@ -12,6 +12,7 @@ import '../providers/orders_provider.dart';
 import '../widgets/order_filter_bar.dart';
 import '../widgets/order_tile.dart';
 import 'order_detail_page.dart';
+import 'admin_refund_requests_page.dart';
 
 /// 订单列表主页
 class OrdersListPage extends ConsumerStatefulWidget {
@@ -132,6 +133,19 @@ class _OrdersListPageState extends ConsumerState<OrdersListPage>
         ),
         centerTitle: false,
         actions: [
+          // 管理员仲裁入口按钮
+          IconButton(
+            icon: const Icon(Icons.admin_panel_settings_outlined),
+            tooltip: 'Admin Arbitration',
+            onPressed: () async {
+              await Navigator.push<bool>(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const AdminRefundRequestsPage(),
+                ),
+              );
+            },
+          ),
           // 导出按钮（P2）
           IconButton(
             onPressed: isExporting ? null : _exportCsv,

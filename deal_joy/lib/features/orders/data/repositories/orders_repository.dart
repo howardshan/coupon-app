@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/errors/app_exception.dart';
+// FunctionException 已在 supabase_flutter 中导出，无需额外导入
 import '../models/order_detail_model.dart';
 import '../models/order_model.dart';
 
@@ -104,6 +105,61 @@ class OrdersRepository {
       return data;
     } on PostgrestException catch (e) {
       throw AppException('Coupon not found: ${e.message}', code: e.code);
+    }
+  }
+
+  /// 核销后退款申请 — 调用 submit-refund-request Edge Function
+  /// [orderId] 订单 ID
+  /// [reason] 退款原因（必填，min 10 chars，由 UI 层保证）
+  Future<void> submitPostUseRefundRequest({
+    required String orderId,
+    required String reason,
+  }) async {
+    try {
+      final token = _client.auth.currentSession?.accessToken;
+      if (token == null || token.isEmpty) {
+        throw const AppException(
+          'Not signed in. Please sign in and retry.',
+          code: 'unauthorized',
+        );
+      }
+      final res = await _client.functions.invoke(
+        'submit-refund-request',
+        body: {
+          'orderId': orderId,
+          'reason': reason,
+          'access_token': token,
+        },
+      );
+      if (res.data == null) {
+        throw AppException(
+          'Failed to submit refund request',
+          code: 'server_error',
+        );
+      }
+      final data = res.data as Map<String, dynamic>;
+      if (data.containsKey('error')) {
+        throw AppException(
+          data['message'] as String? ?? data['error'] as String? ?? 'Request failed',
+          code: data['error'] as String? ?? 'error',
+        );
+      }
+    } on AppException {
+      rethrow;
+    } on FunctionException catch (e) {
+      final details = e.details;
+      String message;
+      if (details is Map && details.containsKey('message')) {
+        message = details['message'].toString();
+      } else if (details is Map && details.containsKey('error')) {
+        message = details['error'].toString();
+      } else {
+        message = 'Failed to submit refund request (${e.status})';
+      }
+      throw AppException(message);
+    } catch (e) {
+      if (e is AppException) rethrow;
+      throw AppException('Refund request failed: $e');
     }
   }
 }

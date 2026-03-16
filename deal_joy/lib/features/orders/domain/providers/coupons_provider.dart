@@ -98,6 +98,25 @@ class RefundNotifier extends AsyncNotifier<void> {
     }
     return !state.hasError;
   }
+
+  /// 核销后退款申请（submit-refund-request Edge Function）
+  Future<bool> submitPostUseRefundRequest({
+    required String orderId,
+    required String reason,
+  }) async {
+    state = const AsyncValue.loading();
+    state = await AsyncValue.guard(
+      () => ref
+          .read(ordersRepositoryProvider)
+          .submitPostUseRefundRequest(orderId: orderId, reason: reason),
+    );
+    if (!state.hasError) {
+      ref.invalidate(userOrdersProvider);
+      ref.invalidate(orderDetailProvider(orderId));
+      ref.invalidate(userOrderDetailProvider(orderId));
+    }
+    return !state.hasError;
+  }
 }
 
 final refundNotifierProvider =
