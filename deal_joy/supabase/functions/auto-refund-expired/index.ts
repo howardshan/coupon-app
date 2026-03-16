@@ -1,9 +1,14 @@
 // auto-refund-expired: 过期订单自动退款 Edge Function
 // 由 Supabase Cron Job 定期触发（建议每小时一次）
 // 需求 7.1.2：团购券过期 24 小时后自动退全额
-// 使用 fetch 直连 Stripe API，避免 Stripe SDK 在 Supabase Edge 中触发 runMicrotasks 报错
 
+import Stripe from 'https://esm.sh/stripe@14?target=deno';
 import { createClient } from 'npm:@supabase/supabase-js@2';
+
+const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {
+  apiVersion: '2024-04-10',
+  httpClient: Stripe.createFetchHttpClient(),
+});
 
 // CORS 响应头（与其他 Edge Functions 保持一致）
 const corsHeaders = {
@@ -137,10 +142,7 @@ Deno.serve(async (req) => {
       const orderId = order.id;
 
       try {
-        // 1. 向 Stripe 发起退款
-        //    reason: 'expired_uncaptured_charge' 是 Stripe 内置枚举中最接近的值；
-        //    实际为"团购券过期"场景，通过 metadata 额外说明。
-        // 判断退款原因
+        // 1. 向 Stripe 发起退款（团购券过期场景，通过 metadata 说明）
         const isStoreClosed = order.status === 'refund_requested';
         const refundSource = isStoreClosed ? 'store_closed' : 'auto_expired';
 
@@ -151,13 +153,7 @@ Deno.serve(async (req) => {
             source: `auto-refund-${refundSource}`,
             order_id: orderId,
           },
-          body: form.toString(),
         });
-        if (!stripeRes.ok) {
-          const errText = await stripeRes.text();
-          throw new Error(`Stripe refund failed: ${stripeRes.status} ${errText}`);
-        }
-        const refund = await stripeRes.json() as { id?: string };
 
         const now = new Date().toISOString();
 
