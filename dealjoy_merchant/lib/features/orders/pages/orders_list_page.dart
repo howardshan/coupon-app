@@ -13,6 +13,7 @@ import '../widgets/order_filter_bar.dart';
 import '../widgets/order_tile.dart';
 import 'order_detail_page.dart';
 import 'admin_refund_requests_page.dart';
+import 'refund_requests_page.dart';
 
 /// 订单列表主页
 class OrdersListPage extends ConsumerStatefulWidget {
@@ -133,6 +134,19 @@ class _OrdersListPageState extends ConsumerState<OrdersListPage>
         ),
         centerTitle: false,
         actions: [
+          // 退款申请审批入口（商家审核用户的核销后退款申请）
+          IconButton(
+            icon: const Icon(Icons.policy_outlined),
+            tooltip: 'Refund Requests',
+            onPressed: () async {
+              await Navigator.push<bool>(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const RefundRequestsPage(),
+                ),
+              );
+            },
+          ),
           // 管理员仲裁入口按钮
           IconButton(
             icon: const Icon(Icons.admin_panel_settings_outlined),

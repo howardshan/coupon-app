@@ -306,6 +306,133 @@ class OrdersService {
   }
 
   // =============================================================
+  // fetchRefundRequests — 商家获取退款申请列表
+  // =============================================================
+  /// 商家获取自己店铺的退款申请列表
+  /// [status] 传 null 获取全部，传 'pending_merchant' 获取待处理
+  Future<Map<String, dynamic>> fetchRefundRequests({
+    String? status,
+    int page = 1,
+    int perPage = 20,
+  }) async {
+    try {
+      await _ensureFreshSession();
+
+      final token = _accessToken;
+      if (token == null || token.isEmpty) {
+        throw const OrdersException(
+          code: 'unauthorized',
+          message: 'Not signed in. Please sign in and retry.',
+        );
+      }
+
+      // GET 请求，access_token 通过 query 参数传递
+      final params = <String, String>{
+        'access_token': token,
+        'page': page.toString(),
+        'per_page': perPage.toString(),
+      };
+      if (status != null) params['status'] = status;
+
+      final queryString = _buildQueryString(params);
+      final path = '$_functionName/refund-requests?$queryString';
+
+      final response = await _supabase.functions.invoke(
+        path,
+        method: HttpMethod.get,
+        headers: _authHeaders,
+      );
+
+      final data = _parseResponse(response);
+
+      if (data['error'] != null) {
+        throw OrdersException(
+          code: data['error'] as String,
+          message: data['message'] as String? ?? 'Failed to fetch refund requests',
+        );
+      }
+
+      return data;
+    } on OrdersException {
+      rethrow;
+    } on FunctionException catch (e) {
+      final body = _tryParseBody(e.details);
+      throw OrdersException(
+        code: body?['error'] as String? ?? 'network_error',
+        message: body?['message'] as String? ?? 'Network error. Please try again.',
+      );
+    } catch (e) {
+      if (e is OrdersException) rethrow;
+      throw const OrdersException(
+        code: 'network_error',
+        message: 'Network error. Please check your connection.',
+      );
+    }
+  }
+
+  // =============================================================
+  // decideRefundRequest — 商家审批退款申请
+  // =============================================================
+  /// 商家批准或拒绝退款申请
+  /// [action] 传 'approve' 批准，传 'reject' 拒绝
+  /// [reason] 拒绝时填写原因（必填）
+  Future<void> decideRefundRequest({
+    required String refundRequestId,
+    required String action,
+    String? reason,
+  }) async {
+    try {
+      await _ensureFreshSession();
+
+      final token = _accessToken;
+      if (token == null || token.isEmpty) {
+        throw const OrdersException(
+          code: 'unauthorized',
+          message: 'Not signed in. Please sign in and retry.',
+        );
+      }
+
+      final body = <String, dynamic>{
+        'action': action,
+        'access_token': token,
+        if (reason != null) 'reason': reason,
+      };
+
+      final path = '$_functionName/refund-requests/$refundRequestId?access_token=${Uri.encodeComponent(token)}';
+
+      final response = await _supabase.functions.invoke(
+        path,
+        method: HttpMethod.patch,
+        headers: _authHeaders,
+        body: body,
+      );
+
+      final data = _parseResponse(response);
+
+      if (data['error'] != null) {
+        throw OrdersException(
+          code: data['error'] as String,
+          message: data['message'] as String? ?? 'Failed to process refund decision',
+        );
+      }
+    } on OrdersException {
+      rethrow;
+    } on FunctionException catch (e) {
+      final body = _tryParseBody(e.details);
+      throw OrdersException(
+        code: body?['error'] as String? ?? 'network_error',
+        message: body?['message'] as String? ?? 'Failed to process refund decision.',
+      );
+    } catch (e) {
+      if (e is OrdersException) rethrow;
+      throw const OrdersException(
+        code: 'network_error',
+        message: 'Network error. Please check your connection.',
+      );
+    }
+  }
+
+  // =============================================================
   // fetchAdminRefundRequests — 管理员获取退款申请列表
   // =============================================================
   /// 管理员获取退款申请列表（调用 admin-refund Edge Function）
