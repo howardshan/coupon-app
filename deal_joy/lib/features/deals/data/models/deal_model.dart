@@ -107,6 +107,12 @@ class DealModel {
   final String usageNotes;
   // 选项组（"几选几"功能，如 "Side: pick 2 from 4"）
   final List<DealOptionGroup> optionGroups;
+  // 详情页多图列表（区别于封面图 imageUrls）
+  final List<String> detailImages;
+  // 有效期类型：'fixed_date' | 'short_after_purchase' | 'long_after_purchase'
+  final String validityType;
+  // 购买后有效天数（short/long_after_purchase 时非 null）
+  final int? validityDays;
 
   const DealModel({
     required this.id,
@@ -143,6 +149,9 @@ class DealModel {
     this.shortName,
     this.usageNotes = '',
     this.optionGroups = const [],
+    this.detailImages = const [],
+    this.validityType = 'fixed_date',
+    this.validityDays,
   });
 
   factory DealModel.fromJson(Map<String, dynamic> json) => DealModel(
@@ -186,6 +195,9 @@ class DealModel {
         shortName: json['short_name'] as String?,
         usageNotes: json['usage_notes'] as String? ?? '',
         optionGroups: _parseOptionGroups(json),
+        detailImages: List<String>.from(json['detail_images'] as List? ?? []),
+        validityType: json['validity_type'] as String? ?? 'fixed_date',
+        validityDays: json['validity_days'] as int?,
       );
 
   // RPC 搜索结果（search_deals_nearby / search_deals_by_city）解析
@@ -222,6 +234,9 @@ class DealModel {
         applicableMerchantIds: null, // RPC 不再返回此字段，改为 active_store_count
         activeStoreCount: (json['active_store_count'] as num?)?.toInt(),
         shortName: json['short_name'] as String?,
+        detailImages: List<String>.from(json['detail_images'] as List? ?? []),
+        validityType: json['validity_type'] as String? ?? 'fixed_date',
+        validityDays: json['validity_days'] as int?,
       );
 
   /// 解析产品列表：优先读 products 数组，为空时从 package_contents 文本按行解析

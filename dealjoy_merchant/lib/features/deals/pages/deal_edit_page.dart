@@ -69,6 +69,9 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
   // 使用须知附图（已有 URL + 新增文件）
   late List<String> _existingUsageNoteImageUrls;
   final List<XFile> _newUsageNoteImageFiles = [];
+  // 竖版详情图（已有 URL + 新增文件）
+  late List<String> _existingDetailImageUrls;
+  final List<XFile> _newDetailImageFiles = [];
 
   bool _isSubmitting = false;
   final _formKey = GlobalKey<FormState>();
@@ -133,6 +136,8 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
     _optionGroups = List.of(deal.optionGroups);
     // 使用须知附图回填
     _existingUsageNoteImageUrls = List.of(deal.usageNoteImages);
+    // 竖版详情图回填
+    _existingDetailImageUrls = List.of(deal.detailImages);
   }
 
   @override
@@ -247,6 +252,20 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
         }
       }
 
+      // 上传新增的竖版详情图
+      final allDetailUrls = List<String>.from(_existingDetailImageUrls);
+      if (_newDetailImageFiles.isNotEmpty) {
+        final service = ref.read(dealsServiceProvider);
+        for (final file in _newDetailImageFiles) {
+          final url = await service.uploadDetailImage(
+            merchantId: widget.deal.merchantId,
+            dealId: widget.deal.id,
+            file: file,
+          );
+          allDetailUrls.add(url);
+        }
+      }
+
       final deal = MerchantDeal(
         id: widget.deal.id,
         merchantId: widget.deal.merchantId,
@@ -265,9 +284,11 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
         packageContents: _packageContentsText,
         usageNotes: _usageNotesController.text.trim(),
         usageNoteImages: allUsageNoteUrls,
+        detailImages: allDetailUrls,
         validityType: _validityType,
         expiresAt: expiresAt,
-        validityDays: _validityType == ValidityType.daysAfterPurchase
+        validityDays: (_validityType == ValidityType.shortAfterPurchase ||
+                       _validityType == ValidityType.longAfterPurchase)
             ? int.tryParse(_validityDaysController.text)
             : null,
         usageDays: _selectedDays.toList(),
@@ -959,7 +980,8 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
             'Expires',
             '${_endDate!.month}/${_endDate!.day}/${_endDate!.year}',
           ),
-        if (_validityType == ValidityType.daysAfterPurchase)
+        if (_validityType == ValidityType.shortAfterPurchase ||
+            _validityType == ValidityType.longAfterPurchase)
           _summaryRow(
             'Valid For',
             '${_validityDaysController.text.isNotEmpty ? _validityDaysController.text : '-'} days after purchase',
@@ -1001,20 +1023,32 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
         const SizedBox(height: 16),
         _sectionLabel('Validity Period'),
         const SizedBox(height: 8),
-        Row(
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
           children: [
             _ValidityTypeChip(
               label: 'Fixed Date',
               selected: _validityType == ValidityType.fixedDate,
               onTap: () => setState(() => _validityType = ValidityType.fixedDate),
             ),
-            const SizedBox(width: 8),
             _ValidityTypeChip(
-              label: 'Days After Purchase',
-              selected: _validityType == ValidityType.daysAfterPurchase,
-              onTap: () => setState(
-                () => _validityType = ValidityType.daysAfterPurchase,
-              ),
+              label: 'Short-term',
+              selected: _validityType == ValidityType.shortAfterPurchase,
+              onTap: () => setState(() {
+                _validityType = ValidityType.shortAfterPurchase;
+                final days = int.tryParse(_validityDaysController.text) ?? 0;
+                if (days > 7) _validityDaysController.clear();
+              }),
+            ),
+            _ValidityTypeChip(
+              label: 'Long-term',
+              selected: _validityType == ValidityType.longAfterPurchase,
+              onTap: () => setState(() {
+                _validityType = ValidityType.longAfterPurchase;
+                final days = int.tryParse(_validityDaysController.text) ?? 0;
+                if (days > 0 && days < 8) _validityDaysController.clear();
+              }),
             ),
           ],
         ),
@@ -1025,8 +1059,10 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
           _buildTextField(
             fieldKey: const ValueKey('deal_edit_validity_days_field'),
             controller: _validityDaysController,
-            label: 'Valid for (days)',
-            hint: 'e.g. 30',
+            label: _validityType == ValidityType.shortAfterPurchase
+                ? 'Valid for (1–7 days)'
+                : 'Valid for (8–365 days)',
+            hint: _validityType == ValidityType.shortAfterPurchase ? 'e.g. 3' : 'e.g. 30',
             keyboardType: TextInputType.number,
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
           ),
@@ -1842,6 +1878,15 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
           '$totalImages image${totalImages > 1 ? 's' : ''}',
           style: const TextStyle(fontSize: 12, color: Color(0xFF999999)),
         ),
+        // 显示竖版详情图数量（如有）
+        if (_existingDetailImageUrls.isNotEmpty ||
+            _newDetailImageFiles.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(
+            '${_existingDetailImageUrls.length + _newDetailImageFiles.length} detail photo${(_existingDetailImageUrls.length + _newDetailImageFiles.length) > 1 ? 's' : ''}',
+            style: const TextStyle(fontSize: 12, color: Color(0xFF999999)),
+          ),
+        ],
       ],
     );
   }
@@ -1995,6 +2040,150 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
               ),
             ),
           ),
+
+        // ---- 竖版详情图区域 ----
+        const SizedBox(height: 20),
+        const Divider(height: 1, color: Color(0xFFEEEEEE)),
+        const SizedBox(height: 16),
+        _buildDetailImagesSection(),
+      ],
+    );
+  }
+
+  // ============================================================
+  // 竖版详情图区域（编辑模式：已有 URL + 新增文件）
+  // ============================================================
+  Widget _buildDetailImagesSection() {
+    final totalCount =
+        _existingDetailImageUrls.length + _newDetailImageFiles.length;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 标题行
+        Row(
+          children: [
+            const Icon(Icons.photo_size_select_actual_outlined,
+                size: 18, color: _orange),
+            const SizedBox(width: 6),
+            const Text(
+              'Detail Photos (Portrait)',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF333333),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF3E0),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: const Text(
+                'Optional',
+                style: TextStyle(fontSize: 10, color: Color(0xFFF57C00)),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Max 5 portrait photos for deal detail page',
+          style: TextStyle(fontSize: 12, color: Color(0xFF999999)),
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            // 已有的远程竖版图片
+            for (int i = 0; i < _existingDetailImageUrls.length; i++)
+              _detailImageTile(
+                child: Image.network(
+                  _existingDetailImageUrls[i],
+                  width: 80,
+                  height: 120,
+                  fit: BoxFit.cover,
+                ),
+                onRemove: () =>
+                    setState(() => _existingDetailImageUrls.removeAt(i)),
+              ),
+            // 新选的本地竖版图片
+            for (int i = 0; i < _newDetailImageFiles.length; i++)
+              _detailImageTile(
+                child: Image.file(
+                  File(_newDetailImageFiles[i].path),
+                  width: 80,
+                  height: 120,
+                  fit: BoxFit.cover,
+                ),
+                onRemove: () =>
+                    setState(() => _newDetailImageFiles.removeAt(i)),
+              ),
+            // 添加按钮
+            if (totalCount < 5)
+              GestureDetector(
+                onTap: () async {
+                  final picker = ImagePicker();
+                  final picked = await picker.pickImage(
+                    source: ImageSource.gallery,
+                    maxWidth: 1200,
+                    maxHeight: 2400,
+                    imageQuality: 85,
+                  );
+                  if (picked != null) {
+                    setState(() => _newDetailImageFiles.add(picked));
+                  }
+                },
+                child: Container(
+                  width: 80,
+                  height: 120,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF5F5F5),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFDDDDDD)),
+                  ),
+                  child: const Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.add_photo_alternate_outlined,
+                          size: 24, color: Color(0xFF999999)),
+                      SizedBox(height: 4),
+                      Text('Add',
+                          style:
+                              TextStyle(fontSize: 11, color: Color(0xFF999999))),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  // 竖版详情图单元（带删除按钮）
+  Widget _detailImageTile({
+    required Widget child,
+    required VoidCallback onRemove,
+  }) {
+    return Stack(
+      children: [
+        ClipRRect(borderRadius: BorderRadius.circular(8), child: child),
+        Positioned(
+          top: 2,
+          right: 2,
+          child: GestureDetector(
+            onTap: onRemove,
+            child: Container(
+              decoration: const BoxDecoration(
+                  color: Colors.black54, shape: BoxShape.circle),
+              padding: const EdgeInsets.all(2),
+              child: const Icon(Icons.close, size: 14, color: Colors.white),
+            ),
+          ),
+        ),
       ],
     );
   }

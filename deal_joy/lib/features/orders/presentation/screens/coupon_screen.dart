@@ -358,10 +358,10 @@ class _DealInfoSection extends StatelessWidget {
                 fontSize: 18,
               ),
             ),
-          if (coupon.orderNumber != null && coupon.orderNumber!.isNotEmpty) ...[
+          ...[
             const SizedBox(height: 4),
             Text(
-              'Order #${coupon.orderNumber}',
+              'Order #${coupon.orderId.substring(0, 8).toUpperCase()}',
               style: const TextStyle(
                 color: AppColors.textSecondary,
                 fontSize: 13,
@@ -845,6 +845,24 @@ class _ActionButtonsState extends ConsumerState<_ActionButtons> {
                 backgroundColor: AppColors.error,
                 foregroundColor: Colors.white,
                 minimumSize: const Size(double.infinity, 48),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ],
+          // 已核销 + 24h 内 → 显示核销后退款按钮
+          if (coupon.isUsed &&
+              coupon.usedAt != null &&
+              DateTime.now().difference(coupon.usedAt!).inHours < 24) ...[
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: () => context.push('/post-use-refund/${coupon.orderId}'),
+              icon: const Icon(Icons.policy_outlined),
+              label: const Text('Request Post-Use Refund'),
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size(double.infinity, 48),
+                foregroundColor: AppColors.warning,
+                side: const BorderSide(color: AppColors.warning),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12)),
               ),

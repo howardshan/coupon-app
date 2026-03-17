@@ -77,6 +77,8 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
   final List<XFile> _selectedImages = [];
   // 使用须知附带图片
   final List<XFile> _usageNoteImageFiles = [];
+  // 竖版详情图（展示在 deal detail 页面）
+  final List<XFile> _detailImageFiles = [];
   bool _isSubmitting = false;
 
   static const _dayOptions = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -247,7 +249,7 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
       if (_validityType == ValidityType.fixedDate) {
         expiresAt = _endDate!;
       } else {
-        // days_after_purchase: 设置远期过期（实际在购买时计算）
+        // short/long_after_purchase: 设置远期占位（实际在购买时计算到期日）
         expiresAt = DateTime.now().add(const Duration(days: 730));
       }
 
@@ -274,7 +276,8 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
         usageNotes:      _usageNotesController.text.trim(),
         validityType:    _validityType,
         expiresAt:       expiresAt,
-        validityDays:    _validityType == ValidityType.daysAfterPurchase
+        validityDays:    (_validityType == ValidityType.shortAfterPurchase ||
+                          _validityType == ValidityType.longAfterPurchase)
             ? int.tryParse(_validityDaysController.text)
             : null,
         usageDays:       _selectedDays.toList(),
@@ -323,7 +326,7 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
         // 创建模式：先创建 Deal，再上传图片
         savedDeal = await notifier.createDeal(deal);
 
-        // 上传图片（按顺序，第一张设为主图）
+        // 上传主图（按顺序，第一张设为主图）
         for (int i = 0; i < _selectedImages.length; i++) {
           await notifier.uploadImage(
             dealId:    savedDeal.id,
@@ -332,6 +335,22 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
             isPrimary: i == 0,
           );
         }
+      }
+
+      // 上传竖版详情图（创建和编辑模式都支持）
+      if (_detailImageFiles.isNotEmpty) {
+        final service = ref.read(dealsServiceProvider);
+        final detailUrls = <String>[];
+        for (final file in _detailImageFiles) {
+          final url = await service.uploadDetailImage(
+            merchantId: merchantId,
+            dealId: savedDeal.id,
+            file: file,
+          );
+          detailUrls.add(url);
+        }
+        // 通过 PATCH 更新 detail_images 字段
+        await notifier.updateDeal(savedDeal.copyWith(detailImages: detailUrls));
       }
 
       if (!mounted) return;
@@ -404,6 +423,32 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
 
   void _removeUsageNoteImage(int index) {
     setState(() => _usageNoteImageFiles.removeAt(index));
+  }
+
+  // --------------------------------------------------------
+  // 竖版详情图选择（最多5张）
+  // --------------------------------------------------------
+  Future<void> _pickDetailImage() async {
+    if (_detailImageFiles.length >= 5) {
+      _showSnack('Maximum 5 detail images allowed');
+      return;
+    }
+
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1200,
+      maxHeight: 2400,
+      imageQuality: 85,
+    );
+
+    if (picked != null) {
+      setState(() => _detailImageFiles.add(picked));
+    }
+  }
+
+  void _removeDetailImage(int index) {
+    setState(() => _detailImageFiles.removeAt(index));
   }
 
   // --------------------------------------------------------
@@ -1515,21 +1560,35 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
             _sectionLabel('Validity Period'),
             const SizedBox(height: 8),
 
-            // 有效期类型选择
-            Row(
+            // 有效期类型选择（三种模式）
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
               children: [
                 _ValidityTypeChip(
                   label: 'Fixed Date',
                   selected: _validityType == ValidityType.fixedDate,
                   onTap: () => setState(() => _validityType = ValidityType.fixedDate),
                 ),
-                const SizedBox(width: 8),
                 _ValidityTypeChip(
-                  label: 'Days After Purchase',
-                  selected: _validityType == ValidityType.daysAfterPurchase,
-                  onTap: () => setState(
-                    () => _validityType = ValidityType.daysAfterPurchase,
-                  ),
+                  label: 'Short-term',
+                  selected: _validityType == ValidityType.shortAfterPurchase,
+                  onTap: () => setState(() {
+                    _validityType = ValidityType.shortAfterPurchase;
+                    // 切换时若天数超过 7 则清空，避免超范围
+                    final days = int.tryParse(_validityDaysController.text) ?? 0;
+                    if (days > 7) _validityDaysController.clear();
+                  }),
+                ),
+                _ValidityTypeChip(
+                  label: 'Long-term',
+                  selected: _validityType == ValidityType.longAfterPurchase,
+                  onTap: () => setState(() {
+                    _validityType = ValidityType.longAfterPurchase;
+                    // 切换时若天数不足 8 则清空
+                    final days = int.tryParse(_validityDaysController.text) ?? 0;
+                    if (days > 0 && days < 8) _validityDaysController.clear();
+                  }),
                 ),
               ],
             ),
@@ -1554,9 +1613,14 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      _validityType == ValidityType.daysAfterPurchase
-                          ? 'Expired deals will be automatically refunded. DealJoy\'s customer guarantee.'
-                          : 'Deals purchased before expiry but not used will be automatically refunded.',
+                      switch (_validityType) {
+                        ValidityType.shortAfterPurchase =>
+                          'Stripe hold — card charged at redemption. Instantly released if unused.',
+                        ValidityType.longAfterPurchase =>
+                          'Charged immediately at purchase. Standard refund if unused.',
+                        ValidityType.fixedDate =>
+                          'Deals purchased before expiry but not used will be automatically refunded.',
+                      },
                       style: const TextStyle(
                         fontSize: 12,
                         color: Color(0xFFF57C00),
@@ -1628,25 +1692,35 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
   }
 
   Widget _buildDaysAfterPurchaseInput() {
+    // 根据有效期类型动态调整范围提示
+    final isShort = _validityType == ValidityType.shortAfterPurchase;
+    final hint = isShort ? 'e.g. 3' : 'e.g. 30';
+    final rangeHint = isShort ? '1–7 days' : '8–365 days';
     return TextFormField(
       key: const ValueKey('deal_create_validity_days_field'),
       controller: _validityDaysController,
       keyboardType: TextInputType.number,
       inputFormatters: [FilteringTextInputFormatter.digitsOnly],
       validator: (v) {
-        if (_validityType != ValidityType.daysAfterPurchase) return null;
+        if (_validityType == ValidityType.fixedDate) return null;
         if (v == null || v.isEmpty) return 'Number of days is required';
         final days = int.tryParse(v);
-        if (days == null || days < 1 || days > 365) {
-          return 'Must be between 1 and 365 days';
+        if (_validityType == ValidityType.shortAfterPurchase) {
+          if (days == null || days < 1 || days > 7) {
+            return 'Short-term: must be between 1 and 7 days';
+          }
+        } else {
+          if (days == null || days < 8 || days > 365) {
+            return 'Long-term: must be between 8 and 365 days';
+          }
         }
         return null;
       },
       decoration: _inputDecoration(
         label: 'Valid for (days)',
-        hint: 'e.g. 30',
+        hint: hint,
       ).copyWith(
-        suffixText: 'days after purchase',
+        suffixText: 'days after purchase  ($rangeHint)',
         suffixStyle: const TextStyle(fontSize: 12, color: Color(0xFF999999)),
       ),
     );
@@ -2080,8 +2154,123 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
             'Tip: Drag to reorder images. The leftmost image is the cover.',
             style: TextStyle(fontSize: 12, color: Color(0xFFBBBBBB)),
           ),
+
+          // ---- 竖版详情图区域 ----
+          const SizedBox(height: 24),
+          const Divider(height: 1, color: Color(0xFFEEEEEE)),
+          const SizedBox(height: 16),
+          _buildDetailImagesSection(),
         ],
       ),
+    );
+  }
+
+  // ============================================================
+  // 竖版详情图区域（用于 deal detail 页面展示）
+  // ============================================================
+  Widget _buildDetailImagesSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 标题行
+        Row(
+          children: [
+            const Icon(Icons.photo_size_select_actual_outlined,
+                size: 18, color: Color(0xFFFF6B35)),
+            const SizedBox(width: 6),
+            const Text(
+              'Detail Photos (Portrait)',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF333333),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF3E0),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: const Text(
+                'Optional',
+                style: TextStyle(fontSize: 10, color: Color(0xFFF57C00)),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Max 5 portrait photos for deal detail page',
+          style: TextStyle(fontSize: 12, color: Color(0xFF999999)),
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            // 已选竖版图片
+            for (int i = 0; i < _detailImageFiles.length; i++)
+              Stack(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.file(
+                      File(_detailImageFiles[i].path),
+                      width: 80,
+                      height: 120,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  Positioned(
+                    top: 2,
+                    right: 2,
+                    child: GestureDetector(
+                      onTap: () => _removeDetailImage(i),
+                      child: Container(
+                        decoration: const BoxDecoration(
+                          color: Colors.black54,
+                          shape: BoxShape.circle,
+                        ),
+                        padding: const EdgeInsets.all(2),
+                        child: const Icon(Icons.close,
+                            size: 14, color: Colors.white),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            // 添加按钮
+            if (_detailImageFiles.length < 5)
+              GestureDetector(
+                onTap: _pickDetailImage,
+                child: Container(
+                  width: 80,
+                  height: 120,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF5F5F5),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                        color: const Color(0xFFDDDDDD),
+                        style: BorderStyle.solid),
+                  ),
+                  child: const Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.add_photo_alternate_outlined,
+                          size: 24, color: Color(0xFF999999)),
+                      SizedBox(height: 4),
+                      Text('Add',
+                          style: TextStyle(
+                              fontSize: 11, color: Color(0xFF999999))),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ],
     );
   }
 

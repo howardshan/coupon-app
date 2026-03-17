@@ -164,6 +164,10 @@ class _DealDetailBodyState extends ConsumerState<_DealDetailBody> {
           // Restaurant info
           SliverToBoxAdapter(child: _RestaurantInfo(deal: deal)),
 
+          // 详情竖版图片展示区（restaurant info 下方）
+          if (deal.detailImages.isNotEmpty)
+            SliverToBoxAdapter(child: _DetailPhotosSection(images: deal.detailImages)),
+
           // Gray divider
           const SliverToBoxAdapter(child: _SectionDivider()),
 
@@ -1744,8 +1748,23 @@ class _PurchaseNotes extends StatelessWidget {
           _NoteRow(
             icon: Icons.event_available,
             label: 'Validity',
-            value: 'Valid until ${dateFormat.format(deal.expiresAt)}',
+            value: switch (deal.validityType) {
+              'short_after_purchase' =>
+                '${deal.validityDays ?? '?'} days after purchase',
+              'long_after_purchase' =>
+                '${deal.validityDays ?? '?'} days after purchase',
+              _ => 'Valid until ${dateFormat.format(deal.expiresAt)}',
+            },
           ),
+          // Short-term 预授权模式：额外展示支付方式说明
+          if (deal.validityType == 'short_after_purchase') ...[
+            const SizedBox(height: 12),
+            const _NoteRow(
+              icon: Icons.credit_card_outlined,
+              label: 'Payment',
+              value: 'Card hold only — charged at redemption, released if unused',
+            ),
+          ],
           if (deal.merchantHours != null) ...[
             const SizedBox(height: 12),
             _NoteRow(
@@ -1839,51 +1858,48 @@ class _RestaurantInfo extends StatelessWidget {
             'Restaurant Info',
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
           ),
-          // 封面图（优先 homepageCoverUrl，降级用 logoUrl）
-          if (merchant.homepageCoverUrl != null && merchant.homepageCoverUrl!.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: CachedNetworkImage(
-                imageUrl: merchant.homepageCoverUrl!,
-                width: double.infinity,
-                height: 130,
-                fit: BoxFit.cover,
-                errorWidget: (_, _, _) => const SizedBox.shrink(),
-              ),
-            ),
-          ],
           const SizedBox(height: 14),
           Row(
             children: [
-              // Logo
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: merchant.logoUrl != null && merchant.logoUrl!.isNotEmpty
-                    ? CachedNetworkImage(
-                        imageUrl: merchant.logoUrl!,
-                        width: 48,
-                        height: 48,
-                        fit: BoxFit.cover,
-                      )
-                    : Container(
-                        width: 48,
-                        height: 48,
-                        color: AppColors.surfaceVariant,
-                        child: Center(
-                          child: Text(
-                            merchant.name.isNotEmpty
-                                ? merchant.name[0].toUpperCase()
-                                : '?',
-                            style: const TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                        ),
+              // 圆形头像：优先封面图，降级用 Logo，再降级首字母占位
+              Builder(builder: (context) {
+                // 确定头像图片 URL
+                final avatarUrl = (merchant.homepageCoverUrl != null &&
+                        merchant.homepageCoverUrl!.isNotEmpty)
+                    ? merchant.homepageCoverUrl!
+                    : (merchant.logoUrl != null && merchant.logoUrl!.isNotEmpty)
+                        ? merchant.logoUrl!
+                        : null;
+                // 首字母占位 Widget
+                final placeholder = Container(
+                  width: 56,
+                  height: 56,
+                  color: AppColors.surfaceVariant,
+                  child: Center(
+                    child: Text(
+                      merchant.name.isNotEmpty
+                          ? merchant.name[0].toUpperCase()
+                          : '?',
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textSecondary,
                       ),
-              ),
+                    ),
+                  ),
+                );
+                return ClipOval(
+                  child: avatarUrl != null
+                      ? CachedNetworkImage(
+                          imageUrl: avatarUrl,
+                          width: 56,
+                          height: 56,
+                          fit: BoxFit.cover,
+                          errorWidget: (_, _, _) => placeholder,
+                        )
+                      : placeholder,
+                );
+              }),
               const SizedBox(width: 12),
               // Info
               Expanded(
@@ -1977,6 +1993,57 @@ class _RestaurantInfo extends StatelessWidget {
               ],
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+// ── Detail Photos Section ─────────────────────────────────────
+/// Deal 详情竖版图片展示区（显示在 Restaurant Info 下方）
+class _DetailPhotosSection extends StatelessWidget {
+  final List<String> images;
+
+  const _DetailPhotosSection({required this.images});
+
+  @override
+  Widget build(BuildContext context) {
+    if (images.isEmpty) return const SizedBox.shrink();
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Photos',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 12),
+          // 竖版图片列表，宽度铺满，高宽比 3:4
+          ...images.map((url) => Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: AspectRatio(
+                aspectRatio: 3 / 4,
+                child: CachedNetworkImage(
+                  imageUrl: url,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  placeholder: (context, url) => Container(
+                    color: AppColors.surfaceVariant,
+                  ),
+                  errorWidget: (context, url, error) => Container(
+                    color: AppColors.surfaceVariant,
+                    child: const Center(
+                      child: Icon(Icons.broken_image, color: AppColors.textHint),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          )),
         ],
       ),
     );
