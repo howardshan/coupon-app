@@ -62,6 +62,8 @@ class CheckoutRepository {
 
     final clientSecret = response['clientSecret'] as String;
     final paymentIntentId = response['paymentIntentId'] as String;
+    // 服务端根据 deal.validity_type 决定的支付模式（'automatic' | 'manual'）
+    final captureMethod = response['captureMethod'] as String? ?? 'automatic';
 
     // 2. Initialize & present Stripe payment sheet
     await _presentPaymentSheet(clientSecret);
@@ -76,6 +78,7 @@ class CheckoutRepository {
       paymentIntentId: paymentIntentId,
       purchasedMerchantId: purchasedMerchantId,
       selectedOptions: selectedOptions,
+      captureMethod: captureMethod,
     );
 
     return CheckoutResult(orderId: orderId);
@@ -217,6 +220,7 @@ class CheckoutRepository {
     required String paymentIntentId,
     String? purchasedMerchantId,
     List<Map<String, dynamic>>? selectedOptions,
+    String captureMethod = 'automatic',
   }) async {
     try {
       final orderData = {
@@ -227,6 +231,7 @@ class CheckoutRepository {
         'total_amount': total,
         'status': 'unused',
         'payment_intent_id': paymentIntentId,
+        'capture_method': captureMethod,
         if (purchasedMerchantId != null)
           'purchased_merchant_id': purchasedMerchantId,
         if (selectedOptions != null && selectedOptions.isNotEmpty)

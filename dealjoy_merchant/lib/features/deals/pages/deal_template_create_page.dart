@@ -69,10 +69,11 @@ class _DealTemplateCreatePageState
     'Other',
   ];
 
-  // 有效期类型选项
+  // 有效期类型选项（三种模式）
   static const _validityTypeOptions = [
     ('fixed_date', 'Fixed Date'),
-    ('days_after_purchase', 'Days After Purchase'),
+    ('short_after_purchase', 'Short-term (1–7 days)'),
+    ('long_after_purchase', 'Long-term (8–365 days)'),
   ];
 
   // 使用星期选项
@@ -321,20 +322,29 @@ class _DealTemplateCreatePageState
             ),
             const SizedBox(height: 12),
 
-            // 有效期天数（仅 days_after_purchase 时显示）
-            if (_validityType == 'days_after_purchase') ...[
+            // 有效期天数（short/long_after_purchase 时显示）
+            if (_validityType == 'short_after_purchase' ||
+                _validityType == 'long_after_purchase') ...[
               TextFormField(
                 controller: _validityDaysController,
-                decoration: _inputDecoration('Valid for (days)'),
+                decoration: _inputDecoration(
+                  _validityType == 'short_after_purchase'
+                      ? 'Valid for (1–7 days)'
+                      : 'Valid for (8–365 days)',
+                ),
                 keyboardType: TextInputType.number,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                 validator: (v) {
-                  if (_validityType != 'days_after_purchase') return null;
+                  if (_validityType == 'fixed_date') return null;
                   if (v == null || v.trim().isEmpty) {
                     return 'Please enter validity days';
                   }
                   final n = int.tryParse(v.trim());
-                  if (n == null || n <= 0) return 'Enter a valid number';
+                  if (_validityType == 'short_after_purchase') {
+                    if (n == null || n < 1 || n > 7) return 'Short-term: 1–7 days';
+                  } else {
+                    if (n == null || n < 8 || n > 365) return 'Long-term: 8–365 days';
+                  }
                   return null;
                 },
               ),

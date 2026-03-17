@@ -12,6 +12,9 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { resolveAuth, requirePermission } from "../_shared/auth.ts";
 
+// Stripe Secret Key（用于 manual capture 时调用 Stripe API）
+const STRIPE_SECRET_KEY = Deno.env.get('STRIPE_SECRET_KEY') ?? '';
+
 // CORS 响应头（允许商家端 App 调用）
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -279,10 +282,10 @@ async function handleRedeem(
     return errorResponse('invalid_request', 'coupon_id is required');
   }
 
-  // 查询券的当前状态，JOIN orders 获取门店快照
+  // 查询券的当前状态，JOIN orders 获取门店快照和支付模式
   const { data: coupon, error: queryError } = await supabase
     .from('coupons')
-    .select('id, status, merchant_id, expires_at, redeemed_at, deal_id, order_id, orders(applicable_store_ids)')
+    .select('id, status, merchant_id, expires_at, redeemed_at, deal_id, order_id, orders(applicable_store_ids, payment_intent_id, capture_method)')
     .eq('id', couponId)
     .single();
 
@@ -321,6 +324,18 @@ async function handleRedeem(
     return errorResponse('expired', 'This voucher has expired');
   }
 
+  // 预授权模式检查：距离过期不足 1 小时则拒绝核销（防止 capture 后 PI 旋即失效）
+  // deno-lint-ignore no-explicit-any
+  const orderData = (coupon as any).orders;
+  const captureMethod: string = orderData?.capture_method ?? 'automatic';
+  if (captureMethod === 'manual') {
+    const expiresAt = new Date(coupon.expires_at);
+    const oneHourFromNow = new Date(Date.now() + 60 * 60 * 1000);
+    if (expiresAt < oneHourFromNow) {
+      return errorResponse('expiring_soon', 'Deal expires soon, cannot redeem', coupon.expires_at, 400);
+    }
+  }
+
   const now = new Date().toISOString();
 
   // 更新 coupons 表：标记为已使用，记录实际核销门店
@@ -338,6 +353,33 @@ async function handleRedeem(
   if (updateError) {
     console.error('redeem update error:', updateError);
     return errorResponse('server_error', 'Failed to redeem voucher', undefined, 500);
+  }
+
+  // 预授权模式（short_after_purchase）：核销成功后立即 capture Stripe PI
+  if (captureMethod === 'manual') {
+    const paymentIntentId: string = orderData?.payment_intent_id ?? '';
+    if (paymentIntentId) {
+      const captureRes = await fetch(
+        `https://api.stripe.com/v1/payment_intents/${paymentIntentId}/capture`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${STRIPE_SECRET_KEY}`,
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+        },
+      );
+      if (!captureRes.ok) {
+        const errText = await captureRes.text();
+        console.error(`merchant-scan: capture 失败 payment_intent=${paymentIntentId}`, errText);
+        // capture 失败 = 核销失败，回滚 coupon 状态为 active
+        await supabase
+          .from('coupons')
+          .update({ status: 'active', redeemed_at: null, redeemed_by_merchant_id: null, redeemed_at_merchant_id: null, used_at: null })
+          .eq('id', couponId);
+        return errorResponse('payment_capture_failed', 'Payment capture failed, please try again', undefined, 402);
+      }
+    }
   }
 
   // 写入核销日志

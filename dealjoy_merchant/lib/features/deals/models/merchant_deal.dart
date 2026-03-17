@@ -52,43 +52,38 @@ enum DealStatus {
 // ValidityType — 有效期类型枚举
 // ============================================================
 enum ValidityType {
-  /// 固定日期范围（有明确的开始日期和结束日期）
+  /// 固定日期到期（商家设置具体到期日）
   fixedDate,
 
-  /// 购买后X天内有效（过期自动退款，DealJoy特色）
-  daysAfterPurchase;
+  /// 购买后 1-7 天内有效（Stripe 预授权模式，核销时才实收）
+  shortAfterPurchase,
+
+  /// 购买后 8-365 天内有效（立即扣款，退款时走正常流程）
+  longAfterPurchase;
 
   /// 转换为 API 字符串
-  String get value {
-    switch (this) {
-      case ValidityType.fixedDate:
-        return 'fixed_date';
-      case ValidityType.daysAfterPurchase:
-        return 'days_after_purchase';
-    }
-  }
+  String get value => switch (this) {
+    ValidityType.fixedDate          => 'fixed_date',
+    ValidityType.shortAfterPurchase => 'short_after_purchase',
+    ValidityType.longAfterPurchase  => 'long_after_purchase',
+  };
 
   /// 从 API 字符串解析
-  static ValidityType fromString(String? value) {
-    switch (value) {
-      case 'fixed_date':
-        return ValidityType.fixedDate;
-      case 'days_after_purchase':
-        return ValidityType.daysAfterPurchase;
-      default:
-        return ValidityType.fixedDate;
-    }
-  }
+  static ValidityType fromString(String? value) => switch (value) {
+    'fixed_date'           => ValidityType.fixedDate,
+    'short_after_purchase' => ValidityType.shortAfterPurchase,
+    'long_after_purchase'  => ValidityType.longAfterPurchase,
+    // 向后兼容旧数据（迁移前的 days_after_purchase）
+    'days_after_purchase'  => ValidityType.longAfterPurchase,
+    _                      => ValidityType.fixedDate,
+  };
 
   /// 用户友好的显示标签
-  String get displayLabel {
-    switch (this) {
-      case ValidityType.fixedDate:
-        return 'Fixed Date Range';
-      case ValidityType.daysAfterPurchase:
-        return 'Days After Purchase';
-    }
-  }
+  String get displayLabel => switch (this) {
+    ValidityType.fixedDate          => 'Fixed Date',
+    ValidityType.shortAfterPurchase => 'Short-term (1–7 days)',
+    ValidityType.longAfterPurchase  => 'Long-term (8–365 days)',
+  };
 }
 
 // ============================================================
@@ -307,6 +302,7 @@ class MerchantDeal {
     this.usageNoteImages = const [],
     this.dishes = const [],
     this.optionGroups = const [],
+    this.detailImages = const [],
   });
 
   /// Deal ID
@@ -402,6 +398,9 @@ class MerchantDeal {
 
   /// 选项组列表（"几选几"功能）
   final List<DealOptionGroup> optionGroups;
+
+  /// 详情页多图列表（区别于封面图 image_urls）
+  final List<String> detailImages;
 
   /// 图片列表（含主图）
   final List<DealImage> images;
@@ -522,6 +521,7 @@ class MerchantDeal {
       shortName:       json['short_name'] as String?,
       dishes:          List<String>.from(json['dishes'] as List? ?? []),
       optionGroups:    _parseOptionGroups(json),
+      detailImages:    List<String>.from(json['detail_images'] as List? ?? []),
       images:          imagesSorted,
       createdAt:       json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
@@ -560,6 +560,7 @@ class MerchantDeal {
         'dishes': dishes,
         if (optionGroups.isNotEmpty)
           'option_groups': optionGroups.map((g) => g.toJson()).toList(),
+        'detail_images': detailImages,
       };
 
   /// 复制并修改部分字段
@@ -595,6 +596,7 @@ class MerchantDeal {
     String? shortName,
     List<String>? dishes,
     List<DealOptionGroup>? optionGroups,
+    List<String>? detailImages,
     List<DealImage>? images,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -631,6 +633,7 @@ class MerchantDeal {
       shortName:       shortName ?? this.shortName,
       dishes:          dishes ?? this.dishes,
       optionGroups:    optionGroups ?? this.optionGroups,
+      detailImages:    detailImages ?? this.detailImages,
       images:          images ?? this.images,
       createdAt:       createdAt ?? this.createdAt,
       updatedAt:       updatedAt ?? this.updatedAt,
