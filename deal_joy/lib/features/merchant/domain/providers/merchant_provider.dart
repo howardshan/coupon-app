@@ -9,11 +9,23 @@ final merchantRepositoryProvider = Provider<MerchantRepository>((ref) {
   return MerchantRepository(ref.watch(supabaseClientProvider));
 });
 
-/// 首页商家列表 — 按城市 + 分类筛选
+/// 首页商家列表 — Near Me 时按 GPS 半径搜索；否则按城市 + 分类筛选
 final merchantListProvider = FutureProvider<List<MerchantModel>>((ref) async {
-  final city = ref.watch(selectedLocationProvider).city;
+  final isNearMe = ref.watch(isNearMeProvider);
   final category = ref.watch(selectedCategoryProvider);
-  return ref.watch(merchantRepositoryProvider).fetchMerchants(city: city, category: category);
+  final repo = ref.watch(merchantRepositoryProvider);
+
+  if (isNearMe) {
+    final loc = await ref.watch(userLocationProvider.future);
+    return repo.fetchMerchantsNearby(
+      lat: loc.lat,
+      lng: loc.lng,
+      category: category,
+    );
+  }
+
+  final city = ref.watch(selectedLocationProvider).city;
+  return repo.fetchMerchants(city: city, category: category);
 });
 
 /// 搜索商家 — 由 searchQueryProvider 驱动

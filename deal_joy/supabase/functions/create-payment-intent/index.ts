@@ -15,6 +15,7 @@ const corsHeaders = {
 const PREAUTH_THRESHOLD_DAYS = 7;
 
 Deno.serve(async (req) => {
+  // 处理 CORS 预检请求
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
@@ -29,33 +30,33 @@ Deno.serve(async (req) => {
       );
     }
 
-    // 根据 deal 有效期决定扣款模式
-    // manual = 预授权（只冻结资金，核销时才扣款）
-    // automatic = 即时扣款
-    let captureMethod: 'automatic' | 'manual' = 'automatic';
-
-    if (dealId) {
-      const supabase = createClient(
-        Deno.env.get('SUPABASE_URL') ?? '',
-        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+    // dealId 必填：用于服务端查询 validity_type 决定支付模式
+    if (!dealId) {
+      return new Response(
+        JSON.stringify({ error: 'dealId is required' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
-      const { data: deal } = await supabase
-        .from('deals')
-        .select('expires_at')
-        .eq('id', dealId)
-        .maybeSingle();
-
-      if (deal?.expires_at) {
-        const expiresAt = new Date(deal.expires_at);
-        const thresholdDate = new Date();
-        thresholdDate.setDate(thresholdDate.getDate() + PREAUTH_THRESHOLD_DAYS);
-        // 到期时间在 7 天内 → 使用预授权
-        if (expiresAt <= thresholdDate) {
-          captureMethod = 'manual';
-        }
-      }
     }
 
+    // 服务端查询 deal 的 validity_type，不信任客户端传入
+    // short_after_purchase → 预授权（manual capture），核销时才实收
+    // 其他类型 → 立即扣款（automatic capture）
+    const supabaseAdmin = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+    );
+
+    const { data: deal } = await supabaseAdmin
+      .from('deals')
+      .select('validity_type')
+      .eq('id', dealId)
+      .single();
+
+    // deal 查不到时降级为自动扣款，不阻断支付流程
+    const isPreAuth = deal?.validity_type === 'short_after_purchase';
+    const captureMethod = isPreAuth ? 'manual' : 'automatic';
+
+    // 创建 PaymentIntent（金额单位：分）
     const paymentIntent = await stripe.paymentIntents.create({
       amount: Math.round(amount * 100),
       currency,
@@ -72,7 +73,8 @@ Deno.serve(async (req) => {
       JSON.stringify({
         clientSecret: paymentIntent.client_secret,
         paymentIntentId: paymentIntent.id,
-        captureMethod, // 告知客户端是预授权还是即时扣款，用于 UI 提示
+        // 返回 captureMethod 供客户端写入 orders.capture_method
+        captureMethod,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );

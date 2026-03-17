@@ -11,12 +11,15 @@ class StoreInfoCard extends StatelessWidget {
   final MerchantDetailModel merchant;
   final ReviewStatsModel? reviewStats;
   final List<StoreFacilityModel> facilities;
+  // Near Me 模式下传入的距离（英里）
+  final double? distanceMiles;
 
   const StoreInfoCard({
     super.key,
     required this.merchant,
     this.reviewStats,
     this.facilities = const [],
+    this.distanceMiles,
   });
 
   @override
@@ -146,11 +149,13 @@ class StoreInfoCard extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 4),
-        // 评价数 + 人均 + 经营年数整体放入 Flexible，超出则截断
+        // 评价数 + 距离 + 人均 + 经营年数整体放入 Flexible，超出则截断
         Flexible(
           child: Text(
             [
               '$reviewCount reviews',
+              if (distanceMiles != null)
+                '${distanceMiles!.toStringAsFixed(1)} mi',
               if (merchant.pricePerPerson != null)
                 '\$${merchant.pricePerPerson!.toStringAsFixed(0)}/person',
               if (merchant.yearsInBusiness != null &&

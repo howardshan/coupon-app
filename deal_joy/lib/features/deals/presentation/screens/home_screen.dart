@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../data/models/deal_model.dart';
+import '../../../../core/utils/location_utils.dart';
 import '../../domain/providers/deals_provider.dart';
 import '../../../merchant/data/models/merchant_model.dart';
 import '../../../merchant/domain/providers/merchant_provider.dart';
@@ -962,7 +963,7 @@ class _DistanceText extends ConsumerWidget {
     final userLoc = ref.watch(userLocationProvider);
     final distance = userLoc.whenOrNull(data: (loc) {
       if (deal.lat == null || deal.lng == null) return null;
-      return distanceMiles(loc.lat, loc.lng, deal.lat!, deal.lng!);
+      return haversineDistanceMiles(loc.lat, loc.lng, deal.lat!, deal.lng!);
     });
     final text = distance != null
         ? '${distance.toStringAsFixed(1)} mi'
@@ -1202,6 +1203,17 @@ class _MerchantGridCard extends StatelessWidget {
                             color: AppColors.textSecondary,
                           ),
                         ),
+                      // Near Me 模式下显示距离
+                      if (merchant.distanceMiles != null) ...[
+                        const SizedBox(width: 6),
+                        Text(
+                          '${merchant.distanceMiles!.toStringAsFixed(1)} mi',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                   // 折扣价

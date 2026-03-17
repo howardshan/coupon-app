@@ -358,10 +358,10 @@ class _DealInfoSection extends StatelessWidget {
                 fontSize: 18,
               ),
             ),
-          if (coupon.orderId.isNotEmpty) ...[
+          ...[
             const SizedBox(height: 4),
             Text(
-              'Order #${coupon.orderId}',
+              'Order #${coupon.orderId.substring(0, 8).toUpperCase()}',
               style: const TextStyle(
                 color: AppColors.textSecondary,
                 fontSize: 13,
