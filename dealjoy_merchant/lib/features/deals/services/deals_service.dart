@@ -227,6 +227,32 @@ class DealsService {
   }
 
   // ----------------------------------------------------------
+  // 6c. 上传竖版详情图（仅上传到 Storage，返回公开 URL）
+  //     不写 deal_images 表，URL 直接存到 deals.detail_images
+  //     路径: {merchantId}/detail_images/{dealId}/{timestamp}.jpg
+  // ----------------------------------------------------------
+  Future<String> uploadDetailImage({
+    required String merchantId,
+    required String dealId,
+    required XFile file,
+  }) async {
+    final fileName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
+    final storagePath = '$merchantId/detail_images/$dealId/$fileName';
+    final bytes = await file.readAsBytes();
+
+    await _supabase.storage.from(_storageBucket).uploadBinary(
+          storagePath,
+          bytes,
+          fileOptions: const FileOptions(
+            contentType: 'image/jpeg',
+            upsert: false,
+          ),
+        );
+
+    return _supabase.storage.from(_storageBucket).getPublicUrl(storagePath);
+  }
+
+  // ----------------------------------------------------------
   // 7. 删除 Deal 图片（删除 DB 记录 + Storage 文件）
   //    imageUrl: Storage 公开 URL（解析出路径）
   //    imageId: deal_images 表中的记录 ID

@@ -390,7 +390,7 @@ async function handleCreateDeal(
 
   // 校验有效期
   const validityType = (body.validity_type as string) ?? "fixed_date";
-  if (!["fixed_date", "days_after_purchase"].includes(validityType)) {
+  if (!["fixed_date", "short_after_purchase", "long_after_purchase"].includes(validityType)) {
     return errorResponse("Invalid validity_type", 400);
   }
 
@@ -401,7 +401,7 @@ async function handleCreateDeal(
     }
     expiresAt = body.expires_at as string;
   } else {
-    // days_after_purchase: 设置一个远期过期时间，实际过期逻辑在购买后计算
+    // short_after_purchase / long_after_purchase: 设置远期占位，购买后计算实际到期
     const daysAfter = Number(body.validity_days ?? 30);
     const farFuture = new Date();
     farFuture.setFullYear(farFuture.getFullYear() + 2);
@@ -434,6 +434,7 @@ async function handleCreateDeal(
       : "Refund anytime before use, refund when expired",
     image_urls:       (body.image_urls as string[]) ?? [],
     dishes:           body.dishes ?? [],
+    detail_images:    (body.detail_images as string[]) ?? [],
     deal_category_id: body.deal_category_id ?? null,
     deal_type:        body.deal_type ? String(body.deal_type) : "regular",
     badge_text:       body.badge_text ? String(body.badge_text) : null,
@@ -509,7 +510,7 @@ async function handleUpdateDeal(
     "usage_days", "max_per_person", "is_stackable", "validity_type",
     "validity_days", "discount_label", "refund_policy", "image_urls", "dishes",
     "deal_category_id", "deal_type", "badge_text", "short_name", "sort_order",
-    "applicable_merchant_ids",
+    "applicable_merchant_ids", "detail_images",
   ];
 
   // sort_order 或 short_name 变更：原地更新，不克隆不重审
@@ -556,6 +557,7 @@ async function handleUpdateDeal(
     "deal_category_id", "deal_type", "badge_text",
     "applicable_merchant_ids", "store_confirmations",
     "lat", "lng", "address", "expires_at", "sort_order", "short_name",
+    "detail_images",
   ];
 
   const newDealData: Record<string, unknown> = {
@@ -1036,8 +1038,8 @@ function templateToDealPayload(
 ): Record<string, unknown> {
   // 过期时间：根据 validity_type 计算
   let expiresAt: string;
-  if (template.validity_type === "days_after_purchase") {
-    // 购买后 N 天有效 — 设置一个远期日期
+  if (template.validity_type === "short_after_purchase" || template.validity_type === "long_after_purchase") {
+    // 购买后 N 天有效 — 设置一个远期占位日期（购买时再计算实际到期）
     const future = new Date();
     future.setFullYear(future.getFullYear() + 2);
     expiresAt = future.toISOString();

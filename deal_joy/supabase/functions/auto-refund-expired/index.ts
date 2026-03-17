@@ -1,26 +1,32 @@
 // auto-refund-expired: 过期订单自动退款 Edge Function
 // 由 Supabase Cron Job 定期触发（建议每小时一次）
-// 需求 7.1.2：团购券过期 24 小时后自动退全额
+// 需求 7.1.2：团购券过期后自动退款
+//
+// 支持三种有效期模式：
+//   - short_after_purchase（预授权）：提前 1 小时触发，取消 PI 而非退款
+//   - long_after_purchase / fixed_date：过期 24 小时后正常退款
+//
+// 使用 Stripe SDK（在 Supabase Edge 中已稳定）
 
 import Stripe from 'https://esm.sh/stripe@14?target=deno';
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import Stripe from 'https://esm.sh/stripe@14?target=deno';
 
 const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {
   apiVersion: '2024-04-10',
   httpClient: Stripe.createFetchHttpClient(),
 });
 
-// CORS 响应头（与其他 Edge Functions 保持一致）
+// CORS 响应头
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// 单次最多处理的订单数，防止单次执行超时
+// 单次最多处理订单数，防止单次执行超时
 const BATCH_SIZE = 50;
 
-// 可选：Cron 调用方通过自定义请求头传入共享密钥，防止公开 URL 被滥用
-// 在 Supabase Dashboard > Edge Functions > Secrets 中配置 CRON_SECRET
+// Cron 调用方共享密钥（在 Supabase Dashboard > Secrets 中配置 CRON_SECRET）
 const CRON_SECRET = Deno.env.get('CRON_SECRET');
 
 Deno.serve(async (req) => {
@@ -30,10 +36,7 @@ Deno.serve(async (req) => {
   }
 
   // -------------------------------------------------------------
-  // 调用方身份验证
-  // 策略：若配置了 CRON_SECRET，则要求请求头 x-cron-secret 匹配；
-  //       若未配置，则仅允许来自 Supabase 内部的调用
-  //       （通过网络层限制，不对公网开放）。
+  // 调用方身份验证：若配置了 CRON_SECRET 则校验请求头
   // -------------------------------------------------------------
   if (CRON_SECRET) {
     const incomingSecret = req.headers.get('x-cron-secret');
@@ -45,13 +48,13 @@ Deno.serve(async (req) => {
     }
   }
 
-  // Service role 客户端：绕过 RLS，供定时任务读写所有行
+  // Service role 客户端：绕过 RLS，读写所有行
   const supabaseAdmin = createClient(
     Deno.env.get('SUPABASE_URL') ?? '',
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
   );
 
-  // 汇总结果，最终返回给调用方
+  // 汇总结果，返回给调用方
   const summary = {
     processed: 0,
     succeeded: 0,
@@ -61,133 +64,132 @@ Deno.serve(async (req) => {
 
   try {
     // -------------------------------------------------------------
-    // 查询符合自动退款条件的订单：
-    //   - orders.status = 'unused'（尚未核销、尚未退款）
-    //   - 关联 deals.expires_at < now() - interval '24 hours'
-    //     （团购券已过期超过 24 小时，满足需求 7.1.2）
-    // 通过 join deals 表在数据库层完成过滤，减少网络传输量
+    // 查询一：预授权（short_after_purchase）订单
+    // 条件：capture_method='manual' + status='unused' + deals.expires_at < now + 1 hour
+    // 目的：提前 1 小时触发，在 Stripe 7 天预授权过期前主动 cancel
     // -------------------------------------------------------------
-    // 查询两类待退款订单：
-    // A) 过期 24 小时的 unused 订单（原逻辑）
-    // B) 用户已申请退款、且券已过期超过 24 小时的 refund_requested 订单（过期后自动审批通过）
-    const expiredThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const { data: expiredOrders, error: queryErr1 } = await supabaseAdmin
+    const preAuthThreshold = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const { data: preAuthOrders } = await supabaseAdmin
       .from('orders')
       .select(`
         id,
         payment_intent_id,
         total_amount,
         status,
-        deal_id,
-        deals!inner (
-          expires_at
-        )
+        capture_method,
+        deals!inner ( expires_at )
       `)
-      .eq('status', 'unused')
-      .lt('deals.expires_at', expiredThreshold)
+      .eq('capture_method', 'manual')
+      .in('status', ['unused', 'refund_requested'])
+      .lt('deals.expires_at', preAuthThreshold)
       .limit(BATCH_SIZE);
 
-    const { data: pendingRefundExpiredOrders, error: queryErr2 } = await supabaseAdmin
+    // -------------------------------------------------------------
+    // 查询二：立即扣款（automatic）订单
+    // 条件：capture_method='automatic' + status in (unused, refund_requested)
+    //       + deals.expires_at < now - 24 hours
+    // -------------------------------------------------------------
+    const autoThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { data: autoOrders } = await supabaseAdmin
       .from('orders')
       .select(`
         id,
         payment_intent_id,
         total_amount,
         status,
-        deal_id,
-        deals!inner (
-          expires_at
-        )
+        capture_method,
+        deals!inner ( expires_at )
       `)
-      .eq('status', 'refund_requested')
-      .lt('deals.expires_at', expiredThreshold)
+      .eq('capture_method', 'automatic')
+      .in('status', ['unused', 'refund_requested'])
+      .lt('deals.expires_at', autoThreshold)
       .limit(BATCH_SIZE);
 
-    const queryErr = queryErr1 || queryErr2;
-    // 合并两组订单，去重
+    // 合并并去重
     const seen = new Set<string>();
     const eligibleOrders = [
-      ...(expiredOrders ?? []),
-      ...(pendingRefundExpiredOrders ?? []),
+      ...(preAuthOrders ?? []),
+      ...(autoOrders ?? []),
     ].filter((o) => {
       if (seen.has(o.id)) return false;
       seen.add(o.id);
       return true;
     });
 
-    if (queryErr) {
-      console.error('auto-refund-expired: 查询过期订单失败', queryErr);
-      return new Response(
-        JSON.stringify({ error: 'Failed to query eligible orders', detail: queryErr.message }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      );
-    }
-
     if (!eligibleOrders || eligibleOrders.length === 0) {
-      // 无需处理的订单，正常返回
       return new Response(
         JSON.stringify({ ...summary, message: 'No eligible orders found' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
 
-    console.log(`auto-refund-expired: 找到 ${eligibleOrders.length} 笔待退款订单`);
+    console.log(`auto-refund-expired: 找到 ${eligibleOrders.length} 笔待处理订单`);
     summary.processed = eligibleOrders.length;
 
     // -------------------------------------------------------------
-    // 逐笔处理退款
-    // 单笔失败不中断批次，保证其他订单正常退款
+    // 逐笔处理，单笔失败不中断批次
     // -------------------------------------------------------------
     for (const order of eligibleOrders) {
       const orderId = order.id;
+      const isPreAuth = order.capture_method === 'manual';
+      const refundSource = order.status === 'refund_requested' ? 'store_closed' : 'auto_expired';
 
       try {
-        // 1. 向 Stripe 发起退款（团购券过期场景，通过 metadata 说明）
-        const isStoreClosed = order.status === 'refund_requested';
-        const refundSource = isStoreClosed ? 'store_closed' : 'auto_expired';
-
-        const refund = await stripe.refunds.create({
-          payment_intent: order.payment_intent_id,
-          reason: 'requested_by_customer',
-          metadata: {
-            source: `auto-refund-${refundSource}`,
-            order_id: orderId,
-          },
-        });
-
         const now = new Date().toISOString();
 
-        // 2. 更新 orders 表：状态置为 refunded，记录退款原因和时间戳
-        const { error: orderUpdateErr } = await supabaseAdmin
+        if (isPreAuth) {
+          // 预授权模式：查询 PI 状态后决定是 cancel 还是仅更新 DB
+          const pi = await stripe.paymentIntents.retrieve(order.payment_intent_id);
+
+          if (pi.status === 'requires_capture') {
+            // PI 仍在预授权期（7天内）→ 主动 cancel
+            await stripe.paymentIntents.cancel(order.payment_intent_id);
+            console.log(`auto-refund-expired: 取消预授权 PI=${order.payment_intent_id} order=${orderId}`);
+          } else if (pi.status === 'canceled') {
+            // PI 已被 Stripe 自动取消（超 7 天）→ 只更新 DB 状态
+            console.log(`auto-refund-expired: PI 已自动取消 order=${orderId}，仅更新 DB`);
+          } else {
+            // 其他状态（已 captured 等）→ 跳过，不重复处理
+            console.warn(`auto-refund-expired: PI=${order.payment_intent_id} 状态=${pi.status}，跳过 order=${orderId}`);
+            summary.succeeded += 1;
+            continue;
+          }
+        } else {
+          // 立即扣款模式：向 Stripe 发起退款
+          await stripe.refunds.create({
+            payment_intent: order.payment_intent_id,
+            reason: 'requested_by_customer',
+            metadata: {
+              source: `auto-refund-${refundSource}`,
+              order_id: orderId,
+            },
+          });
+          console.log(`auto-refund-expired: 退款成功 order=${orderId}`);
+        }
+
+        // 更新 orders 表
+        await supabaseAdmin
           .from('orders')
           .update({
             status: 'refunded',
             refund_reason: refundSource,
-            refund_requested_at: isStoreClosed ? undefined : now,
+            refund_requested_at: order.status === 'refund_requested' ? undefined : now,
             refunded_at: now,
             updated_at: now,
           })
           .eq('id', orderId);
 
-        if (orderUpdateErr) {
-          throw new Error(`更新 orders 失败: ${orderUpdateErr.message}`);
-        }
-
-        // 3. 更新 coupons 表：将关联券状态置为 refunded
+        // 更新 coupons 表
         const { error: couponUpdateErr } = await supabaseAdmin
           .from('coupons')
-          .update({
-            status: 'refunded',
-          })
+          .update({ status: 'refunded' })
           .eq('order_id', orderId);
 
         if (couponUpdateErr) {
-          // 优惠券更新失败不中断流程，但记录警告
-          // 订单已成功退款是核心，券状态可后续修复
-          console.warn(`auto-refund-expired: 订单 ${orderId} 的优惠券状态更新失败`, couponUpdateErr);
+          console.warn(`auto-refund-expired: 订单 ${orderId} 的 coupons 状态更新失败`, couponUpdateErr);
         }
 
-        // 4. 更新 payments 表：记录退款状态和金额
+        // 更新 payments 表
         const { error: paymentUpdateErr } = await supabaseAdmin
           .from('payments')
           .update({
@@ -197,28 +199,23 @@ Deno.serve(async (req) => {
           .eq('order_id', orderId);
 
         if (paymentUpdateErr) {
-          // payments 表更新失败同样仅警告，不回滚已成功的 Stripe 退款
           console.warn(`auto-refund-expired: 订单 ${orderId} 的 payments 状态更新失败`, paymentUpdateErr);
         }
 
-        console.log(`auto-refund-expired: 订单 ${orderId} 退款成功，refund_id=${refund?.id ?? 'n/a'}`);
         summary.succeeded += 1;
-      } catch (refundErr) {
-        // 单笔退款失败：记录错误并继续处理下一笔
-        const errMsg = refundErr instanceof Error ? refundErr.message : String(refundErr);
-        console.error(`auto-refund-expired: 订单 ${orderId} 退款失败 —`, errMsg);
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        console.error(`auto-refund-expired: 订单 ${orderId} 处理失败 —`, errMsg);
         summary.failed += 1;
         summary.errors.push({ orderId, error: errMsg });
       }
     }
 
-    // 返回本次批次的汇总结果，供 cron 监控日志使用
     return new Response(
       JSON.stringify(summary),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
   } catch (err) {
-    // 顶层兜底错误处理（如网络异常、客户端初始化失败等）
     console.error('auto-refund-expired: 未预期的错误', err);
     return new Response(
       JSON.stringify({

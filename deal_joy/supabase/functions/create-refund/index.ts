@@ -70,7 +70,7 @@ Deno.serve(async (req) => {
     // 查询订单：通过用户 JWT 客户端确保只能查到自己的订单（RLS）
     const { data: order, error: orderErr } = await supabase
       .from('orders')
-      .select('payment_intent_id, total_amount, status, refund_requested_at, is_captured')
+      .select('payment_intent_id, total_amount, status, refund_requested_at, capture_method')
       .eq('id', orderId)
       .single();
 
@@ -102,26 +102,23 @@ Deno.serve(async (req) => {
     }
 
     const now = new Date().toISOString();
+    // 判断是否为预授权模式：manual = 取消预授权（无需退款），automatic = 正常退款
+    const isPreAuth = order.capture_method === 'manual';
 
     try {
-      let refundId: string;
-      let refundStatus: string;
+      let refundId = 'pre_auth_cancelled';
 
-      if (!order.is_captured) {
-        // 预授权未扣款 → 取消授权（秒级，无资金流动）
-        const cancelled = await stripe.paymentIntents.cancel(order.payment_intent_id);
-        refundId = cancelled.id;
-        refundStatus = cancelled.status; // 'canceled'
-        console.log(`[create-refund] cancelled pre-auth pi=${order.payment_intent_id}`);
+      if (isPreAuth) {
+        // 预授权模式：取消 PaymentIntent 而非创建退款
+        // Stripe 取消预授权不产生退款记录，资金直接释放回用户账户
+        await stripe.paymentIntents.cancel(order.payment_intent_id);
       } else {
-        // 已扣款 → 标准 Stripe 退款（5-10 个工作日）
+        // 自动扣款模式：向 Stripe 发起退款
         const refund = await stripe.refunds.create({
           payment_intent: order.payment_intent_id,
           reason: 'requested_by_customer',
         });
         refundId = refund.id;
-        refundStatus = refund.status;
-        console.log(`[create-refund] stripe refund created refund=${refundId}`);
       }
 
       // 使用 service role 客户端更新 orders 表
@@ -154,13 +151,14 @@ Deno.serve(async (req) => {
       return new Response(
         JSON.stringify({
           refundId,
-          status: refundStatus,
+          // 预授权取消时 status 用 'cancelled'，正常退款用 'succeeded'
+          status: isPreAuth ? 'cancelled' : 'succeeded',
           amount: Number(order.total_amount),
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     } catch (stripeErr: unknown) {
-      // Stripe 退款失败：将订单标记为 refund_failed
+      // Stripe 操作失败：将订单标记为 refund_failed
       await supabaseAdmin
         .from('orders')
         .update({

@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shimmer/shimmer.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/location_utils.dart';
+import '../../../deals/domain/providers/deals_provider.dart';
 import '../../../deals/domain/providers/history_provider.dart';
 import '../../data/models/merchant_detail_model.dart';
 import '../../data/models/merchant_hour_model.dart';
@@ -147,6 +149,9 @@ class _MerchantDetailScreenState extends ConsumerState<MerchantDetailScreen> {
     final savedIds = ref.watch(savedMerchantIdsProvider).valueOrNull ?? {};
     final isSaved = savedIds.contains(widget.merchantId);
 
+    // 计算用户与商家的距离（GPS 可用时）
+    final userLoc = ref.watch(userLocationProvider).valueOrNull;
+
     return detailAsync.when(
       data: (merchant) {
         final reviewStats = reviewStatsAsync.valueOrNull;
@@ -212,6 +217,13 @@ class _MerchantDetailScreenState extends ConsumerState<MerchantDetailScreen> {
                     merchant: merchant,
                     reviewStats: reviewStats,
                     facilities: facilities,
+                    distanceMiles: (userLoc != null &&
+                            merchant.lat != null &&
+                            merchant.lng != null)
+                        ? haversineDistanceMiles(
+                            userLoc.lat, userLoc.lng,
+                            merchant.lat!, merchant.lng!)
+                        : null,
                   ),
                 ),
               ),

@@ -13,6 +13,8 @@ class MerchantModel {
   final int? totalReviewCount;
   final int? activeDealCount;
   final double? bestDiscount;
+  // Near Me 模式下的距离（英里）
+  final double? distanceMiles;
 
   MerchantModel({
     required this.id,
@@ -28,7 +30,28 @@ class MerchantModel {
     this.totalReviewCount,
     this.activeDealCount,
     this.bestDiscount,
+    this.distanceMiles,
   });
+
+  /// 复制并设置距离
+  MerchantModel copyWith({double? distanceMiles}) {
+    return MerchantModel(
+      id: id,
+      name: name,
+      description: description,
+      logoUrl: logoUrl,
+      homepageCoverUrl: homepageCoverUrl,
+      address: address,
+      phone: phone,
+      lat: lat,
+      lng: lng,
+      avgRating: avgRating,
+      totalReviewCount: totalReviewCount,
+      activeDealCount: activeDealCount,
+      bestDiscount: bestDiscount,
+      distanceMiles: distanceMiles ?? this.distanceMiles,
+    );
+  }
 
   factory MerchantModel.fromJson(Map<String, dynamic> json) {
     // 聚合关联 deals 数据
@@ -75,6 +98,7 @@ class MerchantModel {
       totalReviewCount: totalReviewCount,
       activeDealCount: activeDealCount,
       bestDiscount: bestDiscount,
+      distanceMiles: (json['distance_miles'] as num?)?.toDouble(),
     );
   }
 }

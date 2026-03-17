@@ -457,9 +457,18 @@ void main() {
         ValidityType.fromString('fixed_date'),
         equals(ValidityType.fixedDate),
       );
+      // 向后兼容旧值
       expect(
         ValidityType.fromString('days_after_purchase'),
-        equals(ValidityType.daysAfterPurchase),
+        equals(ValidityType.longAfterPurchase),
+      );
+      expect(
+        ValidityType.fromString('short_after_purchase'),
+        equals(ValidityType.shortAfterPurchase),
+      );
+      expect(
+        ValidityType.fromString('long_after_purchase'),
+        equals(ValidityType.longAfterPurchase),
       );
       expect(
         ValidityType.fromString(null),
@@ -468,8 +477,9 @@ void main() {
     });
 
     test('value 返回正确 API 字符串', () {
-      expect(ValidityType.fixedDate.value,          equals('fixed_date'));
-      expect(ValidityType.daysAfterPurchase.value,  equals('days_after_purchase'));
+      expect(ValidityType.fixedDate.value,           equals('fixed_date'));
+      expect(ValidityType.shortAfterPurchase.value,  equals('short_after_purchase'));
+      expect(ValidityType.longAfterPurchase.value,   equals('long_after_purchase'));
     });
   });
 }

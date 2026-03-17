@@ -1,4 +1,3 @@
-import 'dart:math' show asin, cos, sin, sqrt, pi;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../../../core/constants/app_constants.dart';
@@ -127,19 +126,8 @@ final userLocationProvider = FutureProvider<({double lat, double lng})>((
   }
 });
 
-/// 计算两点间距离（英里），Haversine 公式
-double distanceMiles(double lat1, double lng1, double lat2, double lng2) {
-  const earthRadiusMiles = 3958.8;
-  final dLat = _toRad(lat2 - lat1);
-  final dLng = _toRad(lng2 - lng1);
-  final a =
-      sin(dLat / 2) * sin(dLat / 2) +
-      cos(_toRad(lat1)) * cos(_toRad(lat2)) * sin(dLng / 2) * sin(dLng / 2);
-  final c = 2 * asin(sqrt(a));
-  return earthRadiusMiles * c;
-}
-
-double _toRad(double deg) => deg * pi / 180;
+// Haversine 距离计算已提取到 core/utils/location_utils.dart
+// 使用 haversineDistanceMiles() 替代原 distanceMiles()
 
 // ---- 收藏 Deals Provider ----
 // 收藏 ID 集合，用于快速检查是否已收藏

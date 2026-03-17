@@ -1,5 +1,34 @@
 # Git Change Description
 
+## 2026-03-17
+
+### Deal 有效期三种模式 + Stripe 预授权支持
+
+#### 数据库
+- **20260317000001_validity_type_three_modes.sql**: `deals.validity_type` CHECK 约束扩展为三值 (`fixed_date` / `short_after_purchase` / `long_after_purchase`)；`orders` 表新增 `capture_method` 列 (`automatic` | `manual`)
+- **20260317000002_rpc_add_validity_fields.sql**: 重建 `search_deals_nearby` 和 `search_deals_by_city` RPC 函数，返回值新增 `validity_type` / `validity_days` 字段
+
+#### 后端 (Supabase Edge Functions)
+- **create-payment-intent**: 服务端查 `deals.validity_type`，`short_after_purchase` 时 Stripe PI 使用 `capture_method: 'manual'`（预授权）；返回 `captureMethod` 字段
+- **merchant-scan**: 核销前检查预授权 deal 距过期不足 1 小时则拒绝；核销成功后若 `capture_method=manual` 则调 Stripe capture；capture 失败时回滚 coupon 状态
+- **create-refund**: 查 `orders.capture_method`，`manual` 时调 `paymentIntents.cancel()` 取消预授权，`automatic` 时走正常退款
+- **auto-refund-expired**: 清理旧错误代码；预授权订单提前 1 小时触发，查 PI 状态后 cancel 或仅更新 DB；立即扣款订单原逻辑不变
+- **merchant-deals**: `validity_type` 白名单改为三值；模板发布分支条件从 `days_after_purchase` 改为 `short/long_after_purchase`
+
+#### 商家端 (dealjoy_merchant)
+- **merchant_deal.dart**: `ValidityType` 枚举 `daysAfterPurchase` → `shortAfterPurchase` + `longAfterPurchase`，`fromString` 向后兼容旧值
+- **deal_create_page.dart**: 有效期 Chip 改为三个（Fixed Date / Short-term / Long-term）；天数验证 Short 1-7 / Long 8-365；切换时自动清空超范围输入；不同类型显示不同说明文字
+- **deal_edit_page.dart**: 同上
+- **deal_template_create_page.dart**: `_validityTypeOptions` 改为三值，天数验证同步
+- **deals_service_test.dart**: 更新 `ValidityType` 枚举测试用例
+
+#### 用户端 (deal_joy)
+- **deal_model.dart**: 新增 `validityType` 和 `validityDays` 字段，`fromJson` / `fromSearchJson` 均支持
+- **deal_detail_screen.dart**: Purchase Notes 的 Validity 行根据 `validityType` 动态展示；Short-term 额外显示 "Card hold only" 支付说明行
+- **checkout_repository.dart**: 解析 `captureMethod` 返回值，写入 `orders.capture_method`
+
+---
+
 ## 2026-03-13
 
 ### 商家端 (dealjoy_merchant)
@@ -178,3 +207,46 @@
 
 #### Store 详情页 TabBar 自适应
 - **merchant_detail_screen.dart**: `_StickyTabBar` 从 `ListView.separated`（可滚动）改为 `Row` + `Expanded`，每个 tab 等分宽度居中对齐，确保 Deals/Menu/About 始终全部可见
+
+#### Near Me 功能完善 — GPS 附近商家搜索
+- **location_utils.dart**（新建）: 从 `deals_provider.dart` 提取 `haversineDistanceMiles()` 为共享工具函数
+- **deals_provider.dart**: 删除内联 Haversine 函数，改为引用 `location_utils.dart`
+- **home_screen.dart**: `distanceMiles()` 调用改为 `haversineDistanceMiles()`
+- **merchant_model.dart**: 新增 `distanceMiles` 字段 + `copyWith()` 方法
+- **merchant_repository.dart**: 新增 `fetchMerchantsNearby({lat, lng, category, radiusMiles})` — 拉取 approved 商家，Dart 端 Haversine 计算距离，过滤 20mi 内，按距离排序
+- **merchant_provider.dart**: `merchantListProvider` 新增 `isNearMeProvider` 监听，Near Me 时调 `fetchMerchantsNearby`，城市模式保持不变
+- **home_screen.dart** `_MerchantGridCard`: 评分行新增距离显示（"X.X mi"），仅 `distanceMiles != null` 时出现
+- **store_info_card.dart**: 新增 `distanceMiles` 参数，评分行加入距离显示（"X.X mi · ..."）
+- **merchant_detail_screen.dart**: 通过 `userLocationProvider` + `haversineDistanceMiles` 计算距离传入 `StoreInfoCard`
+
+---
+
+## 2026-03-15 — Deal 详情页 Restaurant Info 布局 + Detail Images 功能
+
+### 用户端 (deal_joy)
+
+#### Restaurant Info 图片与名字同行
+- **deal_detail_screen.dart** `_RestaurantInfo`: 移除全宽封面图，头像改为圆形 56x56（优先 homepageCoverUrl，降级 logoUrl），与商家名称同行显示
+
+#### Deal 详情页新增 Photos 展示区
+- **deal_detail_screen.dart**: 新增 `_DetailPhotosSection` widget，在 Restaurant Info 下方展示竖版图片（宽度铺满、3:4 比例、圆角 10px），使用 CachedNetworkImage
+- **deal_model.dart**: DealModel 新增 `detailImages` 字段（`List<String>`），fromJson/fromSearchJson 均解析 `detail_images`
+
+#### coupon_screen.dart 编译修复
+- **coupon_screen.dart**: `coupon.orderNumber` 替换为 `coupon.orderId.substring(0, 8).toUpperCase()`（CouponModel 无 orderNumber 字段）
+
+### 商家端 (dealjoy_merchant)
+
+#### Deal 创建/编辑新增竖版图片上传
+- **merchant_deal.dart**: MerchantDeal 新增 `detailImages` 字段（`List<String>`），fromJson/toJson/copyWith 均支持
+- **deals_service.dart**: 新增 `uploadDetailImage()` 方法，上传到 Storage 路径 `{merchantId}/detail_images/{dealId}/{timestamp}.jpg`
+- **deal_create_page.dart**: Step 5 新增 "Detail Photos (Portrait)" 区域，最多 5 张竖版图片，创建 deal 后上传并 PATCH 回写 detail_images
+- **deal_edit_page.dart**: Images 编辑区新增竖版图片管理，支持已有图片展示/删除 + 新图片上传
+
+### 后端 (Supabase)
+
+#### DB Migration
+- **20260315000001_deal_detail_images.sql**: deals 表新增 `detail_images text[] NOT NULL DEFAULT '{}'`
+
+#### Edge Function
+- **merchant-deals/index.ts**: POST 创建时写入 detail_images；PATCH updatableFields 和 cloneFields 白名单新增 detail_images
