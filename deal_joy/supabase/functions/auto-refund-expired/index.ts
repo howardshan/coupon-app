@@ -8,6 +8,7 @@
 //
 // 使用 Stripe SDK（在 Supabase Edge 中已稳定）
 
+import Stripe from 'https://esm.sh/stripe@14?target=deno';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import Stripe from 'https://esm.sh/stripe@14?target=deno';
 

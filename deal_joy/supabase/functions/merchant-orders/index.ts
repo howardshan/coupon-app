@@ -99,6 +99,18 @@ serve(async (req: Request) => {
   // 路由分发
   // ----------------------------------------------------------------
 
+  // 退款申请列表（GET /merchant-orders/refund-requests）
+  if (subPath === 'refund-requests' && req.method === 'GET' && !pathParts[1]) {
+    return await handleRefundRequestsList(serviceClient, merchantId, url.searchParams);
+  }
+
+  // 退款申请审批（PATCH /merchant-orders/refund-requests/:id）
+  if (subPath === 'refund-requests' && req.method === 'PATCH' && pathParts[1]) {
+    const refundRequestId = pathParts[1];
+    const patchBody = await req.json().catch(() => ({}));
+    return await handleRefundRequestDecision(serviceClient, merchantId, refundRequestId, patchBody);
+  }
+
   // 导出 CSV（必须在 :id 路由前检查，避免 "export" 被当作 uuid）
   if (subPath === 'export') {
     return await handleExport(serviceClient, merchantId, url.searchParams);
@@ -572,5 +584,149 @@ async function handleOrderTransfers(
 
     default:
       return errorResponse('Method not allowed', 'method_not_allowed', 405);
+  }
+}
+
+// =============================================================
+// handleRefundRequestsList — 退款申请列表
+// GET /merchant-orders/refund-requests?status=pending_merchant&page=1&per_page=20
+// =============================================================
+async function handleRefundRequestsList(
+  client: ReturnType<typeof createClient>,
+  merchantId: string,
+  params: URLSearchParams,
+): Promise<Response> {
+  const statusFilter = params.get('status');
+  const page = Math.max(parseInt(params.get('page') ?? '1', 10), 1);
+  const perPage = Math.min(Math.max(parseInt(params.get('per_page') ?? '20', 10), 1), 100);
+  const offset = (page - 1) * perPage;
+
+  let query = client
+    .from('refund_requests')
+    .select(`
+      id, status, refund_amount, reason, merchant_response,
+      created_at, updated_at, responded_at,
+      orders!inner(
+        id, order_number, total_amount, status, created_at,
+        deals!inner(id, title)
+      )
+    `, { count: 'exact' })
+    .eq('merchant_id', merchantId);
+
+  if (statusFilter) {
+    query = query.eq('status', statusFilter);
+  }
+
+  const { data, error, count } = await query
+    .order('created_at', { ascending: false })
+    .range(offset, offset + perPage - 1);
+
+  if (error) {
+    console.error('[merchant-orders] refund list error:', error);
+    return jsonResponse({ error: 'db_error', message: 'Failed to fetch refund requests' }, 500);
+  }
+
+  return jsonResponse({
+    data: data ?? [],
+    total: count ?? 0,
+    page,
+    per_page: perPage,
+    has_more: (count ?? 0) > offset + perPage,
+  });
+}
+
+// =============================================================
+// handleRefundRequestDecision — 审批退款申请
+// PATCH /merchant-orders/refund-requests/:id
+// body: { action: 'approve' | 'reject', reason?: string, access_token?: string }
+// =============================================================
+async function handleRefundRequestDecision(
+  client: ReturnType<typeof createClient>,
+  merchantId: string,
+  refundRequestId: string,
+  body: Record<string, unknown>,
+): Promise<Response> {
+  const { action, reason } = body as { action?: string; reason?: string };
+
+  if (!action || !['approve', 'reject'].includes(action)) {
+    return jsonResponse({ error: 'invalid_action', message: "action must be 'approve' or 'reject'" }, 400);
+  }
+  if (action === 'reject' && (!reason || reason.trim().length < 10)) {
+    return jsonResponse({ error: 'invalid_reason', message: 'Rejection reason must be at least 10 characters' }, 400);
+  }
+
+  // 查询退款申请，确认属于该商家且状态为 pending_merchant
+  const { data: refundReq, error: rrError } = await client
+    .from('refund_requests')
+    .select('id, status, order_id, merchant_id')
+    .eq('id', refundRequestId)
+    .single();
+
+  if (rrError || !refundReq) {
+    return jsonResponse({ error: 'not_found', message: 'Refund request not found' }, 404);
+  }
+  if (refundReq.merchant_id !== merchantId) {
+    return jsonResponse({ error: 'forbidden', message: 'Access denied' }, 403);
+  }
+  if (refundReq.status !== 'pending_merchant') {
+    return jsonResponse(
+      { error: 'invalid_status', message: `Status is '${refundReq.status}', expected 'pending_merchant'` },
+      400,
+    );
+  }
+
+  const now = new Date().toISOString();
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+
+  if (action === 'approve') {
+    // 调用 execute-refund 执行实际 Stripe 退款
+    const executeUrl = `${supabaseUrl}/functions/v1/execute-refund`;
+    const executeResp = await fetch(executeUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${serviceRoleKey}`,
+      },
+      body: JSON.stringify({ refundRequestId, approvedBy: 'merchant' }),
+    });
+
+    if (!executeResp.ok) {
+      const errBody = await executeResp.json().catch(() => ({}));
+      const errMsg = (errBody as { error?: string }).error ?? 'Execute refund failed';
+      return jsonResponse({ error: 'execute_failed', message: errMsg }, 502);
+    }
+
+    // 更新退款申请状态（execute-refund 内部也会更新，这里做幂等保障）
+    await client
+      .from('refund_requests')
+      .update({
+        status: 'approved_merchant',
+        merchant_response: reason?.trim() ?? null,
+        responded_at: now,
+        updated_at: now,
+      })
+      .eq('id', refundRequestId);
+
+    return jsonResponse({ success: true, status: 'approved_merchant' });
+  } else {
+    // 拒绝 → 升级到 pending_admin
+    await client
+      .from('refund_requests')
+      .update({
+        status: 'pending_admin',
+        merchant_response: reason?.trim(),
+        responded_at: now,
+        updated_at: now,
+      })
+      .eq('id', refundRequestId);
+
+    // 更新订单状态 → refund_pending_admin
+    await client
+      .from('orders')
+      .update({ status: 'refund_pending_admin', updated_at: now })
+      .eq('id', refundReq.order_id);
+
+    return jsonResponse({ success: true, status: 'pending_admin' });
   }
 }

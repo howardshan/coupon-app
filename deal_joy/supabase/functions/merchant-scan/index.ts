@@ -397,6 +397,24 @@ async function handleRedeem(
     console.error('redemption_log insert error:', logError);
   }
 
+  // 核销成功后，若为预授权订单（is_captured = false）则触发扣款
+  // 使用 fire-and-forget 模式：capture 失败不中断核销流程，记录日志待人工处理
+  // deno-lint-ignore no-explicit-any
+  const captureOrderData = (coupon as any).orders;
+  if (captureOrderData?.is_captured === false) {
+    const captureUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/capture-payment`;
+    fetch(captureUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+      },
+      body: JSON.stringify({ orderId: coupon.order_id }),
+    }).catch((e: Error) => {
+      console.error('[merchant-scan/redeem] capture-payment failed:', e.message);
+    });
+  }
+
   return jsonResponse({ redeemed_at: now, coupon_id: couponId });
 }
 

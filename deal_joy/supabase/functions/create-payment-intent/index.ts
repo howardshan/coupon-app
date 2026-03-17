@@ -11,6 +11,9 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// 预授权有效期阈值：deal 到期时间在 7 天内则使用预授权
+const PREAUTH_THRESHOLD_DAYS = 7;
+
 Deno.serve(async (req) => {
   // 处理 CORS 预检请求
   if (req.method === 'OPTIONS') {
@@ -62,6 +65,7 @@ Deno.serve(async (req) => {
       metadata: {
         deal_id: dealId ?? '',
         user_id: userId ?? '',
+        capture_method: captureMethod,
       },
     });
 

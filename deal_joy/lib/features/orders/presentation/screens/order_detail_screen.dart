@@ -267,6 +267,21 @@ class _OrderDetailBody extends StatelessWidget {
                     onPressed: () => context.push('/coupon/${detail.couponId}'),
                   ),
                 ],
+                // 已核销且未在退款流程中，显示核销后退款入口
+                if (detail.isUsed &&
+                    !detail.isRefunded &&
+                    detail.status != 'refund_pending_merchant' &&
+                    detail.status != 'refund_pending_admin' &&
+                    detail.status != 'refund_rejected') ...[
+                  const SizedBox(height: 12),
+                  AppButton(
+                    label: 'Request Post-Use Refund',
+                    icon: Icons.policy_outlined,
+                    isOutlined: true,
+                    color: AppColors.warning,
+                    onPressed: () => context.push('/post-use-refund/${detail.id}'),
+                  ),
+                ],
                 const SizedBox(height: 16),
                 AppButton(
                   label: 'Back to Orders',
