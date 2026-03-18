@@ -14,6 +14,7 @@ import '../widgets/order_tile.dart';
 import 'order_detail_page.dart';
 import 'admin_refund_requests_page.dart';
 import 'refund_requests_page.dart';
+import '../../after_sales/pages/after_sales_list_page.dart';
 
 /// 订单列表主页
 class OrdersListPage extends ConsumerStatefulWidget {
@@ -134,6 +135,18 @@ class _OrdersListPageState extends ConsumerState<OrdersListPage>
         ),
         centerTitle: false,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.support_agent_outlined),
+            tooltip: 'After-Sales',
+            onPressed: () async {
+              await Navigator.push<bool>(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const AfterSalesListPage(),
+                ),
+              );
+            },
+          ),
           // 退款申请审批入口（商家审核用户的核销后退款申请）
           IconButton(
             icon: const Icon(Icons.policy_outlined),

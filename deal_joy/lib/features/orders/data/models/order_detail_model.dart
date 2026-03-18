@@ -120,6 +120,7 @@ class OrderDetailModel {
   final String? couponCode;
   final String? couponStatus;
   final DateTime? couponExpiresAt;
+  final DateTime? couponUsedAt;
 
   final DateTime createdAt;
   final DateTime? updatedAt;
@@ -150,6 +151,7 @@ class OrderDetailModel {
     this.couponCode,
     this.couponStatus,
     this.couponExpiresAt,
+    this.couponUsedAt,
     required this.createdAt,
     this.updatedAt,
     this.refundRequestedAt,
@@ -183,6 +185,9 @@ class OrderDetailModel {
       couponExpiresAt: json['coupon_expires_at'] != null
           ? DateTime.parse(json['coupon_expires_at'] as String)
           : null,
+      couponUsedAt: json['coupon_used_at'] != null
+          ? DateTime.parse(json['coupon_used_at'] as String)
+          : null,
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: json['updated_at'] != null
           ? DateTime.parse(json['updated_at'] as String)
@@ -211,6 +216,12 @@ class OrderDetailModel {
       couponExpiresAt != null && DateTime.now().isAfter(couponExpiresAt!);
 
   /// 展示用状态（与商家端一致：已退款优先，再按过期/其他）
+  bool get canRequestAfterSales {
+    if (!isUsed || couponUsedAt == null) return false;
+    final diff = DateTime.now().difference(couponUsedAt!);
+    return diff.inDays <= 7;
+  }
+
   String get displayStatus {
     if (status == 'refunded') return 'refunded';
     if (status == 'expired') return 'expired';
