@@ -6,6 +6,7 @@ import '../../../../core/errors/app_exception.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../auth/domain/providers/auth_provider.dart';
+import '../../../cart/domain/providers/cart_provider.dart';
 import '../../../deals/domain/providers/deals_provider.dart';
 import '../../data/repositories/checkout_repository.dart';
 import '../../domain/providers/checkout_provider.dart';
@@ -144,7 +145,10 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         selectedOptions: selectedOptions,
       );
 
-      if (mounted) context.go('/order-success/${result.orderId}');
+      if (mounted) {
+        ref.read(cartProvider.notifier).remove(widget.dealId);
+        context.go('/order-success/${result.orderId}');
+      }
     } on StripeException catch (e) {
       if (e.error.code == FailureCode.Canceled) return;
       if (mounted) _showPaymentFailedDialog(e.error.localizedMessage ?? 'Payment was declined');
