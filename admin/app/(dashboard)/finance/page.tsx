@@ -1,6 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
+import { getServiceRoleClient } from '@/lib/supabase/service'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
+import CommissionConfigForm from '@/components/commission-config-form'
 
 export default async function FinancePage({
   searchParams,
@@ -13,6 +15,13 @@ export default async function FinancePage({
   const { data: profile } = await supabase.from('users').select('role').eq('id', user!.id).single()
 
   if (profile?.role !== 'admin') redirect('/dashboard')
+
+  // 读取全局抽成配置（service_role 确保可读）
+  const serviceClient = getServiceRoleClient()
+  const { data: commissionConfig } = await serviceClient
+    .from('platform_commission_config')
+    .select('id, free_months, fixed_date_rate, short_after_purchase_rate, long_after_purchase_rate, stripe_processing_rate, stripe_flat_fee, effective_from, effective_to, updated_at')
+    .single()
 
   const { data: brands } = await supabase.from('brands').select('id, name').order('name')
 
@@ -41,8 +50,10 @@ export default async function FinancePage({
 
   return (
     <div>
+      {commissionConfig && <CommissionConfigForm config={commissionConfig} />}
+
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Finance</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Withdrawals</h1>
         <div className="flex items-center gap-2">
           <label className="text-sm text-gray-500">Brand:</label>
           <div className="flex items-center gap-1 flex-wrap">

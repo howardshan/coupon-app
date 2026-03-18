@@ -1,8 +1,10 @@
 import { createClient } from '@/lib/supabase/server'
+import { getServiceRoleClient } from '@/lib/supabase/service'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import MerchantReviewActions from '@/components/merchant-review-actions'
 import StaffToggleButton from '@/components/staff-toggle-button'
+import MerchantCommissionForm from '@/components/merchant-commission-form'
 
 const DOCUMENT_TYPE_LABELS: Record<string, string> = {
   business_license: 'Business License',
@@ -28,9 +30,17 @@ export default async function MerchantReviewPage({
 
   if (profile?.role !== 'admin') redirect('/dashboard')
 
+  const serviceClient = getServiceRoleClient()
+
+  // 读取全局默认费率（用于占位提示）
+  const { data: globalConfig } = await serviceClient
+    .from('platform_commission_config')
+    .select('fixed_date_rate, short_after_purchase_rate, long_after_purchase_rate, stripe_processing_rate, stripe_flat_fee')
+    .single()
+
   const { data: merchant } = await supabase
     .from('merchants')
-    .select('id, user_id, name, company_name, description, contact_name, contact_email, phone, category, ein, address, status, rejection_reason, submitted_at, created_at, updated_at, brand_id, brands(id, name, logo_url)')
+    .select('id, user_id, name, company_name, description, contact_name, contact_email, phone, category, ein, address, status, rejection_reason, submitted_at, created_at, updated_at, brand_id, commission_free_until, commission_fixed_date_rate, commission_short_rate, commission_long_rate, commission_stripe_rate, commission_stripe_flat_fee, commission_effective_from, commission_effective_to, brands(id, name, logo_url)')
     .eq('id', id)
     .single()
 
@@ -138,6 +148,23 @@ export default async function MerchantReviewPage({
             <p className="text-sm text-gray-500">No documents submitted.</p>
           )}
         </div>
+
+        <MerchantCommissionForm
+          merchantId={merchant.id}
+          commissionFreeUntil={(merchant as any).commission_free_until ?? null}
+          commissionFixedDateRate={(merchant as any).commission_fixed_date_rate ?? null}
+          commissionShortRate={(merchant as any).commission_short_rate ?? null}
+          commissionLongRate={(merchant as any).commission_long_rate ?? null}
+          commissionStripeRate={(merchant as any).commission_stripe_rate ?? null}
+          commissionStripeFlatFee={(merchant as any).commission_stripe_flat_fee ?? null}
+          commissionEffectiveFrom={(merchant as any).commission_effective_from ?? null}
+          commissionEffectiveTo={(merchant as any).commission_effective_to ?? null}
+          defaultFixedRate={Number(globalConfig?.fixed_date_rate ?? 0.15)}
+          defaultShortRate={Number(globalConfig?.short_after_purchase_rate ?? 0.10)}
+          defaultLongRate={Number(globalConfig?.long_after_purchase_rate ?? 0.15)}
+          defaultStripeRate={Number(globalConfig?.stripe_processing_rate ?? 0.03)}
+          defaultStripeFlatFee={Number(globalConfig?.stripe_flat_fee ?? 0.30)}
+        />
 
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">Staff ({staff?.length ?? 0})</h2>
