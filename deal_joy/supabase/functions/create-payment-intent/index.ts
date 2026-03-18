@@ -1,5 +1,4 @@
 import Stripe from 'https://esm.sh/stripe@14?target=deno';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2?target=deno';
 
 const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {
   apiVersion: '2024-04-10',
@@ -11,8 +10,11 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// 预授权有效期阈值：deal 到期时间在 7 天内则使用预授权
-const PREAUTH_THRESHOLD_DAYS = 7;
+// 所有订单统一使用预授权（manual capture）：
+// - 核销时由 merchant-scan 触发 capture-payment 实际扣款
+// - 购买后 6 天内未核销，由 auto-capture-preauth 定时任务兜底扣款
+// - 退款时若尚未 capture，直接 cancel PI（零手续费）
+const CAPTURE_METHOD = 'manual' as const;
 
 Deno.serve(async (req) => {
   // 处理 CORS 预检请求
@@ -30,7 +32,6 @@ Deno.serve(async (req) => {
       );
     }
 
-    // dealId 必填：用于服务端查询 validity_type 决定支付模式
     if (!dealId) {
       return new Response(
         JSON.stringify({ error: 'dealId is required' }),
@@ -38,34 +39,16 @@ Deno.serve(async (req) => {
       );
     }
 
-    // 服务端查询 deal 的 validity_type，不信任客户端传入
-    // short_after_purchase → 预授权（manual capture），核销时才实收
-    // 其他类型 → 立即扣款（automatic capture）
-    const supabaseAdmin = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
-    );
-
-    const { data: deal } = await supabaseAdmin
-      .from('deals')
-      .select('validity_type')
-      .eq('id', dealId)
-      .single();
-
-    // deal 查不到时降级为自动扣款，不阻断支付流程
-    const isPreAuth = deal?.validity_type === 'short_after_purchase';
-    const captureMethod = isPreAuth ? 'manual' : 'automatic';
-
-    // 创建 PaymentIntent（金额单位：分）
+    // 创建 PaymentIntent，统一使用 manual capture（预授权）
     const paymentIntent = await stripe.paymentIntents.create({
       amount: Math.round(amount * 100),
       currency,
-      capture_method: captureMethod,
+      capture_method: CAPTURE_METHOD,
       automatic_payment_methods: { enabled: true },
       metadata: {
         deal_id: dealId ?? '',
         user_id: userId ?? '',
-        capture_method: captureMethod,
+        capture_method: CAPTURE_METHOD,
       },
     });
 
@@ -73,8 +56,7 @@ Deno.serve(async (req) => {
       JSON.stringify({
         clientSecret: paymentIntent.client_secret,
         paymentIntentId: paymentIntent.id,
-        // 返回 captureMethod 供客户端写入 orders.capture_method
-        captureMethod,
+        captureMethod: CAPTURE_METHOD,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );

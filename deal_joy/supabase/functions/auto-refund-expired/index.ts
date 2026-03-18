@@ -2,9 +2,9 @@
 // 由 Supabase Cron Job 定期触发（建议每小时一次）
 // 需求 7.1.2：团购券过期后自动退款
 //
-// 支持三种有效期模式：
-//   - short_after_purchase（预授权）：提前 1 小时触发，取消 PI 而非退款
-//   - long_after_purchase / fixed_date：过期 24 小时后正常退款
+// 判断逻辑（基于 is_captured 字段）：
+//   - is_captured = false：预授权尚未扣款 → cancel PI（零手续费）
+//   - is_captured = true ：已扣款 → Stripe refund（正常退款）
 //
 // 使用 fetch 直连 Stripe REST API，避免 Stripe SDK 在 Deno 2.x Edge 中触发 runMicrotasks 报错
 
@@ -84,52 +84,34 @@ Deno.serve(async (req) => {
 
   try {
     // -------------------------------------------------------------
-    // 查询一：预授权（short_after_purchase）订单
-    // 条件：capture_method='manual' + status='unused' + deals.expires_at < now + 1 hour
-    // 目的：提前 1 小时触发，在 Stripe 7 天预授权过期前主动 cancel
+    // 统一查询所有过期未使用订单
+    // is_captured = false：预授权未扣款 → cancel PI（提前 1 小时触发防 Stripe 7 天失效）
+    // is_captured = true ：已扣款 → Stripe refund（过期 24 小时后处理）
     // -------------------------------------------------------------
-    const preAuthThreshold = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const preAuthThreshold = new Date(Date.now() + 60 * 60 * 1000).toISOString(); // now + 1h
+    const capturedThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(); // now - 24h
+
     const { data: preAuthOrders } = await supabaseAdmin
       .from('orders')
-      .select(`
-        id,
-        payment_intent_id,
-        total_amount,
-        status,
-        capture_method,
-        deals!inner ( expires_at )
-      `)
-      .eq('capture_method', 'manual')
-      .in('status', ['unused', 'refund_requested'])
+      .select(`id, payment_intent_id, total_amount, status, is_captured, deals!inner ( expires_at )`)
+      .eq('is_captured', false)
+      .in('status', ['authorized', 'unused', 'refund_requested'])
       .lt('deals.expires_at', preAuthThreshold)
       .limit(BATCH_SIZE);
 
-    // -------------------------------------------------------------
-    // 查询二：立即扣款（automatic）订单
-    // 条件：capture_method='automatic' + status in (unused, refund_requested)
-    //       + deals.expires_at < now - 24 hours
-    // -------------------------------------------------------------
-    const autoThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const { data: autoOrders } = await supabaseAdmin
+    const { data: capturedOrders } = await supabaseAdmin
       .from('orders')
-      .select(`
-        id,
-        payment_intent_id,
-        total_amount,
-        status,
-        capture_method,
-        deals!inner ( expires_at )
-      `)
-      .eq('capture_method', 'automatic')
+      .select(`id, payment_intent_id, total_amount, status, is_captured, deals!inner ( expires_at )`)
+      .eq('is_captured', true)
       .in('status', ['unused', 'refund_requested'])
-      .lt('deals.expires_at', autoThreshold)
+      .lt('deals.expires_at', capturedThreshold)
       .limit(BATCH_SIZE);
 
     // 合并并去重
     const seen = new Set<string>();
     const eligibleOrders = [
       ...(preAuthOrders ?? []),
-      ...(autoOrders ?? []),
+      ...(capturedOrders ?? []),
     ].filter((o) => {
       if (seen.has(o.id)) return false;
       seen.add(o.id);
@@ -151,7 +133,8 @@ Deno.serve(async (req) => {
     // -------------------------------------------------------------
     for (const order of eligibleOrders) {
       const orderId = order.id;
-      const isPreAuth = order.capture_method === 'manual';
+      // 用 is_captured 判断：false = 预授权未扣款，true = 已扣款
+      const isPreAuth = order.is_captured === false;
       const refundSource = order.status === 'refund_requested' ? 'store_closed' : 'auto_expired';
 
       try {
