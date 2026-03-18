@@ -1,0 +1,497 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2?target=deno";
+import {
+  AFTER_SALES_BUCKET,
+  TimelineEntry,
+  appendTimeline,
+  decorateAfterSalesRequest,
+  decorateAfterSalesRequests,
+  issueAfterSalesRefund,
+  normalizeAttachmentKeys,
+  recordAfterSalesEvent,
+} from "../_shared/after-sales.ts";
+import { resolveAuth, requirePermission } from "../_shared/auth.ts";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-merchant-id, x-app-bearer",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+};
+
+function jsonResponse(data: unknown, status = 200): Response {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+function errorResponse(message: string, code = "bad_request", status = 400): Response {
+  return jsonResponse({ error: code, message }, status);
+}
+
+function sanitizePath(filename: string, merchantId: string): string {
+  const safeName = filename
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+  return `merchant/${merchantId}/${Date.now()}-${crypto.randomUUID()}-${safeName || "evidence"}`;
+}
+
+type MerchantAuth = {
+  userId: string;
+  merchantId: string;
+  merchantIds: string[];
+};
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+
+  if (!["GET", "POST"].includes(req.method)) {
+    return errorResponse("Method not allowed", "method_not_allowed", 405);
+  }
+
+  const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  const anonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
+  if (!supabaseUrl || !serviceKey || !anonKey) {
+    return errorResponse("Supabase env vars missing", "config_error", 500);
+  }
+
+  const url = new URL(req.url);
+  const pathname = url.pathname.replace(/\/+$/, "");
+  const suffix = pathname.replace(/^\/merchant-after-sales/, "");
+  const segments = suffix.split("/").filter(Boolean);
+
+  let parsedBody: Record<string, unknown> | null = null;
+  if (req.method === "POST") {
+    parsedBody = await req.json().catch(() => ({}));
+  }
+
+  const token = extractToken(req, url, parsedBody);
+  if (!token) {
+    return errorResponse("Missing authorization", "unauthorized", 401);
+  }
+
+  const anonClient = createClient(supabaseUrl, anonKey);
+  const { data: userData, error: userError } = await anonClient.auth.getUser(token);
+  if (userError || !userData?.user) {
+    return errorResponse("Invalid or expired token", "unauthorized", 401);
+  }
+  const userId = userData.user.id;
+
+  const serviceClient = createClient(supabaseUrl, serviceKey);
+  let merchantContext;
+  try {
+    merchantContext = await resolveAuth(serviceClient, userId, req.headers);
+    requirePermission(merchantContext, "orders");
+  } catch (err) {
+    return errorResponse((err as Error).message, "forbidden", 403);
+  }
+  const auth: MerchantAuth = {
+    userId,
+    merchantId: merchantContext.merchantId,
+    merchantIds: merchantContext.merchantIds,
+  };
+
+  if (segments[0] === "uploads" && req.method === "POST") {
+    return await handleUploadSlots(serviceClient, auth, parsedBody ?? {});
+  }
+
+  if (req.method === "GET" || (req.method === "POST" && segments.length === 0)) {
+    // GET list or POST list (body filters)
+    if (segments.length === 1 && segments[0]) {
+      return await handleDetail(serviceClient, auth, segments[0]);
+    }
+    return await handleList(serviceClient, auth, url.searchParams, parsedBody ?? {});
+  }
+
+  if (segments.length === 2 && req.method === "POST") {
+    const requestId = segments[0];
+    const action = segments[1];
+    if (action === "approve") {
+      return await handleApprove(serviceClient, auth, requestId, parsedBody ?? {});
+    }
+    if (action === "reject") {
+      return await handleReject(serviceClient, auth, requestId, parsedBody ?? {});
+    }
+  }
+
+  return errorResponse("Route not found", "not_found", 404);
+});
+
+function extractToken(
+  req: Request,
+  url: URL,
+  body: Record<string, unknown> | null
+): string {
+  const header = req.headers.get("Authorization") ?? "";
+  const bearer = header.replace(/^[Bb]earer\s+/i, "").trim();
+  const custom = req.headers.get("x-app-bearer")?.trim() ?? "";
+  const queryToken = url.searchParams.get("access_token")?.trim() ?? "";
+  const bodyToken =
+    body && typeof body.access_token === "string" ? body.access_token.trim() : "";
+  return bodyToken || queryToken || custom || bearer;
+}
+
+async function handleUploadSlots(
+  supabase: ReturnType<typeof createClient>,
+  auth: MerchantAuth,
+  body: Record<string, unknown>
+): Promise<Response> {
+  const files = Array.isArray(body.files) ? body.files : [];
+  if (!files.length) {
+    return errorResponse("files array required", "invalid_payload", 400);
+  }
+  if (files.length > 3) {
+    return errorResponse("Maximum 3 files per request", "too_many_files", 400);
+  }
+  const bucket = supabase.storage.from(AFTER_SALES_BUCKET);
+  const uploads = [];
+  for (const file of files) {
+    const filename = typeof file?.filename === "string" ? file.filename : "evidence";
+    const path = sanitizePath(filename, auth.merchantId);
+    const { data, error } = await bucket.createSignedUploadUrl(path);
+    if (error || !data) {
+      console.error("[merchant-after-sales] upload url error", error?.message);
+      return errorResponse("Failed to create upload url", "storage_error", 500);
+    }
+    uploads.push({ path, bucket: AFTER_SALES_BUCKET, signedUrl: data.signedUrl, token: data.token });
+  }
+  return jsonResponse({ uploads });
+}
+
+async function handleList(
+  supabase: ReturnType<typeof createClient>,
+  auth: MerchantAuth,
+  params: URLSearchParams,
+  body: Record<string, unknown>
+): Promise<Response> {
+  const statusParam =
+    (body?.status as string) || params.get("status") || "pending,awaiting_platform";
+  const statuses = Array.from(
+    new Set(
+      statusParam
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    )
+  );
+  const storeId = (body?.storeId as string) || params.get("store_id") || null;
+  const page = Math.max(Number((body?.page as number) ?? params.get("page") ?? 1), 1);
+  const perPage = Math.min(
+    Math.max(Number((body?.perPage as number) ?? params.get("per_page") ?? 20), 1),
+    100,
+  );
+  const offset = (page - 1) * perPage;
+
+  let query = supabase
+    .from("after_sales_requests")
+    .select(
+      "id, status, reason_code, reason_detail, refund_amount, user_attachments, merchant_feedback, created_at, expires_at, store_id, order_id, timeline, users:users!inner(full_name), orders(total_amount, order_number), after_sales_events(*)",
+      { count: "exact" }
+    )
+    .in("merchant_id", auth.merchantIds)
+    .order("created_at", { ascending: false })
+    .range(offset, offset + perPage - 1);
+
+  if (statuses.length) {
+    query = query.in("status", statuses);
+  }
+  if (storeId) {
+    query = query.eq("store_id", storeId);
+  }
+
+  const { data, error, count } = await query;
+  if (error) {
+    console.error("[merchant-after-sales] list error", error.message);
+    return errorResponse("Failed to load after-sales requests", "db_error", 500);
+  }
+
+  const hydrated = await decorateAfterSalesRequests(supabase, data ?? []);
+  return jsonResponse({
+    data: hydrated.map((row) => ({
+      ...row,
+      user_display_name: maskName(row.users?.full_name ?? "Anonymous"),
+    })),
+    total: count ?? 0,
+    page,
+    per_page: perPage,
+  });
+}
+
+function maskName(name: string): string {
+  if (!name) return "User";
+  if (name.length === 1) return `${name[0]}*`;
+  return `${name[0]}***${name[name.length - 1]}`;
+}
+
+async function handleDetail(
+  supabase: ReturnType<typeof createClient>,
+  auth: MerchantAuth,
+  requestId: string
+): Promise<Response> {
+  const { data, error } = await supabase
+    .from("after_sales_requests")
+    .select(
+      "*, users:users!inner(full_name, avatar_url), orders(*), after_sales_events(*)"
+    )
+    .eq("id", requestId)
+    .in("merchant_id", auth.merchantIds)
+    .single();
+
+  if (error || !data) {
+    return errorResponse("Request not found", "not_found", 404);
+  }
+  const hydrated = await decorateAfterSalesRequest(supabase, data);
+  return jsonResponse({
+    request: {
+      ...hydrated,
+      user_display_name: maskName(data.users?.full_name ?? "Anonymous"),
+    },
+  });
+}
+
+async function handleApprove(
+  supabase: ReturnType<typeof createClient>,
+  auth: MerchantAuth,
+  requestId: string,
+  body: Record<string, unknown>
+): Promise<Response> {
+  const note = typeof body.note === "string" ? body.note.trim() : "";
+  const attachments = normalizeAttachmentKeys(body.attachments ?? []);
+  if (note.length < 5) {
+    return errorResponse("Approval note must be at least 5 characters", "invalid_note", 400);
+  }
+
+  const request = await fetchRequestForAction(supabase, auth, requestId);
+  if (!request) {
+    return errorResponse("Request not found", "not_found", 404);
+  }
+  if (request.status !== "pending") {
+    return errorResponse(
+      `Request status is ${request.status}, expected pending`,
+      "invalid_status",
+      400,
+    );
+  }
+
+  const nowIso = new Date().toISOString();
+  const decisionTimeline = appendTimeline(request.timeline, {
+    status: "merchant_approved",
+    actor: "merchant",
+    note,
+    attachments,
+    at: nowIso,
+  } as TimelineEntry);
+
+  const { data: updated, error: updateError } = await supabase
+    .from("after_sales_requests")
+    .update({
+      status: "merchant_approved",
+      merchant_feedback: note,
+      merchant_attachments: attachments,
+      timeline: decisionTimeline,
+      metadata: {
+        ...(request.metadata ?? {}),
+        merchant_decided_at: nowIso,
+        merchant_actor: auth.userId,
+      },
+    })
+    .eq("id", requestId)
+    .select("id, order_id, coupon_id, refund_amount, timeline, metadata")
+    .single();
+
+  if (updateError || !updated) {
+    console.error("[merchant-after-sales] approve update error", updateError?.message);
+    return errorResponse("Failed to update request", "update_failed", 500);
+  }
+
+  await recordAfterSalesEvent({
+    supabase,
+    requestId,
+    actorRole: "merchant",
+    actorId: auth.userId,
+    action: "merchant_approved",
+    note,
+    attachments,
+  });
+
+  try {
+    const refundResult = await issueAfterSalesRefund({ supabase, request: updated });
+    const finalTimeline = appendTimeline(updated.timeline, {
+      status: "refunded",
+      actor: "system",
+      note: `Refunded (${refundResult.status})`,
+      at: refundResult.completedAt,
+      meta: { stripe_refund_id: refundResult.refundId },
+    });
+
+    const { data: finalized } = await supabase
+      .from("after_sales_requests")
+      .update({
+        status: "refunded",
+        refunded_at: refundResult.completedAt,
+        timeline: finalTimeline,
+        metadata: {
+          ...(updated.metadata ?? {}),
+          refund: {
+            id: refundResult.refundId,
+            status: refundResult.status,
+            is_pre_auth: refundResult.isPreAuth,
+          },
+        },
+      })
+      .eq("id", requestId)
+      .select("id")
+      .single();
+
+    await recordAfterSalesEvent({
+      supabase,
+      requestId,
+      actorRole: "system",
+      actorId: auth.userId,
+      action: "refund_succeeded",
+      note: `Refunded (${refundResult.status})`,
+      extra: { refund_id: refundResult.refundId },
+    });
+    const refreshed = await fetchMerchantRequest(supabase, auth, requestId);
+    const hydrated = await decorateAfterSalesRequest(supabase, refreshed);
+    const fallback = await decorateAfterSalesRequest(supabase, updated);
+    return jsonResponse({ request: hydrated ?? fallback, refund: refundResult });
+  } catch (err) {
+    console.error("[merchant-after-sales] refund error", err);
+    const failTimeline = appendTimeline(updated.timeline, {
+      status: "merchant_approved",
+      actor: "system",
+      note: `Refund failed: ${(err as Error).message}`,
+      at: new Date().toISOString(),
+    });
+    await supabase
+      .from("after_sales_requests")
+      .update({
+        timeline: failTimeline,
+        metadata: {
+          ...(updated.metadata ?? {}),
+          refund_error: (err as Error).message,
+        },
+      })
+      .eq("id", requestId);
+    await recordAfterSalesEvent({
+      supabase,
+      requestId,
+      actorRole: "system",
+      actorId: auth.userId,
+      action: "refund_failed",
+      note: (err as Error).message,
+    });
+    return errorResponse((err as Error).message, "stripe_error", 502);
+  }
+}
+
+async function handleReject(
+  supabase: ReturnType<typeof createClient>,
+  auth: MerchantAuth,
+  requestId: string,
+  body: Record<string, unknown>
+): Promise<Response> {
+  const note = typeof body.note === "string" ? body.note.trim() : "";
+  const attachments = normalizeAttachmentKeys(body.attachments ?? []);
+  if (note.length < 10) {
+    return errorResponse("Rejection reason must be at least 10 characters", "invalid_note", 400);
+  }
+  if (!attachments.length) {
+    return errorResponse(
+      "At least one attachment is required for rejection",
+      "attachments_required",
+      400,
+    );
+  }
+
+  const request = await fetchRequestForAction(supabase, auth, requestId);
+  if (!request) {
+    return errorResponse("Request not found", "not_found", 404);
+  }
+  if (request.status !== "pending") {
+    return errorResponse(
+      `Request status is ${request.status}, expected pending`,
+      "invalid_status",
+      400,
+    );
+  }
+
+  const nowIso = new Date().toISOString();
+  const timeline = appendTimeline(request.timeline, {
+    status: "merchant_rejected",
+    actor: "merchant",
+    note,
+    attachments,
+    at: nowIso,
+  });
+
+  const { data, error } = await supabase
+    .from("after_sales_requests")
+    .update({
+      status: "merchant_rejected",
+      merchant_feedback: note,
+      merchant_attachments: attachments,
+      timeline,
+      metadata: {
+        ...(request.metadata ?? {}),
+        merchant_decided_at: nowIso,
+        merchant_actor: auth.userId,
+      },
+    })
+    .eq("id", requestId)
+    .select("id, status, timeline")
+    .single();
+
+  if (error || !data) {
+    console.error("[merchant-after-sales] reject error", error?.message);
+    return errorResponse("Failed to reject request", "update_failed", 500);
+  }
+
+  await recordAfterSalesEvent({
+    supabase,
+    requestId,
+    actorRole: "merchant",
+    actorId: auth.userId,
+    action: "merchant_rejected",
+    note,
+    attachments,
+  });
+  const refreshed = await fetchMerchantRequest(supabase, auth, requestId);
+  const hydrated = await decorateAfterSalesRequest(supabase, refreshed);
+  const fallback = await decorateAfterSalesRequest(supabase, data);
+  return jsonResponse({ request: hydrated ?? fallback });
+}
+
+async function fetchRequestForAction(
+  supabase: ReturnType<typeof createClient>,
+  auth: MerchantAuth,
+  requestId: string
+) {
+  const { data } = await supabase
+    .from("after_sales_requests")
+    .select("id, status, order_id, coupon_id, refund_amount, timeline, metadata")
+    .eq("id", requestId)
+    .in("merchant_id", auth.merchantIds)
+    .maybeSingle();
+  return data ?? null;
+}
+
+async function fetchMerchantRequest(
+  supabase: ReturnType<typeof createClient>,
+  auth: MerchantAuth,
+  requestId: string
+) {
+  const { data } = await supabase
+    .from("after_sales_requests")
+    .select("*, after_sales_events(*)")
+    .eq("id", requestId)
+    .in("merchant_id", auth.merchantIds)
+    .maybeSingle();
+  return data ?? null;
+}
