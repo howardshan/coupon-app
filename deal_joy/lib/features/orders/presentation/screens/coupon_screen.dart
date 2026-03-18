@@ -21,7 +21,19 @@ class CouponScreen extends ConsumerWidget {
     final couponAsync = ref.watch(couponDetailProvider(couponId));
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Your Coupon')),
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () {
+            if (context.canPop()) {
+              Navigator.of(context).pop();
+            } else {
+              context.go('/home');
+            }
+          },
+        ),
+        title: const Text('Your Coupon'),
+      ),
       body: couponAsync.when(
         data: (coupon) => _CouponDetailBody(coupon: coupon),
         loading: () => const Center(child: CircularProgressIndicator()),

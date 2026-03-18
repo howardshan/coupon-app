@@ -6,16 +6,36 @@
 //   - short_after_purchase（预授权）：提前 1 小时触发，取消 PI 而非退款
 //   - long_after_purchase / fixed_date：过期 24 小时后正常退款
 //
-// 使用 Stripe SDK（在 Supabase Edge 中已稳定）
+// 使用 fetch 直连 Stripe REST API，避免 Stripe SDK 在 Deno 2.x Edge 中触发 runMicrotasks 报错
 
-import Stripe from 'https://esm.sh/stripe@14?target=deno';
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import Stripe from 'https://esm.sh/stripe@14?target=deno';
 
-const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {
-  apiVersion: '2024-04-10',
-  httpClient: Stripe.createFetchHttpClient(),
-});
+const STRIPE_SECRET_KEY = Deno.env.get('STRIPE_SECRET_KEY') ?? '';
+const STRIPE_API = 'https://api.stripe.com/v1';
+
+async function stripeGet(path: string): Promise<Record<string, unknown>> {
+  const res = await fetch(`${STRIPE_API}${path}`, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${STRIPE_SECRET_KEY}` },
+  });
+  const data = await res.json() as Record<string, unknown>;
+  if (!res.ok) throw new Error((data.error as { message?: string })?.message ?? `Stripe API ${res.status}`);
+  return data;
+}
+
+async function stripePost(path: string, body: string): Promise<Record<string, unknown>> {
+  const res = await fetch(`${STRIPE_API}${path}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${STRIPE_SECRET_KEY}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body,
+  });
+  const data = await res.json() as Record<string, unknown>;
+  if (!res.ok) throw new Error((data.error as { message?: string })?.message ?? `Stripe API ${res.status}`);
+  return data;
+}
 
 // CORS 响应头
 const corsHeaders = {
@@ -139,32 +159,40 @@ Deno.serve(async (req) => {
 
         if (isPreAuth) {
           // 预授权模式：查询 PI 状态后决定是 cancel 还是仅更新 DB
-          const pi = await stripe.paymentIntents.retrieve(order.payment_intent_id);
+          const pi = await stripeGet(`/payment_intents/${order.payment_intent_id}`) as { status?: string };
+          const status = pi.status ?? '';
 
-          if (pi.status === 'requires_capture') {
-            // PI 仍在预授权期（7天内）→ 主动 cancel
-            await stripe.paymentIntents.cancel(order.payment_intent_id);
+          if (status === 'requires_capture') {
+            await stripePost(`/payment_intents/${order.payment_intent_id}/cancel`, '');
             console.log(`auto-refund-expired: 取消预授权 PI=${order.payment_intent_id} order=${orderId}`);
-          } else if (pi.status === 'canceled') {
-            // PI 已被 Stripe 自动取消（超 7 天）→ 只更新 DB 状态
+          } else if (status === 'canceled') {
             console.log(`auto-refund-expired: PI 已自动取消 order=${orderId}，仅更新 DB`);
           } else {
-            // 其他状态（已 captured 等）→ 跳过，不重复处理
-            console.warn(`auto-refund-expired: PI=${order.payment_intent_id} 状态=${pi.status}，跳过 order=${orderId}`);
+            console.warn(`auto-refund-expired: PI=${order.payment_intent_id} 状态=${status}，跳过 order=${orderId}`);
             summary.succeeded += 1;
             continue;
           }
         } else {
-          // 立即扣款模式：向 Stripe 发起退款
-          await stripe.refunds.create({
+          // 立即扣款模式：向 Stripe 发起退款（fetch 直连，避免 SDK 触发 runMicrotasks）
+          const refundBody = new URLSearchParams({
             payment_intent: order.payment_intent_id,
             reason: 'requested_by_customer',
-            metadata: {
-              source: `auto-refund-${refundSource}`,
-              order_id: orderId,
-            },
-          });
-          console.log(`auto-refund-expired: 退款成功 order=${orderId}`);
+            'metadata[source]': `auto-refund-${refundSource}`,
+            'metadata[order_id]': orderId,
+          }).toString();
+          try {
+            await stripePost('/refunds', refundBody);
+            console.log(`auto-refund-expired: 退款成功 order=${orderId}`);
+          } catch (refundErr) {
+            const msg = refundErr instanceof Error ? refundErr.message : String(refundErr);
+            const alreadyRefunded = /already been refunded|charge_already_refunded/i.test(msg);
+            if (alreadyRefunded) {
+              // Stripe 已退过款，仅同步 DB 状态，视为成功
+              console.log(`auto-refund-expired: 订单 ${orderId} 在 Stripe 已退款，同步 DB`);
+            } else {
+              throw refundErr;
+            }
+          }
         }
 
         // 更新 orders 表
