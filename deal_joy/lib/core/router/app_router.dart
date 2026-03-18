@@ -19,6 +19,9 @@ import '../../features/orders/presentation/screens/coupons_screen.dart';
 import '../../features/orders/presentation/screens/order_detail_screen.dart';
 import '../../features/orders/presentation/screens/refund_request_screen.dart';
 import '../../features/orders/presentation/screens/post_use_refund_screen.dart';
+import '../../features/after_sales/presentation/pages/after_sales_request_form_page.dart';
+import '../../features/after_sales/presentation/pages/after_sales_timeline_page.dart';
+import '../../features/after_sales/presentation/pages/after_sales_screen_args.dart';
 import '../../features/profile/presentation/screens/profile_screen.dart';
 import '../../features/reviews/presentation/screens/write_review_screen.dart';
 import '../../features/merchant/presentation/screens/merchant_dashboard_screen.dart';
@@ -210,6 +213,14 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (_, state) =>
             CouponScreen(couponId: state.pathParameters['couponId']!),
       ),
+      GoRoute(
+        path: '/after-sales/:orderId',
+        builder: (_, state) => AfterSalesTimelinePage(args: _resolveAfterSalesArgs(state)),
+      ),
+      GoRoute(
+        path: '/after-sales/:orderId/request',
+        builder: (_, state) => AfterSalesRequestFormPage(args: _resolveAfterSalesArgs(state)),
+      ),
 
       // Orders (standalone, accessible from profile)
       GoRoute(path: '/orders', builder: (_, _) => const OrdersScreen()),
@@ -253,3 +264,19 @@ final routerProvider = Provider<GoRouter>((ref) {
         Scaffold(body: Center(child: Text('Page not found: ${state.uri}'))),
   );
 });
+
+AfterSalesScreenArgs _resolveAfterSalesArgs(GoRouterState state) {
+  final extra = state.extra;
+  if (extra is AfterSalesScreenArgs) {
+    return extra;
+  }
+  final orderId = state.pathParameters['orderId'] ?? '';
+  return AfterSalesScreenArgs(
+    orderId: orderId,
+    couponId: state.uri.queryParameters['couponId'] ?? '',
+    dealTitle: state.uri.queryParameters['dealTitle'] ?? 'After-Sales Support',
+    totalAmount: double.tryParse(state.uri.queryParameters['amount'] ?? '0') ?? 0,
+    merchantName: state.uri.queryParameters['merchantName'],
+    couponCode: state.uri.queryParameters['couponCode'],
+  );
+}

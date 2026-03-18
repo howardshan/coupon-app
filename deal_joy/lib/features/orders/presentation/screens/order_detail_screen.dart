@@ -10,6 +10,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../data/models/order_detail_model.dart';
 import '../../domain/providers/orders_provider.dart';
+import '../../../after_sales/presentation/pages/after_sales_screen_args.dart';
 
 class OrderDetailScreen extends ConsumerWidget {
   final String orderId;
@@ -265,6 +266,25 @@ class _OrderDetailBody extends StatelessWidget {
                     icon: Icons.qr_code_2,
                     isOutlined: true,
                     onPressed: () => context.push('/coupon/${detail.couponId}'),
+                  ),
+                ],
+                if (detail.canRequestAfterSales && detail.couponId != null) ...[
+                  const SizedBox(height: 12),
+                  AppButton(
+                    label: '申请售后',
+                    icon: Icons.support_agent_outlined,
+                    onPressed: () {
+                      final args = AfterSalesScreenArgs(
+                        orderId: detail.id,
+                        couponId: detail.couponId!,
+                        dealTitle: detail.dealTitle,
+                        totalAmount: detail.totalAmount,
+                        merchantName: detail.merchantName,
+                        couponCode: detail.couponCode,
+                        couponUsedAt: detail.couponUsedAt,
+                      );
+                      context.push('/after-sales/\${detail.id}', extra: args);
+                    },
                   ),
                 ],
                 // 已核销且未在退款流程中，显示核销后退款入口
