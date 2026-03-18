@@ -264,3 +264,12 @@ final withdrawalSettingsProvider = FutureProvider<WithdrawalSettings>((ref) asyn
   final service = ref.read(earningsServiceProvider);
   return service.fetchWithdrawalSettings();
 });
+
+// =============================================================
+// commissionConfigProvider — 全局抽成配置 + 该商家免费期状态
+// =============================================================
+/// 获取平台抽成配置（三档费率 + 免费期截止时间 + 是否处于免费期）
+final commissionConfigProvider = FutureProvider<CommissionConfig>((ref) async {
+  final service = ref.read(earningsServiceProvider);
+  return service.fetchCommissionConfig();
+});

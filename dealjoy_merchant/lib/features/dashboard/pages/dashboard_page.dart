@@ -200,6 +200,16 @@ class DashboardPage extends ConsumerWidget {
             ),
 
             // ------------------------------------------------
+            // 区块 2.5: Earnings 快速入口（仅 store_owner 可见）
+            // ------------------------------------------------
+            // storeProvider 未加载时 currentRole 为 null，默认视为 store_owner 显示
+            if (const {'store_owner', 'brand_owner', ''}.contains(
+                ref.watch(storeProvider).valueOrNull?.currentRole ?? '')) ...[
+              const SizedBox(height: 16),
+              _EarningsShortcutCard(onTap: () => context.push('/earnings')),
+            ],
+
+            // ------------------------------------------------
             // 区块 3: 待办提醒（P1 — 有待办时才显示）
             // ------------------------------------------------
             if (data.todos.hasAnyTodos) ...[
@@ -867,6 +877,83 @@ class _PendingBrandDealsBanner extends ConsumerWidget {
                 },
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================
+// _EarningsShortcutCard — Earnings 快速入口卡片（仅 owner 可见）
+// ============================================================
+class _EarningsShortcutCard extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _EarningsShortcutCard({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey.shade100),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withAlpha(6),
+              blurRadius: 4,
+              offset: const Offset(0, 1),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            // 左侧图标
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: const Color(0xFF4CAF50).withAlpha(26),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(
+                Icons.account_balance_wallet_outlined,
+                size: 20,
+                color: Color(0xFF4CAF50),
+              ),
+            ),
+            const SizedBox(width: 14),
+            // 中间文字
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Earnings & Settlement',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF1A1A2E),
+                    ),
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    'View revenue, transactions & payouts',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF999999),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // 右箭头
+            Icon(Icons.chevron_right, color: Colors.grey.shade400),
           ],
         ),
       ),

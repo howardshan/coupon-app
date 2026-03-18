@@ -128,9 +128,15 @@ class SettingsPage extends ConsumerWidget {
             title: 'Support',
             children: [
               SettingsTile(
+                icon: Icons.chat_bubble_outline,
+                title: 'Contact Support',
+                subtitle: 'Chat with the DealJoy team',
+                onTap: () => context.push('/me/support'),
+              ),
+              SettingsTile(
                 icon: Icons.help_outline,
                 title: 'Help Center',
-                subtitle: 'FAQ and contact support',
+                subtitle: 'FAQ and guides',
                 onTap: () => context.push('/me/help'),
               ),
               SettingsTile(

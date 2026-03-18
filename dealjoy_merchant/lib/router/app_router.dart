@@ -25,6 +25,7 @@ import '../features/settings/pages/notification_preferences_page.dart';
 import '../features/settings/pages/help_center_page.dart';
 import '../features/settings/pages/account_security_page.dart';
 import '../features/store/pages/staff_manage_page.dart';
+import '../features/support/pages/support_chat_page.dart';
 
 // ── 认证 ─────────────────────────────────────────────────────
 import '../features/merchant_auth/pages/merchant_login_page.dart';
@@ -345,6 +346,10 @@ final appRouter = GoRouter(
             GoRoute(
               path: 'staff',
               builder: (context, state) => const StaffManagePage(),
+            ),
+            GoRoute(
+              path: 'support',
+              builder: (context, state) => const SupportChatPage(),
             ),
           ],
         ),

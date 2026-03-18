@@ -409,4 +409,36 @@ class EarningsService {
             '${Uri.encodeComponent(e.key)}=${Uri.encodeComponent(e.value)}')
         .join('&');
   }
+
+  // =============================================================
+  // fetchCommissionConfig — 获取全局抽成配置 + 该商家免费期状态
+  // =============================================================
+  /// 返回 [CommissionConfig]：三档费率 + 免费期截止时间 + 是否在免费期内
+  Future<CommissionConfig> fetchCommissionConfig() async {
+    try {
+      final response = await _supabase.functions.invoke(
+        '$_functionName/commission-config',
+        method: HttpMethod.get,
+      );
+
+      final data = _parseResponse(response);
+      _checkError(data);
+
+      return CommissionConfig.fromJson(data);
+    } on EarningsException {
+      rethrow;
+    } on FunctionException catch (e) {
+      final body = _tryParseBody(e.details);
+      throw EarningsException(
+        code:    body?['error'] as String? ?? 'network_error',
+        message: body?['message'] as String? ?? 'Failed to fetch commission config.',
+      );
+    } catch (e) {
+      if (e is EarningsException) rethrow;
+      throw const EarningsException(
+        code:    'network_error',
+        message: 'Network error. Please check your connection.',
+      );
+    }
+  }
 }

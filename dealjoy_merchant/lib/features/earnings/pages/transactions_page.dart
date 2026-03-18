@@ -110,6 +110,7 @@ class TransactionsPage extends ConsumerWidget {
                         return TransactionTotalsRow(
                           totalAmount:      paged.totals.amount,
                           totalPlatformFee: paged.totals.platformFee,
+                          totalStripeFee:   paged.totals.stripeFee,
                           totalNetAmount:   paged.totals.netAmount,
                           orderCount:       paged.total,
                         );
