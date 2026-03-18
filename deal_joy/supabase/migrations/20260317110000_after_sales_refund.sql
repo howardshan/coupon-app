@@ -226,25 +226,29 @@ LEFT JOIN public.deals d ON d.id = o.deal_id;
 ALTER TABLE public.after_sales_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.after_sales_events ENABLE ROW LEVEL SECURITY;
 
--- user policies
-CREATE POLICY IF NOT EXISTS user_select_after_sales
+-- user policies（DROP + CREATE 替代不支持的 IF NOT EXISTS）
+DROP POLICY IF EXISTS user_select_after_sales ON public.after_sales_requests;
+CREATE POLICY user_select_after_sales
 ON public.after_sales_requests
 FOR SELECT
 USING (auth.uid() = user_id);
 
-CREATE POLICY IF NOT EXISTS user_insert_after_sales
+DROP POLICY IF EXISTS user_insert_after_sales ON public.after_sales_requests;
+CREATE POLICY user_insert_after_sales
 ON public.after_sales_requests
 FOR INSERT
 WITH CHECK (auth.uid() = user_id);
 
-CREATE POLICY IF NOT EXISTS user_update_after_sales
+DROP POLICY IF EXISTS user_update_after_sales ON public.after_sales_requests;
+CREATE POLICY user_update_after_sales
 ON public.after_sales_requests
 FOR UPDATE
 USING (auth.uid() = user_id)
 WITH CHECK (auth.uid() = user_id AND status IN ('awaiting_platform','pending'));
 
 -- merchant read policy
-CREATE POLICY IF NOT EXISTS merchant_select_after_sales
+DROP POLICY IF EXISTS merchant_select_after_sales ON public.after_sales_requests;
+CREATE POLICY merchant_select_after_sales
 ON public.after_sales_requests
 FOR SELECT
 USING (
@@ -262,26 +266,28 @@ USING (
 );
 
 -- admin/service policies
-CREATE POLICY IF NOT EXISTS admin_all_after_sales
+DROP POLICY IF EXISTS admin_all_after_sales ON public.after_sales_requests;
+CREATE POLICY admin_all_after_sales
 ON public.after_sales_requests
 FOR ALL
 USING (
   auth.role() = 'service_role'
   OR EXISTS (
     SELECT 1 FROM public.users u
-    WHERE u.id = auth.uid() AND u.role IN ('admin','super_admin')
+    WHERE u.id = auth.uid() AND u.role = 'admin'
   )
 )
 WITH CHECK (
   auth.role() = 'service_role'
   OR EXISTS (
     SELECT 1 FROM public.users u
-    WHERE u.id = auth.uid() AND u.role IN ('admin','super_admin')
+    WHERE u.id = auth.uid() AND u.role = 'admin'
   )
 );
 
 -- mirror policies for events
-CREATE POLICY IF NOT EXISTS user_select_after_sales_events
+DROP POLICY IF EXISTS user_select_after_sales_events ON public.after_sales_events;
+CREATE POLICY user_select_after_sales_events
 ON public.after_sales_events
 FOR SELECT
 USING (
@@ -292,7 +298,8 @@ USING (
   )
 );
 
-CREATE POLICY IF NOT EXISTS merchant_select_after_sales_events
+DROP POLICY IF EXISTS merchant_select_after_sales_events ON public.after_sales_events;
+CREATE POLICY merchant_select_after_sales_events
 ON public.after_sales_events
 FOR SELECT
 USING (
@@ -314,21 +321,22 @@ USING (
   )
 );
 
-CREATE POLICY IF NOT EXISTS admin_all_after_sales_events
+DROP POLICY IF EXISTS admin_all_after_sales_events ON public.after_sales_events;
+CREATE POLICY admin_all_after_sales_events
 ON public.after_sales_events
 FOR ALL
 USING (
   auth.role() = 'service_role'
   OR EXISTS (
     SELECT 1 FROM public.users u
-    WHERE u.id = auth.uid() AND u.role IN ('admin','super_admin')
+    WHERE u.id = auth.uid() AND u.role = 'admin'
   )
 )
 WITH CHECK (
   auth.role() = 'service_role'
   OR EXISTS (
     SELECT 1 FROM public.users u
-    WHERE u.id = auth.uid() AND u.role IN ('admin','super_admin')
+    WHERE u.id = auth.uid() AND u.role = 'admin'
   )
 );
 
@@ -342,28 +350,21 @@ WHERE NOT EXISTS (
 );
 
 -- stub policies: service role full access, others denied until app-layer signed URLs are used
-CREATE POLICY IF NOT EXISTS "after_sales_evidence_service"
+DROP POLICY IF EXISTS "after_sales_evidence_service" ON storage.objects;
+CREATE POLICY "after_sales_evidence_service"
 ON storage.objects
 FOR ALL
 USING (bucket_id = 'after-sales-evidence' AND auth.role() = 'service_role')
 WITH CHECK (bucket_id = 'after-sales-evidence' AND auth.role() = 'service_role');
 
-CREATE POLICY IF NOT EXISTS "after_sales_evidence_readonly_stub"
+DROP POLICY IF EXISTS "after_sales_evidence_readonly_stub" ON storage.objects;
+CREATE POLICY "after_sales_evidence_readonly_stub"
 ON storage.objects
 FOR SELECT
 USING (
   bucket_id = 'after-sales-evidence'
   AND auth.role() = 'service_role'
 );
-COMMENT ON POLICY "after_sales_evidence_readonly_stub" ON storage.objects
-IS 'TODO: replace with fine-grained actor-based read policy once storage metadata wiring is ready.';
-
--- -----------------------------------------------------------------------------
--- 8) Comments for clarity
--- -----------------------------------------------------------------------------
-COMMENT ON TABLE public.after_sales_requests IS 'After-sales refund requests for coupons already redeemed';
-COMMENT ON TABLE public.after_sales_events IS 'Timeline/audit log for after-sales requests';
-COMMENT ON COLUMN public.after_sales_requests.timeline IS 'Cached timeline JSON, kept in sync by application logic';
-COMMENT ON COLUMN public.after_sales_requests.store_id IS 'Linked store (temp: references merchants until dedicated stores table ships)';
+-- COMMENT ON POLICY 需要 storage.objects owner 权限，通过 pooler 无法执行，跳过
 
 commit;

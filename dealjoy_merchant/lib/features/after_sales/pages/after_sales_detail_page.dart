@@ -72,18 +72,18 @@ class _AfterSalesDetailPageState extends ConsumerState<AfterSalesDetailPage> {
   }
 
   Future<void> _handleApprove(String requestId) async {
-    final note = await _collectDecisionNote(
+    final result = await _collectDecisionNote(
       title: 'Approve request',
       hint: 'Explain why the refund is approved',
       minLength: 5,
       requireEvidence: false,
     );
-    if (note == null) return;
+    if (result == null) return;
 
     setState(() => _isActioning = true);
     try {
       final repo = ref.read(merchantAfterSalesRepositoryProvider);
-      await repo.approve(requestId: requestId, note: note);
+      await repo.approve(requestId: requestId, note: result.note);
       await _refreshAfterAction();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -368,7 +368,9 @@ class _AttachmentPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isImage = url.endsWith('.jpg') || url.endsWith('.jpeg') || url.endsWith('.png');
+    // signed URL 末尾是 ?token=xxx，需用 path 判断扩展名
+    final path = Uri.tryParse(url)?.path ?? url;
+    final isImage = path.endsWith('.jpg') || path.endsWith('.jpeg') || path.endsWith('.png') || path.endsWith('.webp');
     return GestureDetector(
       onTap: () => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
       child: Container(

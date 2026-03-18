@@ -41,7 +41,7 @@ class AfterSalesTimelineEntry {
       status: json['status'] as String? ?? 'unknown',
       actor: json['actor'] as String? ?? 'system',
       note: json['note'] as String?,
-      timestamp: DateTime.parse(json['at'] as String? ?? DateTime.now().toIso8601String()),
+      timestamp: DateTime.tryParse(json['at'] as String? ?? '') ?? DateTime.now(),
       attachments: attachmentList,
     );
   }
@@ -75,7 +75,7 @@ class AfterSalesEventModel {
       id: json['id'] is int ? json['id'] as int : int.tryParse('${json['id']}') ?? 0,
       action: json['action'] as String? ?? 'event',
       actorRole: json['actor_role'] as String? ?? 'system',
-      createdAt: DateTime.parse(json['created_at'] as String? ?? DateTime.now().toIso8601String()),
+      createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ?? DateTime.now(),
       note: note,
       attachments: attachmentList,
     );
@@ -134,15 +134,15 @@ class AfterSalesRequestModel {
             .toList() ??
         const [];
     return AfterSalesRequestModel(
-      id: json['id'] as String,
-      orderId: json['order_id'] as String,
-      couponId: json['coupon_id'] as String,
+      id: json['id'] as String? ?? '',
+      orderId: json['order_id'] as String? ?? '',
+      couponId: json['coupon_id'] as String? ?? '',
       status: json['status'] as String? ?? 'pending',
       reasonCode: json['reason_code'] as String? ?? 'other',
       reasonDetail: json['reason_detail'] as String? ?? '',
       refundAmount: (json['refund_amount'] as num?)?.toDouble() ?? 0,
       timeline: timelineList,
-      createdAt: DateTime.parse(json['created_at'] as String? ?? DateTime.now().toIso8601String()),
+      createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ?? DateTime.now(),
       merchantFeedback: json['merchant_feedback'] as String?,
       platformFeedback: json['platform_feedback'] as String?,
       userAttachments:
@@ -171,9 +171,9 @@ class AfterSalesUploadSlot {
 
   factory AfterSalesUploadSlot.fromJson(Map<String, dynamic> json) {
     return AfterSalesUploadSlot(
-      path: json['path'] as String,
-      signedUrl: json['signedUrl'] as String,
-      token: json['token'] as String,
+      path: json['path'] as String? ?? '',
+      signedUrl: json['signedUrl'] as String? ?? '',
+      token: json['token'] as String? ?? '',
       bucket: json['bucket'] as String? ?? 'after-sales-evidence',
     );
   }

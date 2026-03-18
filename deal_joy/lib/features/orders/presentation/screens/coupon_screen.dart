@@ -850,24 +850,6 @@ class _ActionButtonsState extends ConsumerState<_ActionButtons> {
               ),
             ),
           ],
-          // 已核销 + 24h 内 → 显示核销后退款按钮
-          if (coupon.isUsed &&
-              coupon.usedAt != null &&
-              DateTime.now().difference(coupon.usedAt!).inHours < 24) ...[
-            const SizedBox(height: 10),
-            OutlinedButton.icon(
-              onPressed: () => context.push('/post-use-refund/${coupon.orderId}'),
-              icon: const Icon(Icons.policy_outlined),
-              label: const Text('Request Post-Use Refund'),
-              style: OutlinedButton.styleFrom(
-                minimumSize: const Size(double.infinity, 48),
-                foregroundColor: AppColors.warning,
-                side: const BorderSide(color: AppColors.warning),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-              ),
-            ),
-          ],
         ],
       ),
     );

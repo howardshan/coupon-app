@@ -60,6 +60,13 @@ class AfterSalesRepository {
       },
     );
     final data = response.data as Map<String, dynamic>?;
+    // 透传后端业务错误（如 duplicate_request、window_expired 等）
+    if (data != null && data.containsKey('error')) {
+      throw AppException(
+        data['message'] as String? ?? 'Request failed',
+        code: data['error'] as String?,
+      );
+    }
     final requestJson = data?['request'] as Map<String, dynamic>?;
     if (requestJson == null) {
       throw const AppException('Failed to submit after-sales request');

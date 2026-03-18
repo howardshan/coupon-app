@@ -45,7 +45,7 @@ class MerchantAfterSalesRequest {
         .map((item) => AfterSalesTimelineEntry.fromJson(item as Map<String, dynamic>))
         .toList();
     return MerchantAfterSalesRequest(
-      id: json['id'] as String,
+      id: json['id'] as String? ?? '',
       status: json['status'] as String? ?? 'pending',
       reasonCode: json['reason_code'] as String? ?? 'other',
       reasonDetail: json['reason_detail'] as String? ?? '',
@@ -89,7 +89,7 @@ class AfterSalesTimelineEntry {
     return AfterSalesTimelineEntry(
       status: json['status'] as String? ?? 'update',
       actor: json['actor'] as String? ?? 'system',
-      timestamp: DateTime.parse(json['at'] as String? ?? DateTime.now().toIso8601String()),
+      timestamp: DateTime.tryParse(json['at'] as String? ?? '') ?? DateTime.now(),
       note: json['note'] as String?,
       attachments:
           (json['attachments'] as List<dynamic>? ?? const []).whereType<String>().toList(),

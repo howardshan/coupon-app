@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/theme/app_colors.dart';
@@ -280,7 +281,7 @@ class _TimelineEntryTile extends StatelessWidget {
                 Text(entry.status.replaceAll('_', ' ').toUpperCase(),
                     style: const TextStyle(fontWeight: FontWeight.w600)),
                 Text(
-                  '${entry.actor} · ${TimeOfDay.fromDateTime(entry.timestamp.toLocal()).format(context)}',
+                  '${entry.actor} · ${DateFormat('MMM d, h:mm a').format(entry.timestamp.toLocal())}',
                   style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
                 ),
                 if (subtitle.isNotEmpty) ...subtitle,

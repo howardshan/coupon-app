@@ -76,20 +76,20 @@ Deno.serve(async (req) => {
   }
 
   const anonClient = createClient(supabaseUrl, anonKey);
-  const { data: claims, error: claimsError } = await anonClient.auth.getClaims(token);
-  if (claimsError || !claims?.claims?.sub) {
+  const { data: userData, error: userError } = await anonClient.auth.getUser(token);
+  if (userError || !userData?.user) {
     return errorResponse("Invalid or expired token", "unauthorized", 401);
   }
-  const userId = claims.claims.sub as string;
+  const userId = userData.user.id;
 
   const serviceClient = createClient(supabaseUrl, serviceKey);
   let merchantContext;
   try {
     merchantContext = await resolveAuth(serviceClient, userId, req.headers);
+    requirePermission(merchantContext, "orders");
   } catch (err) {
     return errorResponse((err as Error).message, "forbidden", 403);
   }
-  requirePermission(merchantContext, "orders");
   const auth: MerchantAuth = {
     userId,
     merchantId: merchantContext.merchantId,
@@ -246,7 +246,12 @@ async function handleDetail(
     return errorResponse("Request not found", "not_found", 404);
   }
   const hydrated = await decorateAfterSalesRequest(supabase, data);
-  return jsonResponse({ request: hydrated });
+  return jsonResponse({
+    request: {
+      ...hydrated,
+      user_display_name: maskName(data.users?.full_name ?? "Anonymous"),
+    },
+  });
 }
 
 async function handleApprove(

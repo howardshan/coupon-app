@@ -228,9 +228,9 @@ class AfterSalesUploadSlot {
 
   factory AfterSalesUploadSlot.fromJson(Map<String, dynamic> json) {
     return AfterSalesUploadSlot(
-      path: json['path'] as String,
-      signedUrl: json['signedUrl'] as String,
-      token: json['token'] as String,
+      path: json['path'] as String? ?? '',
+      signedUrl: json['signedUrl'] as String? ?? '',
+      token: json['token'] as String? ?? '',
       bucket: json['bucket'] as String? ?? 'after-sales-evidence',
     );
   }

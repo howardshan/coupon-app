@@ -18,7 +18,6 @@ import '../../features/orders/presentation/screens/coupon_screen.dart';
 import '../../features/orders/presentation/screens/coupons_screen.dart';
 import '../../features/orders/presentation/screens/order_detail_screen.dart';
 import '../../features/orders/presentation/screens/refund_request_screen.dart';
-import '../../features/orders/presentation/screens/post_use_refund_screen.dart';
 import '../../features/after_sales/presentation/pages/after_sales_request_form_page.dart';
 import '../../features/after_sales/presentation/pages/after_sales_timeline_page.dart';
 import '../../features/after_sales/presentation/pages/after_sales_screen_args.dart';
@@ -241,13 +240,6 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/refund/:orderId',
         builder: (_, state) =>
             RefundRequestScreen(orderId: state.pathParameters['orderId']!),
-      ),
-
-      // 核销后退款申请（需商家审批）
-      GoRoute(
-        path: '/post-use-refund/:orderId',
-        builder: (_, state) => PostUseRefundScreen(
-            orderId: state.pathParameters['orderId']!),
       ),
 
       // My Coupons list (tabbed by status)

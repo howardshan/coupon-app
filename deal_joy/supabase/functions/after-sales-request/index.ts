@@ -302,14 +302,14 @@ async function handleList(
   params: URLSearchParams
 ): Promise<Response> {
   const filterOrder = params.get("order_id");
-  const query = supabase
+  let query = supabase
     .from("after_sales_requests")
     .select("*, after_sales_events(*)")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
   if (filterOrder) {
-    query.eq("order_id", filterOrder);
+    query = query.eq("order_id", filterOrder);
   }
 
   const { data, error } = await query;
