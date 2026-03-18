@@ -138,6 +138,10 @@ serve(async (req: Request) => {
     return handleReport(serviceClient, merchant.id, user.id, searchParams);
   }
 
+  if (subRoute === 'commission-config') {
+    return handleCommissionConfig(serviceClient, auth.merchantId);
+  }
+
   // 返回账户信息（默认路由 /merchant-earnings）
   if (subRoute === 'merchant-earnings' || subRoute === 'account') {
     return handleAccount(merchant);
@@ -221,36 +225,46 @@ async function handleTransactions(
     const rows = Array.isArray(data) ? data : [];
     const totalCount = rows.length > 0 ? parseInt(rows[0].total_count ?? '0') : 0;
 
-    // 聚合合计行
+    // 聚合合计行（含 stripe_fee）
     const totals = rows.reduce(
-      (acc: { amount: number; platform_fee: number; net_amount: number }, row: {
+      (acc: { amount: number; platform_fee: number; stripe_fee: number; net_amount: number }, row: {
         amount: string;
         platform_fee: string;
+        stripe_fee: string;
         net_amount: string;
       }) => ({
         amount: acc.amount + parseFloat(row.amount ?? '0'),
         platform_fee: acc.platform_fee + parseFloat(row.platform_fee ?? '0'),
+        stripe_fee: acc.stripe_fee + parseFloat(row.stripe_fee ?? '0'),
         net_amount: acc.net_amount + parseFloat(row.net_amount ?? '0'),
       }),
-      { amount: 0, platform_fee: 0, net_amount: 0 },
+      { amount: 0, platform_fee: 0, stripe_fee: 0, net_amount: 0 },
     );
 
     return jsonResponse({
       data: rows.map((row: {
         order_id: string;
+        deal_title: string;
+        validity_type: string;
         amount: string;
+        platform_fee_rate: string;
         platform_fee: string;
+        stripe_fee: string;
         net_amount: string;
         status: string;
         created_at: string;
         total_count: string;
       }) => ({
-        order_id:     row.order_id,
-        amount:       parseFloat(row.amount ?? '0'),
-        platform_fee: parseFloat(row.platform_fee ?? '0'),
-        net_amount:   parseFloat(row.net_amount ?? '0'),
-        status:       row.status,
-        created_at:   row.created_at,
+        order_id:          row.order_id,
+        deal_title:        row.deal_title ?? '',
+        validity_type:     row.validity_type ?? 'fixed_date',
+        amount:            parseFloat(row.amount ?? '0'),
+        platform_fee_rate: parseFloat(row.platform_fee_rate ?? '0'),
+        platform_fee:      parseFloat(row.platform_fee ?? '0'),
+        stripe_fee:        parseFloat(row.stripe_fee ?? '0'),
+        net_amount:        parseFloat(row.net_amount ?? '0'),
+        status:            row.status,
+        created_at:        row.created_at,
       })),
       pagination: {
         page,
@@ -261,6 +275,7 @@ async function handleTransactions(
       totals: {
         amount:       Math.round(totals.amount * 100) / 100,
         platform_fee: Math.round(totals.platform_fee * 100) / 100,
+        stripe_fee:   Math.round(totals.stripe_fee * 100) / 100,
         net_amount:   Math.round(totals.net_amount * 100) / 100,
       },
     });
@@ -383,20 +398,22 @@ async function handleReport(
 
     const rows = Array.isArray(data) ? data : [];
 
-    // 计算合计
+    // 计算合计（含 stripe_fee）
     const totals = rows.reduce(
-      (acc: { order_count: number; gross_amount: number; platform_fee: number; net_amount: number }, row: {
+      (acc: { order_count: number; gross_amount: number; platform_fee: number; stripe_fee: number; net_amount: number }, row: {
         order_count: string;
         gross_amount: string;
         platform_fee: string;
+        stripe_fee: string;
         net_amount: string;
       }) => ({
         order_count:  acc.order_count  + parseInt(row.order_count ?? '0'),
         gross_amount: acc.gross_amount + parseFloat(row.gross_amount ?? '0'),
         platform_fee: acc.platform_fee + parseFloat(row.platform_fee ?? '0'),
+        stripe_fee:   acc.stripe_fee   + parseFloat(row.stripe_fee ?? '0'),
         net_amount:   acc.net_amount   + parseFloat(row.net_amount ?? '0'),
       }),
-      { order_count: 0, gross_amount: 0, platform_fee: 0, net_amount: 0 },
+      { order_count: 0, gross_amount: 0, platform_fee: 0, stripe_fee: 0, net_amount: 0 },
     );
 
     return jsonResponse({
@@ -408,23 +425,115 @@ async function handleReport(
         order_count: string;
         gross_amount: string;
         platform_fee: string;
+        stripe_fee: string;
         net_amount: string;
       }) => ({
         date:         row.report_date,
         order_count:  parseInt(row.order_count ?? '0'),
         gross_amount: parseFloat(row.gross_amount ?? '0'),
         platform_fee: parseFloat(row.platform_fee ?? '0'),
+        stripe_fee:   parseFloat(row.stripe_fee ?? '0'),
         net_amount:   parseFloat(row.net_amount ?? '0'),
       })),
       totals: {
         order_count:  totals.order_count,
         gross_amount: Math.round(totals.gross_amount * 100) / 100,
         platform_fee: Math.round(totals.platform_fee * 100) / 100,
+        stripe_fee:   Math.round(totals.stripe_fee * 100) / 100,
         net_amount:   Math.round(totals.net_amount * 100) / 100,
       },
     });
   } catch (e) {
     console.error('handleReport error:', e);
+    return errorResponse('Internal server error', 'internal_error', 500);
+  }
+}
+
+// =============================================================
+// 处理函数: 抽成配置 GET /commission-config
+// 返回全局费率配置 + 该商家的免费期状态
+// =============================================================
+async function handleCommissionConfig(
+  client: ReturnType<typeof createClient>,
+  merchantId: string,
+): Promise<Response> {
+  try {
+    const [configRes, merchantRes] = await Promise.all([
+      client
+        .from('platform_commission_config')
+        .select('free_months, fixed_date_rate, short_after_purchase_rate, long_after_purchase_rate, stripe_processing_rate, stripe_flat_fee, effective_from, effective_to')
+        .single(),
+      client
+        .from('merchants')
+        .select('commission_free_until, commission_fixed_date_rate, commission_short_rate, commission_long_rate, commission_stripe_rate, commission_stripe_flat_fee, commission_effective_from, commission_effective_to')
+        .eq('id', merchantId)
+        .single(),
+    ]);
+
+    if (configRes.error) {
+      console.error('commission config error:', configRes.error);
+      return errorResponse('Failed to fetch commission config', 'db_error', 500);
+    }
+
+    const config = configRes.data;
+    const m = merchantRes.data ?? {};
+    const commissionFreeUntil = m.commission_free_until ?? null;
+    // 免费期含当天：用 DATE 比较
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const freeUntilDate = commissionFreeUntil ? new Date(commissionFreeUntil) : null;
+    if (freeUntilDate) freeUntilDate.setHours(0, 0, 0, 0);
+    const isInFreePeriod = freeUntilDate ? today <= freeUntilDate : false;
+
+    // 判断商家自定义费率是否在生效期内
+    const mEffFrom = m.commission_effective_from ? new Date(m.commission_effective_from) : null;
+    const mEffTo = m.commission_effective_to ? new Date(m.commission_effective_to) : null;
+    const hasMerchantRates = m.commission_fixed_date_rate != null || m.commission_short_rate != null
+      || m.commission_long_rate != null || m.commission_stripe_rate != null || m.commission_stripe_flat_fee != null;
+    let merchantRatesActive = false;
+    if (hasMerchantRates) {
+      if (!mEffFrom && !mEffTo) {
+        merchantRatesActive = true; // 没设生效期 → 永久生效
+      } else if (mEffFrom && mEffTo) {
+        merchantRatesActive = today >= mEffFrom && today <= mEffTo;
+      } else if (mEffFrom) {
+        merchantRatesActive = today >= mEffFrom;
+      } else if (mEffTo) {
+        merchantRatesActive = today <= mEffTo;
+      }
+    }
+
+    // 实际生效的费率（商家专属 > 全局默认）
+    const effectiveRates = {
+      fixed_date_rate: merchantRatesActive && m.commission_fixed_date_rate != null
+        ? parseFloat(m.commission_fixed_date_rate) : parseFloat(config.fixed_date_rate),
+      short_after_purchase_rate: merchantRatesActive && m.commission_short_rate != null
+        ? parseFloat(m.commission_short_rate) : parseFloat(config.short_after_purchase_rate),
+      long_after_purchase_rate: merchantRatesActive && m.commission_long_rate != null
+        ? parseFloat(m.commission_long_rate) : parseFloat(config.long_after_purchase_rate),
+      stripe_processing_rate: merchantRatesActive && m.commission_stripe_rate != null
+        ? parseFloat(m.commission_stripe_rate) : parseFloat(config.stripe_processing_rate ?? '0.03'),
+      stripe_flat_fee: merchantRatesActive && m.commission_stripe_flat_fee != null
+        ? parseFloat(m.commission_stripe_flat_fee) : parseFloat(config.stripe_flat_fee ?? '0.30'),
+    };
+
+    return jsonResponse({
+      free_months:                config.free_months,
+      // 全局默认费率
+      fixed_date_rate:            parseFloat(config.fixed_date_rate),
+      short_after_purchase_rate:  parseFloat(config.short_after_purchase_rate),
+      long_after_purchase_rate:   parseFloat(config.long_after_purchase_rate),
+      stripe_processing_rate:     parseFloat(config.stripe_processing_rate ?? '0.03'),
+      stripe_flat_fee:            parseFloat(config.stripe_flat_fee ?? '0.30'),
+      // 商家状态
+      commission_free_until:      commissionFreeUntil,
+      is_in_free_period:          isInFreePeriod,
+      merchant_rates_active:      merchantRatesActive,
+      // 实际生效的费率（已合并商家专属 + 全局）
+      effective_rates:            effectiveRates,
+    });
+  } catch (e) {
+    console.error('handleCommissionConfig error:', e);
     return errorResponse('Internal server error', 'internal_error', 500);
   }
 }

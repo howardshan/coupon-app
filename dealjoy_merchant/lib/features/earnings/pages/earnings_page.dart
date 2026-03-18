@@ -22,6 +22,7 @@ class EarningsPage extends ConsumerWidget {
     final settlementAsync     = ref.watch(settlementScheduleProvider);
     final stripeAsync         = ref.watch(stripeAccountProvider);
     final transactionsAsync   = ref.watch(transactionsProvider);
+    final commissionAsync     = ref.watch(commissionConfigProvider);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
@@ -55,6 +56,14 @@ class EarningsPage extends ConsumerWidget {
               _SectionHeader(title: 'Settlement Info'),
               const SizedBox(height: 12),
               _SettlementInfoCard(settlementAsync: settlementAsync),
+              const SizedBox(height: 24),
+
+              // ------------------------------------------------
+              // 区块 3.5: 抽成费率卡片
+              // ------------------------------------------------
+              _SectionHeader(title: 'Commission Rates'),
+              const SizedBox(height: 12),
+              _CommissionRatesCard(commissionAsync: commissionAsync),
               const SizedBox(height: 24),
 
               // ------------------------------------------------
@@ -856,6 +865,315 @@ class _SectionHeader extends StatelessWidget {
         fontWeight: FontWeight.w700,
         color: Color(0xFF1A1A2E),
       ),
+    );
+  }
+}
+
+// =============================================================
+// _CommissionRatesCard — 平台抽成费率展示卡片
+// 免费期内显示绿色横幅，免费期后显示三档费率
+// =============================================================
+class _CommissionRatesCard extends StatelessWidget {
+  final AsyncValue<CommissionConfig> commissionAsync;
+
+  const _CommissionRatesCard({required this.commissionAsync});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withAlpha(8),
+            blurRadius: 6,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      child: commissionAsync.when(
+        loading: () => _buildLoading(),
+        error: (err, st) => _buildFallback(),
+        data: (config) => config.isInFreePeriod
+            ? _buildFreePeriodBanner(config)
+            : _buildRatesContent(config),
+      ),
+    );
+  }
+
+  /// 免费期内：绿色横幅（含 ? tooltip 说明含当天免费）
+  Widget _buildFreePeriodBanner(CommissionConfig config) {
+    final endDate = config.commissionFreeUntil != null
+        ? DateFormat('MMM d, yyyy').format(config.commissionFreeUntil!)
+        : '—';
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF4CAF50).withAlpha(13),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF4CAF50).withAlpha(51)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: const Color(0xFF4CAF50).withAlpha(26),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(
+              Icons.card_giftcard_outlined,
+              size: 20,
+              color: Color(0xFF4CAF50),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Text(
+                      'Free Period Active',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF2E7D32),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    // ? tooltip：说明含当天、次日起收费
+                    Tooltip(
+                      message: 'The last day of the free period is included.\n'
+                          'Platform commission starts from the next day.',
+                      triggerMode: TooltipTriggerMode.tap,
+                      showDuration: const Duration(seconds: 4),
+                      child: Container(
+                        width: 15,
+                        height: 15,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.green.shade400, width: 1),
+                        ),
+                        child: Center(
+                          child: Text(
+                            '?',
+                            style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.green.shade600,
+                              height: 1,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'No platform fee · Free until $endDate (inclusive)',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.green.shade700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 费率卡片：三档平台抽成 + Stripe 手续费（使用实际生效费率）
+  Widget _buildRatesContent(CommissionConfig config) {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 如果商家专属费率生效中，显示提示
+          if (config.merchantRatesActive) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFF2196F3).withAlpha(20),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: const Text(
+                'Custom rates active for your account',
+                style: TextStyle(fontSize: 11, color: Color(0xFF1565C0)),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+          // 平台抽成标题
+          const Text(
+            'Platform Commission',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF999999),
+            ),
+          ),
+          const SizedBox(height: 8),
+          _RateRow(
+            label: 'Fixed Date Deal',
+            hint: 'Deal with a specific expiry date set by the merchant.',
+            rate: config.rateLabel(config.effectiveFixedDateRate),
+            icon: Icons.event_outlined,
+          ),
+          const Divider(height: 24, thickness: 0.5),
+          _RateRow(
+            label: 'Short-term (≤7 days)',
+            hint: 'Voucher valid 1–7 days after purchase.',
+            rate: config.rateLabel(config.effectiveShortRate),
+            icon: Icons.flash_on_outlined,
+          ),
+          const Divider(height: 24, thickness: 0.5),
+          _RateRow(
+            label: 'Long-term (>7 days)',
+            hint: 'Voucher valid 8 days or more after purchase.',
+            rate: config.rateLabel(config.effectiveLongRate),
+            icon: Icons.date_range_outlined,
+          ),
+          // Stripe 手续费
+          const Divider(height: 28, thickness: 1),
+          const Text(
+            'Stripe Processing Fee',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF999999),
+            ),
+          ),
+          const SizedBox(height: 8),
+          _RateRow(
+            label: 'Per transaction',
+            hint: 'Stripe charges this fee on every successful redemption.\n'
+                'Fee = amount × rate + flat fee.',
+            rate: '${config.rateLabel(config.effectiveStripeRate)} + \$${config.effectiveStripeFlatFee.toStringAsFixed(2)}',
+            icon: Icons.credit_card_outlined,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLoading() {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: List.generate(
+          3,
+          (i) => Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Container(
+              height: 14,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade200,
+                borderRadius: BorderRadius.circular(6),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFallback() {
+    return const Padding(
+      padding: EdgeInsets.all(16),
+      child: Text(
+        'Commission rates unavailable',
+        style: TextStyle(fontSize: 13, color: Color(0xFF999999)),
+      ),
+    );
+  }
+}
+
+// 单行费率展示（含可选 ? tooltip）
+class _RateRow extends StatelessWidget {
+  final String label;
+  final String rate;
+  final IconData icon;
+  /// 点击 ? 弹出的说明文字，null 则不显示 ?
+  final String? hint;
+
+  const _RateRow({
+    required this.label,
+    required this.rate,
+    required this.icon,
+    this.hint,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: const Color(0xFFFF6B35)),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Row(
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: Color(0xFF555555),
+                ),
+              ),
+              if (hint != null) ...[
+                const SizedBox(width: 4),
+                Tooltip(
+                  message: hint!,
+                  triggerMode: TooltipTriggerMode.tap,
+                  showDuration: const Duration(seconds: 4),
+                  child: Container(
+                    width: 15,
+                    height: 15,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.grey.shade400, width: 1),
+                    ),
+                    child: Center(
+                      child: Text(
+                        '?',
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.grey.shade500,
+                          height: 1,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFF6B35).withAlpha(20),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Text(
+            rate,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFFFF6B35),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

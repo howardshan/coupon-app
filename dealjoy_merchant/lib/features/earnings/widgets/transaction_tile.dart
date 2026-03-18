@@ -137,22 +137,59 @@ class _AmountColumn extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 2),
-        // 平台手续费（较小灰色）
-        Text(
-          'Fee: \$${transaction.platformFee.toStringAsFixed(2)}',
-          style: TextStyle(
-            fontSize: 11,
-            color: Colors.grey.shade500,
-          ),
+        // 平台抽成 + 费率标签
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Commission: \$${transaction.platformFee.toStringAsFixed(2)}',
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.grey.shade500,
+              ),
+            ),
+            const SizedBox(width: 4),
+            // 费率标签："Free" 或 "10%"
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+              decoration: BoxDecoration(
+                color: transaction.platformFeeRate == 0
+                    ? const Color(0xFF4CAF50).withAlpha(26)
+                    : Colors.grey.withAlpha(26),
+                borderRadius: BorderRadius.circular(3),
+              ),
+              child: Text(
+                transaction.rateLabel,
+                style: TextStyle(
+                  fontSize: 9,
+                  fontWeight: FontWeight.w600,
+                  color: transaction.platformFeeRate == 0
+                      ? const Color(0xFF4CAF50)
+                      : Colors.grey.shade600,
+                ),
+              ),
+            ),
+          ],
         ),
+        // Stripe 手续费（免费期内不显示）
+        if (transaction.stripeFee > 0) ...[
+          const SizedBox(height: 1),
+          Text(
+            'Stripe: \$${transaction.stripeFee.toStringAsFixed(2)}',
+            style: TextStyle(
+              fontSize: 10,
+              color: Colors.grey.shade400,
+            ),
+          ),
+        ],
         const SizedBox(height: 2),
-        // 商家实收（品牌橙色）
+        // 商家实收（绿色）
         Text(
           'Net: \$${transaction.netAmount.toStringAsFixed(2)}',
           style: const TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.w600,
-            color: Color(0xFF4CAF50), // 绿色：实收金额
+            color: Color(0xFF4CAF50),
           ),
         ),
         const SizedBox(height: 4),
@@ -212,6 +249,7 @@ class _StatusBadge extends StatelessWidget {
 class TransactionTotalsRow extends StatelessWidget {
   final double totalAmount;
   final double totalPlatformFee;
+  final double totalStripeFee;
   final double totalNetAmount;
   final int orderCount;
 
@@ -219,6 +257,7 @@ class TransactionTotalsRow extends StatelessWidget {
     super.key,
     required this.totalAmount,
     required this.totalPlatformFee,
+    required this.totalStripeFee,
     required this.totalNetAmount,
     required this.orderCount,
   });
@@ -252,9 +291,14 @@ class TransactionTotalsRow extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Platform fee: \$${totalPlatformFee.toStringAsFixed(2)}',
+                  'Commission: \$${totalPlatformFee.toStringAsFixed(2)}',
                   style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
                 ),
+                if (totalStripeFee > 0)
+                  Text(
+                    'Stripe fee: \$${totalStripeFee.toStringAsFixed(2)}',
+                    style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                  ),
               ],
             ),
           ),

@@ -389,7 +389,9 @@ async function handleCreateDeal(
   }
 
   // 校验有效期
-  const validityType = (body.validity_type as string) ?? "fixed_date";
+  let validityType = (body.validity_type as string) ?? "fixed_date";
+  // 向后兼容旧值：旧版商家端仍可能发送 days_after_purchase
+  if (validityType === "days_after_purchase") validityType = "long_after_purchase";
   if (!["fixed_date", "short_after_purchase", "long_after_purchase"].includes(validityType)) {
     return errorResponse("Invalid validity_type", 400);
   }

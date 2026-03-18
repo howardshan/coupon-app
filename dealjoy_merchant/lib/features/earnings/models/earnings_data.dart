@@ -69,17 +69,25 @@ class EarningsSummary {
 // EarningsTransaction — 单笔交易记录
 // =============================================================
 class EarningsTransaction {
-  final String orderId;       // 订单 UUID
-  final double amount;        // 原始金额（含平台手续费）
-  final double platformFee;   // 平台手续费（15%）
-  final double netAmount;     // 商家实收（85%）
-  final String status;        // 订单状态原始值
-  final DateTime createdAt;   // 下单时间
+  final String orderId;         // 订单 UUID
+  final String dealTitle;       // Deal 标题
+  final String validityType;    // 'fixed_date' | 'short_after_purchase' | 'long_after_purchase'
+  final double amount;          // 原始金额（含平台手续费）
+  final double platformFeeRate; // 本笔实际费率（0 表示免费期）
+  final double platformFee;     // 平台手续费
+  final double stripeFee;       // Stripe 刷卡手续费
+  final double netAmount;       // 商家实收（= amount - platformFee - stripeFee）
+  final String status;          // 订单状态原始值
+  final DateTime createdAt;     // 下单时间
 
   const EarningsTransaction({
     required this.orderId,
+    required this.dealTitle,
+    required this.validityType,
     required this.amount,
+    required this.platformFeeRate,
     required this.platformFee,
+    required this.stripeFee,
     required this.netAmount,
     required this.status,
     required this.createdAt,
@@ -88,13 +96,24 @@ class EarningsTransaction {
   /// 从 Edge Function JSON 解析
   factory EarningsTransaction.fromJson(Map<String, dynamic> json) {
     return EarningsTransaction(
-      orderId:     json['order_id'] as String? ?? '',
-      amount:      (json['amount'] as num?)?.toDouble() ?? 0.0,
-      platformFee: (json['platform_fee'] as num?)?.toDouble() ?? 0.0,
-      netAmount:   (json['net_amount'] as num?)?.toDouble() ?? 0.0,
-      status:      json['status'] as String? ?? 'unknown',
-      createdAt:   DateTime.tryParse(json['created_at'] as String? ?? '') ?? DateTime.now(),
+      orderId:         json['order_id'] as String? ?? '',
+      dealTitle:       json['deal_title'] as String? ?? '',
+      validityType:    json['validity_type'] as String? ?? 'fixed_date',
+      amount:          (json['amount'] as num?)?.toDouble() ?? 0.0,
+      platformFeeRate: (json['platform_fee_rate'] as num?)?.toDouble() ?? 0.0,
+      platformFee:     (json['platform_fee'] as num?)?.toDouble() ?? 0.0,
+      stripeFee:       (json['stripe_fee'] as num?)?.toDouble() ?? 0.0,
+      netAmount:       (json['net_amount'] as num?)?.toDouble() ?? 0.0,
+      status:          json['status'] as String? ?? 'unknown',
+      createdAt:       DateTime.tryParse(json['created_at'] as String? ?? '') ?? DateTime.now(),
     );
+  }
+
+  /// 费率显示文字："Free" | "10%" | "15%"
+  String get rateLabel {
+    if (platformFeeRate == 0) return 'Free';
+    final pct = (platformFeeRate * 100).toStringAsFixed(0);
+    return '$pct%';
   }
 
   /// 显示用状态标签
@@ -130,11 +149,13 @@ class EarningsTransaction {
 class TransactionTotals {
   final double amount;
   final double platformFee;
+  final double stripeFee;
   final double netAmount;
 
   const TransactionTotals({
     required this.amount,
     required this.platformFee,
+    required this.stripeFee,
     required this.netAmount,
   });
 
@@ -142,6 +163,7 @@ class TransactionTotals {
     return TransactionTotals(
       amount:      (json['amount'] as num?)?.toDouble() ?? 0.0,
       platformFee: (json['platform_fee'] as num?)?.toDouble() ?? 0.0,
+      stripeFee:   (json['stripe_fee'] as num?)?.toDouble() ?? 0.0,
       netAmount:   (json['net_amount'] as num?)?.toDouble() ?? 0.0,
     );
   }
@@ -150,6 +172,7 @@ class TransactionTotals {
     return const TransactionTotals(
       amount: 0.0,
       platformFee: 0.0,
+      stripeFee: 0.0,
       netAmount: 0.0,
     );
   }
@@ -282,6 +305,7 @@ class ReportRow {
   final int orderCount;
   final double grossAmount;
   final double platformFee;
+  final double stripeFee;
   final double netAmount;
 
   const ReportRow({
@@ -289,6 +313,7 @@ class ReportRow {
     required this.orderCount,
     required this.grossAmount,
     required this.platformFee,
+    required this.stripeFee,
     required this.netAmount,
   });
 
@@ -298,6 +323,7 @@ class ReportRow {
       orderCount:   (json['order_count'] as num?)?.toInt() ?? 0,
       grossAmount:  (json['gross_amount'] as num?)?.toDouble() ?? 0.0,
       platformFee:  (json['platform_fee'] as num?)?.toDouble() ?? 0.0,
+      stripeFee:    (json['stripe_fee'] as num?)?.toDouble() ?? 0.0,
       netAmount:    (json['net_amount'] as num?)?.toDouble() ?? 0.0,
     );
   }
@@ -310,12 +336,14 @@ class ReportTotals {
   final int orderCount;
   final double grossAmount;
   final double platformFee;
+  final double stripeFee;
   final double netAmount;
 
   const ReportTotals({
     required this.orderCount,
     required this.grossAmount,
     required this.platformFee,
+    required this.stripeFee,
     required this.netAmount,
   });
 
@@ -324,6 +352,7 @@ class ReportTotals {
       orderCount:  (json['order_count'] as num?)?.toInt() ?? 0,
       grossAmount: (json['gross_amount'] as num?)?.toDouble() ?? 0.0,
       platformFee: (json['platform_fee'] as num?)?.toDouble() ?? 0.0,
+      stripeFee:   (json['stripe_fee'] as num?)?.toDouble() ?? 0.0,
       netAmount:   (json['net_amount'] as num?)?.toDouble() ?? 0.0,
     );
   }
@@ -333,6 +362,7 @@ class ReportTotals {
       orderCount:  0,
       grossAmount: 0.0,
       platformFee: 0.0,
+      stripeFee:   0.0,
       netAmount:   0.0,
     );
   }
@@ -609,5 +639,71 @@ class WithdrawalSettings {
     return const WithdrawalSettings(
       autoWithdrawalEnabled: false,
     );
+  }
+}
+
+// =============================================================
+// CommissionConfig — 全局抽成配置 + 该商家的免费期状态
+// =============================================================
+class CommissionConfig {
+  final int freeMonths;                   // 全局免费期月数
+  final double fixedDateRate;             // 全局 fixed_date 费率
+  final double shortAfterPurchaseRate;    // 全局 short_after_purchase 费率
+  final double longAfterPurchaseRate;     // 全局 long_after_purchase 费率
+  final double stripeProcessingRate;      // 全局 Stripe 手续费率
+  final double stripeFlatFee;             // 全局 Stripe 固定费
+  final DateTime? commissionFreeUntil;    // 该商家的免费期截止时间
+  final bool isInFreePeriod;              // 当前是否处于免费期内
+  final bool merchantRatesActive;         // 商家专属费率是否在生效期内
+  // 实际生效的费率（已合并商家专属 + 全局）
+  final double effectiveFixedDateRate;
+  final double effectiveShortRate;
+  final double effectiveLongRate;
+  final double effectiveStripeRate;
+  final double effectiveStripeFlatFee;
+
+  const CommissionConfig({
+    required this.freeMonths,
+    required this.fixedDateRate,
+    required this.shortAfterPurchaseRate,
+    required this.longAfterPurchaseRate,
+    required this.stripeProcessingRate,
+    required this.stripeFlatFee,
+    this.commissionFreeUntil,
+    required this.isInFreePeriod,
+    required this.merchantRatesActive,
+    required this.effectiveFixedDateRate,
+    required this.effectiveShortRate,
+    required this.effectiveLongRate,
+    required this.effectiveStripeRate,
+    required this.effectiveStripeFlatFee,
+  });
+
+  factory CommissionConfig.fromJson(Map<String, dynamic> json) {
+    final effectiveRates = json['effective_rates'] as Map<String, dynamic>? ?? {};
+    return CommissionConfig(
+      freeMonths:               json['free_months'] as int? ?? 3,
+      fixedDateRate:            (json['fixed_date_rate'] as num?)?.toDouble() ?? 0.15,
+      shortAfterPurchaseRate:   (json['short_after_purchase_rate'] as num?)?.toDouble() ?? 0.10,
+      longAfterPurchaseRate:    (json['long_after_purchase_rate'] as num?)?.toDouble() ?? 0.15,
+      stripeProcessingRate:     (json['stripe_processing_rate'] as num?)?.toDouble() ?? 0.03,
+      stripeFlatFee:            (json['stripe_flat_fee'] as num?)?.toDouble() ?? 0.30,
+      commissionFreeUntil:      json['commission_free_until'] != null
+          ? DateTime.tryParse(json['commission_free_until'] as String)
+          : null,
+      isInFreePeriod:           json['is_in_free_period'] as bool? ?? false,
+      merchantRatesActive:      json['merchant_rates_active'] as bool? ?? false,
+      effectiveFixedDateRate:   (effectiveRates['fixed_date_rate'] as num?)?.toDouble() ?? 0.15,
+      effectiveShortRate:       (effectiveRates['short_after_purchase_rate'] as num?)?.toDouble() ?? 0.10,
+      effectiveLongRate:        (effectiveRates['long_after_purchase_rate'] as num?)?.toDouble() ?? 0.15,
+      effectiveStripeRate:      (effectiveRates['stripe_processing_rate'] as num?)?.toDouble() ?? 0.03,
+      effectiveStripeFlatFee:   (effectiveRates['stripe_flat_fee'] as num?)?.toDouble() ?? 0.30,
+    );
+  }
+
+  /// 费率百分比显示文字，如 "15%"
+  String rateLabel(double rate) {
+    final pct = (rate * 100).toStringAsFixed(0);
+    return '$pct%';
   }
 }

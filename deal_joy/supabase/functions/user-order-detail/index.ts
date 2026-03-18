@@ -204,6 +204,7 @@ serve(async (req: Request) => {
       coupon_code: coupon?.qr_code ?? null,
       coupon_status: coupon?.status ?? null,
       coupon_expires_at: coupon?.expires_at ?? null,
+      coupon_used_at: coupon?.used_at ?? null,
       created_at: order.created_at,
       updated_at: order.updated_at,
       refund_requested_at: order.refund_requested_at ?? null,

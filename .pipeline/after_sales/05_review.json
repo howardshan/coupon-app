@@ -1,0 +1,141 @@
+{
+  "module": "after_sales (dealjoy_merchant merchant-side)",
+  "reviewed_at": "2026-03-18",
+  "reviewer": "claude-sonnet-4-6",
+  "files_reviewed": [
+    "dealjoy_merchant/lib/features/after_sales/data/merchant_after_sales_request.dart",
+    "dealjoy_merchant/lib/features/after_sales/data/merchant_after_sales_repository.dart",
+    "dealjoy_merchant/lib/features/after_sales/providers/after_sales_providers.dart",
+    "dealjoy_merchant/lib/features/after_sales/pages/after_sales_list_page.dart",
+    "dealjoy_merchant/lib/features/after_sales/pages/after_sales_detail_page.dart",
+    "deal_joy/supabase/functions/merchant-after-sales/index.ts",
+    "deal_joy/supabase/functions/_shared/after-sales.ts",
+    "deal_joy/supabase/migrations/20260317110000_after_sales_refund.sql"
+  ],
+  "issues": [
+    {
+      "id": "P0-001",
+      "severity": "P0",
+      "category": "Model null-safe — 运行时崩溃",
+      "file": "dealjoy_merchant/lib/features/after_sales/data/merchant_after_sales_request.dart",
+      "line": 48,
+      "title": "MerchantAfterSalesRequest.fromJson 中 id 字段硬转换，null 时抛出 TypeError",
+      "description": "`json['id'] as String` 没有 null-safe fallback。项目规范要求所有 fromJson 字段必须使用 `as String? ?? ''` 写法。虽然当前 Edge Function 不会返回 null id，一旦 select 范围变动或数据异常，此处会导致整个列表/详情页解析失败崩溃。",
+      "current_code": "id: json['id'] as String,",
+      "required_fix": "id: json['id'] as String? ?? '',"
+    },
+    {
+      "id": "P0-002",
+      "severity": "P0",
+      "category": "Model null-safe — 运行时崩溃",
+      "file": "dealjoy_merchant/lib/features/after_sales/data/merchant_after_sales_request.dart",
+      "line": 92,
+      "title": "AfterSalesTimelineEntry.fromJson 中使用 DateTime.parse 而非 DateTime.tryParse，格式异常时崩溃",
+      "description": "`DateTime.parse(json['at'] as String? ?? DateTime.now().toIso8601String())` — 当 `json['at']` 存在但不是合法 ISO 8601 字符串时（例如空字符串 ''），DateTime.parse 抛出 FormatException 导致整个 timeline 列表解析失败。应改用 tryParse 并提供 fallback。",
+      "current_code": "timestamp: DateTime.parse(json['at'] as String? ?? DateTime.now().toIso8601String()),",
+      "required_fix": "timestamp: DateTime.tryParse(json['at'] as String? ?? '') ?? DateTime.now(),"
+    },
+    {
+      "id": "P0-003",
+      "severity": "P0",
+      "category": "Model null-safe — 运行时崩溃",
+      "file": "dealjoy_merchant/lib/features/after_sales/data/merchant_after_sales_repository.dart",
+      "line": "230-233",
+      "title": "AfterSalesUploadSlot.fromJson 三个关键字段无 null-safe fallback",
+      "description": "`path: json['path'] as String`、`signedUrl: json['signedUrl'] as String`、`token: json['token'] as String` 三个字段均为硬转换。若 Supabase Storage 返回部分字段缺失（如 signedUrl 生成失败），这里会直接抛出 TypeError，导致证据上传流程完全崩溃。",
+      "current_code": "path: json['path'] as String,\nsignedUrl: json['signedUrl'] as String,\ntoken: json['token'] as String,",
+      "required_fix": "path: json['path'] as String? ?? '',\nsignedUrl: json['signedUrl'] as String? ?? '',\ntoken: json['token'] as String? ?? '',"
+    },
+    {
+      "id": "P1-001",
+      "severity": "P1",
+      "category": "编译错误 — 类型不匹配",
+      "file": "dealjoy_merchant/lib/features/after_sales/pages/after_sales_detail_page.dart",
+      "line": "74-86",
+      "title": "_handleApprove 将 _DecisionInput? 类型的值直接作为 String 传给 repo.approve，编译报错",
+      "description": "_collectDecisionNote 返回 `_DecisionInput?`。_handleApprove 中写法是：`final note = await _collectDecisionNote(...); if (note == null) return; await repo.approve(requestId: requestId, note: note);`。note 经 null check 后类型是 `_DecisionInput`（非 String），传给 `repo.approve(note: note)` 时参数类型不匹配，编译报错。_handleReject 的写法相同（`result.note` 和 `result.attachments` 读取是正确的），但 _handleApprove 忘了用 `.note` 取值。",
+      "current_code": "final note = await _collectDecisionNote(\n  title: 'Approve request',\n  ...\n);\nif (note == null) return;\nawait repo.approve(requestId: requestId, note: note);",
+      "required_fix": "final result = await _collectDecisionNote(\n  title: 'Approve request',\n  ...\n);\nif (result == null) return;\nawait repo.approve(requestId: requestId, note: result.note);",
+      "compile_error": true
+    },
+    {
+      "id": "P1-002",
+      "severity": "P1",
+      "category": "前后端数据不一致 — 详情页 userDisplayName 永远显示 'User'",
+      "file": "deal_joy/supabase/functions/merchant-after-sales/index.ts",
+      "line": "231-249",
+      "title": "handleDetail 返回的 JSON 中没有 user_display_name 字段，Dart model fallback 为 'User'",
+      "description": "handleList（第 215-218 行）在返回数据时显式注入了 `user_display_name: maskName(row.users?.full_name ?? 'Anonymous')`。但 handleDetail（第 231-249 行）直接返回 `{ request: hydrated }`，hydrated 是 after_sales_requests 的 `*` 字段加 join，并没有 user_display_name 顶层字段。Dart 的 `MerchantAfterSalesRequest.fromJson`（第 53 行）读取 `json['user_display_name'] as String? ?? 'User'`，因此详情页的用户姓名始终显示为 'User'，列表页却能正确显示脱敏姓名。",
+      "required_fix": "在 handleDetail 的返回 JSON 中，类似 handleList，从 users join 字段读取并注入 user_display_name：在 decorateAfterSalesRequest 结果上追加 `user_display_name: maskName((hydrated as any).users?.full_name ?? 'Anonymous')`。"
+    },
+    {
+      "id": "P1-003",
+      "severity": "P1",
+      "category": "UI 状态管理 — filter 与 tab 视图不同步",
+      "file": "dealjoy_merchant/lib/features/after_sales/pages/after_sales_list_page.dart",
+      "line": "80",
+      "title": "_EmptyState 的 onReset 回调将 filter 重置为 'pending'，但不重置 TabController index",
+      "description": "当用户在 Tab[2]（Closed）看到空状态时，点击 'Return to pending' 按钮只执行 `ref.read(afterSalesStatusFilterProvider.notifier).state = 'pending'`。TabController 仍停留在 index 2，导致 UI tab 高亮仍在 Closed，但数据实际已切换到 pending。正确做法是同时调用 `_tabController.animateTo(0)` 以保持 tab 和 filter 同步。",
+      "required_fix": "onReset 回调中增加 `_tabController.animateTo(0)` 调用（_tabController 需通过 callback 或 controller 传入）。"
+    },
+    {
+      "id": "P1-004",
+      "severity": "P1",
+      "category": "性能 — isLoadingMore 不触发 rebuild",
+      "file": "dealjoy_merchant/lib/features/after_sales/pages/after_sales_list_page.dart",
+      "line": 60,
+      "title": "isLoadingMore 用 ref.read 获取，loadMore 异步期间 UI 不 rebuild，底部 loading indicator 不显示",
+      "description": "`final isLoadingMore = ref.read(afterSalesListProvider.notifier).isLoadingMore` 只在 build 调用时取一次值。loadMore() 将 `_isLoadingMore = true` 后不触发任何 UI 更新，第 85 行的 `state.hasMore || isLoadingMore` 中 isLoadingMore 永远是 false，底部加载指示器永远不会显示，用户以为没有更多数据。",
+      "required_fix": "将 isLoadingMore 作为独立 StateProvider 暴露，或在 loadMore 完成前后通过 notifyListeners 机制触发 rebuild。最简方案：把 isLoadingMore 迁移到 AfterSalesListState 中，使其成为 AsyncData 状态的一部分。"
+    },
+    {
+      "id": "P1-005",
+      "severity": "P1",
+      "category": "UX — 审批成功后 SnackBar 文案与实际行为不符",
+      "file": "dealjoy_merchant/lib/features/after_sales/pages/after_sales_detail_page.dart",
+      "line": 89,
+      "title": "approve 成功时 SnackBar 写死 'Request approved and refunded.'，但退款可能失败",
+      "description": "Edge Function handleApprove 先更新状态为 merchant_approved，然后尝试发起 Stripe refund。如果 Stripe 退款失败，Edge Function 返回 502 错误（第 385 行），Dart 端 try-catch 会进入 catch 分支显示 'Approve failed: ...'。但如果退款成功，SnackBar 显示 'Request approved and refunded.'。这个逻辑本身是正确的。\n\n然而：approve 成功时状态是 'refunded'（不是 'merchant_approved'），`awaitingAction` 会变 false，按钮消失。但 handleApprove 在 Stripe 失败时返回 502，Dart `catch (err)` 只显示错误但不刷新详情，详情页依然显示旧的 pending 状态和 Approve 按钮，用户可能重复点击。应在 catch 后也调用 _refreshAfterAction()。",
+      "required_fix": "在 _handleApprove 的 catch 块中增加刷新调用，确保即使报错也能更新状态显示：`await _refreshAfterAction();`（放在 catch 块中，`if (!mounted) return;` 之后）。"
+    },
+    {
+      "id": "P2-001",
+      "severity": "P2",
+      "category": "UI — 图片预览 URL 识别失效",
+      "file": "dealjoy_merchant/lib/features/after_sales/pages/after_sales_detail_page.dart",
+      "line": 371,
+      "title": "_AttachmentPreview 用 endsWith 判断图片类型，signed URL 带查询参数导致判断永远为 false",
+      "description": "`url.endsWith('.jpg') || url.endsWith('.jpeg') || url.endsWith('.png')` — Edge Function 通过 decorateAfterSalesRequest 将存储路径转换为 Supabase signed URL，格式为 `https://.../object/sign/bucket/merchant/id/timestamp-uuid-file.jpg?token=xxxx`，末尾是查询参数而非扩展名，所以 isImage 始终为 false，所有图片附件均显示为文件图标，无法预览。",
+      "required_fix": "改用 `Uri.parse(url).path` 提取路径部分后再做扩展名判断，或者改用 `url.contains('.jpg?') || url.contains('.jpeg?') || url.contains('.png?') || url.endsWith('.jpg') || url.endsWith('.jpeg') || url.endsWith('.png')`。"
+    },
+    {
+      "id": "P2-002",
+      "severity": "P2",
+      "category": "Provider — refresh 丢失旧数据",
+      "file": "dealjoy_merchant/lib/features/after_sales/providers/after_sales_providers.dart",
+      "line": "33-35",
+      "title": "MerchantAfterSalesListNotifier.refresh() 直接 state = AsyncLoading() 丢失旧数据，刷新失败时页面变空白",
+      "description": "`state = const AsyncLoading()` 后 `state = await AsyncValue.guard(...)` — AsyncLoading 会丢弃 previousData，如果请求失败则 state 变为 AsyncError，用户看到空白错误页而非保留旧数据并在顶部显示错误提示。Riverpod 推荐使用 `state = AsyncLoading<T>().copyWithPrevious(state)` 以在刷新时保留旧数据。",
+      "required_fix": "改为：`state = const AsyncLoading<AfterSalesListState>().copyWithPrevious(state);`"
+    },
+    {
+      "id": "P2-003",
+      "severity": "P2",
+      "category": "UI — _DecisionButtons 按钮未填满宽度",
+      "file": "dealjoy_merchant/lib/features/after_sales/pages/after_sales_detail_page.dart",
+      "line": "500-515",
+      "title": "Approve 和 Reject 按钮未包 SizedBox(width: double.infinity)，窄屏时按钮偏小",
+      "description": "DetailPage 底部的两个操作按钮没有 `SizedBox(width: double.infinity)` 包裹，按钮宽度由内容决定，与 _collectDecisionNote bottomSheet 中 Submit 按钮（有 SizedBox 包裹，全宽）的视觉风格不一致。",
+      "required_fix": "将两个 FilledButton 都包裹在 `SizedBox(width: double.infinity, child: ...)` 中。"
+    }
+  ],
+  "summary": {
+    "P0": 3,
+    "P1": 5,
+    "P2": 3,
+    "total": 11,
+    "must_fix_before_release": ["P0-001", "P0-002", "P0-003", "P1-001"],
+    "compile_errors": ["P1-001"],
+    "notes": "P1-001 是编译错误，应用无法构建，必须最先修复。P0-001/002/003 是运行时崩溃风险。P1-002 导致详情页用户名显示异常（始终为 'User'）。P1-003/004 是 UI 逻辑缺陷。"
+  }
+}
