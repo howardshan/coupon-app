@@ -214,7 +214,7 @@ ALTER TABLE orders ADD COLUMN is_captured BOOLEAN NOT NULL DEFAULT true;
 
 #### 测试 A-1：预授权扣款（短有效期 Deal）
 
-**准备：** 在 Supabase Dashboard 将某个 Deal 的 `expires_at` 改为 3 天后。
+**准备：** 在 Supabase Dashboard 将某个 Deal 的 `validity_type` 改为 `short_after_purchase`。
 
 1. 用户端打开该 Deal，点击购买，完成 Stripe 支付
 2. 检查 Supabase `orders` 表：
@@ -341,7 +341,7 @@ ALTER TABLE orders ADD COLUMN is_captured BOOLEAN NOT NULL DEFAULT true;
 
 | 项目 | 说明 |
 |------|------|
-| **预授权有效期** | Stripe PaymentIntent 预授权最长 7 天，超期自动失效。当前逻辑以 7 天为临界值，如果 Deal 有效期 > 7 天则走普通扣款 |
+| **预授权触发条件** | 当前以 `deals.validity_type = 'short_after_purchase'` 为判断依据，其他类型一律走即时扣款。Stripe 预授权最长有效 7 天，超期自动失效需注意 |
 | **部分退款** | 当前实现为全额退款。多张券的部分退款（如购买 2 张只退 1 张）需额外开发 |
 | **推送通知** | 退款申请状态变更目前无推送，建议后续接入 Supabase Realtime 或 FCM |
 | **用户端退款追踪** | `post_use_refund_screen.dart` 需要手动刷新；建议后续增加 Realtime 订阅 |
