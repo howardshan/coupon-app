@@ -62,7 +62,7 @@ class _AfterSalesDetailPageState extends ConsumerState<AfterSalesDetailPage> {
             ],
           ),
         ),
-        loading: const Center(child: CircularProgressIndicator()),
+        loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => _ErrorState(
           message: error.toString(),
           onRetry: () => ref.read(afterSalesDetailProvider(widget.requestId).notifier).refresh(),
