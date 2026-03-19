@@ -120,6 +120,10 @@ merchant_photos, merchant_hours, merchant_documents, deal_images
 - `deal_joy/supabase/functions/merchant-deals/index.ts` — deal_category_id, deal_type, badge_text 相关逻辑
 - DB 表 `deal_categories`
 
+### 客户端 Deal 详情页图片画廊
+以下文件的图片画廊滑动相关逻辑**禁止修改**，除非用户明确命令要求：
+- `deal_joy/lib/features/deals/presentation/screens/deal_detail_screen.dart` — `_ImageGallery` widget、`SliverToBoxAdapter` 图片画廊布局结构（图片画廊必须在 `SliverToBoxAdapter` 中，不能放回 `SliverAppBar`/`FlexibleSpaceBar` 内，否则 `PageView` 水平滑动会被拦截）
+
 ## 开发命令
 ```bash
 # Flutter

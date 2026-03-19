@@ -22,6 +22,7 @@ import '../../features/after_sales/presentation/pages/after_sales_request_form_p
 import '../../features/after_sales/presentation/pages/after_sales_timeline_page.dart';
 import '../../features/after_sales/presentation/pages/after_sales_screen_args.dart';
 import '../../features/profile/presentation/screens/profile_screen.dart';
+import '../../features/profile/presentation/screens/edit_profile_screen.dart';
 import '../../features/reviews/presentation/screens/write_review_screen.dart';
 import '../../features/merchant/presentation/screens/merchant_dashboard_screen.dart';
 import '../../features/merchant/presentation/screens/merchant_detail_screen.dart';
@@ -149,6 +150,12 @@ final routerProvider = Provider<GoRouter>((ref) {
             ),
           ),
         ],
+      ),
+
+      // Profile 编辑页
+      GoRoute(
+        path: '/profile/edit',
+        builder: (_, _) => const EditProfileScreen(),
       ),
 
       // Merchant static routes must come before parameterized /merchant/:id

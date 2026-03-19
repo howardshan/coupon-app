@@ -215,6 +215,13 @@ async function handleVerify(
     );
   }
 
+  if (coupon.status === 'voided') {
+    return errorResponse(
+      'voided',
+      'This voucher is no longer valid — the merchant updated this offer',
+    );
+  }
+
   if (coupon.status === 'expired') {
     const expiredDate = new Date(coupon.expires_at).toLocaleDateString('en-US', {
       month: 'short', day: 'numeric', year: 'numeric',
@@ -318,6 +325,10 @@ async function handleRedeem(
 
   if (coupon.status === 'refunded') {
     return errorResponse('already_refunded', 'This voucher has been refunded');
+  }
+
+  if (coupon.status === 'voided') {
+    return errorResponse('voided', 'This voucher is no longer valid — the merchant updated this offer');
   }
 
   if (coupon.status === 'expired' || new Date(coupon.expires_at) < new Date()) {

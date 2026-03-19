@@ -4,6 +4,7 @@ class UserModel {
   final String? username;
   final String? fullName;
   final String? avatarUrl;
+  final String? bio;
   final String? phone;
   final String role; // 'user' | 'merchant' | 'admin'
   final String registrationSource; // 'email' | 'google' | 'apple'
@@ -17,6 +18,7 @@ class UserModel {
     this.username,
     this.fullName,
     this.avatarUrl,
+    this.bio,
     this.phone,
     this.role = 'user',
     this.registrationSource = 'email',
@@ -31,6 +33,7 @@ class UserModel {
     username: json['username'] as String?,
     fullName: json['full_name'] as String?,
     avatarUrl: json['avatar_url'] as String?,
+    bio: json['bio'] as String?,
     phone: json['phone'] as String?,
     role: json['role'] as String? ?? 'user',
     registrationSource: json['registration_source'] as String? ?? 'email',
@@ -47,6 +50,7 @@ class UserModel {
     'username': username,
     'full_name': fullName,
     'avatar_url': avatarUrl,
+    'bio': bio,
     'phone': phone,
     'role': role,
     'registration_source': registrationSource,
@@ -59,6 +63,7 @@ class UserModel {
     String? username,
     String? fullName,
     String? avatarUrl,
+    String? bio,
     String? phone,
     DateTime? lastLoginAt,
   }) => UserModel(
@@ -67,6 +72,7 @@ class UserModel {
     username: username ?? this.username,
     fullName: fullName ?? this.fullName,
     avatarUrl: avatarUrl ?? this.avatarUrl,
+    bio: bio ?? this.bio,
     phone: phone ?? this.phone,
     role: role,
     registrationSource: registrationSource,

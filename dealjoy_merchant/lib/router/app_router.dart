@@ -68,9 +68,6 @@ import '../features/earnings/pages/earnings_report_page.dart';
 import '../features/earnings/pages/payment_account_page.dart';
 import '../features/earnings/pages/withdrawal_page.dart';
 import '../features/notifications/pages/notifications_page.dart';
-import '../features/marketing/pages/marketing_page.dart';
-import '../features/marketing/pages/flash_deals_page.dart';
-import '../features/marketing/pages/promotions_page.dart';
 
 // ─────────────────────────────────────────────────────────────
 // Auth 状态变化通知器：让 GoRouter 在 signIn/signOut 时自动重跑 redirect
@@ -544,21 +541,6 @@ final appRouter = GoRouter(
       builder: (context, state) => const NotificationsPage(),
     ),
 
-    // 营销工具
-    GoRoute(
-      path: '/marketing',
-      builder: (context, state) => const MarketingPage(),
-      routes: [
-        GoRoute(
-          path: 'flash-deals',
-          builder: (context, state) => const FlashDealsPage(),
-        ),
-        GoRoute(
-          path: 'promotions',
-          builder: (context, state) => const PromotionsPage(),
-        ),
-      ],
-    ),
   ],
 
   // 错误页面（路由找不到时）

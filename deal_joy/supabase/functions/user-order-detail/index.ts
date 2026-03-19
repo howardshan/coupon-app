@@ -150,6 +150,14 @@ serve(async (req: Request) => {
     });
   }
 
+  if (order.status === 'voided') {
+    timeline.push({
+      event: 'voided',
+      timestamp: order.updated_at ?? null,
+      completed: true,
+    });
+  }
+
   if (order.status === 'refunded') {
     if (order.refund_requested_at) {
       timeline.push({

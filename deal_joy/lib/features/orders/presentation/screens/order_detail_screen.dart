@@ -95,6 +95,8 @@ String _statusTagLabel(String tag) {
       return 'Refund Requested';
     case 'refunded':
       return 'Refunded';
+    case 'voided':
+      return 'Cancelled';
     case 'refund_failed':
       return 'Refund Failed';
     case 'refund_rejected':
@@ -116,6 +118,8 @@ Color _statusTagColor(String tag) {
       return AppColors.success;
     case 'refunded':
       return AppColors.warning;
+    case 'voided':
+      return AppColors.textSecondary;
     case 'refund_requested':
       return AppColors.warning;
     case 'refund_failed':

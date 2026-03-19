@@ -9,6 +9,7 @@ import '../models/coupon_model.dart';
 const _couponSelect =
     'id, order_id, user_id, deal_id, merchant_id, qr_code, status, '
     'expires_at, used_at, created_at, gifted_from, verified_by, '
+    'void_reason, voided_at, '
     'deals(id, title, description, image_urls, refund_policy, '
     'merchants(name, logo_url, address, phone)), '
     'orders!coupons_order_id_fkey(applicable_store_ids)';
