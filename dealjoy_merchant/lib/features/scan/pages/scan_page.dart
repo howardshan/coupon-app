@@ -4,6 +4,7 @@
 // Enter Code Tab: 文字输入框 + Verify 按钮
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
@@ -284,7 +285,7 @@ class _ScanPageState extends ConsumerState<ScanPage>
               ),
               const SizedBox(height: 8),
               Text(
-                'Type or paste the 12-digit voucher code from the customer\'s app.',
+                'Type or paste the 16-digit voucher code from the customer\'s app. (auto-format: 4-4-4-4)',
                 style: TextStyle(
                   fontSize: 14,
                   color: Colors.grey.shade500,
@@ -296,17 +297,18 @@ class _ScanPageState extends ConsumerState<ScanPage>
               TextFormField(
                 key: const ValueKey('scan_code_field'),
                 controller: _codeController,
-                keyboardType: TextInputType.text,
+                keyboardType: TextInputType.number,
                 textCapitalization: TextCapitalization.none,
                 autocorrect: false,
-                maxLength: 64,
+                maxLength: 19, // 16 digits + 3 dashes
+                inputFormatters: const [_QrCodeDashInputFormatter()],
                 style: const TextStyle(
                   fontFamily: 'monospace',
                   fontSize: 15,
                   letterSpacing: 1,
                 ),
                 decoration: InputDecoration(
-                  hintText: 'e.g. DJ-XXXXXXXXXXXX',
+                  hintText: 'e.g. 1234-5678-9012-3456',
                   hintStyle: TextStyle(
                     color: Colors.grey.shade400,
                     fontFamily: 'monospace',
@@ -341,8 +343,9 @@ class _ScanPageState extends ConsumerState<ScanPage>
                   if (value == null || value.trim().isEmpty) {
                     return 'Please enter a voucher code.';
                   }
-                  if (value.trim().length < 12) {
-                    return 'Please enter a valid 12-digit voucher code.';
+                  final normalized = value.replaceAll('-', '').trim();
+                  if (!RegExp(r'^\d{16}$').hasMatch(normalized)) {
+                    return 'Please enter a valid 16-digit voucher code.';
                   }
                   return null;
                 },
@@ -389,6 +392,34 @@ class _ScanPageState extends ConsumerState<ScanPage>
           ),
         ),
       ),
+    );
+  }
+}
+
+// =============================================================
+// 手动输入：将 16 位数字格式化为 dddd-dddd-dddd-dddd
+// =============================================================
+class _QrCodeDashInputFormatter extends TextInputFormatter {
+  const _QrCodeDashInputFormatter();
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final digitsOnly = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
+    final limited = digitsOnly.length > 16 ? digitsOnly.substring(0, 16) : digitsOnly;
+
+    final buffer = StringBuffer();
+    for (var i = 0; i < limited.length; i++) {
+      if (i > 0 && i % 4 == 0) buffer.write('-');
+      buffer.write(limited[i]);
+    }
+
+    final formatted = buffer.toString();
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
     );
   }
 }
