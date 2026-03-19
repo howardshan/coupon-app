@@ -299,6 +299,7 @@ class MerchantDeal {
     this.applicableMerchantIds,
     this.storeConfirmations,
     this.shortName,
+    this.dealType = 'regular',
     this.usageNoteImages = const [],
     this.dishes = const [],
     this.optionGroups = const [],
@@ -392,6 +393,9 @@ class MerchantDeal {
 
   /// 短名称（最多10字符，用于变体选择器展示）
   final String? shortName;
+
+  /// Deal 类型：'regular'（套餐券）/ 'voucher'（抵用券）
+  final String dealType;
 
   /// 菜品列表（格式："name::qty::subtotal"），用于用户端展示每行价格
   final List<String> dishes;
@@ -519,6 +523,7 @@ class MerchantDeal {
           .toList(),
       storeConfirmations: null, // 后端不返回此字段，仅用于创建时传参
       shortName:       json['short_name'] as String?,
+      dealType:        json['deal_type'] as String? ?? 'regular',
       dishes:          List<String>.from(json['dishes'] as List? ?? []),
       optionGroups:    _parseOptionGroups(json),
       detailImages:    List<String>.from(json['detail_images'] as List? ?? []),
@@ -557,6 +562,7 @@ class MerchantDeal {
           'store_confirmations': storeConfirmations,
         if (shortName != null)
           'short_name': shortName,
+        'deal_type': dealType,
         'dishes': dishes,
         if (optionGroups.isNotEmpty)
           'option_groups': optionGroups.map((g) => g.toJson()).toList(),
@@ -594,6 +600,7 @@ class MerchantDeal {
     List<String>? applicableMerchantIds,
     List<Map<String, dynamic>>? storeConfirmations,
     String? shortName,
+    String? dealType,
     List<String>? dishes,
     List<DealOptionGroup>? optionGroups,
     List<String>? detailImages,
@@ -631,6 +638,7 @@ class MerchantDeal {
       applicableMerchantIds: applicableMerchantIds ?? this.applicableMerchantIds,
       storeConfirmations: storeConfirmations ?? this.storeConfirmations,
       shortName:       shortName ?? this.shortName,
+      dealType:        dealType ?? this.dealType,
       dishes:          dishes ?? this.dishes,
       optionGroups:    optionGroups ?? this.optionGroups,
       detailImages:    detailImages ?? this.detailImages,

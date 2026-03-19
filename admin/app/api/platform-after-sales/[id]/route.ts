@@ -45,10 +45,11 @@ async function callPlatformAfterSales(path: string, token: string, init?: Reques
   return data
 }
 
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await params
     const token = await requireAdminToken()
-    const data = await callPlatformAfterSales(`/${params.id}?access_token=${encodeURIComponent(token)}`, token, {
+    const data = await callPlatformAfterSales(`/${id}?access_token=${encodeURIComponent(token)}`, token, {
       method: 'GET',
     })
     return NextResponse.json(data)
@@ -60,8 +61,9 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   }
 }
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await params
     const token = await requireAdminToken()
     const body = await req.json().catch(() => ({}))
     const action = typeof body?.action === 'string' ? body.action : ''
@@ -73,7 +75,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       attachments: body?.attachments ?? [],
       access_token: token,
     }
-    const data = await callPlatformAfterSales(`/${params.id}/${action}`, token, {
+    const data = await callPlatformAfterSales(`/${id}/${action}`, token, {
       method: 'POST',
       body: JSON.stringify(payload),
     })

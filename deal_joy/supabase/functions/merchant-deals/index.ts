@@ -297,6 +297,12 @@ async function handleGetDeals(
     created_at,
     updated_at,
     applicable_merchant_ids,
+    short_name,
+    dishes,
+    detail_images,
+    deal_type,
+    deal_category_id,
+    badge_text,
     deal_images (
       id,
       image_url,
@@ -797,15 +803,30 @@ async function handleBatchReorder(
     return errorResponse("items array is required", 400);
   }
 
-  // 验证所有 deal 都属于该商家
+  // 验证所有 deal 都属于该商家（含品牌共享的 deal）
   const dealIds = items.map((i) => i.id);
-  const { data: deals } = await admin
+  // 1. 自己创建的 deal
+  const { data: ownDeals } = await admin
     .from("deals")
     .select("id")
     .eq("merchant_id", merchantId)
     .in("id", dealIds);
+  const ownedIds = new Set((ownDeals ?? []).map((d: { id: string }) => d.id));
 
-  const ownedIds = new Set((deals ?? []).map((d: { id: string }) => d.id));
+  // 2. 通过 deal_applicable_stores 关联到本店的品牌 deal
+  const remaining = dealIds.filter((id) => !ownedIds.has(id));
+  if (remaining.length > 0) {
+    const { data: sharedDeals } = await admin
+      .from("deal_applicable_stores")
+      .select("deal_id")
+      .eq("store_id", merchantId)
+      .eq("status", "active")
+      .in("deal_id", remaining);
+    for (const sd of (sharedDeals ?? [])) {
+      ownedIds.add(sd.deal_id);
+    }
+  }
+
   const unauthorized = dealIds.filter((id) => !ownedIds.has(id));
   if (unauthorized.length > 0) {
     return errorResponse(`Access denied for deals: ${unauthorized.join(", ")}`, 403);

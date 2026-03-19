@@ -33,12 +33,17 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
   // 当前步骤索引（0-based）
   int _currentStep = 0;
 
+  // Deal 模式: 'combo'（套餐券）或 'credit'（抵用券）
+  String _dealMode = 'combo';
+
   // Step 1: 基本信息
   final _step1Key = GlobalKey<FormState>();
   late final TextEditingController _titleController;
   late final TextEditingController _shortNameController;
   late final TextEditingController _descriptionController;
   late final TextEditingController _usageNotesController;
+  // 抵用券面值输入
+  late final TextEditingController _creditValueController;
 
   // Step 1: 套餐菜品（从选择器选出）
   List<SelectedMenuItem> _selectedMenuItems = [];
@@ -83,8 +88,11 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
 
   static const _dayOptions = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-  // 计算原价（选中菜品的价格总和）
+  // 计算原价：套餐券从菜品计算，抵用券从面值输入
   double get _originalPrice {
+    if (_dealMode == 'credit') {
+      return double.tryParse(_creditValueController.text) ?? 0;
+    }
     if (_selectedMenuItems.isEmpty) return 0;
     return _selectedMenuItems.fold(0.0, (sum, item) => sum + item.subtotal);
   }
@@ -121,6 +129,14 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
     _shortNameController   = TextEditingController(text: deal?.shortName ?? '');
     _descriptionController = TextEditingController(text: deal?.description ?? '');
     _usageNotesController  = TextEditingController(text: deal?.usageNotes ?? '');
+    _creditValueController = TextEditingController(
+      text: deal != null && (deal.dealType == 'voucher')
+          ? deal.originalPrice.toStringAsFixed(2)
+          : '',
+    );
+    if (deal != null && deal.dealType == 'voucher') {
+      _dealMode = 'credit';
+    }
     _stockController       = TextEditingController(
       text: deal != null && !deal.isUnlimited ? deal.stockLimit.toString() : '',
     );
@@ -153,6 +169,7 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
     _shortNameController.dispose();
     _descriptionController.dispose();
     _usageNotesController.dispose();
+    _creditValueController.dispose();
     _stockController.dispose();
     _validityDaysController.dispose();
     _maxPerPersonController.dispose();
@@ -165,9 +182,15 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
   bool _validateCurrentStep() {
     switch (_currentStep) {
       case 0:
-        if (!(_step1Key.currentState?.validate() ?? false)) return false;
-        if (_selectedMenuItems.isEmpty) {
+        final formValid = _step1Key.currentState?.validate() ?? false;
+        debugPrint('[DEBUG] Step1 验证: formValid=$formValid, dealMode=$_dealMode, originalPrice=$_originalPrice');
+        if (!formValid) return false;
+        if (_dealMode == 'combo' && _selectedMenuItems.isEmpty) {
           _showSnack('Please select at least one menu item');
+          return false;
+        }
+        if (_dealMode == 'credit' && _originalPrice <= 0) {
+          _showSnack('Please enter the credit value');
           return false;
         }
         return true;
@@ -271,8 +294,11 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
         reviewCount:     widget.editDeal?.reviewCount ?? 0,
         isActive:        false,
         dealStatus:      DealStatus.pending,
-        packageContents: _packageContentsText,
-        dishes:          _dishesData,
+        dealType:        _dealMode == 'credit' ? 'voucher' : 'regular',
+        packageContents: _dealMode == 'credit'
+            ? '\$${_originalPrice.toStringAsFixed(0)} Credit Voucher'
+            : _packageContentsText,
+        dishes:          _dealMode == 'credit' ? [] : _dishesData,
         usageNotes:      _usageNotesController.text.trim(),
         validityType:    _validityType,
         expiresAt:       expiresAt,
@@ -645,11 +671,19 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
             ),
             const SizedBox(height: 16),
 
-            // Deal 分类选择
-            _sectionLabel('Deal Category (Optional)'),
-            const SizedBox(height: 6),
-            _buildDealCategoryDropdown(),
+            // Deal 模式选择：套餐券 / 抵用券（放在 Category 上面）
+            _sectionLabel('Deal Mode'),
+            const SizedBox(height: 8),
+            _buildDealModeSelector(),
             const SizedBox(height: 16),
+
+            // Deal 分类选择（仅套餐券模式显示）
+            if (_dealMode == 'combo') ...[
+              _sectionLabel('Deal Category (Optional)'),
+              const SizedBox(height: 6),
+              _buildDealCategoryDropdown(),
+              const SizedBox(height: 16),
+            ],
 
             // 描述
             _buildTextField(
@@ -666,22 +700,64 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
             ),
             const SizedBox(height: 16),
 
-            // 套餐内容（从菜品选择器选择）
-            _sectionLabel('Package Contents'),
-            const SizedBox(height: 8),
-            _buildPackageContentsSection(),
-            const SizedBox(height: 16),
+            // 套餐券：菜品选择 + 选项组
+            if (_dealMode == 'combo') ...[
+              _sectionLabel('Package Contents'),
+              const SizedBox(height: 8),
+              _buildPackageContentsSection(),
+              const SizedBox(height: 16),
 
-            // 选项组（"几选几"功能）
-            _sectionLabel('Option Groups (Optional)'),
-            const SizedBox(height: 4),
-            const Text(
-              'Let customers pick items from groups, e.g. "Pick 3 from 8 main courses"',
-              style: TextStyle(fontSize: 12, color: Color(0xFF999999)),
-            ),
-            const SizedBox(height: 8),
-            _buildOptionGroupsSection(),
-            const SizedBox(height: 16),
+              // 选项组（"几选几"功能）
+              _sectionLabel('Option Groups (Optional)'),
+              const SizedBox(height: 4),
+              const Text(
+                'Let customers pick items from groups, e.g. "Pick 3 from 8 main courses"',
+                style: TextStyle(fontSize: 12, color: Color(0xFF999999)),
+              ),
+              const SizedBox(height: 8),
+              _buildOptionGroupsSection(),
+              const SizedBox(height: 16),
+            ],
+
+            // 抵用券：面值输入
+            if (_dealMode == 'credit') ...[
+              _sectionLabel('Credit Value'),
+              const SizedBox(height: 4),
+              const Text(
+                'The amount customers can spend in-store, e.g. \$40 credit sold for \$30',
+                style: TextStyle(fontSize: 12, color: Color(0xFF999999)),
+              ),
+              const SizedBox(height: 8),
+              TextFormField(
+                key: const ValueKey('deal_credit_value_field'),
+                controller: _creditValueController,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: InputDecoration(
+                  prefixText: '\$ ',
+                  hintText: 'e.g. 40.00',
+                  hintStyle: const TextStyle(color: Color(0xFFBBBBBB)),
+                  filled: true,
+                  fillColor: Colors.white,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(color: Color(0xFFE0E0E0)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(color: Color(0xFFE0E0E0)),
+                  ),
+                ),
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                validator: (v) {
+                  if (v == null || v.trim().isEmpty) return 'Credit value is required';
+                  final val = double.tryParse(v.trim());
+                  if (val == null || val <= 0) return 'Enter a valid amount';
+                  return null;
+                },
+                onChanged: (_) => setState(() {}), // 刷新原价显示
+              ),
+              const SizedBox(height: 16),
+            ],
 
             // 使用须知
             _buildTextField(
@@ -830,6 +906,113 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
           onChanged: (value) => setState(() => _selectedDealCategoryId = value),
         );
       },
+    );
+  }
+
+  // Deal 模式选择器：套餐券 / 抵用券
+  Widget _buildDealModeSelector() {
+    return Row(
+      children: [
+        Expanded(
+          child: GestureDetector(
+            onTap: () => setState(() => _dealMode = 'combo'),
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              decoration: BoxDecoration(
+                color: _dealMode == 'combo'
+                    ? const Color(0xFFFF6B35).withValues(alpha: 0.1)
+                    : Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: _dealMode == 'combo'
+                      ? const Color(0xFFFF6B35)
+                      : const Color(0xFFE0E0E0),
+                  width: _dealMode == 'combo' ? 2 : 1,
+                ),
+              ),
+              child: Column(
+                children: [
+                  Icon(Icons.restaurant_menu,
+                      color: _dealMode == 'combo'
+                          ? const Color(0xFFFF6B35)
+                          : const Color(0xFF999999)),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Combo Deal',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: _dealMode == 'combo'
+                          ? const Color(0xFFFF6B35)
+                          : const Color(0xFF666666),
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Bundle menu items',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: _dealMode == 'combo'
+                          ? const Color(0xFFFF6B35).withValues(alpha: 0.7)
+                          : const Color(0xFF999999),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: GestureDetector(
+            onTap: () => setState(() => _dealMode = 'credit'),
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              decoration: BoxDecoration(
+                color: _dealMode == 'credit'
+                    ? const Color(0xFFFF6B35).withValues(alpha: 0.1)
+                    : Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: _dealMode == 'credit'
+                      ? const Color(0xFFFF6B35)
+                      : const Color(0xFFE0E0E0),
+                  width: _dealMode == 'credit' ? 2 : 1,
+                ),
+              ),
+              child: Column(
+                children: [
+                  Icon(Icons.credit_card,
+                      color: _dealMode == 'credit'
+                          ? const Color(0xFFFF6B35)
+                          : const Color(0xFF999999)),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Credit Voucher',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: _dealMode == 'credit'
+                          ? const Color(0xFFFF6B35)
+                          : const Color(0xFF666666),
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'e.g. \$40 credit for \$30',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: _dealMode == 'credit'
+                          ? const Color(0xFFFF6B35).withValues(alpha: 0.7)
+                          : const Color(0xFF999999),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -1416,7 +1599,9 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // 原价（自动计算，只读展示）
-            _sectionLabel('Original Price (from selected items)'),
+            _sectionLabel(_dealMode == 'credit'
+                ? 'Credit Value'
+                : 'Original Price (from selected items)'),
             const SizedBox(height: 6),
             Container(
               width: double.infinity,
