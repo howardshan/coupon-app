@@ -1,6 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/errors/app_exception.dart';
-import '../../../../core/utils/location_utils.dart';
 import '../models/brand_detail_model.dart';
 import '../models/merchant_model.dart';
 
@@ -41,45 +40,42 @@ class MerchantRepository {
     }
   }
 
-  /// 获取 GPS 附近的商家列表（20 英里内，按距离排序）
-  // TODO: 后期改为 Supabase RPC（PostGIS ST_DWithin）服务端过滤
+  /// 获取 GPS 附近的商家列表（通过 RPC，基于 deal_applicable_stores 搜索，和 deals 搜索逻辑一致）
   Future<List<MerchantModel>> fetchMerchantsNearby({
     required double lat,
     required double lng,
     String? category,
-    double radiusMiles = 20,
   }) async {
     try {
-      final hasCategory = category != null && category.isNotEmpty && category != 'All';
-      final dealFilter = hasCategory
-          ? 'deals!inner(rating, review_count, discount_price, is_active, category)'
-          : 'deals(rating, review_count, discount_price, is_active)';
-
-      var query = _client
-          .from('merchants')
-          .select('*, $dealFilter')
-          .eq('status', 'approved');
-
-      if (hasCategory) {
-        query = query.eq('deals.category', category!);
-      }
-
-      // 拉取所有 approved 商家，Dart 端按距离过滤
-      final data = await query.limit(200);
-      final allMerchants =
-          (data as List).map((e) => MerchantModel.fromJson(e)).toList();
-
-      // 计算距离、过滤、排序
-      final nearby = <MerchantModel>[];
-      for (final m in allMerchants) {
-        if (m.lat == null || m.lng == null) continue;
-        final dist = haversineDistanceMiles(lat, lng, m.lat!, m.lng!);
-        if (dist <= radiusMiles) {
-          nearby.add(m.copyWith(distanceMiles: dist));
-        }
-      }
-      nearby.sort((a, b) => a.distanceMiles!.compareTo(b.distanceMiles!));
-      return nearby;
+      final data = await _client.rpc('search_merchants_nearby', params: {
+        'p_lat': lat,
+        'p_lng': lng,
+        'p_radius_m': 32187, // ~20 英里
+        'p_category': (category == null || category == 'All') ? null : category,
+        'p_limit': 30,
+        'p_offset': 0,
+      });
+      return (data as List).map((e) {
+        final json = e as Map<String, dynamic>;
+        return MerchantModel(
+          id: json['id'] as String,
+          name: json['name'] as String? ?? '',
+          description: json['description'] as String?,
+          logoUrl: json['logo_url'] as String?,
+          homepageCoverUrl: json['homepage_cover_url'] as String?,
+          address: json['address'] as String?,
+          phone: json['phone'] as String?,
+          lat: (json['lat'] as num?)?.toDouble(),
+          lng: (json['lng'] as num?)?.toDouble(),
+          avgRating: (json['avg_rating'] as num?)?.toDouble(),
+          totalReviewCount: (json['total_review_count'] as num?)?.toInt(),
+          activeDealCount: (json['active_deal_count'] as num?)?.toInt(),
+          bestDiscount: (json['best_discount'] as num?)?.toDouble(),
+          distanceMiles: (json['distance_meters'] as num?) != null
+              ? (json['distance_meters'] as num).toDouble() / 1609.34
+              : null,
+        );
+      }).toList();
     } on PostgrestException catch (e) {
       throw AppException(
         'Failed to fetch nearby merchants: ${e.message}',

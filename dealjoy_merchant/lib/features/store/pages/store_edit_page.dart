@@ -4,6 +4,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geocoding/geocoding.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/store_provider.dart';
 
@@ -52,6 +53,26 @@ class _StoreEditPageState extends ConsumerState<StoreEditPage> {
     _isInitialized = true;
   }
 
+  // 地址转经纬度（失败时返回 null，不阻塞保存）
+  Future<({double lat, double lng, String? city})?> _geocodeAddress(String address) async {
+    try {
+      final locations = await locationFromAddress(address);
+      if (locations.isNotEmpty) {
+        final loc = locations.first;
+        // 反向解析获取城市名
+        String? city;
+        try {
+          final placemarks = await placemarkFromCoordinates(loc.latitude, loc.longitude);
+          if (placemarks.isNotEmpty) {
+            city = placemarks.first.locality;
+          }
+        } catch (_) {}
+        return (lat: loc.latitude, lng: loc.longitude, city: city);
+      }
+    } catch (_) {}
+    return null;
+  }
+
   // 保存表单
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
@@ -59,11 +80,30 @@ class _StoreEditPageState extends ConsumerState<StoreEditPage> {
     setState(() => _isSaving = true);
 
     try {
+      final address = _addressController.text.trim();
+
+      // 地址变更时自动 geocode
+      final currentStore = ref.read(storeProvider).valueOrNull;
+      double? lat;
+      double? lng;
+      String? city;
+      if (address.isNotEmpty && address != (currentStore?.address ?? '')) {
+        final geo = await _geocodeAddress(address);
+        if (geo != null) {
+          lat = geo.lat;
+          lng = geo.lng;
+          city = geo.city;
+        }
+      }
+
       await ref.read(storeProvider.notifier).updateBasicInfo(
             name: _nameController.text.trim(),
             description: _descriptionController.text.trim(),
             phone: _phoneController.text.trim(),
-            address: _addressController.text.trim(),
+            address: address,
+            city: city,
+            lat: lat,
+            lng: lng,
           );
 
       if (!mounted) return;
