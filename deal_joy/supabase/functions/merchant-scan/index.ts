@@ -143,8 +143,9 @@ async function handleVerify(
     return errorResponse('invalid_request', 'Request body must be valid JSON');
   }
 
-  const code = body.code?.trim();
-  if (!code) {
+  const rawCode = body.code?.trim();
+  const normalizedCode = rawCode.replaceAll('-', '').replaceAll(' ', '');
+  if (!normalizedCode) {
     return errorResponse('invalid_code', 'Please enter a valid voucher code');
   }
 
@@ -161,7 +162,7 @@ async function handleVerify(
       merchant_id,
       deal_id,
       order_id,
-      orders (
+      orders!coupons_order_id_fkey (
         applicable_store_ids
       ),
       deals!inner (
@@ -171,7 +172,7 @@ async function handleVerify(
         full_name
       )
     `)
-    .eq('qr_code', code)
+    .eq('qr_code', normalizedCode)
     .maybeSingle();
 
   if (error) {
@@ -292,7 +293,7 @@ async function handleRedeem(
   // 查询券的当前状态，JOIN orders 获取门店快照和支付模式
   const { data: coupon, error: queryError } = await supabase
     .from('coupons')
-    .select('id, status, merchant_id, expires_at, redeemed_at, deal_id, order_id, orders(applicable_store_ids, payment_intent_id, capture_method)')
+    .select('id, status, merchant_id, expires_at, redeemed_at, deal_id, order_id, orders!coupons_order_id_fkey(applicable_store_ids, payment_intent_id, capture_method)')
     .eq('id', couponId)
     .single();
 

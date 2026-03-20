@@ -109,16 +109,12 @@ class CartScreen extends ConsumerWidget {
                           ],
                         ),
                       ),
-                      // 结算按钮
+                      // 结算按钮：跳转到第一个商品的结账页（当前结账为单 deal 流程）
                       GestureDetector(
                         onTap: () {
-                          // TODO: 批量结算逻辑
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Checkout coming soon'),
-                              behavior: SnackBarBehavior.floating,
-                            ),
-                          );
+                          final list = ref.read(cartProvider);
+                          if (list.isEmpty) return;
+                          context.push('/checkout/${list.first.dealId}');
                         },
                         child: Container(
                           height: 48,
