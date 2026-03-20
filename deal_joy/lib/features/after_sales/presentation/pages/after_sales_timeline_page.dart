@@ -143,6 +143,35 @@ class _AfterSalesTimelinePageState extends ConsumerState<AfterSalesTimelinePage>
   }
 }
 
+/// 状态/原因标签芯片
+class _StatusChip extends StatelessWidget {
+  const _StatusChip({required this.label, this.color});
+
+  final String label;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final effectiveLabel = label.isNotEmpty ? label : '—';
+    final bgColor = color ?? AppColors.surfaceVariant;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: bgColor.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        effectiveLabel,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w500,
+          color: color != null ? Colors.white : AppColors.textSecondary,
+        ),
+      ),
+    );
+  }
+}
+
 class _SummaryCard extends StatelessWidget {
   const _SummaryCard({required this.request, required this.args});
 

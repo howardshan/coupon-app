@@ -223,15 +223,18 @@ class CheckoutRepository {
     String captureMethod = 'automatic',
   }) async {
     try {
+      // captureMethod == 'manual' 表示预授权，资金已冻结但未扣款，is_captured = false
+      final isManualCapture = captureMethod == 'manual';
       final orderData = {
         'user_id': userId,
         'deal_id': dealId,
         'quantity': quantity,
         'unit_price': total / quantity,
         'total_amount': total,
-        'status': 'unused',
+        'status': isManualCapture ? 'authorized' : 'unused',
         'payment_intent_id': paymentIntentId,
         'capture_method': captureMethod,
+        'is_captured': !isManualCapture,
         if (purchasedMerchantId != null)
           'purchased_merchant_id': purchasedMerchantId,
         if (selectedOptions != null && selectedOptions.isNotEmpty)

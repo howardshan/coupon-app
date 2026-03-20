@@ -288,8 +288,12 @@ final appRouter = GoRouter(
               path: 'success',
               builder: (context, state) {
                 final extra = state.extra as Map<String, dynamic>;
+                final redeemedRaw = extra['redeemed_at'];
+                final redeemedAt = redeemedRaw is DateTime
+                    ? redeemedRaw
+                    : DateTime.parse(redeemedRaw as String);
                 return RedemptionSuccessPage(
-                  redeemedAt: extra['redeemed_at'] as DateTime,
+                  redeemedAt: redeemedAt,
                   dealTitle: extra['deal_title'] as String,
                   couponId: extra['coupon_id'] as String,
                 );
