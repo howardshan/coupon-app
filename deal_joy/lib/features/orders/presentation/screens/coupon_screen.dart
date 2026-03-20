@@ -11,6 +11,16 @@ import '../../../../core/theme/app_colors.dart';
 import '../../data/models/coupon_model.dart';
 import '../../domain/providers/coupons_provider.dart';
 
+String _formatQrCodeForDisplay(String qrCode) {
+  final normalized = qrCode.trim().replaceAll('-', '');
+  if (RegExp(r'^\d{16}$').hasMatch(normalized)) {
+    return '${normalized.substring(0, 4)}-${normalized.substring(4, 8)}-'
+        '${normalized.substring(8, 12)}-${normalized.substring(12, 16)}';
+  }
+  // 兼容旧券：当 qrCode 不是 16 位数字时，直接原样展示
+  return qrCode;
+}
+
 class CouponScreen extends ConsumerWidget {
   final String couponId;
 
@@ -254,7 +264,7 @@ class _QrSection extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             SelectableText(
-              coupon.id,
+              _formatQrCodeForDisplay(coupon.qrCode),
               style: const TextStyle(
                 fontWeight: FontWeight.w600,
                 letterSpacing: 1.2,
