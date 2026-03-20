@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import Link from 'next/link'
 import RoleSelect from '@/components/role-select'
 
 export default async function UsersPage() {
@@ -35,7 +36,11 @@ export default async function UsersPage() {
           <tbody className="divide-y divide-gray-100">
             {users?.map(u => (
               <tr key={u.id} className="hover:bg-gray-50">
-                <td className="px-4 py-3 font-medium text-gray-900">{u.full_name || '—'}</td>
+                <td className="px-4 py-3 font-medium text-gray-900">
+                  <Link href={`/users/${u.id}`} className="text-blue-600 hover:underline">
+                    {u.full_name || '—'}
+                  </Link>
+                </td>
                 <td className="px-4 py-3 text-gray-600">{u.email}</td>
                 <td className="px-4 py-3">
                   {/* 不能修改自己的 role */}
