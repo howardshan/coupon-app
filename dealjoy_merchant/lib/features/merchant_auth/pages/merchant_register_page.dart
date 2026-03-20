@@ -3,6 +3,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geocoding/geocoding.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/merchant_application.dart';
@@ -832,12 +833,34 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
       case 5:
         // Step 5: 地址 + 提交申请
         if (!(_step5FormKey.currentState?.validate() ?? false)) return;
+
+        // 自动 geocode 地址获取经纬度
+        final addr1 = _address1Ctrl.text.trim();
+        final addr2 = _address2Ctrl.text.trim();
+        final city5 = _cityCtrl.text.trim();
+        final state5 = _stateCtrl.text.trim();
+        final zip5 = _zipcodeCtrl.text.trim();
+        final fullAddress = '$addr1${addr2.isNotEmpty ? ', $addr2' : ''}, $city5, $state5 $zip5';
+        double? geoLat;
+        double? geoLng;
+        try {
+          final locations = await locationFromAddress(fullAddress);
+          if (locations.isNotEmpty) {
+            geoLat = locations.first.latitude;
+            geoLng = locations.first.longitude;
+          }
+        } catch (_) {
+          // geocode 失败不阻塞注册
+        }
+
         notifier.updateAddress(
-          address1: _address1Ctrl.text.trim(),
-          address2: _address2Ctrl.text.trim(),
-          city: _cityCtrl.text.trim(),
-          state: _stateCtrl.text.trim(),
-          zipcode: _zipcodeCtrl.text.trim(),
+          address1: addr1,
+          address2: addr2,
+          city: city5,
+          state: state5,
+          zipcode: zip5,
+          lat: geoLat,
+          lng: geoLng,
         );
 
         if (_isResubmit) {
@@ -854,9 +877,9 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
                 : null,
           );
         }
-        final state5 = ref.read(merchantAuthProvider);
-        if (state5 is AsyncError) {
-          _showError(state5.error.toString());
+        final submitState = ref.read(merchantAuthProvider);
+        if (submitState is AsyncError) {
+          _showError(submitState.error.toString());
           return;
         }
         // 提交成功，跳转审核状态页

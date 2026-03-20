@@ -120,14 +120,23 @@ class DealsRepository {
   }
 
   // 获取首页展示券：sort_order 不为空的 active deal，按 sort_order 升序
-  Future<List<DealModel>> fetchFeaturedDeals() async {
+  Future<List<DealModel>> fetchFeaturedDeals({String? city}) async {
     try {
-      final data = await _client
+      // 有城市过滤时用 !inner join，确保只返回 merchant.city 匹配的 deal
+      final merchantSelect = (city != null && city.isNotEmpty)
+          ? 'merchants!inner(id, name, logo_url, phone, homepage_cover_url, brand_id, brands(name, logo_url), city)'
+          : 'merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, brands(name, logo_url))';
+      var query = _client
           .from('deals')
-          .select('*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, brands(name, logo_url))')
+          .select('*, $merchantSelect')
           .eq('is_active', true)
           .not('sort_order', 'is', null)
-          .gt('expires_at', DateTime.now().toIso8601String())
+          .gt('expires_at', DateTime.now().toIso8601String());
+      // 通过 merchant 的 city 字段过滤
+      if (city != null && city.isNotEmpty) {
+        query = query.eq('merchants.city', city);
+      }
+      final data = await query
           .order('sort_order', ascending: true)
           .limit(20);
       final results = (data as List).map((e) => DealModel.fromJson(e)).toList();

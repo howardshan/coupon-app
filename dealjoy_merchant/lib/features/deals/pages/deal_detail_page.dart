@@ -86,7 +86,53 @@ class _DealDetailView extends StatelessWidget {
           // 编辑按钮（仅非 pending 状态可编辑）
           if (deal.canEdit)
             TextButton.icon(
-              onPressed: () {
+              onPressed: () async {
+                // brand deal 权限检查：创建者或 brand owner/admin 可编辑
+                if (deal.applicableMerchantIds != null &&
+                    deal.applicableMerchantIds!.isNotEmpty) {
+                  final supabase = Supabase.instance.client;
+                  final user = supabase.auth.currentUser;
+                  if (user != null) {
+                    final merchant = await supabase
+                        .from('merchants')
+                        .select('id, brand_id')
+                        .eq('user_id', user.id)
+                        .maybeSingle();
+                    final isCreator = merchant != null &&
+                        merchant['id'] == deal.merchantId;
+                    // 非创建者：检查是否为同品牌的 owner/admin
+                    var isBrandAdmin = false;
+                    if (!isCreator && merchant != null && merchant['brand_id'] != null) {
+                      final admin = await supabase
+                          .from('brand_admins')
+                          .select('role')
+                          .eq('brand_id', merchant['brand_id'] as String)
+                          .eq('user_id', user.id)
+                          .maybeSingle();
+                      isBrandAdmin = admin != null;
+                    }
+                    if (!isCreator && !isBrandAdmin) {
+                      if (!context.mounted) return;
+                      showDialog(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: const Text('Cannot Edit'),
+                          content: const Text(
+                            'This is a brand deal. Only the brand owner or manager can edit it.',
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx),
+                              child: const Text('OK'),
+                            ),
+                          ],
+                        ),
+                      );
+                      return;
+                    }
+                  }
+                }
+                if (!context.mounted) return;
                 Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (_) => DealEditPage(deal: deal),
@@ -169,40 +215,44 @@ class _DealDetailView extends StatelessWidget {
               title: 'Pricing',
               child: Row(
                 children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Deal Price',
-                        style: TextStyle(fontSize: 12, color: Color(0xFF999999)),
-                      ),
-                      Text(
-                        '\$${deal.discountPrice.toStringAsFixed(2)}',
-                        style: const TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w800,
-                          color: Color(0xFFFF6B35),
+                  Flexible(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Deal Price',
+                          style: TextStyle(fontSize: 12, color: Color(0xFF999999)),
                         ),
-                      ),
-                    ],
+                        Text(
+                          '\$${deal.discountPrice.toStringAsFixed(2)}',
+                          style: const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFFFF6B35),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(width: 24),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Original Price',
-                        style: TextStyle(fontSize: 12, color: Color(0xFF999999)),
-                      ),
-                      Text(
-                        '\$${deal.originalPrice.toStringAsFixed(2)}',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          color: Color(0xFFBBBBBB),
-                          decoration: TextDecoration.lineThrough,
+                  Flexible(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Original Price',
+                          style: TextStyle(fontSize: 12, color: Color(0xFF999999)),
                         ),
-                      ),
-                    ],
+                        Text(
+                          '\$${deal.originalPrice.toStringAsFixed(2)}',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            color: Color(0xFFBBBBBB),
+                            decoration: TextDecoration.lineThrough,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                   const Spacer(),
                   // 折扣标签
@@ -307,10 +357,8 @@ class _DealDetailView extends StatelessWidget {
                     icon: deal.isStackable
                         ? Icons.layers_outlined
                         : Icons.layers_clear_outlined,
-                    label: 'Stackable',
-                    value: deal.isStackable
-                        ? 'Can be combined with other offers'
-                        : 'Cannot be combined',
+                    label: 'Allow Stacking',
+                    value: deal.isStackable ? 'Yes' : 'No',
                   ),
 
                   // 使用须知
@@ -384,7 +432,7 @@ class _DealDetailView extends StatelessWidget {
             // 门店审批状态卡片（仅多门店 brand deal 显示）
             if (deal.applicableMerchantIds != null &&
                 deal.applicableMerchantIds!.isNotEmpty) ...[
-              _StoreStatusCard(dealId: deal.id),
+              _StoreStatusCard(dealId: deal.id, creatorMerchantId: deal.merchantId),
               const SizedBox(height: 12),
             ],
 
@@ -1072,9 +1120,10 @@ class _ActionButtonsState extends State<_ActionButtons> {
 // 门店审批状态卡片（brand multi-store deal）
 // ============================================================
 class _StoreStatusCard extends StatefulWidget {
-  const _StoreStatusCard({required this.dealId});
+  const _StoreStatusCard({required this.dealId, required this.creatorMerchantId});
 
   final String dealId;
+  final String creatorMerchantId;
 
   @override
   State<_StoreStatusCard> createState() => _StoreStatusCardState();
@@ -1083,6 +1132,7 @@ class _StoreStatusCard extends StatefulWidget {
 class _StoreStatusCardState extends State<_StoreStatusCard> {
   List<Map<String, dynamic>>? _stores;
   bool _loading = true;
+  bool _hasPermission = true;
   String? _error;
 
   @override
@@ -1094,7 +1144,37 @@ class _StoreStatusCardState extends State<_StoreStatusCard> {
   // 查询 deal_applicable_stores 获取各门店审批状态
   Future<void> _loadStoreStatus() async {
     try {
-      final data = await Supabase.instance.client
+      // 权限检查：deal 创建者或 brand owner/admin 可查看
+      final supabase = Supabase.instance.client;
+      final user = supabase.auth.currentUser;
+      if (user != null) {
+        final merchant = await supabase
+            .from('merchants')
+            .select('id, brand_id')
+            .eq('user_id', user.id)
+            .maybeSingle();
+        final isCreator = merchant != null &&
+            merchant['id'] == widget.creatorMerchantId;
+        var isBrandAdmin = false;
+        if (!isCreator && merchant != null && merchant['brand_id'] != null) {
+          final admin = await supabase
+              .from('brand_admins')
+              .select('role')
+              .eq('brand_id', merchant['brand_id'] as String)
+              .eq('user_id', user.id)
+              .maybeSingle();
+          isBrandAdmin = admin != null;
+        }
+        if (!isCreator && !isBrandAdmin) {
+          setState(() {
+            _hasPermission = false;
+            _loading = false;
+          });
+          return;
+        }
+      }
+
+      final data = await supabase
           .from('deal_applicable_stores')
           .select('store_id, status, confirmed_at, merchants!deal_applicable_stores_store_id_fkey(name, logo_url)')
           .eq('deal_id', widget.dealId)
@@ -1113,6 +1193,9 @@ class _StoreStatusCardState extends State<_StoreStatusCard> {
 
   @override
   Widget build(BuildContext context) {
+    // 非 brand owner/manager 不显示
+    if (!_hasPermission) return const SizedBox.shrink();
+
     if (_loading) {
       return const _InfoCard(
         title: 'Store Status',

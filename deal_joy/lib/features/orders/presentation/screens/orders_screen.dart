@@ -59,6 +59,7 @@ class _OrderCard extends StatelessWidget {
     'unused' => AppColors.info,
     'used' => AppColors.success,
     'refunded' => AppColors.textSecondary,
+    'voided' => AppColors.textSecondary,
     'refund_requested' => AppColors.warning,
     'refund_failed' => AppColors.error,
     'expired' => AppColors.textHint,
@@ -67,6 +68,7 @@ class _OrderCard extends StatelessWidget {
 
   /// 展示用状态：未使用但券已按时间过期时显示为 expired
   String get _displayStatus {
+    if (order.status == 'voided') return 'cancelled';
     if (order.isExpired) return 'expired';
     if (order.isRefundFailed) return 'refund_failed';
     if (order.isUnused && order.isExpiredByDate) return 'expired';

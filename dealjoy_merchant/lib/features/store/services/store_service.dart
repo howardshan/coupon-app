@@ -146,6 +146,9 @@ class StoreService {
     String? description,
     String? phone,
     String? address,
+    String? city,
+    double? lat,
+    double? lng,
     List<String>? tags,
     String? headerPhotoStyle,
     List<String>? headerPhotos,
@@ -156,6 +159,9 @@ class StoreService {
     if (description != null) body['description'] = description;
     if (phone != null) body['phone'] = phone;
     if (address != null) body['address'] = address;
+    if (city != null) body['city'] = city;
+    if (lat != null) body['lat'] = lat;
+    if (lng != null) body['lng'] = lng;
     if (tags != null) body['tags'] = tags;
     if (headerPhotoStyle != null) body['header_photo_style'] = headerPhotoStyle;
     if (headerPhotos != null) body['header_photos'] = headerPhotos;

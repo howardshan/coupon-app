@@ -311,6 +311,8 @@ class MerchantApplication {
     this.city = '',
     this.state = '',
     this.zipcode = '',
+    this.lat,
+    this.lng,
     // 状态
     this.status = ApplicationStatus.pending,
     this.rejectionReason,
@@ -331,6 +333,8 @@ class MerchantApplication {
   final String city;
   final String state;
   final String zipcode;
+  final double? lat;
+  final double? lng;
   final ApplicationStatus status;
   final String? rejectionReason;
   final DateTime? submittedAt;
@@ -386,6 +390,8 @@ class MerchantApplication {
         'city': city,
         'state': state,
         'zipcode': zipcode,
+        if (lat != null) 'lat': lat,
+        if (lng != null) 'lng': lng,
         'documents': documents.map((d) => d.toJson()).toList(),
       };
 
@@ -429,6 +435,8 @@ class MerchantApplication {
     String? city,
     String? state,
     String? zipcode,
+    double? lat,
+    double? lng,
     ApplicationStatus? status,
     String? rejectionReason,
     DateTime? submittedAt,
@@ -448,6 +456,8 @@ class MerchantApplication {
       city: city ?? this.city,
       state: state ?? this.state,
       zipcode: zipcode ?? this.zipcode,
+      lat: lat ?? this.lat,
+      lng: lng ?? this.lng,
       status: status ?? this.status,
       rejectionReason: rejectionReason ?? this.rejectionReason,
       submittedAt: submittedAt ?? this.submittedAt,

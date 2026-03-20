@@ -37,6 +37,8 @@ class TimelineEvent {
         return 'Refund Requested';
       case 'refunded':
         return 'Refunded';
+      case 'voided':
+        return 'Offer Updated';
       default:
         return event;
     }
@@ -52,6 +54,8 @@ class TimelineEvent {
         return Icons.hourglass_empty_rounded;
       case 'refunded':
         return Icons.currency_exchange_rounded;
+      case 'voided':
+        return Icons.cancel_outlined;
       default:
         return Icons.circle_outlined;
     }
@@ -66,6 +70,8 @@ class TimelineEvent {
       case 'refund_requested':
       case 'refunded':
         return const Color(0xFFF59E0B);
+      case 'voided':
+        return const Color(0xFF6B7280);
       default:
         return const Color(0xFF9CA3AF);
     }
@@ -206,6 +212,7 @@ class OrderDetailModel {
   }
 
   bool get isRefunded => status == 'refunded';
+  bool get isVoided => status == 'voided';
   bool get isRefundRequested => status == 'refund_requested';
   bool get isRefundFailed => status == 'refund_failed';
   bool get isUnused => status == 'unused';
@@ -223,6 +230,7 @@ class OrderDetailModel {
   }
 
   String get displayStatus {
+    if (status == 'voided') return 'voided';
     if (status == 'refunded') return 'refunded';
     if (status == 'expired') return 'expired';
     if (isRefundFailed) return 'refund_failed';
@@ -233,6 +241,7 @@ class OrderDetailModel {
   /// 详情页多状态标签（与商家端 detailStatusTags 逻辑一致）
   List<String> get detailStatusTags {
     if (status == 'refund_failed') return ['refund_failed'];
+    if (status == 'voided') return ['voided'];
     if (status != 'unused') return [status];
     final tags = <String>['unused'];
     if (refundRejectedAt != null) tags.add('refund_rejected');

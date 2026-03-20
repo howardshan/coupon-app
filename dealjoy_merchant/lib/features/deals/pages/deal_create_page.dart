@@ -2070,11 +2070,29 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
       content: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Upload 1 to 5 images. The first image will be the cover photo shown in listings.',
-            style: TextStyle(fontSize: 13, color: Color(0xFF666666)),
+          // 封面/Gallery 图片标题
+          Row(
+            children: [
+              const Icon(Icons.photo_library_outlined,
+                  size: 18, color: Color(0xFFFF6B35)),
+              const SizedBox(width: 6),
+              const Text(
+                'Cover & Gallery Photos',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF333333),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 4),
+          const Text(
+            'These photos appear in deal listings and the top of the deal detail page. '
+            'The first image is the cover shown in search results.',
+            style: TextStyle(fontSize: 12, color: Color(0xFF999999)),
+          ),
+          const SizedBox(height: 12),
 
           // 图片预览网格
           if (_selectedImages.isNotEmpty) ...[
@@ -2202,7 +2220,7 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
         ),
         const SizedBox(height: 4),
         const Text(
-          'Max 5 portrait photos for deal detail page',
+          'Vertical photos displayed in the deal detail page body, below the main info.',
           style: TextStyle(fontSize: 12, color: Color(0xFF999999)),
         ),
         const SizedBox(height: 10),

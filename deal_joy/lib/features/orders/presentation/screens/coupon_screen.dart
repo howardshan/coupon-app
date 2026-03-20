@@ -120,9 +120,13 @@ class _CouponDetailBodyState extends State<_CouponDetailBody> {
           // ── 状态 Banner ──────────────────────────────
           _StatusBanner(coupon: coupon),
 
-          // ── QR 区域 ──────────────────────────────────
-          if (coupon.isUnused) _QrSection(coupon: coupon),
-          if (!coupon.isUnused) _UsedStatusSection(coupon: coupon),
+          // ── QR / 已作废 / 已用等 ─────────────────────
+          if (coupon.isVoided)
+            _UsedStatusSection(coupon: coupon)
+          else if (coupon.isUnused)
+            _QrSection(coupon: coupon)
+          else
+            _UsedStatusSection(coupon: coupon),
 
           const SizedBox(height: 8),
           const Divider(indent: 16, endIndent: 16),
@@ -164,6 +168,7 @@ class _StatusBanner extends StatelessWidget {
 
   /// 与列表卡片一致：已退款一律按 REFUNDED 展示，未退款但已过期按 EXPIRED，其余按 status
   Color get _color {
+    if (coupon.isVoided) return AppColors.textSecondary;
     if (coupon.status == 'refunded') return AppColors.warning;
     if (coupon.isExpired) return AppColors.textSecondary;
     return switch (coupon.status) {
@@ -176,6 +181,7 @@ class _StatusBanner extends StatelessWidget {
   }
 
   String get _label {
+    if (coupon.isVoided) return 'CANCELLED';
     if (coupon.status == 'refunded') return 'REFUNDED';
     if (coupon.isExpired) return 'EXPIRED';
     return switch (coupon.status) {
@@ -306,7 +312,15 @@ class _UsedStatusSection extends StatelessWidget {
   Widget build(BuildContext context) {
     String message;
 
-    if (coupon.isRefunded) {
+    if (coupon.isVoided) {
+      message = coupon.voidReason == 'merchant_edit'
+          ? 'This offer was updated by the merchant. This voucher is no longer valid. Contact support if you need help.'
+          : 'This voucher is no longer valid.';
+      if (coupon.voidedAt != null) {
+        message +=
+            ' (${DateFormat('MMM d, yyyy').format(coupon.voidedAt!.toLocal())})';
+      }
+    } else if (coupon.isRefunded) {
       message = 'This coupon has been refunded.';
     } else if (coupon.isUsed && coupon.usedAt != null) {
       final formatted = DateFormat('MMM d, yyyy \'at\' h:mm a')
@@ -324,13 +338,15 @@ class _UsedStatusSection extends StatelessWidget {
       child: Column(
         children: [
           Icon(
-            coupon.isRefunded
-                ? Icons.currency_exchange
-                : coupon.isUsed
-                    ? Icons.check_circle_outline
-                    : coupon.isExpired
-                        ? Icons.timer_off_outlined
-                        : Icons.currency_exchange,
+            coupon.isVoided
+                ? Icons.cancel_outlined
+                : coupon.isRefunded
+                    ? Icons.currency_exchange
+                    : coupon.isUsed
+                        ? Icons.check_circle_outline
+                        : coupon.isExpired
+                            ? Icons.timer_off_outlined
+                            : Icons.currency_exchange,
             size: 64,
             color: AppColors.textHint,
           ),
@@ -831,8 +847,8 @@ class _ActionButtonsState extends ConsumerState<_ActionButtons> {
             ),
           if (coupon.merchantPhone != null) const SizedBox(height: 10),
 
-          // 仅 unused 显示：退款 + 转赠
-          if (coupon.isUnused) ...[
+          // 仅 unused 且未作废：退款 + 转赠
+          if (coupon.isUnused && !coupon.isVoided) ...[
             OutlinedButton.icon(
               onPressed: _isGifting ? null : _giftToFriend,
               icon: _isGifting

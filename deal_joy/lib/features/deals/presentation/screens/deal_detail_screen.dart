@@ -54,84 +54,50 @@ class _DealDetailBody extends ConsumerStatefulWidget {
 class _DealDetailBodyState extends ConsumerState<_DealDetailBody> {
   // 图片画廊高度
   static const _imageHeight = 280.0;
-  // 是否已收起（图片滚出视野）
-  bool _isCollapsed = false;
+  // 滚动进度 0.0 ~ 1.0（0=顶部，1=图片完全滚出）
+  double _scrollProgress = 0.0;
+  final ScrollController _scrollController = ScrollController();
 
   DealModel get deal => widget.deal;
 
-  /// 监听滚动通知，判断 SliverAppBar 是否已收起
-  bool _onScrollNotification(ScrollNotification notification) {
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
     final statusBarHeight = MediaQuery.of(context).padding.top;
-    // 图片滚出阈值 = 图片高度 - 收起后的 toolbar 高度
+    // 渐变区间：从图片底部往上 toolbar + statusBar 的距离
     final threshold = _imageHeight - kToolbarHeight - statusBarHeight;
-    final collapsed = notification.metrics.pixels >= threshold;
-    if (collapsed != _isCollapsed) {
-      setState(() => _isCollapsed = collapsed);
+    final progress = (_scrollController.offset / threshold).clamp(0.0, 1.0);
+    if ((progress - _scrollProgress).abs() > 0.01) {
+      setState(() => _scrollProgress = progress);
     }
-    return false;
   }
 
   @override
   Widget build(BuildContext context) {
+    final statusBarHeight = MediaQuery.of(context).padding.top;
+
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: NotificationListener<ScrollNotification>(
-        onNotification: _onScrollNotification,
-        child: CustomScrollView(
-          slivers: [
-            // 美团风格 SliverAppBar：展开时显示图片+浮动按钮，收起时显示搜索栏+操作按钮
-            SliverAppBar(
-              pinned: true,
-              expandedHeight: _imageHeight,
-              backgroundColor: _isCollapsed ? Colors.white : Colors.transparent,
-              surfaceTintColor: Colors.transparent,
-              elevation: _isCollapsed ? 0.5 : 0,
-              automaticallyImplyLeading: false,
-              // 收起后才显示标题栏
-              title: _isCollapsed ? _CollapsedHeaderBar(deal: deal) : null,
-              flexibleSpace: FlexibleSpaceBar(
-                background: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    // 图片画廊
-                    _ImageGallery(imageUrls: deal.imageUrls),
-                    // 展开状态下的浮动按钮（图片上方）
-                    Positioned(
-                      top: MediaQuery.of(context).padding.top + 8,
-                      left: 12,
-                      right: 12,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          _CircleButton(
-                            icon: Icons.arrow_back,
-                            onTap: () => context.pop(),
-                          ),
-                          Row(
-                            children: [
-                              _SaveButton(dealId: deal.id),
-                              const SizedBox(width: 8),
-                              _CircleButton(
-                                icon: Icons.share_outlined,
-                                onTap: () => Share.share(
-                                  '${deal.title} - \$${deal.discountPrice.toStringAsFixed(2)} '
-                                  '(${deal.effectiveDiscountLabel}) on DealJoy!',
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              _CircleButton(
-                                icon: Icons.more_horiz,
-                                onTap: () => _showMoreMenu(context),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+      body: Stack(
+        children: [
+          CustomScrollView(
+            controller: _scrollController,
+            slivers: [
+              // 图片画廊（独立 sliver，不在 SliverAppBar 内，确保 PageView 水平滑动正常）
+              SliverToBoxAdapter(
+                child: _ImageGallery(imageUrls: deal.imageUrls),
               ),
-            ),
 
           // Price section
           SliverToBoxAdapter(child: _PriceSection(deal: deal)),
@@ -199,8 +165,76 @@ class _DealDetailBodyState extends ConsumerState<_DealDetailBody> {
 
           // Bottom padding for the fixed bottom bar
           const SliverToBoxAdapter(child: SizedBox(height: 100)),
+            ],
+          ),
+          // 浮动导航栏：随滚动从透明渐变到白色背景
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: Container(
+              padding: EdgeInsets.only(
+                top: statusBarHeight + 8,
+                left: 12,
+                right: 12,
+                bottom: 8,
+              ),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: _scrollProgress),
+                boxShadow: _scrollProgress > 0.9
+                    ? [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.06),
+                          blurRadius: 4,
+                          offset: const Offset(0, 1),
+                        ),
+                      ]
+                    : null,
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  _AdaptiveCircleButton(
+                    icon: Icons.arrow_back,
+                    progress: _scrollProgress,
+                    onTap: () => context.pop(),
+                  ),
+                  Row(
+                    children: [
+                      // 搜索按钮（仅收起后显示）
+                      if (_scrollProgress > 0.9)
+                        _AdaptiveCircleButton(
+                          icon: Icons.search,
+                          progress: _scrollProgress,
+                          onTap: () => context.push('/search'),
+                        ),
+                      if (_scrollProgress > 0.9) const SizedBox(width: 8),
+                      _AdaptiveSaveButton(
+                        dealId: deal.id,
+                        progress: _scrollProgress,
+                      ),
+                      const SizedBox(width: 8),
+                      _AdaptiveCircleButton(
+                        icon: Icons.share_outlined,
+                        progress: _scrollProgress,
+                        onTap: () => Share.share(
+                          '${deal.title} - \$${deal.discountPrice.toStringAsFixed(2)} '
+                          '(${deal.effectiveDiscountLabel}) on DealJoy!',
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      _AdaptiveCircleButton(
+                        icon: Icons.more_horiz,
+                        progress: _scrollProgress,
+                        onTap: () => _showMoreMenu(context),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
         ],
-        ),
       ),
       bottomNavigationBar: _BottomBar(deal: deal),
     );
@@ -221,82 +255,6 @@ void _showMoreMenu(BuildContext context) {
     ),
     builder: (ctx) => _MoreMenuSheet(),
   );
-}
-
-// ── 收起后的顶部栏（搜索框 + 操作按钮）───────────────────────
-class _CollapsedHeaderBar extends ConsumerWidget {
-  final DealModel deal;
-
-  const _CollapsedHeaderBar({required this.deal});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Row(
-      children: [
-        // 返回按钮
-        GestureDetector(
-          onTap: () => context.pop(),
-          child: const Icon(Icons.arrow_back, size: 22, color: AppColors.textPrimary),
-        ),
-        const Spacer(),
-        // 搜索按钮（点击跳转搜索页）
-        GestureDetector(
-          onTap: () => context.push('/search'),
-          child: const Padding(
-            padding: EdgeInsets.all(6),
-            child: Icon(Icons.search, size: 22, color: AppColors.textPrimary),
-          ),
-        ),
-        // 收藏按钮
-        _CollapsedSaveButton(dealId: deal.id),
-        // 分享按钮
-        GestureDetector(
-          onTap: () => Share.share(
-            '${deal.title} - \$${deal.discountPrice.toStringAsFixed(2)} '
-            '(${deal.effectiveDiscountLabel}) on DealJoy!',
-          ),
-          child: const Padding(
-            padding: EdgeInsets.all(6),
-            child: Icon(Icons.share_outlined, size: 20, color: AppColors.textPrimary),
-          ),
-        ),
-        // 三个点更多菜单
-        GestureDetector(
-          onTap: () => _showMoreMenu(context),
-          child: const Padding(
-            padding: EdgeInsets.all(6),
-            child: Icon(Icons.more_horiz, size: 22, color: AppColors.textPrimary),
-          ),
-        ),
-      ],
-    );
-  }
-
-}
-
-// ── 收起状态下的收藏按钮（无圆形背景）─────────────────────────
-class _CollapsedSaveButton extends ConsumerWidget {
-  final String dealId;
-
-  const _CollapsedSaveButton({required this.dealId});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final savedIds = ref.watch(savedDealIdsProvider).valueOrNull ?? {};
-    final isSaved = savedIds.contains(dealId);
-
-    return GestureDetector(
-      onTap: () => ref.read(savedDealsNotifierProvider.notifier).toggle(dealId),
-      child: Padding(
-        padding: const EdgeInsets.all(6),
-        child: Icon(
-          isSaved ? Icons.favorite : Icons.favorite_border,
-          size: 20,
-          color: isSaved ? Colors.red : AppColors.textPrimary,
-        ),
-      ),
-    );
-  }
 }
 
 // ── 三个点更多菜单底部弹出框（美团风格）────────────────────────
@@ -623,46 +581,61 @@ class _MenuIcon extends StatelessWidget {
   }
 }
 
-// ── Floating circle button ───────────────────────────────────
-class _CircleButton extends StatelessWidget {
+// ── 自适应圆形按钮（透明背景 → 无背景，随 progress 渐变）─────
+class _AdaptiveCircleButton extends StatelessWidget {
   final IconData icon;
+  final double progress;
   final VoidCallback onTap;
 
-  const _CircleButton({required this.icon, required this.onTap});
+  const _AdaptiveCircleButton({
+    required this.icon,
+    required this.progress,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
+    // progress 0: 半透明白色圆形背景 + 深色图标
+    // progress 1: 无背景 + 深色图标
+    final showCircle = progress < 0.9;
     return GestureDetector(
       onTap: onTap,
       child: Container(
         width: 40,
         height: 40,
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.9),
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.1),
-              blurRadius: 8,
-            ),
-          ],
-        ),
+        decoration: showCircle
+            ? BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.9 * (1 - progress)),
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.1 * (1 - progress)),
+                    blurRadius: 8,
+                  ),
+                ],
+              )
+            : null,
         child: Icon(icon, size: 20, color: AppColors.textPrimary),
       ),
     );
   }
 }
 
-// ── 收藏心形按钮（已收藏红心 / 未收藏空心）────────────────────
-class _SaveButton extends ConsumerWidget {
+// ── 自适应收藏按钮（随 progress 渐变）────────────────────────
+class _AdaptiveSaveButton extends ConsumerWidget {
   final String dealId;
+  final double progress;
 
-  const _SaveButton({required this.dealId});
+  const _AdaptiveSaveButton({
+    required this.dealId,
+    required this.progress,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final savedIds = ref.watch(savedDealIdsProvider).valueOrNull ?? {};
     final isSaved = savedIds.contains(dealId);
+    final showCircle = progress < 0.9;
 
     return GestureDetector(
       onTap: () =>
@@ -670,20 +643,22 @@ class _SaveButton extends ConsumerWidget {
       child: Container(
         width: 40,
         height: 40,
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.9),
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.1),
-              blurRadius: 8,
-            ),
-          ],
-        ),
+        decoration: showCircle
+            ? BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.9 * (1 - progress)),
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.1 * (1 - progress)),
+                    blurRadius: 8,
+                  ),
+                ],
+              )
+            : null,
         child: Icon(
           isSaved ? Icons.favorite : Icons.favorite_border,
           size: 20,
-          color: isSaved ? Colors.red : AppColors.textSecondary,
+          color: isSaved ? Colors.red : AppColors.textPrimary,
         ),
       ),
     );
@@ -2776,7 +2751,9 @@ class _ReviewCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dateStr = DateFormat('MMM dd, yyyy').format(review.createdAt);
+    // 展示上传日期与时间（北美英文格式）
+    final dateStr =
+        'Posted ${DateFormat('MMM d, y').format(review.createdAt)} · ${DateFormat('h:mm a').format(review.createdAt)}';
     final userName = review.userName ?? 'User';
 
     return Container(

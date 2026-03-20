@@ -7,7 +7,9 @@ class CouponModel {
   final String dealId;
   final String merchantId;
   final String qrCode;
-  final String status; // unused | used | expired | refunded
+  final String status; // unused | used | expired | refunded | voided
+  final String? voidReason;
+  final DateTime? voidedAt;
   final DateTime expiresAt;
   final DateTime? usedAt;
   final DateTime createdAt;
@@ -40,6 +42,8 @@ class CouponModel {
     required this.merchantId,
     required this.qrCode,
     required this.status,
+    this.voidReason,
+    this.voidedAt,
     required this.expiresAt,
     this.usedAt,
     required this.createdAt,
@@ -83,7 +87,11 @@ class CouponModel {
       dealId: json['deal_id'] as String,
       merchantId: json['merchant_id'] as String,
       qrCode: json['qr_code'] as String,
-      status: json['status'] as String,
+      status: json['status'] as String? ?? 'unused',
+      voidReason: json['void_reason'] as String?,
+      voidedAt: json['voided_at'] != null
+          ? DateTime.parse(json['voided_at'] as String)
+          : null,
       expiresAt: DateTime.parse(json['expires_at'] as String),
       usedAt: json['used_at'] != null
           ? DateTime.parse(json['used_at'] as String)
@@ -115,4 +123,5 @@ class CouponModel {
   bool get isUsed => status == 'used';
   bool get isExpired => status == 'expired' || DateTime.now().isAfter(expiresAt);
   bool get isRefunded => status == 'refunded';
+  bool get isVoided => status == 'voided';
 }

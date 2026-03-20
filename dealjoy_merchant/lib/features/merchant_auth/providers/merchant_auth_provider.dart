@@ -243,6 +243,8 @@ class MerchantAuthNotifier extends AsyncNotifier<MerchantApplication?> {
     required String city,
     required String state,
     required String zipcode,
+    double? lat,
+    double? lng,
   }) {
     final current = this.state.value;
     this.state = AsyncData(
@@ -252,6 +254,8 @@ class MerchantAuthNotifier extends AsyncNotifier<MerchantApplication?> {
         city: city,
         state: state,
         zipcode: zipcode,
+        lat: lat,
+        lng: lng,
       ),
     );
   }

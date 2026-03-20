@@ -22,7 +22,6 @@ import '../widgets/menu_item_card.dart';
 import '../widgets/nearby_merchant_card.dart';
 import '../widgets/review_card.dart';
 import '../widgets/review_stats_header.dart';
-import '../widgets/store_bottom_bar.dart';
 import '../widgets/store_info_card.dart';
 import '../widgets/store_photo_header.dart';
 
@@ -133,9 +132,6 @@ class _MerchantDetailScreenState extends ConsumerState<MerchantDetailScreen> {
         ref.watch(reviewStatsProvider(widget.merchantId));
     final facilitiesAsync =
         ref.watch(facilitiesProvider(widget.merchantId));
-    final dealsAsync =
-        ref.watch(merchantActiveDealsProvider(widget.merchantId));
-
     // 记录浏览历史
     detailAsync.whenData((_) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -156,7 +152,6 @@ class _MerchantDetailScreenState extends ConsumerState<MerchantDetailScreen> {
       data: (merchant) {
         final reviewStats = reviewStatsAsync.valueOrNull;
         final facilities = facilitiesAsync.valueOrNull ?? [];
-        final deals = dealsAsync.valueOrNull ?? [];
         final reviewCount = reviewStats?.totalCount ?? 0;
 
         // 构建带 review count 的 tab 标签列表
@@ -298,16 +293,6 @@ class _MerchantDetailScreenState extends ConsumerState<MerchantDetailScreen> {
             ],
           ),
 
-          // ── 底部操作栏 ────────────────────────────────────────────
-          bottomNavigationBar: StoreBottomBar(
-            merchantId: widget.merchantId,
-            phone: merchant.phone,
-            deals: deals,
-            isSaved: isSaved,
-            onToggleSave: () => ref
-                .read(savedMerchantsNotifierProvider.notifier)
-                .toggle(widget.merchantId),
-          ),
         );
       },
       loading: () =>
@@ -710,17 +695,7 @@ class _MerchantDetailScreenState extends ConsumerState<MerchantDetailScreen> {
         reviewsAsync.when(
           data: (reviews) {
             if (reviews.isEmpty) {
-              return SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 40),
-                  child: Center(
-                    child: Text(
-                      'No reviews yet',
-                      style: TextStyle(color: AppColors.textSecondary),
-                    ),
-                  ),
-                ),
-              );
+              return const SliverToBoxAdapter(child: SizedBox.shrink());
             }
 
             return SliverList(
@@ -953,17 +928,18 @@ class _StickyTabBar extends StatelessWidget implements PreferredSizeWidget {
       height: 48,
       color: AppColors.surface,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: Row(
-        children: List.generate(labels.length, (i) {
-          final isSelected = currentIndex == i;
-          return Expanded(
-            child: GestureDetector(
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: List.generate(labels.length, (i) {
+            final isSelected = currentIndex == i;
+            return GestureDetector(
               onTap: () => onTap(i),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
                 alignment: Alignment.center,
-                margin: EdgeInsets.only(left: i > 0 ? 4 : 0),
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                margin: EdgeInsets.only(left: i > 0 ? 6 : 0),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
                 decoration: BoxDecoration(
                   color: isSelected
                       ? AppColors.secondary.withValues(alpha: 0.12)
@@ -988,12 +964,11 @@ class _StickyTabBar extends StatelessWidget implements PreferredSizeWidget {
                         ? AppColors.secondary
                         : AppColors.textSecondary,
                   ),
-                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-            ),
-          );
-        }),
+            );
+          }),
+        ),
       ),
     );
   }
