@@ -25,6 +25,7 @@ class CartRepository {
       image_urls,
       original_price,
       discount_price,
+      max_per_account,
       merchants(id, name)
     )
   ''';

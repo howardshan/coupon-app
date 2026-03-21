@@ -1,5 +1,4 @@
 import 'package:flutter_stripe/flutter_stripe.dart';
-import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/errors/app_exception.dart';
 import '../../../cart/data/models/cart_item_model.dart';
@@ -56,7 +55,9 @@ class CheckoutRepository {
   Future<CheckoutResult> checkoutCart({
     required String userId,
     required List<CartItemModel> cartItems,
-    List<String>? cartItemIds, // 用于清理购物车 DB 记录（可选）
+    List<String>? cartItemIds,
+    String paymentMethod = 'card', // 'card' | 'google' | 'apple'
+    BillingDetails? billingDetails,
   }) async {
     if (userId.isEmpty) {
       throw const PaymentException('User not authenticated', code: 'unauthenticated');
@@ -81,6 +82,7 @@ class CheckoutRepository {
     final piResponse = await _createPaymentIntentV3(
       items: items,
       userId: userId,
+      paymentMethod: paymentMethod,
     );
 
     final clientSecret = piResponse['clientSecret'] as String? ?? '';
@@ -89,8 +91,19 @@ class CheckoutRepository {
     final subtotal = (piResponse['subtotal'] as num?)?.toDouble() ?? 0.0;
     final totalAmount = (piResponse['totalAmount'] as num?)?.toDouble() ?? 0.0;
 
-    // 3. 弹出 Stripe 支付表单
-    await _presentPaymentSheet(clientSecret);
+    // 从后端响应中读取 Stripe Customer 信息（用于显示已保存的卡片）
+    final customerId = piResponse['customerId'] as String?;
+    final ephemeralKey = piResponse['ephemeralKey'] as String?;
+
+    // 3. 根据支付方式调用对应的 Stripe API
+    await _processPayment(
+      clientSecret: clientSecret,
+      paymentMethod: paymentMethod,
+      amount: totalAmount,
+      customerId: customerId,
+      ephemeralKey: ephemeralKey,
+      billingDetails: billingDetails,
+    );
 
     // 4. 调用 create-order-v3 Edge Function 创建订单
     final orderResult = await _createOrderV3(
@@ -122,41 +135,62 @@ class CheckoutRepository {
     String? purchasedMerchantId,
     List<Map<String, dynamic>>? selectedOptions,
     String? promoCode,
+    String paymentMethod = 'card',
+    BillingDetails? billingDetails,
   }) async {
     if (userId.isEmpty) {
       throw const PaymentException('User not authenticated', code: 'unauthenticated');
     }
 
-    final total = unitPrice * quantity;
+    // V3: 单 deal 也走 items 数组格式
+    // 构建 items：quantity 张同一 deal
+    final items = List.generate(quantity, (_) => {
+      'dealId': dealId,
+      'unitPrice': unitPrice,
+      if (promoCode != null) 'promoCode': promoCode,
+    });
 
-    // 1. 创建 PaymentIntent（旧版单 deal）
-    final piResponse = await _createPaymentIntentSingle(
-      amount: total,
-      dealId: dealId,
+    // 1. 创建 PaymentIntent（V3 格式，传入支付方式）
+    final piResponse = await _createPaymentIntentV3(
+      items: items,
       userId: userId,
-      promoCode: promoCode,
+      paymentMethod: paymentMethod,
     );
 
     final clientSecret = piResponse['clientSecret'] as String? ?? '';
     final paymentIntentId = piResponse['paymentIntentId'] as String? ?? '';
-    final captureMethod = piResponse['captureMethod'] as String? ?? 'automatic';
+    final totalAmount = (piResponse['totalAmount'] as num?)?.toDouble() ?? unitPrice * quantity;
+    // 从后端响应中读取 Stripe Customer 信息（用于显示已保存的卡片）
+    final customerId = piResponse['customerId'] as String?;
+    final ephemeralKey = piResponse['ephemeralKey'] as String?;
 
-    // 2. 弹出 Stripe 支付表单
-    await _presentPaymentSheet(clientSecret);
-
-    // 3. 直接写入 orders 表
-    final orderId = await _insertOrder(
-      userId: userId,
-      dealId: dealId,
-      quantity: quantity,
-      total: total,
-      paymentIntentId: paymentIntentId,
-      purchasedMerchantId: purchasedMerchantId,
-      selectedOptions: selectedOptions,
-      captureMethod: captureMethod,
+    // 2. 根据支付方式调用对应的 Stripe API
+    await _processPayment(
+      clientSecret: clientSecret,
+      paymentMethod: paymentMethod,
+      amount: totalAmount,
+      customerId: customerId,
+      ephemeralKey: ephemeralKey,
+      billingDetails: billingDetails,
     );
 
-    return CheckoutResult(orderId: orderId);
+    // 3. 调用 create-order-v3 创建订单（触发器自动创建 coupons）
+    final orderResult = await _createOrderV3(
+      paymentIntentId: paymentIntentId,
+      userId: userId,
+      items: items.map((item) => {
+        'dealId': item['dealId'],
+        'unitPrice': item['unitPrice'],
+        if (purchasedMerchantId != null) 'purchasedMerchantId': purchasedMerchantId,
+        if (selectedOptions != null) 'selectedOptions': selectedOptions,
+      }).toList(),
+      serviceFeeTotal: (piResponse['serviceFee'] as num?)?.toDouble() ?? 0.99,
+      subtotal: (piResponse['subtotal'] as num?)?.toDouble() ?? unitPrice * quantity,
+      totalAmount: totalAmount,
+      cartItemIds: [],
+    );
+
+    return orderResult;
   }
 
   // ────────────────────────────────────────────────────────────────
@@ -252,6 +286,7 @@ class CheckoutRepository {
   Future<Map<String, dynamic>> _createPaymentIntentV3({
     required List<Map<String, dynamic>> items,
     required String userId,
+    String paymentMethod = 'card',
   }) async {
     try {
       final response = await _client.functions.invoke(
@@ -259,6 +294,7 @@ class CheckoutRepository {
         body: {
           'items': items,
           'userId': userId,
+          'paymentMethod': paymentMethod,
         },
       );
 
@@ -311,18 +347,61 @@ class CheckoutRepository {
     }
   }
 
-  /// 初始化并弹出 Stripe 支付表单
-  Future<void> _presentPaymentSheet(String clientSecret) async {
-    await Stripe.instance.initPaymentSheet(
-      paymentSheetParameters: SetupPaymentSheetParameters(
+  /// 根据支付方式调用不同的 Stripe API
+  /// paymentMethod: 'card' | 'google' | 'apple'
+  /// customerId / ephemeralKey 用于 PaymentSheet 显示已保存的卡片
+  /// billingDetails 用于信用卡支付时携带账单地址
+  Future<void> _processPayment({
+    required String clientSecret,
+    required String paymentMethod,
+    required double amount,
+    String? customerId,
+    String? ephemeralKey,
+    String label = 'DealJoy',
+    BillingDetails? billingDetails,
+  }) async {
+    if (paymentMethod == 'google') {
+      // Google Pay — Platform Pay API
+      await Stripe.instance.confirmPlatformPayPaymentIntent(
+        clientSecret: clientSecret,
+        confirmParams: PlatformPayConfirmParams.googlePay(
+          googlePay: GooglePayParams(
+            testEnv: true, // 上线改为 false
+            merchantName: 'DealJoy',
+            merchantCountryCode: 'US',
+            currencyCode: 'usd',
+          ),
+        ),
+      );
+    } else if (paymentMethod == 'apple') {
+      // Apple Pay — Platform Pay API（仅 iOS）
+      await Stripe.instance.confirmPlatformPayPaymentIntent(
+        clientSecret: clientSecret,
+        confirmParams: PlatformPayConfirmParams.applePay(
+          applePay: ApplePayParams(
+            merchantCountryCode: 'US',
+            currencyCode: 'usd',
+            cartItems: [
+              ApplePayCartSummaryItem.immediate(
+                label: label,
+                amount: amount.toStringAsFixed(2),
+              ),
+            ],
+          ),
+        ),
+      );
+    } else {
+      // Credit Card — 直接用 confirmPayment（不走 PaymentSheet，避免 Link）
+      // 前端需要先通过 CardField widget 收集卡片信息，再调用此方法
+      await Stripe.instance.confirmPayment(
         paymentIntentClientSecret: clientSecret,
-        merchantDisplayName: 'DealJoy',
-        style: ThemeMode.light,
-      ),
-    );
-
-    // 用户取消会抛出 StripeException，向上传播
-    await Stripe.instance.presentPaymentSheet();
+        data: PaymentMethodParams.card(
+          paymentMethodData: PaymentMethodData(
+            billingDetails: billingDetails,
+          ),
+        ),
+      );
+    }
   }
 
   /// 调用 create-order-v3 Edge Function 创建多 deal 订单

@@ -148,6 +148,18 @@ class OrderItemModel {
   /// 关联商家名称
   final String? merchantName;
 
+  /// Deal 使用规则（从 deals.usage_rules 字段）
+  final List<String> usageRules;
+
+  /// Deal 退款政策
+  final String? refundPolicy;
+
+  /// Deal 过期时间
+  final DateTime? dealExpiresAt;
+
+  /// Deal 原价
+  final double? dealOriginalPrice;
+
   const OrderItemModel({
     required this.id,
     required this.orderId,
@@ -167,6 +179,10 @@ class OrderItemModel {
     this.redeemedAt,
     this.refundedAt,
     this.refundReason,
+    this.usageRules = const [],
+    this.refundPolicy,
+    this.dealExpiresAt,
+    this.dealOriginalPrice,
     this.refundAmount,
     this.refundMethod,
     required this.customerStatus,
@@ -230,49 +246,69 @@ class OrderItemModel {
             .toList() ??
         const <String>[];
 
+    // 解析嵌套 coupons 对象（来自 join）
+    final couponsObj = json['coupons'] as Map<String, dynamic>?;
+
+    // 辅助：同时尝试 snake_case 和 camelCase
+    T? pick<T>(String snake, String camel) =>
+        (json[snake] ?? json[camel]) as T?;
+    DateTime? pickDate(String snake, String camel) {
+      final v = json[snake] ?? json[camel];
+      return v != null ? DateTime.tryParse(v as String) : null;
+    }
+
     return OrderItemModel(
       id: json['id'] as String? ?? '',
-      orderId: json['order_id'] as String? ?? '',
-      dealId: json['deal_id'] as String? ?? '',
-      couponId: json['coupon_id'] as String?,
-      couponCode: json['coupon_code'] as String?,
-      couponQrCode: json['coupon_qr_code'] as String?,
-      couponStatus: json['coupon_status'] as String?,
-      couponExpiresAt: json['coupon_expires_at'] != null
-          ? DateTime.tryParse(json['coupon_expires_at'] as String)
+      orderId: pick<String>('order_id', 'orderId') ?? '',
+      dealId: pick<String>('deal_id', 'dealId') ?? '',
+      couponId: pick<String>('coupon_id', 'couponId') ?? couponsObj?['id'] as String?,
+      couponCode: couponsObj?['coupon_code'] as String? ??
+          pick<String>('coupon_code', 'couponCode'),
+      couponQrCode: couponsObj?['qr_code'] as String? ??
+          pick<String>('coupon_qr_code', 'couponQrCode'),
+      couponStatus: couponsObj?['status'] as String? ??
+          pick<String>('coupon_status', 'couponStatus'),
+      couponExpiresAt: (couponsObj?['expires_at'] ??
+              json['coupon_expires_at'] ?? json['couponExpiresAt']) != null
+          ? DateTime.tryParse((couponsObj?['expires_at'] ??
+              json['coupon_expires_at'] ?? json['couponExpiresAt']) as String)
           : null,
-      unitPrice: (json['unit_price'] as num?)?.toDouble() ?? 0.0,
-      serviceFee: (json['service_fee'] as num?)?.toDouble() ?? 0.0,
-      purchasedMerchantId: json['purchased_merchant_id'] as String?,
-      purchasedMerchantName: json['purchased_merchant_name'] as String?,
+      unitPrice: (pick<num>('unit_price', 'unitPrice'))?.toDouble() ?? 0.0,
+      serviceFee: (pick<num>('service_fee', 'serviceFee'))?.toDouble() ?? 0.0,
+      purchasedMerchantId: pick<String>('purchased_merchant_id', 'purchasedMerchantId'),
+      purchasedMerchantName: pick<String>('purchased_merchant_name', 'purchasedMerchantName'),
       applicableStoreIds: applicableStoreIds,
-      redeemedMerchantId: json['redeemed_merchant_id'] as String?,
-      redeemedMerchantName: json['redeemed_merchant_name'] as String?,
-      redeemedAt: json['redeemed_at'] != null
-          ? DateTime.tryParse(json['redeemed_at'] as String)
-          : null,
-      refundedAt: json['refunded_at'] != null
-          ? DateTime.tryParse(json['refunded_at'] as String)
-          : null,
-      refundReason: json['refund_reason'] as String?,
-      refundAmount: (json['refund_amount'] as num?)?.toDouble(),
-      refundMethod: json['refund_method'] as String?,
+      redeemedMerchantId: pick<String>('redeemed_merchant_id', 'redeemedMerchantId'),
+      redeemedMerchantName: pick<String>('redeemed_merchant_name', 'redeemedMerchantName'),
+      redeemedAt: pickDate('redeemed_at', 'redeemedAt'),
+      refundedAt: pickDate('refunded_at', 'refundedAt'),
+      refundReason: pick<String>('refund_reason', 'refundReason'),
+      refundAmount: (pick<num>('refund_amount', 'refundAmount'))?.toDouble(),
+      refundMethod: pick<String>('refund_method', 'refundMethod'),
       customerStatus: CustomerItemStatus.fromString(
-          json['customer_status'] as String? ?? 'unused'),
+          pick<String>('customer_status', 'customerStatus') ?? 'unused'),
       merchantStatus: MerchantItemStatus.fromString(
-          json['merchant_status'] as String? ?? 'unused'),
-      selectedOptions: json['selected_options'] as Map<String, dynamic>?,
-      createdAt: json['created_at'] != null
-          ? DateTime.tryParse(json['created_at'] as String) ?? DateTime.now()
-          : DateTime.now(),
-      // deal 标题：优先取 join 嵌套字段，其次取顶层扁平字段
+          pick<String>('merchant_status', 'merchantStatus') ?? 'unused'),
+      selectedOptions: (json['selected_options'] ?? json['selectedOptions']) as Map<String, dynamic>?,
+      createdAt: pickDate('created_at', 'createdAt') ?? DateTime.now(),
+      // deal 标题：优先 join 嵌套 → camelCase 扁平 → snake_case 扁平
       dealTitle: (dealsObj?['title'] as String?) ??
-          (json['deal_title'] as String?) ??
+          pick<String>('deal_title', 'dealTitle') ??
           '',
-      dealImageUrl: dealImageUrl,
-      // 商家名：优先取 join 嵌套，其次取顶层扁平字段
+      dealImageUrl: dealImageUrl ??
+          pick<String>('deal_image_url', 'dealImageUrl'),
+      // 商家名
       merchantName: (merchantsObj?['name'] as String?) ??
-          (json['merchant_name'] as String?),
+          pick<String>('merchant_name', 'merchantName'),
+      // Deal 额外信息
+      usageRules: ((json['usageRules'] ?? json['usage_rules'] ?? dealsObj?['usage_rules']) as List?)
+              ?.cast<String>() ?? const [],
+      refundPolicy: pick<String>('refund_policy', 'refundPolicy') ??
+          dealsObj?['refund_policy'] as String?,
+      dealExpiresAt: pickDate('deal_expires_at', 'dealExpiresAt') ??
+          (dealsObj?['expires_at'] != null ? DateTime.tryParse(dealsObj!['expires_at'] as String) : null),
+      dealOriginalPrice: (pick<num>('deal_original_price', 'dealOriginalPrice') ??
+          (dealsObj?['original_price'] as num?))?.toDouble(),
     );
   }
 }

@@ -162,7 +162,6 @@ Deno.serve(async (req) => {
         service_fee_total: serviceFeeTotal ?? 0,
         total_amount: totalAmount,
         paid_at: new Date().toISOString(),
-        currency: 'usd',
         // V3 orders 不再依赖旧字段，兼容性设置
         deal_id: items[0].dealId,      // 取第一个 deal 作为 legacy 兼容
         unit_price: items[0].unitPrice,
@@ -188,14 +187,8 @@ Deno.serve(async (req) => {
 
     // ----------------------------------------------------------------
     // 6. INSERT order_items（每个 item 一行）
-    //    service_fee 分摊：$0.99 / 同 deal_id 的 item 张数
+    //    每张券固定收取 $0.99 service fee
     // ----------------------------------------------------------------
-
-    // 按 dealId 分组，统计每个 deal 的张数，用于分摊 service_fee
-    const dealCountMap: Record<string, number> = {};
-    for (const item of items) {
-      dealCountMap[item.dealId] = (dealCountMap[item.dealId] ?? 0) + 1;
-    }
 
     const orderItemsPayload = items.map((item: {
       dealId: string;
@@ -203,13 +196,11 @@ Deno.serve(async (req) => {
       selectedOptions: unknown;
       purchasedMerchantId: string;
     }) => {
-      // 按同 deal_id 张数均摊服务费，保留 2 位小数
-      const feePerItem = Math.round(SERVICE_FEE_PER_COUPON / dealCountMap[item.dealId] * 100) / 100;
       return {
         order_id: orderId,
         deal_id: item.dealId,
         unit_price: item.unitPrice,
-        service_fee: feePerItem,
+        service_fee: SERVICE_FEE_PER_COUPON,
         purchased_merchant_id: item.purchasedMerchantId ?? null,
         selected_options: item.selectedOptions ?? null,
         customer_status: 'unused',

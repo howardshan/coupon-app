@@ -1,6 +1,7 @@
 // 我的团购券列表页 — 带四个状态 Tab 和下拉刷新
 
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -108,17 +109,260 @@ class _CouponList extends StatelessWidget {
       return _EmptyState(status: status);
     }
 
+    // Unused tab：按商家分组 → 同名券合并
+    if (status == 'unused') {
+      return _buildGroupedView(context);
+    }
+
+    // 其他 tab 保持原来的平铺列表
     return RefreshIndicator(
       onRefresh: () async => ref.invalidate(userCouponsProvider),
       child: ListView.separated(
         padding: const EdgeInsets.all(16),
         itemCount: coupons.length,
-        separatorBuilder: (_, _) => const SizedBox(height: 12),
+        separatorBuilder: (_, __) => const SizedBox(height: 12),
         itemBuilder: (_, i) => CouponCard(
           coupon: coupons[i],
           onTap: () => context.push('/coupon/${coupons[i].id}'),
         ),
       ),
+    );
+  }
+
+  /// Unused tab：即将过期板块 + 两级归类（商家 → 券名合并）
+  Widget _buildGroupedView(BuildContext context) {
+    final now = DateTime.now();
+    final sevenDaysLater = now.add(const Duration(days: 7));
+
+    // 分离即将过期（7天内）和正常的券
+    final expiringSoon = <CouponModel>[];
+    final normal = <CouponModel>[];
+    for (final c in coupons) {
+      if (c.expiresAt != null && c.expiresAt!.isBefore(sevenDaysLater)) {
+        expiringSoon.add(c);
+      } else {
+        normal.add(c);
+      }
+    }
+
+    // 正常券按商家分组
+    final merchantMap = <String, List<CouponModel>>{};
+    for (final c in normal) {
+      final merchant = c.merchantName ?? 'Merchant';
+      merchantMap.putIfAbsent(merchant, () => []).add(c);
+    }
+
+    // 排序：最新购买的商家排前面；同时购买的按券多排前面
+    final sortedMerchants = merchantMap.entries.toList()
+      ..sort((a, b) {
+        final aLatest = a.value.map((c) => c.createdAt).reduce(
+            (v, e) => e.isAfter(v) ? e : v);
+        final bLatest = b.value.map((c) => c.createdAt).reduce(
+            (v, e) => e.isAfter(v) ? e : v);
+        final timeCmp = bLatest.compareTo(aLatest);
+        if (timeCmp != 0) return timeCmp;
+        return b.value.length.compareTo(a.value.length);
+      });
+
+    // 构建列表项：即将过期板块 + 商家分组
+    final widgets = <Widget>[];
+
+    // 即将过期板块（如果有）
+    if (expiringSoon.isNotEmpty) {
+      widgets.add(_ExpiringSoonSection(coupons: expiringSoon));
+    }
+
+    // 正常商家分组
+    for (final entry in sortedMerchants) {
+      widgets.add(_MerchantCouponGroup(
+        merchantName: entry.key,
+        coupons: entry.value,
+      ));
+    }
+
+    return RefreshIndicator(
+      onRefresh: () async => ref.invalidate(userCouponsProvider),
+      child: ListView.separated(
+        padding: const EdgeInsets.all(16),
+        itemCount: widgets.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 16),
+        itemBuilder: (_, i) => widgets[i],
+      ),
+    );
+  }
+}
+
+/// 单个商家的券分组卡片
+class _MerchantCouponGroup extends StatelessWidget {
+  final String merchantName;
+  final List<CouponModel> coupons;
+
+  const _MerchantCouponGroup({
+    required this.merchantName,
+    required this.coupons,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // 按券名（deal title）合并，统计数量
+    final dealMap = <String, List<CouponModel>>{};
+    for (final c in coupons) {
+      final title = c.dealTitle ?? 'Coupon';
+      dealMap.putIfAbsent(title, () => []).add(c);
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 商家抬头
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+            child: Row(
+              children: [
+                Container(
+                  width: 22,
+                  height: 22,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(5),
+                  ),
+                  child: const Icon(Icons.store, size: 13, color: AppColors.primary),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    merchantName,
+                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Text(
+                  '${coupons.length} voucher${coupons.length > 1 ? 's' : ''}',
+                  style: const TextStyle(fontSize: 11, color: AppColors.textHint),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 16, indent: 14, endIndent: 14),
+
+          // 按券名合并后的列表
+          ...dealMap.entries.map((entry) {
+            final dealCoupons = entry.value;
+            final first = dealCoupons.first;
+            return _CouponRow(
+              dealTitle: entry.key,
+              imageUrl: first.dealImageUrl,
+              quantity: dealCoupons.length,
+              expiresAt: first.expiresAt,
+              onTap: () => context.push('/coupon/${first.id}'),
+            );
+          }),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+}
+
+/// 单行券（同名合并后）
+class _CouponRow extends StatelessWidget {
+  final String dealTitle;
+  final String? imageUrl;
+  final int quantity;
+  final DateTime? expiresAt;
+  final bool showUrgent;
+  final VoidCallback onTap;
+
+  const _CouponRow({
+    required this.dealTitle,
+    this.imageUrl,
+    required this.quantity,
+    this.expiresAt,
+    this.showUrgent = false,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
+        child: Row(
+          children: [
+            // 券图标
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: imageUrl != null
+                  ? Image.network(
+                      imageUrl!,
+                      width: 48,
+                      height: 48,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _placeholder(),
+                    )
+                  : _placeholder(),
+            ),
+            const SizedBox(width: 10),
+            // 券名
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    dealTitle,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Qty: $quantity',
+                    style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                  ),
+                  if (expiresAt != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      'Expires ${DateFormat('MMM d, yyyy').format(expiresAt!.toLocal())}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: showUrgent ? AppColors.error : AppColors.textHint,
+                        fontWeight: showUrgent ? FontWeight.w600 : FontWeight.normal,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, size: 18, color: AppColors.textHint),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _placeholder() {
+    return Container(
+      width: 48,
+      height: 48,
+      decoration: BoxDecoration(
+        color: AppColors.surfaceVariant,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: const Icon(Icons.confirmation_number_outlined, size: 20, color: AppColors.textHint),
     );
   }
 }
@@ -183,4 +427,90 @@ class _EmptyState extends StatelessWidget {
         'refunded' => Icons.currency_exchange,
         _ => Icons.confirmation_number_outlined,
       };
+}
+
+// ── 即将过期板块（7天内）────────────────────────────────────
+class _ExpiringSoonSection extends StatelessWidget {
+  final List<CouponModel> coupons;
+
+  const _ExpiringSoonSection({required this.coupons});
+
+  @override
+  Widget build(BuildContext context) {
+    // 按券名合并
+    final dealMap = <String, List<CouponModel>>{};
+    for (final c in coupons) {
+      final title = c.dealTitle ?? 'Coupon';
+      dealMap.putIfAbsent(title, () => []).add(c);
+    }
+
+    final now = DateTime.now();
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.error.withValues(alpha: 0.3)),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.error.withValues(alpha: 0.06),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 警告标题
+          Container(
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+            decoration: BoxDecoration(
+              color: AppColors.error.withValues(alpha: 0.08),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.timer_outlined, size: 18, color: AppColors.error),
+                const SizedBox(width: 8),
+                const Text(
+                  'Expiring Soon',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                    color: AppColors.error,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  '${coupons.length} voucher${coupons.length > 1 ? 's' : ''}',
+                  style: TextStyle(fontSize: 11, color: AppColors.error.withValues(alpha: 0.7)),
+                ),
+              ],
+            ),
+          ),
+
+          // 券列表
+          ...dealMap.entries.map((entry) {
+            final dealCoupons = entry.value;
+            final first = dealCoupons.first;
+            // 计算剩余天数
+            final daysLeft = first.expiresAt != null
+                ? first.expiresAt!.difference(now).inDays
+                : 0;
+
+            return _CouponRow(
+              dealTitle: entry.key,
+              imageUrl: first.dealImageUrl,
+              quantity: dealCoupons.length,
+              expiresAt: first.expiresAt,
+              showUrgent: true,
+              onTap: () => context.push('/coupon/${first.id}'),
+            );
+          }),
+          const SizedBox(height: 4),
+        ],
+      ),
+    );
+  }
 }
