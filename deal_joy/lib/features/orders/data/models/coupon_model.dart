@@ -16,6 +16,13 @@ class CouponModel {
   final String? giftedFrom;
   final String? verifiedBy;
 
+  // V3 新增字段 — 关联 order_items
+  /// 关联的 order_item ID（V3 系统新增）
+  final String? orderItemId;
+
+  /// 16位原始券码（V3 order_items.coupon_code 字段）
+  final String? couponCode;
+
   // Join 字段 — 来自 deals 表
   final String? dealTitle;
   final String? dealDescription;
@@ -49,6 +56,8 @@ class CouponModel {
     required this.createdAt,
     this.giftedFrom,
     this.verifiedBy,
+    this.orderItemId,
+    this.couponCode,
     this.dealTitle,
     this.dealDescription,
     this.dealImageUrl,
@@ -62,7 +71,9 @@ class CouponModel {
   });
 
   factory CouponModel.fromJson(Map<String, dynamic> json) {
-    // 解析嵌套的 orders 对象（获取购买时门店快照）
+    // V3：从 order_items join 获取 applicable_store_ids（新字段）
+    // 向后兼容旧版：也尝试从 orders join 获取
+    final orderItems = json['order_items'] as Map<String, dynamic>?;
     final orders = json['orders'] as Map<String, dynamic>?;
 
     // 解析嵌套的 deals 对象
@@ -99,6 +110,8 @@ class CouponModel {
       createdAt: DateTime.parse(json['created_at'] as String),
       giftedFrom: json['gifted_from'] as String?,
       verifiedBy: json['verified_by'] as String?,
+      orderItemId: json['order_item_id'] as String?,
+      couponCode: json['coupon_code'] as String?,
       dealTitle: deals?['title'] as String?,
       dealDescription: deals?['description'] as String?,
       dealImageUrl: dealImageUrl,
@@ -111,7 +124,9 @@ class CouponModel {
           ?.map((e) => e?.toString() ?? '')
           .where((s) => s.isNotEmpty)
           .toList(),
-      applicableStoreIds: (orders?['applicable_store_ids'] as List?)
+      // V3：优先从 order_items join 获取，向后兼容旧版从 orders join 获取
+      applicableStoreIds: ((orderItems?['applicable_store_ids'] ??
+                  orders?['applicable_store_ids']) as List?)
           ?.map((e) => e?.toString() ?? '')
           .where((s) => s.isNotEmpty)
           .toList(),

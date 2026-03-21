@@ -2,10 +2,19 @@ import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/errors/app_exception.dart';
+import '../../../cart/data/models/cart_item_model.dart';
 
+/// 结账结果
 class CheckoutResult {
   final String orderId;
-  const CheckoutResult({required this.orderId});
+  final String? orderNumber;
+  final int? itemCount;
+
+  const CheckoutResult({
+    required this.orderId,
+    this.orderNumber,
+    this.itemCount,
+  });
 }
 
 /// 优惠码验证结果
@@ -24,7 +33,7 @@ class PromoCodeResult {
     required this.calculatedDiscount,
   });
 
-  /// 获取折扣描述文字
+  /// 折扣描述文字
   String get label => discountType == 'percentage'
       ? '${discountValue.toStringAsFixed(0)}% off'
       : '\$${discountValue.toStringAsFixed(2)} off';
@@ -35,42 +44,108 @@ class CheckoutRepository {
 
   CheckoutRepository(this._client);
 
-  /// Full checkout flow: create payment intent → present Stripe sheet → insert order.
-  /// Returns [CheckoutResult] with the new order ID on success.
-  /// Throws [PaymentException] on failure or rethrows [StripeException] on cancel.
-  Future<CheckoutResult> checkout({
+  // ────────────────────────────────────────────────────────────────
+  // V3 购物车多 deal 结账
+  // ────────────────────────────────────────────────────────────────
+
+  /// V3 购物车结账：
+  /// 1. 调新版 create-payment-intent（传 items 数组）
+  /// 2. 弹出 Stripe 支付表单
+  /// 3. 调 create-order-v3 Edge Function 写入订单
+  /// 4. 返回 [CheckoutResult]
+  Future<CheckoutResult> checkoutCart({
+    required String userId,
+    required List<CartItemModel> cartItems,
+    List<String>? cartItemIds, // 用于清理购物车 DB 记录（可选）
+  }) async {
+    if (userId.isEmpty) {
+      throw const PaymentException('User not authenticated', code: 'unauthenticated');
+    }
+    if (cartItems.isEmpty) {
+      throw const PaymentException('Cart is empty', code: 'empty_cart');
+    }
+
+    // 1. 构建 items 数组传给 Edge Function
+    final items = cartItems
+        .map((c) => {
+              'dealId': c.dealId,
+              'unitPrice': c.unitPrice,
+              if (c.purchasedMerchantId != null)
+                'purchasedMerchantId': c.purchasedMerchantId,
+              if (c.selectedOptions != null)
+                'selectedOptions': c.selectedOptions,
+            })
+        .toList();
+
+    // 2. 调用新版 create-payment-intent（v3 多 deal 版本）
+    final piResponse = await _createPaymentIntentV3(
+      items: items,
+      userId: userId,
+    );
+
+    final clientSecret = piResponse['clientSecret'] as String? ?? '';
+    final paymentIntentId = piResponse['paymentIntentId'] as String? ?? '';
+    final serviceFeeTotal = (piResponse['serviceFee'] as num?)?.toDouble() ?? 0.0;
+    final subtotal = (piResponse['subtotal'] as num?)?.toDouble() ?? 0.0;
+    final totalAmount = (piResponse['totalAmount'] as num?)?.toDouble() ?? 0.0;
+
+    // 3. 弹出 Stripe 支付表单
+    await _presentPaymentSheet(clientSecret);
+
+    // 4. 调用 create-order-v3 Edge Function 创建订单
+    final orderResult = await _createOrderV3(
+      paymentIntentId: paymentIntentId,
+      userId: userId,
+      items: items,
+      serviceFeeTotal: serviceFeeTotal,
+      subtotal: subtotal,
+      totalAmount: totalAmount,
+      cartItemIds: cartItemIds,
+    );
+
+    return orderResult;
+  }
+
+  // ────────────────────────────────────────────────────────────────
+  // 单 deal 快速购买（兼容 Deal 详情页 Buy Now）
+  // ────────────────────────────────────────────────────────────────
+
+  /// 单 deal 快速购买（Buy Now 入口保持不变）：
+  /// 1. 调旧版 create-payment-intent
+  /// 2. 弹出 Stripe 支付表单
+  /// 3. 直接 INSERT orders 表
+  Future<CheckoutResult> checkoutSingleDeal({
     required String userId,
     required String dealId,
+    required double unitPrice,
     required int quantity,
-    required double total,
-    String? promoCode, // P0 fix: 将优惠码传给服务端，让 Edge Function 进行服务端价格验证
-    String? purchasedMerchantId, // brand deal 用户选择的门店 ID
-    List<Map<String, dynamic>>? selectedOptions, // 选项组快照
+    String? purchasedMerchantId,
+    List<Map<String, dynamic>>? selectedOptions,
+    String? promoCode,
   }) async {
-    // P0 fix: userId 不能为空串，否则订单会插入错误数据
     if (userId.isEmpty) {
       throw const PaymentException('User not authenticated', code: 'unauthenticated');
     }
 
-    // 1. Call Edge Function to create PaymentIntent
-    final response = await _createPaymentIntent(
+    final total = unitPrice * quantity;
+
+    // 1. 创建 PaymentIntent（旧版单 deal）
+    final piResponse = await _createPaymentIntentSingle(
       amount: total,
       dealId: dealId,
       userId: userId,
       promoCode: promoCode,
     );
 
-    final clientSecret = response['clientSecret'] as String;
-    final paymentIntentId = response['paymentIntentId'] as String;
-    // 服务端根据 deal.validity_type 决定的支付模式（'automatic' | 'manual'）
-    final captureMethod = response['captureMethod'] as String? ?? 'automatic';
+    final clientSecret = piResponse['clientSecret'] as String? ?? '';
+    final paymentIntentId = piResponse['paymentIntentId'] as String? ?? '';
+    final captureMethod = piResponse['captureMethod'] as String? ?? 'automatic';
 
-    // 2. Initialize & present Stripe payment sheet
+    // 2. 弹出 Stripe 支付表单
     await _presentPaymentSheet(clientSecret);
 
-    // 3. Payment succeeded — create order record
-    //    coupon_id is auto-filled by the on_order_created DB trigger
-    final orderId = await _createOrder(
+    // 3. 直接写入 orders 表
+    final orderId = await _insertOrder(
       userId: userId,
       dealId: dealId,
       quantity: quantity,
@@ -84,6 +159,10 @@ class CheckoutRepository {
     return CheckoutResult(orderId: orderId);
   }
 
+  // ────────────────────────────────────────────────────────────────
+  // 优惠码验证（保持不变）
+  // ────────────────────────────────────────────────────────────────
+
   /// 验证优惠码并计算折扣金额
   /// 如果优惠码无效/过期/不适用，抛出 [AppException]
   Future<PromoCodeResult> validatePromoCode({
@@ -92,8 +171,7 @@ class CheckoutRepository {
     required double subtotal,
   }) async {
     try {
-      // P0 fix: 在查询层也强制过滤 is_active=true，不能仅依赖 RLS。
-      // RLS 在 service_role 连接或策略变更时可能被绕过。
+      // 强制过滤 is_active=true，避免 RLS 绕过
       final data = await _client
           .from('promo_codes')
           .select()
@@ -133,8 +211,8 @@ class CheckoutRepository {
       }
 
       // 计算折扣
-      final discountType = data['discount_type'] as String;
-      final discountValue = (data['discount_value'] as num).toDouble();
+      final discountType = data['discount_type'] as String? ?? 'fixed';
+      final discountValue = (data['discount_value'] as num?)?.toDouble() ?? 0.0;
       final maxDiscount = (data['max_discount'] as num?)?.toDouble();
 
       double calculatedDiscount;
@@ -166,21 +244,21 @@ class CheckoutRepository {
     }
   }
 
-  Future<Map<String, dynamic>> _createPaymentIntent({
-    required double amount,
-    required String dealId,
+  // ────────────────────────────────────────────────────────────────
+  // 私有辅助方法
+  // ────────────────────────────────────────────────────────────────
+
+  /// 调用新版 create-payment-intent（V3 多 deal）
+  Future<Map<String, dynamic>> _createPaymentIntentV3({
+    required List<Map<String, dynamic>> items,
     required String userId,
-    String? promoCode, // P0 fix: 传递优惠码给服务端做价格验证，防止客户端篡改总额
   }) async {
     try {
       final response = await _client.functions.invoke(
         'create-payment-intent',
         body: {
-          'amount': amount,
-          'currency': 'usd',
-          'dealId': dealId,
+          'items': items,
           'userId': userId,
-          'promoCode': ?promoCode,
         },
       );
 
@@ -199,6 +277,41 @@ class CheckoutRepository {
     }
   }
 
+  /// 调用旧版 create-payment-intent（单 deal，兼容 Buy Now）
+  Future<Map<String, dynamic>> _createPaymentIntentSingle({
+    required double amount,
+    required String dealId,
+    required String userId,
+    String? promoCode,
+  }) async {
+    try {
+      final response = await _client.functions.invoke(
+        'create-payment-intent',
+        body: {
+          'amount': amount,
+          'currency': 'usd',
+          'dealId': dealId,
+          'userId': userId,
+          'promoCode': promoCode,
+        },
+      );
+
+      if (response.status != 200) {
+        throw PaymentException(
+          response.data?['error'] as String? ?? 'Payment setup failed',
+          code: 'payment_intent_failed',
+        );
+      }
+
+      return response.data as Map<String, dynamic>;
+    } on PaymentException {
+      rethrow;
+    } catch (e) {
+      throw PaymentException('Failed to create payment: $e');
+    }
+  }
+
+  /// 初始化并弹出 Stripe 支付表单
   Future<void> _presentPaymentSheet(String clientSecret) async {
     await Stripe.instance.initPaymentSheet(
       paymentSheetParameters: SetupPaymentSheetParameters(
@@ -208,11 +321,61 @@ class CheckoutRepository {
       ),
     );
 
-    // This throws StripeException if user cancels — let it propagate
+    // 用户取消会抛出 StripeException，向上传播
     await Stripe.instance.presentPaymentSheet();
   }
 
-  Future<String> _createOrder({
+  /// 调用 create-order-v3 Edge Function 创建多 deal 订单
+  Future<CheckoutResult> _createOrderV3({
+    required String paymentIntentId,
+    required String userId,
+    required List<Map<String, dynamic>> items,
+    required double serviceFeeTotal,
+    required double subtotal,
+    required double totalAmount,
+    List<String>? cartItemIds,
+  }) async {
+    try {
+      final response = await _client.functions.invoke(
+        'create-order-v3',
+        body: {
+          'paymentIntentId': paymentIntentId,
+          'userId': userId,
+          'items': items,
+          'serviceFeeTotal': serviceFeeTotal,
+          'subtotal': subtotal,
+          'totalAmount': totalAmount,
+          'cartItemIds': cartItemIds,
+        },
+      );
+
+      if (response.status != 200) {
+        throw PaymentException(
+          response.data?['error'] as String? ??
+              'Payment succeeded but order creation failed. Please contact support.',
+          code: 'order_create_failed',
+        );
+      }
+
+      final data = response.data as Map<String, dynamic>;
+      return CheckoutResult(
+        orderId: data['orderId'] as String? ?? '',
+        orderNumber: data['orderNumber'] as String?,
+        itemCount: data['itemCount'] as int?,
+      );
+    } on PaymentException {
+      rethrow;
+    } catch (e) {
+      throw PaymentException(
+        'Payment succeeded but order creation failed. '
+        'Please contact support. Error: $e',
+        code: 'order_create_failed',
+      );
+    }
+  }
+
+  /// 直接 INSERT orders 表（旧版单 deal，Buy Now 用）
+  Future<String> _insertOrder({
     required String userId,
     required String dealId,
     required int quantity,
@@ -223,7 +386,6 @@ class CheckoutRepository {
     String captureMethod = 'automatic',
   }) async {
     try {
-      // captureMethod == 'manual' 表示预授权，资金已冻结但未扣款，is_captured = false
       final isManualCapture = captureMethod == 'manual';
       final orderData = {
         'user_id': userId,
@@ -235,14 +397,13 @@ class CheckoutRepository {
         'payment_intent_id': paymentIntentId,
         'capture_method': captureMethod,
         'is_captured': !isManualCapture,
-        if (purchasedMerchantId != null)
-          'purchased_merchant_id': purchasedMerchantId,
-        if (selectedOptions != null && selectedOptions.isNotEmpty)
-          'selected_options': selectedOptions,
+        'purchased_merchant_id': purchasedMerchantId,
+        'selected_options': selectedOptions?.isNotEmpty == true ? selectedOptions : null,
       };
-      final orderRes = await _client.from('orders').insert(orderData).select('id').single();
+      final orderRes =
+          await _client.from('orders').insert(orderData).select('id').single();
 
-      return orderRes['id'] as String;
+      return orderRes['id'] as String? ?? '';
     } catch (e) {
       throw PaymentException(
         'Payment succeeded but order creation failed. '

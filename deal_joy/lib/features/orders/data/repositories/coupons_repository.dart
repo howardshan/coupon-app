@@ -4,15 +4,16 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/errors/app_exception.dart';
 import '../models/coupon_model.dart';
 
-/// Supabase 查询中携带 deals、merchants、orders 的 select 字符串
-/// orders 需指定 FK：coupons 与 orders 存在双向关系，用 orders!coupons_order_id_fkey 消除歧义
+/// V3 coupon select — 通过 order_items join 获取 applicable_store_ids
+/// order_items 关联使用外键 coupons!order_items_coupon_id_fkey
 const _couponSelect =
     'id, order_id, user_id, deal_id, merchant_id, qr_code, status, '
     'expires_at, used_at, created_at, gifted_from, verified_by, '
     'void_reason, voided_at, '
+    'order_item_id, coupon_code, '
     'deals(id, title, description, image_urls, refund_policy, '
     'merchants(name, logo_url, address, phone)), '
-    'orders!coupons_order_id_fkey(applicable_store_ids)';
+    'order_items!order_items_coupon_id_fkey(applicable_store_ids)';
 
 class CouponsRepository {
   final SupabaseClient _client;
@@ -84,60 +85,40 @@ class CouponsRepository {
     }
   }
 
-  /// 请求退款：通过 create-refund Edge Function 调用 Stripe 退款
-  /// [couponId] 券 ID，先查出 orderId 再调用 Edge Function
+  /// V3：通过 couponId 请求退款 — 先查 order_item_id，再调 create-refund Edge Function
+  /// [refundMethod] 退款方式：'store_credit' | 'original_payment'
   /// [reason] 退款原因，可选，默认 'customer_request'
   Future<Map<String, dynamic>> requestRefund(
     String couponId, {
     String? reason,
+    String refundMethod = 'original_payment',
   }) async {
     try {
-      // 先获取对应 order_id
+      // 先查 order_item_id（V3 via order_item_id 退款，需要此字段）
       final couponData = await _client
           .from('coupons')
-          .select('id, order_id')
+          .select('id, order_item_id, order_id')
           .eq('id', couponId)
           .single();
 
+      final orderItemId = couponData['order_item_id'] as String?;
+
+      // V3：优先用 orderItemId 调用退款
+      if (orderItemId != null && orderItemId.isNotEmpty) {
+        return await _invokeRefundByItemId(
+          orderItemId,
+          refundMethod: refundMethod,
+          reason: reason,
+        );
+      }
+
+      // 向后兼容旧订单：使用 orderId 退款
       final orderId = couponData['order_id'] as String;
-
-      // 调用 create-refund Edge Function（内部处理 Stripe 退款 + DB 状态更新）
-      // SDK 在 HTTP 2xx 时返回 FunctionResponse，非 2xx 时抛出 FunctionException
-      final response = await _client.functions.invoke(
-        'create-refund',
-        body: {
-          'orderId': orderId,
-          'reason': ?reason,
-        },
-      );
-
-      // response.data 类型为 dynamic；Edge Function 返回 application/json，
-      // SDK 会将其解码为 Map — 但需做类型安全检查
-      final rawData = response.data;
-      if (rawData is! Map) {
-        throw AppException('Unexpected response format from refund service');
-      }
-      final data = Map<String, dynamic>.from(rawData);
-
-      // Edge Function 返回 error 字段表示业务错误（此路径通常不触发，
-      // 因为 Edge Function 对业务错误返回非 2xx，SDK 会抛 FunctionException）
-      if (data.containsKey('error')) {
-        throw AppException(data['error'] as String);
-      }
-
-      return data; // { refundId, status, amount }
+      return await _invokeRefundByOrderId(orderId, reason: reason);
     } on AppException {
       rethrow;
     } on FunctionException catch (e) {
-      // HTTP 非 2xx 响应：从 details 中提取 Edge Function 返回的 error 字段
-      final details = e.details;
-      String message;
-      if (details is Map && details.containsKey('error')) {
-        message = details['error'].toString();
-      } else {
-        message = 'Refund request failed (${e.status})';
-      }
-      throw AppException(message);
+      throw AppException(_extractFunctionError(e));
     } on PostgrestException catch (e) {
       throw AppException('Failed to request refund: ${e.message}',
           code: e.code);
@@ -146,44 +127,98 @@ class CouponsRepository {
     }
   }
 
-  /// 通过 orderId 请求退款（供 OrdersScreen 使用）
+  /// V3：通过 orderItemId 直接请求退款（供 OrdersRepository/Provider 使用）
+  Future<Map<String, dynamic>> requestRefundByItemId(
+    String orderItemId, {
+    String refundMethod = 'original_payment',
+    String? reason,
+  }) async {
+    try {
+      return await _invokeRefundByItemId(
+        orderItemId,
+        refundMethod: refundMethod,
+        reason: reason,
+      );
+    } on AppException {
+      rethrow;
+    } on FunctionException catch (e) {
+      throw AppException(_extractFunctionError(e));
+    } catch (e) {
+      throw AppException('Refund failed: $e');
+    }
+  }
+
+  /// 通过 orderId 请求退款（旧版向后兼容，供 OrdersScreen 使用）
   Future<Map<String, dynamic>> requestRefundByOrderId(
     String orderId, {
     String? reason,
   }) async {
     try {
-      final response = await _client.functions.invoke(
-        'create-refund',
-        body: {
-          'orderId': orderId,
-          'reason': ?reason,
-        },
-      );
-
-      final rawData = response.data;
-      if (rawData is! Map) {
-        throw AppException('Unexpected response format from refund service');
-      }
-      final data = Map<String, dynamic>.from(rawData);
-
-      if (data.containsKey('error')) {
-        throw AppException(data['error'] as String);
-      }
-
-      return data;
+      return await _invokeRefundByOrderId(orderId, reason: reason);
     } on AppException {
       rethrow;
     } on FunctionException catch (e) {
-      final details = e.details;
-      String message;
-      if (details is Map && details.containsKey('error')) {
-        message = details['error'].toString();
-      } else {
-        message = 'Refund request failed (${e.status})';
-      }
-      throw AppException(message);
+      throw AppException(_extractFunctionError(e));
     } catch (e) {
       throw AppException('Refund failed: $e');
     }
+  }
+
+  // =============================================================
+  // 私有辅助方法
+  // =============================================================
+
+  /// 调用 create-refund Edge Function（V3 item 维度）
+  Future<Map<String, dynamic>> _invokeRefundByItemId(
+    String orderItemId, {
+    required String refundMethod,
+    String? reason,
+  }) async {
+    final response = await _client.functions.invoke(
+      'create-refund',
+      body: {
+        'orderItemId': orderItemId,
+        'refundMethod': refundMethod,
+        if (reason != null && reason.isNotEmpty) 'reason': reason,
+      },
+    );
+    return _parseRefundResponse(response);
+  }
+
+  /// 调用 create-refund Edge Function（旧版 order 维度）
+  Future<Map<String, dynamic>> _invokeRefundByOrderId(
+    String orderId, {
+    String? reason,
+  }) async {
+    final response = await _client.functions.invoke(
+      'create-refund',
+      body: {
+        'orderId': orderId,
+        if (reason != null && reason.isNotEmpty) 'reason': reason,
+      },
+    );
+    return _parseRefundResponse(response);
+  }
+
+  /// 解析 create-refund 响应，统一错误处理
+  Map<String, dynamic> _parseRefundResponse(dynamic response) {
+    final rawData = response.data;
+    if (rawData is! Map) {
+      throw AppException('Unexpected response format from refund service');
+    }
+    final data = Map<String, dynamic>.from(rawData);
+    if (data.containsKey('error')) {
+      throw AppException(data['error'] as String);
+    }
+    return data; // { refundId, status, amount }
+  }
+
+  /// 从 FunctionException 中提取可读的错误信息
+  String _extractFunctionError(FunctionException e) {
+    final details = e.details;
+    if (details is Map && details.containsKey('error')) {
+      return details['error'].toString();
+    }
+    return 'Refund request failed (${e.status})';
   }
 }

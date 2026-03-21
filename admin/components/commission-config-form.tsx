@@ -7,9 +7,7 @@ import { updateCommissionConfig } from '@/app/actions/admin'
 interface CommissionConfig {
   id: string
   free_months: number
-  fixed_date_rate: number
-  short_after_purchase_rate: number
-  long_after_purchase_rate: number
+  commission_rate: number
   stripe_processing_rate: number
   stripe_flat_fee: number
   effective_from: string | null
@@ -58,10 +56,8 @@ function RateInput({
 }
 
 export default function CommissionConfigForm({ config }: { config: CommissionConfig }) {
-  // 抽成费率（百分比显示，存储时 /100）
-  const [fixedRate,  setFixedRate]  = useState(String(Math.round(Number(config.fixed_date_rate) * 1000) / 10))
-  const [shortRate,  setShortRate]  = useState(String(Math.round(Number(config.short_after_purchase_rate) * 1000) / 10))
-  const [longRate,   setLongRate]   = useState(String(Math.round(Number(config.long_after_purchase_rate) * 1000) / 10))
+  // 平台统一抽成费率（百分比显示，存储时 /100）
+  const [commissionRate, setCommissionRate] = useState(String(Math.round(Number(config.commission_rate) * 1000) / 10))
   // 生效日期范围
   const [effFrom, setEffFrom] = useState(config.effective_from ?? '')
   const [effTo,   setEffTo]   = useState(config.effective_to ?? '')
@@ -74,15 +70,15 @@ export default function CommissionConfigForm({ config }: { config: CommissionCon
   const [isPending, startTransition] = useTransition()
 
   function handleSave() {
-    const fixedR  = parseFloat(fixedRate)  / 100
-    const shortR  = parseFloat(shortRate)  / 100
-    const longR   = parseFloat(longRate)   / 100
+    const commR   = parseFloat(commissionRate) / 100
     const stripeR = parseFloat(stripeRate) / 100
     const flatFee = parseFloat(stripeFlatFee)
     const freeM   = parseInt(freeMonths)
 
-    if ([fixedR, shortR, longR, stripeR].some(r => isNaN(r) || r < 0 || r > 1))
-      return toast.error('Commission rates must be 0–100%')
+    if (isNaN(commR) || commR < 0 || commR > 1)
+      return toast.error('Commission rate must be 0–100%')
+    if (isNaN(stripeR) || stripeR < 0 || stripeR > 1)
+      return toast.error('Stripe rate must be 0–100%')
     if (isNaN(flatFee) || flatFee < 0)
       return toast.error('Flat fee must be ≥ 0')
     if (isNaN(freeM) || freeM < 0 || freeM > 24)
@@ -92,9 +88,7 @@ export default function CommissionConfigForm({ config }: { config: CommissionCon
       try {
         await updateCommissionConfig({
           free_months: freeM,
-          fixed_date_rate: fixedR,
-          short_after_purchase_rate: shortR,
-          long_after_purchase_rate: longR,
+          commission_rate: commR,
           stripe_processing_rate: stripeR,
           stripe_flat_fee: flatFee,
           effective_from: effFrom || null,
@@ -116,7 +110,7 @@ export default function CommissionConfigForm({ config }: { config: CommissionCon
         )}
       </div>
 
-      {/* ── 生效日期范围 ── */}
+      {/* 生效日期范围 */}
       <div>
         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Effective Period</p>
         <div className="flex flex-wrap gap-4">
@@ -151,32 +145,17 @@ export default function CommissionConfigForm({ config }: { config: CommissionCon
         </div>
       </div>
 
-      {/* ── 平台抽成费率 ── */}
+      {/* 平台抽成费率 */}
       <div>
-        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Platform Commission Rates</p>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <RateInput
-            label="Fixed Date Deals"
-            desc="Deal with a specific expiry date"
-            value={fixedRate}
-            onChange={setFixedRate}
-          />
-          <RateInput
-            label="Short-term Vouchers (≤7 days)"
-            desc="Valid 1–7 days after purchase"
-            value={shortRate}
-            onChange={setShortRate}
-          />
-          <RateInput
-            label="Long-term Vouchers (>7 days)"
-            desc="Valid 8–365 days after purchase"
-            value={longRate}
-            onChange={setLongRate}
-          />
-        </div>
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Platform Commission Rate</p>
+        <RateInput
+          label="Platform Commission Rate (%)"
+          value={commissionRate}
+          onChange={setCommissionRate}
+        />
       </div>
 
-      {/* ── Stripe 刷卡手续费 ── */}
+      {/* Stripe 刷卡手续费 */}
       <div>
         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Stripe Processing Fee (per successful redeem)</p>
         <div className="flex flex-wrap gap-6">
@@ -202,7 +181,7 @@ export default function CommissionConfigForm({ config }: { config: CommissionCon
         </div>
       </div>
 
-      {/* ── 新商家免费期 ── */}
+      {/* 新商家免费期 */}
       <div>
         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">New Merchant Free Period</p>
         <RateInput

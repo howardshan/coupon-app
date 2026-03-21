@@ -1,8 +1,11 @@
+// 订单列表页 — V3 适配，展示 order_items 摘要
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../data/models/order_item_model.dart';
 import '../../data/models/order_model.dart';
 import '../../domain/providers/orders_provider.dart';
 
@@ -55,9 +58,111 @@ class _OrderCard extends StatelessWidget {
 
   const _OrderCard({required this.order});
 
-  Color _statusColor(String status) => switch (status) {
-    'unused' => AppColors.info,
-    'used' => AppColors.success,
+  // 计算 V3 items 的摘要文案，如 "3 vouchers · 2 deals"
+  String _buildItemsSummary() {
+    final items = order.items;
+    if (items.isEmpty) {
+      // 旧版 order 无 items，降级展示数量
+      final qty = order.quantity ?? 1;
+      return '$qty voucher${qty > 1 ? 's' : ''}';
+    }
+    final totalVouchers = items.length;
+    final dealCount = order.itemsByDeal.length;
+    final voucherStr = '$totalVouchers voucher${totalVouchers > 1 ? 's' : ''}';
+    if (dealCount > 1) {
+      return '$voucherStr · $dealCount deals';
+    }
+    return voucherStr;
+  }
+
+  // 从 V3 items 中取第一个 deal 的图片（降级到旧版 deal 图）
+  String? _firstImageUrl() {
+    if (order.items.isNotEmpty) {
+      return order.items.first.dealImageUrl;
+    }
+    return order.deal?.imageUrl;
+  }
+
+  // 从 V3 items 中取第一个 deal 标题（降级到旧版 deal 标题）
+  String _dealTitle() {
+    if (order.items.isNotEmpty) {
+      return order.items.first.dealTitle;
+    }
+    return order.deal?.title ?? 'Order';
+  }
+
+  // 从 V3 items 中取商家名（降级到旧版）
+  String? _merchantName() {
+    if (order.items.isNotEmpty) {
+      return order.items.first.merchantName ??
+          order.items.first.purchasedMerchantName;
+    }
+    return order.deal?.merchantName;
+  }
+
+  // 计算 V3 订单的综合状态标签颜色（取最重要的 item 状态）
+  Color _summaryStatusColor() {
+    final items = order.items;
+    if (items.isEmpty) {
+      // 旧版降级
+      return _legacyStatusColor(order.status ?? '');
+    }
+    // 优先展示退款/异常状态
+    if (items.any((i) => i.customerStatus == CustomerItemStatus.refundReject)) {
+      return AppColors.error;
+    }
+    if (items.any(
+        (i) => i.customerStatus == CustomerItemStatus.refundPending ||
+            i.customerStatus == CustomerItemStatus.refundReview)) {
+      return AppColors.warning;
+    }
+    if (items.every((i) => i.customerStatus == CustomerItemStatus.refundSuccess)) {
+      return AppColors.textSecondary;
+    }
+    if (items.every((i) => i.customerStatus == CustomerItemStatus.used)) {
+      return AppColors.info;
+    }
+    if (items.every((i) => i.customerStatus == CustomerItemStatus.expired)) {
+      return AppColors.textHint;
+    }
+    // 含未使用券
+    if (items.any((i) => i.customerStatus == CustomerItemStatus.unused)) {
+      return AppColors.success;
+    }
+    return AppColors.textHint;
+  }
+
+  // 计算 V3 订单的综合状态文案
+  String _summaryStatusLabel() {
+    final items = order.items;
+    if (items.isEmpty) {
+      return _legacyStatusLabel(order.status ?? '');
+    }
+    if (items.any((i) => i.customerStatus == CustomerItemStatus.refundReject)) {
+      return 'Refund Rejected';
+    }
+    if (items.any((i) => i.customerStatus == CustomerItemStatus.refundPending ||
+        i.customerStatus == CustomerItemStatus.refundReview)) {
+      return 'Refund Processing';
+    }
+    if (items.every((i) => i.customerStatus == CustomerItemStatus.refundSuccess)) {
+      return 'Refunded';
+    }
+    if (items.every((i) => i.customerStatus == CustomerItemStatus.used)) {
+      return 'Used';
+    }
+    if (items.every((i) => i.customerStatus == CustomerItemStatus.expired)) {
+      return 'Expired';
+    }
+    if (items.any((i) => i.customerStatus == CustomerItemStatus.unused)) {
+      return 'Active';
+    }
+    return 'Active';
+  }
+
+  Color _legacyStatusColor(String status) => switch (status) {
+    'unused' => AppColors.success,
+    'used' => AppColors.info,
     'refunded' => AppColors.textSecondary,
     'voided' => AppColors.textSecondary,
     'refund_requested' => AppColors.warning,
@@ -66,19 +171,25 @@ class _OrderCard extends StatelessWidget {
     _ => AppColors.textHint,
   };
 
-  /// 展示用状态：未使用但券已按时间过期时显示为 expired
-  String get _displayStatus {
-    if (order.status == 'voided') return 'cancelled';
-    if (order.isExpired) return 'expired';
-    if (order.isRefundFailed) return 'refund_failed';
-    if (order.isUnused && order.isExpiredByDate) return 'expired';
-    return order.status;
-  }
+  String _legacyStatusLabel(String status) => switch (status) {
+    'unused' => 'Active',
+    'used' => 'Used',
+    'refunded' => 'Refunded',
+    'voided' => 'Cancelled',
+    'refund_requested' => 'Refund Processing',
+    'refund_failed' => 'Refund Failed',
+    'expired' => 'Expired',
+    _ => status.replaceAll('_', ' '),
+  };
 
   @override
   Widget build(BuildContext context) {
-    final deal = order.deal;
-    final displayStatus = _displayStatus;
+    final imageUrl = _firstImageUrl();
+    final statusColor = _summaryStatusColor();
+    final statusLabel = _summaryStatusLabel();
+    final itemsSummary = _buildItemsSummary();
+    final dateFmt = DateFormat('MMM d, yyyy');
+
     return Card(
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
@@ -86,13 +197,14 @@ class _OrderCard extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Deal image
+              // Deal 封面图
               ClipRRect(
                 borderRadius: BorderRadius.circular(10),
-                child: deal?.imageUrl != null
+                child: imageUrl != null
                     ? CachedNetworkImage(
-                        imageUrl: deal!.imageUrl!,
+                        imageUrl: imageUrl,
                         width: 70,
                         height: 70,
                         fit: BoxFit.cover,
@@ -109,82 +221,89 @@ class _OrderCard extends StatelessWidget {
               ),
               const SizedBox(width: 12),
 
-              // Info
+              // 订单信息
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (deal?.merchantName != null)
+                    // 商家名
+                    if (_merchantName() != null)
                       Text(
-                        deal!.merchantName!,
+                        _merchantName()!,
                         style: const TextStyle(
                           fontSize: 12,
                           color: AppColors.textSecondary,
                         ),
                       ),
+                    // Deal 标题
                     Text(
-                      deal?.title ?? 'Deal',
+                      _dealTitle(),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
                     ),
                     const SizedBox(height: 4),
+                    // 总金额 + items 摘要
                     Text(
-                      '\$${order.totalAmount.toStringAsFixed(2)} · Qty ${order.quantity}${order.orderNumber != null && order.orderNumber!.isNotEmpty ? ' · #${order.orderNumber}' : ''}',
+                      '\$${order.totalAmount.toStringAsFixed(2)} · $itemsSummary',
                       style: const TextStyle(
                         fontSize: 13,
                         color: AppColors.textSecondary,
                       ),
                     ),
+                    // 订单号（如有）
+                    if (order.orderNumber != null &&
+                        order.orderNumber!.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        '#${order.orderNumber}',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AppColors.textHint,
+                          fontFamily: 'monospace',
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
+              const SizedBox(width: 8),
 
-              // Status badge + actions
+              // 右侧：状态 Badge + 日期
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
+                  // 状态 Badge
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 8,
                       vertical: 4,
                     ),
                     decoration: BoxDecoration(
-                      color: _statusColor(displayStatus).withValues(alpha: 0.1),
+                      color: statusColor.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
-                      displayStatus.replaceAll('_', ' ').toUpperCase(),
+                      statusLabel,
                       style: TextStyle(
-                        color: _statusColor(displayStatus),
+                        color: statusColor,
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
                   ),
-                  if (order.isUnused && !order.isExpiredByDate) ...[
-                    const SizedBox(height: 6),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.qr_code_2,
-                          color: AppColors.primary,
-                          size: 20,
-                        ),
-                        const SizedBox(width: 8),
-                        // 退款快捷入口
-                        GestureDetector(
-                          onTap: () => context.push('/refund/${order.id}'),
-                          child: const Icon(
-                            Icons.undo_outlined,
-                            color: AppColors.error,
-                            size: 20,
-                          ),
-                        ),
-                      ],
+                  const SizedBox(height: 6),
+                  // 下单日期
+                  Text(
+                    dateFmt.format(order.createdAt.toLocal()),
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppColors.textHint,
                     ),
-                  ],
+                  ),
                 ],
               ),
             ],

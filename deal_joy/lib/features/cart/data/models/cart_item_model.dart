@@ -1,39 +1,77 @@
-// 购物车单项模型
+// 购物车单项模型 — V3 DB 持久化版本
+// 每行 = 一张券，无 quantity 字段
 
 class CartItemModel {
+  // DB 主键
+  final String id;
+  final String userId;
   final String dealId;
-  final String dealTitle;
-  final String? dealImageUrl;
-  final double discountPrice;
-  final double originalPrice;
-  final String merchantName;
-  final String merchantId;
-  int quantity;
+  // 加入时快照单价
+  final double unitPrice;
+  // 购买时指定的门店（多店 deal 时由用户选择）
+  final String? purchasedMerchantId;
+  // 适用门店 ID 列表（快照）
+  final List<String> applicableStoreIds;
+  // 用户选择的 deal option groups 快照
+  final Map<String, dynamic>? selectedOptions;
+  final DateTime createdAt;
 
-  CartItemModel({
+  // ── join 字段（从 deals + merchants 表）──
+  final String dealTitle;
+  final String dealImageUrl;
+  final double? originalPrice;
+  final String merchantName;
+  final String? merchantId;
+
+  const CartItemModel({
+    required this.id,
+    required this.userId,
     required this.dealId,
+    required this.unitPrice,
+    this.purchasedMerchantId,
+    this.applicableStoreIds = const [],
+    this.selectedOptions,
+    required this.createdAt,
     required this.dealTitle,
-    this.dealImageUrl,
-    required this.discountPrice,
-    required this.originalPrice,
+    required this.dealImageUrl,
+    this.originalPrice,
     required this.merchantName,
-    required this.merchantId,
-    this.quantity = 1,
+    this.merchantId,
   });
 
-  /// 小计
-  double get subtotal => discountPrice * quantity;
+  /// 从 Supabase 查询结果解析（含 deals join merchants 嵌套）
+  factory CartItemModel.fromJson(Map<String, dynamic> json) {
+    // deals join 子对象
+    final deal = json['deals'] as Map<String, dynamic>? ?? {};
+    // merchants join 子对象（在 deals 内）
+    final merchant = deal['merchants'] as Map<String, dynamic>? ?? {};
 
-  CartItemModel copyWith({int? quantity}) {
+    // image_urls 取第一张作为封面
+    final imageUrls = deal['image_urls'] as List? ?? [];
+    final imageUrl = imageUrls.isNotEmpty
+        ? (imageUrls.first as String? ?? '')
+        : '';
+
+    // applicable_store_ids 数组
+    final storeIds = json['applicable_store_ids'] as List? ?? [];
+
     return CartItemModel(
-      dealId: dealId,
-      dealTitle: dealTitle,
-      dealImageUrl: dealImageUrl,
-      discountPrice: discountPrice,
-      originalPrice: originalPrice,
-      merchantName: merchantName,
-      merchantId: merchantId,
-      quantity: quantity ?? this.quantity,
+      id: json['id'] as String? ?? '',
+      userId: json['user_id'] as String? ?? '',
+      dealId: json['deal_id'] as String? ?? '',
+      unitPrice: (json['unit_price'] as num?)?.toDouble() ?? 0.0,
+      purchasedMerchantId: json['purchased_merchant_id'] as String?,
+      applicableStoreIds:
+          storeIds.map((e) => e?.toString() ?? '').where((s) => s.isNotEmpty).toList(),
+      selectedOptions: json['selected_options'] as Map<String, dynamic>?,
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'] as String)
+          : DateTime.now(),
+      dealTitle: deal['title'] as String? ?? '',
+      dealImageUrl: imageUrl,
+      originalPrice: (deal['original_price'] as num?)?.toDouble(),
+      merchantName: merchant['name'] as String? ?? '',
+      merchantId: merchant['id'] as String?,
     );
   }
 }

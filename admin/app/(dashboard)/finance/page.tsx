@@ -20,7 +20,7 @@ export default async function FinancePage({
   const serviceClient = getServiceRoleClient()
   const { data: commissionConfig } = await serviceClient
     .from('platform_commission_config')
-    .select('id, free_months, fixed_date_rate, short_after_purchase_rate, long_after_purchase_rate, stripe_processing_rate, stripe_flat_fee, effective_from, effective_to, updated_at')
+    .select('id, free_months, commission_rate, stripe_processing_rate, stripe_flat_fee, effective_from, effective_to, updated_at')
     .single()
 
   const { data: brands } = await supabase.from('brands').select('id, name').order('name')
