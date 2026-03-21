@@ -108,7 +108,7 @@ export default async function FinancePage({
                     {w.status}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-gray-500">{new Date(w.created_at).toLocaleDateString()}</td>
+                <td className="px-4 py-3 text-gray-500">{new Date(w.created_at).toLocaleDateString('en-US')}</td>
               </tr>
             ))}
           </tbody>
