@@ -3,6 +3,8 @@
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { getServiceRoleClient } from '@/lib/supabase/service'
+import { sendAdminEmail } from '@/lib/email'
+import { buildM3Email } from '@/lib/email-templates/merchant/verification-approved'
 
 async function requireAdmin() {
   const supabase = await createClient()
@@ -62,6 +64,33 @@ export async function approveMerchant(merchantId: string, merchantUserId: string
     .from('users')
     .update({ role: 'merchant' })
     .eq('id', merchantUserId)
+
+  // 发送 M3 商户认证通过邮件（即发即忘，不阻断主流程）
+  const { data: merchantInfo } = await supabase
+    .from('merchants')
+    .select('name, commission_free_until')
+    .eq('id', merchantId)
+    .single()
+  const { data: userInfo } = await supabase
+    .from('users')
+    .select('email')
+    .eq('id', merchantUserId)
+    .single()
+
+  if (merchantInfo && userInfo?.email) {
+    const { subject, html } = buildM3Email({
+      merchantName:        merchantInfo.name,
+      commissionFreeUntil: commissionFreeUntil.toISOString(),
+    })
+    await sendAdminEmail({
+      to:            userInfo.email,
+      subject,
+      htmlBody:      html,
+      emailCode:     'M3',
+      referenceId:   merchantId,
+      recipientType: 'merchant',
+    })
+  }
 
   revalidatePath('/merchants')
 }
