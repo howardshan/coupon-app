@@ -304,6 +304,8 @@ class MerchantDeal {
     this.dishes = const [],
     this.optionGroups = const [],
     this.detailImages = const [],
+    this.usageRules = const [],
+    this.maxPerAccount = -1,
   });
 
   /// Deal ID
@@ -405,6 +407,12 @@ class MerchantDeal {
 
   /// 详情页多图列表（区别于封面图 image_urls）
   final List<String> detailImages;
+
+  /// 使用规则列表（多条文本，如 "No takeout"）
+  final List<String> usageRules;
+
+  /// 每账户限购数量（-1=无限制，正数=具体上限）
+  final int maxPerAccount;
 
   /// 图片列表（含主图）
   final List<DealImage> images;
@@ -527,6 +535,13 @@ class MerchantDeal {
       dishes:          List<String>.from(json['dishes'] as List? ?? []),
       optionGroups:    _parseOptionGroups(json),
       detailImages:    List<String>.from(json['detail_images'] as List? ?? []),
+      // 使用规则列表，DB 返回 text[] 或 null
+      usageRules:      (json['usage_rules'] as List<dynamic>?)
+          ?.map((e) => e?.toString() ?? '')
+          .where((s) => s.isNotEmpty)
+          .toList() ?? [],
+      // 每账户限购，-1 表示无限制
+      maxPerAccount:   json['max_per_account'] as int? ?? -1,
       images:          imagesSorted,
       createdAt:       json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
@@ -567,6 +582,8 @@ class MerchantDeal {
         if (optionGroups.isNotEmpty)
           'option_groups': optionGroups.map((g) => g.toJson()).toList(),
         'detail_images': detailImages,
+        'usage_rules':   usageRules,
+        'max_per_account': maxPerAccount,
       };
 
   /// 复制并修改部分字段
@@ -604,6 +621,8 @@ class MerchantDeal {
     List<String>? dishes,
     List<DealOptionGroup>? optionGroups,
     List<String>? detailImages,
+    List<String>? usageRules,
+    int? maxPerAccount,
     List<DealImage>? images,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -642,6 +661,8 @@ class MerchantDeal {
       dishes:          dishes ?? this.dishes,
       optionGroups:    optionGroups ?? this.optionGroups,
       detailImages:    detailImages ?? this.detailImages,
+      usageRules:      usageRules ?? this.usageRules,
+      maxPerAccount:   maxPerAccount ?? this.maxPerAccount,
       images:          images ?? this.images,
       createdAt:       createdAt ?? this.createdAt,
       updatedAt:       updatedAt ?? this.updatedAt,

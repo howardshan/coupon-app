@@ -21,9 +21,24 @@ class OrderSuccessScreen extends ConsumerWidget {
           padding: const EdgeInsets.all(32),
           child: orderAsync.when(
             data: (order) {
-              // 支付成功后刷新券列表和订单列表，进入 My Coupons / My Orders 时能看到新数据
+              // 支付成功后刷新券列表和订单列表
               ref.invalidate(userCouponsProvider);
               ref.invalidate(userOrdersProvider);
+
+              // V3: 从 items 汇总 deal 信息
+              final items = order.items;
+              final voucherCount = items.length;
+              // 按 deal 分组统计
+              final dealGroups = <String, List<String>>{};
+              for (final item in items) {
+                final title = item.dealTitle.isNotEmpty ? item.dealTitle : 'Deal';
+                dealGroups.putIfAbsent(title, () => []).add(item.id);
+              }
+              // 兼容旧订单
+              final dealSummary = dealGroups.isEmpty
+                  ? (order.deal?.title ?? 'Deal')
+                  : dealGroups.entries.map((e) => '${e.key} × ${e.value.length}').join('\n');
+
               return Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -52,17 +67,19 @@ class OrderSuccessScreen extends ConsumerWidget {
                     children: [
                       _DetailRow(
                         'Order Number',
-                        '#${order.id.substring(0, 8).toUpperCase()}',
+                        (order.orderNumber ?? '').isNotEmpty
+                            ? '#${order.orderNumber}'
+                            : '#${order.id.substring(0, 8).toUpperCase()}',
                       ),
                       const Divider(height: 16),
                       _DetailRow(
                         'Deal',
-                        order.deal?.title ?? 'Deal',
+                        dealSummary,
                       ),
                       const Divider(height: 16),
                       _DetailRow(
-                        'Quantity',
-                        '${order.quantity}',
+                        'Vouchers',
+                        '$voucherCount',
                       ),
                       const Divider(height: 16),
                       _DetailRow(
@@ -79,22 +96,17 @@ class OrderSuccessScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 16),
 
-                const Text(
-                  'Your coupon is ready. Show the QR code at the merchant to redeem your deal.',
+                Text(
+                  voucherCount > 1
+                      ? 'Your $voucherCount vouchers are ready. Show the QR code at the merchant to redeem.'
+                      : 'Your voucher is ready. Show the QR code at the merchant to redeem your deal.',
                   textAlign: TextAlign.center,
-                  style:
-                      TextStyle(color: AppColors.textSecondary, height: 1.6),
+                  style: const TextStyle(color: AppColors.textSecondary, height: 1.6),
                 ),
                 const SizedBox(height: 32),
                 AppButton(
-                  label: 'View My Coupon',
-                  onPressed: () {
-                    if (order.couponId != null) {
-                      context.go('/coupon/${order.couponId}');
-                    } else {
-                      context.go('/orders');
-                    }
-                  },
+                  label: voucherCount > 1 ? 'View My Vouchers' : 'View My Voucher',
+                  onPressed: () => context.go('/orders'),
                   icon: Icons.qr_code_2,
                 ),
                 const SizedBox(height: 16),

@@ -878,7 +878,7 @@ class _ActionButtonsState extends ConsumerState<_ActionButtons> {
                           strokeWidth: 2, color: Colors.white),
                     )
                   : const Icon(Icons.undo_outlined),
-              label: const Text('Request Refund'),
+              label: const Text('Cancel'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.error,
                 foregroundColor: Colors.white,

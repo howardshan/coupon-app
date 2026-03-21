@@ -72,9 +72,16 @@ class CouponModel {
 
   factory CouponModel.fromJson(Map<String, dynamic> json) {
     // V3：从 order_items join 获取 applicable_store_ids（新字段）
-    // 向后兼容旧版：也尝试从 orders join 获取
-    final orderItems = json['order_items'] as Map<String, dynamic>?;
-    final orders = json['orders'] as Map<String, dynamic>?;
+    // 注意：order_items 是反向 FK join，返回 List 而非 Map，取第一个元素
+    final orderItemsList = json['order_items'] as List?;
+    final orderItems = (orderItemsList != null && orderItemsList.isNotEmpty)
+        ? orderItemsList.first as Map<String, dynamic>?
+        : null;
+    // 向后兼容旧版：从 orders join 获取（也可能是 List）
+    final ordersRaw = json['orders'];
+    final orders = ordersRaw is Map<String, dynamic>
+        ? ordersRaw
+        : (ordersRaw is List && ordersRaw.isNotEmpty ? ordersRaw.first as Map<String, dynamic>? : null);
 
     // 解析嵌套的 deals 对象
     final deals = json['deals'] as Map<String, dynamic>?;

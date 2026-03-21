@@ -265,7 +265,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             Center(child: CircularProgressIndicator()),
                       ),
                       error: (e, _) => SliverFillRemaining(
-                        child: Center(child: Text('Error: $e')),
+                        child: _ErrorRetry(
+                          message: 'Failed to load stores',
+                          onRetry: () => ref.invalidate(merchantSearchProvider),
+                        ),
                       ),
                     ),
 
@@ -308,7 +311,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             Center(child: CircularProgressIndicator()),
                       ),
                       error: (e, _) => SliverFillRemaining(
-                        child: Center(child: Text('Error: $e')),
+                        child: _ErrorRetry(
+                          message: 'Failed to load deals',
+                          onRetry: () => ref.invalidate(dealsListProvider),
+                        ),
                       ),
                     ),
                 ],
@@ -470,7 +476,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           Center(child: CircularProgressIndicator()),
                     ),
                     error: (e, _) => SliverFillRemaining(
-                      child: Center(child: Text('Error: $e')),
+                      child: _ErrorRetry(
+                        message: 'Failed to load restaurants',
+                        onRetry: () {
+                          ref.invalidate(merchantListProvider);
+                          ref.invalidate(featuredDealsProvider);
+                        },
+                      ),
                     ),
                   ),
                 ],
@@ -1365,6 +1377,52 @@ class _MerchantCard extends StatelessWidget {
               ),
             ),
             const Icon(Icons.chevron_right, color: AppColors.textHint),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── 网络错误重试组件 ──────────────────────────────────────────
+class _ErrorRetry extends StatelessWidget {
+  final String message;
+  final VoidCallback onRetry;
+
+  const _ErrorRetry({required this.message, required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.wifi_off_rounded, size: 56, color: AppColors.textHint),
+            const SizedBox(height: 16),
+            Text(
+              message,
+              style: const TextStyle(fontSize: 15, color: AppColors.textSecondary),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Please check your network connection',
+              style: TextStyle(fontSize: 12, color: AppColors.textHint),
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh, size: 18),
+              label: const Text('Retry'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              ),
+            ),
           ],
         ),
       ),

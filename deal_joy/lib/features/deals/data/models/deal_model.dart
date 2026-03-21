@@ -113,6 +113,10 @@ class DealModel {
   final String validityType;
   // 购买后有效天数（short/long_after_purchase 时非 null）
   final int? validityDays;
+  // 使用规则列表（从 DB 读取，显示在详情页 Purchase Notes 区域）
+  final List<String> usageRules;
+  // 每账号限购数量，-1 表示无限制
+  final int maxPerAccount;
 
   const DealModel({
     required this.id,
@@ -152,6 +156,8 @@ class DealModel {
     this.detailImages = const [],
     this.validityType = 'fixed_date',
     this.validityDays,
+    this.usageRules = const [],
+    this.maxPerAccount = -1,
   });
 
   factory DealModel.fromJson(Map<String, dynamic> json) => DealModel(
@@ -198,6 +204,8 @@ class DealModel {
         detailImages: List<String>.from(json['detail_images'] as List? ?? []),
         validityType: json['validity_type'] as String? ?? 'fixed_date',
         validityDays: json['validity_days'] as int?,
+        usageRules: (json['usage_rules'] as List?)?.cast<String>() ?? [],
+        maxPerAccount: json['max_per_account'] as int? ?? -1,
       );
 
   // RPC 搜索结果（search_deals_nearby / search_deals_by_city）解析
@@ -237,6 +245,9 @@ class DealModel {
         detailImages: List<String>.from(json['detail_images'] as List? ?? []),
         validityType: json['validity_type'] as String? ?? 'fixed_date',
         validityDays: json['validity_days'] as int?,
+        // RPC 搜索结果不返回这两个字段，给默认值
+        usageRules: const [],
+        maxPerAccount: -1,
       );
 
   /// 解析产品列表：优先读 products 数组，为空时从 package_contents 文本按行解析

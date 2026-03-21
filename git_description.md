@@ -1,5 +1,133 @@
 # Git Change Description
 
+## 2026-03-21 — Order V3 修复 + 支付流程完善 + UI 美化
+
+### Bug 修复
+
+#### 编译错误修复
+- **after_sales_timeline_page.dart**: 修复 `_StatusChip` 类重名导致编译失败，第二个重命名为 `_TimelineStatusChip`
+
+#### 数据解析修复
+- **coupon_model.dart**: `order_items` join 返回 List 而非 Map，改为取 `list.first`；`orders` join 也做 List 兼容
+- **order_detail_model.dart**: 所有 `as String` 改为 null-safe（`as String?`），新增 `pick()` 辅助函数同时支持 snake_case 和 camelCase 字段名
+- **order_item_model.dart**: 新增 `pick()`/`pickDate()` 辅助函数，解决 Edge Function 返回 camelCase（`dealTitle`, `unitPrice`）而 fromJson 只读 snake_case 的问题；新增从嵌套 `coupons` 对象读取 couponCode/couponQrCode/couponStatus
+- **order_items RLS**: 重建策略 `authenticated_select_own_order_items`，用 `EXISTS` 子查询替代 `IN` 子查询
+
+#### Edge Function 修复
+- **create-order-v3**: 移除 `currency` 字段（orders 表无此列导致 500 错误）
+- **create-payment-intent**: 修复 `checkoutSingleDeal` 传含税总价作为 unitPrice 的问题，改为传 `deal.discountPrice`
+
+### 支付流程完善
+
+#### 支付方式分离
+- **create-payment-intent**: 新增 `paymentMethod` 参数，Credit Card 模式用 `payment_method_types: ['card']`（不显示 Link），Google Pay/Apple Pay 用 `automatic_payment_methods`
+- **checkout_repository.dart**: `_processPayment` 根据 paymentMethod 调用不同 Stripe API — Google Pay 走 `confirmPlatformPayPaymentIntent`，Credit Card 走 `confirmPayment` + CardField
+- **checkout_screen.dart**: 按平台过滤支付选项（Android 显示 Google Pay + Credit Card，iOS 显示 Apple Pay + Credit Card）
+
+#### 信用卡直接输入（去除 Link）
+- 从 PaymentSheet 改为 `CardField` widget + `Stripe.confirmPayment()`，完全避免 Link 弹窗
+- `setup_future_usage` 从 PaymentIntent 顶层移到 `payment_method_options.card` 级别
+- Stripe Dashboard 关闭 Link
+
+#### 保存卡片功能
+- **DB**: `users` 表新增 `stripe_customer_id` 字段
+- **create-payment-intent**: 首次支付自动创建 Stripe Customer → 保存 customer_id → 生成 Ephemeral Key → 返回给前端
+- **manage-payment-methods**: 新建 Edge Function（list/default/delete 三个路由）
+- **checkout_repository.dart**: `customerId` + `ephemeralKey` 传给 PaymentSheet/confirmPayment
+- **payment_methods_screen.dart**: 新建卡片管理页面（查看/设默认/删除/添加新卡）
+- **app_router.dart**: 新增 `/profile/payment-methods` 路由
+- **profile_screen.dart**: Profile 页添加 "Payment Methods" 入口
+
+#### 完整账单地址
+- **DB**: `users` 表新增 6 个 billing address 字段（line1, line2, city, state, postal_code, country）
+- **checkout_screen.dart**: 选 Credit Card 时显示 Billing Address 表单（Address Line 1/2, City, State, ZIP, Country）
+- 首次进入从 DB 自动填充已保存地址；支付成功后自动保存
+- **checkout_repository.dart**: `BillingDetails` 传给 `Stripe.confirmPayment()`
+
+### 佣金费率统一化
+
+#### 三档费率 → 单一 commission_rate
+- **DB**: `platform_commission_config` 和 `merchants` 表新增 `commission_rate` 字段，旧三档字段标记 deprecated
+- **RPC**: 3 个 earnings 函数（get_merchant_transactions, get_merchant_earnings_summary, get_merchant_report_data）移除 `validity_type` CASE WHEN 逻辑
+- **merchant-earnings Edge Function**: 返回统一 `commission_rate` + `effective_commission_rate`
+- **earnings_data.dart**: CommissionConfig 新增 `commissionRate`/`effectiveCommissionRate`
+- **earnings_page.dart**: 三行费率合并为一行 "Platform Commission"
+- **Admin**: commission-config-form + merchant-commission-form + admin.ts 全部从三档改为单一费率
+
+### Deal 使用规则 + 限购
+
+#### DB
+- `deals` 表新增 `usage_rules text[]` + `max_per_account int`（-1=无限制）
+
+#### 限购校验（4 个校验点）
+- **Deal 详情页 Add to Cart**: 查 order_items 已购数量 + 购物车数量 ≥ maxPerAccount 则弹 SnackBar
+- **Deal 详情页 Buy Now**: 同上
+- **Cart 页面 + 按钮**: 超限时弹 SnackBar
+- **Checkout 数量选择器**: maxPerPerson = min(maxPerAccount, stockLimit)
+- **create-payment-intent**: 服务端限购校验
+
+#### 使用规则
+- **deal_detail_screen.dart**: Purchase Notes 从硬编码改为 `deal.usageRules` 动态渲染
+- **order_detail_screen.dart**: Purchase Notes 从 deal 的 `usage_rules` + `refund_policy` 读取
+- **user-order-detail Edge Function**: deals select 新增 `usage_rules, refund_policy, expires_at`
+
+#### 商家端
+- **merchant_deal.dart**: 新增 `usageRules` + `maxPerAccount` 字段
+- **deal_create_page.dart + deal_edit_page.dart**: 新增 Usage Rules 标签输入 + Max Per Account 输入框
+- **merchant-deals Edge Function**: CREATE/PATCH 白名单新增
+
+### Service Fee 修正
+- 从 `$0.99 × distinct deal 种类数` 改为 `$0.99 × 券总张数`
+- 修改：create-payment-intent、create-order-v3、cart_provider、checkout_screen
+
+### 库存限制修复
+- `stock_limit = -1` 表示无限库存，不再被 `.clamp(1, 10)` 误判为 "Maximum 1 per person"
+- 无限库存显示 "No purchase limit"
+
+### UI 美化
+
+#### My Orders 页面（美团风格）
+- 以 Order 为外框（订单号 + 日期），内部按商家分组，每个 deal 显示 Qty + Expires 日期
+- 每个 deal 行单独可点击，跳转到该 deal 的订单详情（不是整单）
+- Service Fee + Total 显示在底部
+
+#### 订单详情页（美团风格）
+- 状态横幅（To Use / Used / Refunded）
+- Deal 摘要卡片（图片 + 标题 + 商家 + 有效期 + 价格×数量）
+- 券状态行（Unused (2) View Details >）展开显示 QR Code + 券码
+- Purchase Notes（从 deal 的 usage_rules 读取）
+- Order Info（订单号可复制 + 下单时间 + 总金额）
+- 底部操作栏（Cancel + Buy Again）
+- 支持 `?dealId=` 参数过滤只显示单个 deal
+
+#### My Coupons — Unused Tab
+- 两级归类：第一级按商家分组，第二级按券名合并显示数量
+- "Expiring Soon" 板块：7天内过期的券红色边框放最前面
+- 每行显示过期日期
+
+#### Order Success 页面
+- 从 V3 items 读取 deal 信息（不再显示 $0.00）
+- 按 deal 分组显示 "Deal × 数量"
+- 多张券时文案自适应
+
+#### 首页网络错误
+- 添加 `_ErrorRetry` 组件（WiFi 断开图标 + Retry 按钮）
+
+#### Checkout 页面
+- 恢复 Payment Method 选择器（Apple Pay / Google Pay / Credit Card）
+- 添加 CardField 信用卡输入框 + Billing Address 表单
+- 卡信息未完整时 Confirm 按钮置灰
+
+### To Review 功能
+- **to_review_screen.dart**: 新建待评价页面，查询已使用但未评价的券（coupons.status=used 且 reviews 表无记录）
+- **profile_screen.dart**: "To Review" 入口跳转到 `/to-review`
+- 同 deal 多张券去重，每张卡片带 Review 按钮
+
+### 按钮文案优化
+- 未使用券的退款按钮从 "Request Refund" / "Cancel & Refund" 改为 "Cancel"
+
+---
+
 ## 2026-03-20 — Order System V3 重构（多 deal 购物车 + 双状态 + Store Credit）
 
 ### 数据库 (Supabase Migrations)

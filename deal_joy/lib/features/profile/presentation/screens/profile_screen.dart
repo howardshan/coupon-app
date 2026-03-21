@@ -229,7 +229,7 @@ class _ProfileBody extends StatelessWidget {
                     _IconGridItem(
                       icon: Icons.chat_bubble_outline,
                       label: 'To Review',
-                      onTap: () => context.push('/orders'),
+                      onTap: () => context.push('/to-review'),
                     ),
                     _IconGridItem(
                       icon: Icons.assignment_return_outlined,
@@ -242,6 +242,40 @@ class _ProfileBody extends StatelessWidget {
             ),
           ),
 
+
+          const SizedBox(height: 12),
+
+          // ── Payment Methods 入口 ──────────────────────────────
+          _SectionCard(
+            child: ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceVariant,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.credit_card_outlined,
+                  color: AppColors.textSecondary,
+                  size: 20,
+                ),
+              ),
+              title: const Text(
+                'Payment Methods',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+              ),
+              subtitle: const Text(
+                'Manage saved cards',
+                style: TextStyle(fontSize: 12, color: AppColors.textHint),
+              ),
+              trailing: const Icon(
+                Icons.chevron_right,
+                color: AppColors.textHint,
+              ),
+              onTap: () => context.push('/profile/payment-methods'),
+            ),
+          ),
 
           if (showMerchantDashboard) ...[
             const SizedBox(height: 12),
