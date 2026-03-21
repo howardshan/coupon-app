@@ -13,7 +13,7 @@ import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // SMTP2GO 配置
 const SMTP2GO_API_URL = "https://api.smtp2go.com/v3/email/send";
-const FROM_NAME       = "DealJoy";
+const FROM_NAME       = "CrunchyPlum";
 const FROM_EMAIL      = "noreply@crunchyplum.com";
 
 // ─────────────────────────────────────────────────────────────

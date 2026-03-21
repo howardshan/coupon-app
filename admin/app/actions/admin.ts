@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getServiceRoleClient } from '@/lib/supabase/service'
 import { sendAdminEmail } from '@/lib/email'
 import { buildM3Email } from '@/lib/email-templates/merchant/verification-approved'
+import { buildM4Email } from '@/lib/email-templates/merchant/verification-rejected'
 
 async function requireAdmin() {
   const supabase = await createClient()
@@ -100,15 +101,48 @@ export async function rejectMerchant(merchantId: string, rejectionReason?: strin
   await requireAdmin()
 
   const supabase = getServiceRoleClient()
+  const reason = rejectionReason?.trim() || null
+
   const { error } = await supabase
     .from('merchants')
     .update({
       status: 'rejected',
-      rejection_reason: rejectionReason?.trim() || null,
+      rejection_reason: reason,
     })
     .eq('id', merchantId)
 
   if (error) throw new Error(error.message)
+
+  // 发送 M4 商户认证拒绝邮件（即发即忘，不阻断主流程）
+  const { data: merchantInfo } = await supabase
+    .from('merchants')
+    .select('name, user_id')
+    .eq('id', merchantId)
+    .single()
+
+  if (merchantInfo?.user_id) {
+    const { data: userInfo } = await supabase
+      .from('users')
+      .select('email')
+      .eq('id', merchantInfo.user_id)
+      .single()
+
+    if (userInfo?.email) {
+      const { subject, html } = buildM4Email({
+        merchantName:    merchantInfo.name,
+        rejectionReason: reason,
+      })
+      await sendAdminEmail({
+        to:            userInfo.email,
+        subject,
+        htmlBody:      html,
+        emailCode:     'M4',
+        referenceId:   merchantId,
+        recipientType: 'merchant',
+      })
+    }
+  }
+
   revalidatePath('/merchants')
   revalidatePath(`/merchants/${merchantId}`)
 }

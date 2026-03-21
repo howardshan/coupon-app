@@ -14,7 +14,7 @@ export interface M3VerificationApprovedData {
 }
 
 export function buildM3Email(data: M3VerificationApprovedData): { subject: string; html: string } {
-  const subject = 'Your DealJoy merchant account has been approved!'
+  const subject = 'Your CrunchyPlum merchant account has been approved!'
 
   const dashboardUrl = data.dashboardUrl ?? 'https://merchant.crunchyplum.com'
   const freeUntilFormatted = formatDate(data.commissionFreeUntil)
@@ -25,7 +25,7 @@ export function buildM3Email(data: M3VerificationApprovedData): { subject: strin
     </p>
 
     <p style="margin:0 0 16px;color:#424242;line-height:1.7;">
-      Your DealJoy merchant account has been <strong>approved</strong>.
+      Your CrunchyPlum merchant account has been <strong>approved</strong>.
       You can now publish deals and start reaching customers in the Dallas area.
     </p>
 

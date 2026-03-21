@@ -68,7 +68,7 @@ export function wrapInLayout(options: {
                 <tr>
                   <td style="background-color:${BRAND_DARK};padding:16px 28px;border-radius:8px;">
                     <span style="font-size:22px;font-weight:800;color:#FFFFFF;letter-spacing:0.5px;">
-                      🍒 DealJoy
+                      🍒 CrunchyPlum
                     </span>
                   </td>
                 </tr>
@@ -103,11 +103,11 @@ export function wrapInLayout(options: {
           <tr>
             <td align="center" style="padding:20px 0 8px;">
               <p style="margin:0;font-size:12px;color:${TEXT_MUTED};line-height:1.6;">
-                You received this email because you have an account with DealJoy.<br />
-                DealJoy · Dallas, TX · <a href="https://crunchyplum.com" style="color:${TEXT_MUTED};">crunchyplum.com</a>
+                You received this email because you have an account with CrunchyPlum.<br />
+                CrunchyPlum · Dallas, TX · <a href="https://crunchyplum.com" style="color:${TEXT_MUTED};">crunchyplum.com</a>
               </p>
               <p style="margin:8px 0 0;font-size:11px;color:${TEXT_MUTED};">
-                © ${new Date().getFullYear()} DealJoy. All rights reserved.
+                © ${new Date().getFullYear()} CrunchyPlum. All rights reserved.
               </p>
             </td>
           </tr>
