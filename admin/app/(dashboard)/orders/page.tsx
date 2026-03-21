@@ -1,7 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import OrdersPageClient from '@/components/orders-page-client'
-import { OrdersSearchProvider } from '@/contexts/orders-search-context'
 import { getOrdersList } from '@/app/actions/orders'
 
 export const dynamic = 'force-dynamic'
@@ -60,25 +59,23 @@ export default async function OrdersPage({
   })
 
   return (
-    <OrdersSearchProvider>
-      <OrdersPageClient
-        orders={payload.orders}
-        totalCount={payload.totalCount}
-        redeemedMerchantNames={payload.redeemedMerchantNames}
-        fetchError={payload.fetchError}
-        refundCount={payload.refundCount}
-        merchantsForFilter={payload.merchantsForFilter}
-        initialSearchQ={params.q ?? ''}
-        initialStatus={statusArr}
-        initialMerchantIds={merchantArr ?? []}
-        initialDateFrom={params.date_from}
-        initialDateTo={params.date_to}
-        initialAmountMin={params.amount_min}
-        initialAmountMax={params.amount_max}
-        initialSort={params.sort ?? 'date_desc'}
-        initialPage={Number.isFinite(page) ? page : 1}
-        initialLimit={Number.isFinite(limit) ? limit : 20}
-      />
-    </OrdersSearchProvider>
+    <OrdersPageClient
+      orders={payload.orders}
+      totalCount={payload.totalCount}
+      redeemedMerchantNames={payload.redeemedMerchantNames}
+      fetchError={payload.fetchError}
+      refundCount={payload.refundCount}
+      merchantsForFilter={payload.merchantsForFilter}
+      initialSearchQ={params.q ?? ''}
+      initialStatus={statusArr}
+      initialMerchantIds={merchantArr ?? []}
+      initialDateFrom={params.date_from}
+      initialDateTo={params.date_to}
+      initialAmountMin={params.amount_min}
+      initialAmountMax={params.amount_max}
+      initialSort={params.sort ?? 'date_desc'}
+      initialPage={Number.isFinite(page) ? page : 1}
+      initialLimit={Number.isFinite(limit) ? limit : 20}
+    />
   )
 }
