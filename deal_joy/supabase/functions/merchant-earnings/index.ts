@@ -458,14 +458,15 @@ async function handleCommissionConfig(
   merchantId: string,
 ): Promise<Response> {
   try {
+    // 同时查全局配置表和商家表（新增 commission_rate 统一费率字段）
     const [configRes, merchantRes] = await Promise.all([
       client
         .from('platform_commission_config')
-        .select('free_months, fixed_date_rate, short_after_purchase_rate, long_after_purchase_rate, stripe_processing_rate, stripe_flat_fee, effective_from, effective_to')
+        .select('free_months, commission_rate, fixed_date_rate, short_after_purchase_rate, long_after_purchase_rate, stripe_processing_rate, stripe_flat_fee, effective_from, effective_to')
         .single(),
       client
         .from('merchants')
-        .select('commission_free_until, commission_fixed_date_rate, commission_short_rate, commission_long_rate, commission_stripe_rate, commission_stripe_flat_fee, commission_effective_from, commission_effective_to')
+        .select('commission_free_until, commission_rate, commission_fixed_date_rate, commission_short_rate, commission_long_rate, commission_stripe_rate, commission_stripe_flat_fee, commission_effective_from, commission_effective_to')
         .eq('id', merchantId)
         .single(),
     ]);
@@ -488,8 +489,10 @@ async function handleCommissionConfig(
     // 判断商家自定义费率是否在生效期内
     const mEffFrom = m.commission_effective_from ? new Date(m.commission_effective_from) : null;
     const mEffTo = m.commission_effective_to ? new Date(m.commission_effective_to) : null;
-    const hasMerchantRates = m.commission_fixed_date_rate != null || m.commission_short_rate != null
-      || m.commission_long_rate != null || m.commission_stripe_rate != null || m.commission_stripe_flat_fee != null;
+    // 包含新的统一 commission_rate 字段
+    const hasMerchantRates = m.commission_rate != null || m.commission_fixed_date_rate != null
+      || m.commission_short_rate != null || m.commission_long_rate != null
+      || m.commission_stripe_rate != null || m.commission_stripe_flat_fee != null;
     let merchantRatesActive = false;
     if (hasMerchantRates) {
       if (!mEffFrom && !mEffTo) {
@@ -503,33 +506,51 @@ async function handleCommissionConfig(
       }
     }
 
-    // 实际生效的费率（商家专属 > 全局默认）
+    // 全局统一费率（fallback 到旧字段 fixed_date_rate）
+    const globalCommissionRate = parseFloat(config.commission_rate ?? config.fixed_date_rate ?? '0.15');
+    // 实际生效的统一费率（商家专属 > 全局默认）
+    const effectiveCommissionRate = merchantRatesActive && m.commission_rate != null
+      ? parseFloat(m.commission_rate)
+      : globalCommissionRate;
+
+    // Stripe 手续费（保留原有逻辑）
+    const effectiveStripeRate = merchantRatesActive && m.commission_stripe_rate != null
+      ? parseFloat(m.commission_stripe_rate) : parseFloat(config.stripe_processing_rate ?? '0.03');
+    const effectiveStripeFlatFee = merchantRatesActive && m.commission_stripe_flat_fee != null
+      ? parseFloat(m.commission_stripe_flat_fee) : parseFloat(config.stripe_flat_fee ?? '0.30');
+
+    // [deprecated] 旧三档费率，向后兼容保留
     const effectiveRates = {
+      // 新增：统一费率
+      commission_rate: effectiveCommissionRate,
+      // 旧三档（deprecated，保留向后兼容）
       fixed_date_rate: merchantRatesActive && m.commission_fixed_date_rate != null
-        ? parseFloat(m.commission_fixed_date_rate) : parseFloat(config.fixed_date_rate),
+        ? parseFloat(m.commission_fixed_date_rate) : parseFloat(config.fixed_date_rate ?? '0.15'),
       short_after_purchase_rate: merchantRatesActive && m.commission_short_rate != null
-        ? parseFloat(m.commission_short_rate) : parseFloat(config.short_after_purchase_rate),
+        ? parseFloat(m.commission_short_rate) : parseFloat(config.short_after_purchase_rate ?? '0.10'),
       long_after_purchase_rate: merchantRatesActive && m.commission_long_rate != null
-        ? parseFloat(m.commission_long_rate) : parseFloat(config.long_after_purchase_rate),
-      stripe_processing_rate: merchantRatesActive && m.commission_stripe_rate != null
-        ? parseFloat(m.commission_stripe_rate) : parseFloat(config.stripe_processing_rate ?? '0.03'),
-      stripe_flat_fee: merchantRatesActive && m.commission_stripe_flat_fee != null
-        ? parseFloat(m.commission_stripe_flat_fee) : parseFloat(config.stripe_flat_fee ?? '0.30'),
+        ? parseFloat(m.commission_long_rate) : parseFloat(config.long_after_purchase_rate ?? '0.15'),
+      stripe_processing_rate: effectiveStripeRate,
+      stripe_flat_fee: effectiveStripeFlatFee,
     };
 
     return jsonResponse({
       free_months:                config.free_months,
-      // 全局默认费率
-      fixed_date_rate:            parseFloat(config.fixed_date_rate),
-      short_after_purchase_rate:  parseFloat(config.short_after_purchase_rate),
-      long_after_purchase_rate:   parseFloat(config.long_after_purchase_rate),
+      // 新增：全局统一费率
+      commission_rate:            globalCommissionRate,
+      // [deprecated] 旧三档全局费率，保留向后兼容
+      fixed_date_rate:            parseFloat(config.fixed_date_rate ?? '0.15'),
+      short_after_purchase_rate:  parseFloat(config.short_after_purchase_rate ?? '0.10'),
+      long_after_purchase_rate:   parseFloat(config.long_after_purchase_rate ?? '0.15'),
       stripe_processing_rate:     parseFloat(config.stripe_processing_rate ?? '0.03'),
       stripe_flat_fee:            parseFloat(config.stripe_flat_fee ?? '0.30'),
       // 商家状态
       commission_free_until:      commissionFreeUntil,
       is_in_free_period:          isInFreePeriod,
       merchant_rates_active:      merchantRatesActive,
-      // 实际生效的费率（已合并商家专属 + 全局）
+      // 新增：实际生效的统一费率
+      effective_commission_rate:  effectiveCommissionRate,
+      // 实际生效的费率（已合并商家专属 + 全局，effective_rates 保留向后兼容）
       effective_rates:            effectiveRates,
     });
   } catch (e) {

@@ -105,9 +105,7 @@ export async function revokeMerchantApproval(merchantId: string) {
 // 更新全局抽成配置（唯一一行，先查 id 再 update）
 export async function updateCommissionConfig(data: {
   free_months: number
-  fixed_date_rate: number
-  short_after_purchase_rate: number
-  long_after_purchase_rate: number
+  commission_rate: number
   stripe_processing_rate: number
   stripe_flat_fee: number
   effective_from: string | null
@@ -127,9 +125,7 @@ export async function updateCommissionConfig(data: {
     .from('platform_commission_config')
     .update({
       free_months: data.free_months,
-      fixed_date_rate: data.fixed_date_rate,
-      short_after_purchase_rate: data.short_after_purchase_rate,
-      long_after_purchase_rate: data.long_after_purchase_rate,
+      commission_rate: data.commission_rate,
       stripe_processing_rate: data.stripe_processing_rate,
       stripe_flat_fee: data.stripe_flat_fee,
       effective_from: data.effective_from,
@@ -143,14 +139,12 @@ export async function updateCommissionConfig(data: {
 
 // 按商家单独设置完整抽成配置（费率 + 免费期）
 export async function updateMerchantCommission(merchantId: string, data: {
-  commission_free_until:     string | null
-  commission_fixed_date_rate: number | null
-  commission_short_rate:     number | null
-  commission_long_rate:      number | null
-  commission_stripe_rate:    number | null
+  commission_free_until:      string | null
+  commission_rate:            number | null
+  commission_stripe_rate:     number | null
   commission_stripe_flat_fee: number | null
-  commission_effective_from: string | null
-  commission_effective_to:   string | null
+  commission_effective_from:  string | null
+  commission_effective_to:    string | null
 }) {
   await requireAdmin()
   const supabase = getServiceRoleClient()

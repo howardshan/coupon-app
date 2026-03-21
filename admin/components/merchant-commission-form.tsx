@@ -7,17 +7,13 @@ import { updateMerchantCommission } from '@/app/actions/admin'
 interface Props {
   merchantId: string
   commissionFreeUntil: string | null
-  commissionFixedDateRate: number | null
-  commissionShortRate: number | null
-  commissionLongRate: number | null
+  commissionRate: number | null
   commissionStripeRate: number | null
   commissionStripeFlatFee: number | null
   commissionEffectiveFrom: string | null
   commissionEffectiveTo: string | null
   // 全局默认值（用于占位提示）
-  defaultFixedRate: number
-  defaultShortRate: number
-  defaultLongRate: number
+  defaultCommissionRate: number
   defaultStripeRate: number
   defaultStripeFlatFee: number
 }
@@ -67,16 +63,12 @@ function RateField({
 export default function MerchantCommissionForm({
   merchantId,
   commissionFreeUntil,
-  commissionFixedDateRate,
-  commissionShortRate,
-  commissionLongRate,
+  commissionRate,
   commissionStripeRate,
   commissionStripeFlatFee,
   commissionEffectiveFrom,
   commissionEffectiveTo,
-  defaultFixedRate,
-  defaultShortRate,
-  defaultLongRate,
+  defaultCommissionRate,
   defaultStripeRate,
   defaultStripeFlatFee,
 }: Props) {
@@ -85,9 +77,7 @@ export default function MerchantCommissionForm({
 
   // 费率（空字符串 = 使用全局默认）
   const toRateStr = (v: number | null) => (v === null ? '' : String(Math.round(v * 1000) / 10))
-  const [fixedRate,    setFixedRate]    = useState(toRateStr(commissionFixedDateRate))
-  const [shortRate,    setShortRate]    = useState(toRateStr(commissionShortRate))
-  const [longRate,     setLongRate]     = useState(toRateStr(commissionLongRate))
+  const [rate,         setRate]         = useState(toRateStr(commissionRate))
   const [stripeRate,   setStripeRate]   = useState(toRateStr(commissionStripeRate))
   const [stripeFlatFee, setStripeFlatFee] = useState(
     commissionStripeFlatFee === null ? '' : String(Number(commissionStripeFlatFee).toFixed(2))
@@ -112,9 +102,7 @@ export default function MerchantCommissionForm({
       try {
         await updateMerchantCommission(merchantId, {
           commission_free_until:      freeUntil ? new Date(freeUntil).toISOString() : null,
-          commission_fixed_date_rate: parseRate(fixedRate),
-          commission_short_rate:      parseRate(shortRate),
-          commission_long_rate:       parseRate(longRate),
+          commission_rate:            parseRate(rate),
           commission_stripe_rate:     parseRate(stripeRate),
           commission_stripe_flat_fee: stripeFlatFee.trim() ? parseFloat(stripeFlatFee) : null,
           commission_effective_from:  effFrom || null,
@@ -128,13 +116,12 @@ export default function MerchantCommissionForm({
   }
 
   function handleClearAll() {
-    setFreeUntil(''); setFixedRate(''); setShortRate(''); setLongRate('')
+    setFreeUntil(''); setRate('')
     setStripeRate(''); setStripeFlatFee(''); setEffFrom(''); setEffTo('')
     startTransition(async () => {
       try {
         await updateMerchantCommission(merchantId, {
-          commission_free_until: null, commission_fixed_date_rate: null,
-          commission_short_rate: null, commission_long_rate: null,
+          commission_free_until: null, commission_rate: null,
           commission_stripe_rate: null, commission_stripe_flat_fee: null,
           commission_effective_from: null, commission_effective_to: null,
         })
@@ -214,26 +201,21 @@ export default function MerchantCommissionForm({
       {/* 平台抽成费率 */}
       <div>
         <div className="flex items-center gap-1.5 mb-2">
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Platform Commission Rates</p>
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Platform Commission Rate</p>
           <span className="group relative cursor-help">
             <span className="text-xs text-gray-400 border border-gray-300 rounded-full w-4 h-4 inline-flex items-center justify-center leading-none">?</span>
             <span className="pointer-events-none absolute left-6 top-0 z-10 w-72 rounded-lg bg-gray-800 px-3 py-2 text-xs text-white opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
-              平台从商家实收中扣除的比例。免费期结束的次日起生效。<br/>
-              · Fixed Date：deal 有固定截止日期<br/>
-              · Short-term ≤7 days：购买后 1–7 天有效<br/>
-              · Long-term &gt;7 days：购买后 8 天以上有效<br/>
+              平台从商家实收中扣除的统一比例。免费期结束的次日起生效。<br/>
               留空则使用 Finance 页面的全局默认值。
             </span>
           </span>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <RateField label="Fixed Date Deals" placeholder={`default ${Math.round(defaultFixedRate * 100)}%`}
-            value={fixedRate} onChange={setFixedRate} />
-          <RateField label="Short-term (≤7 days)" placeholder={`default ${Math.round(defaultShortRate * 100)}%`}
-            value={shortRate} onChange={setShortRate} />
-          <RateField label="Long-term (>7 days)" placeholder={`default ${Math.round(defaultLongRate * 100)}%`}
-            value={longRate} onChange={setLongRate} />
-        </div>
+        <RateField
+          label="Commission Rate (%)"
+          placeholder={`default ${Math.round(defaultCommissionRate * 100)}%`}
+          value={rate}
+          onChange={setRate}
+        />
       </div>
 
       {/* Stripe 手续费 */}

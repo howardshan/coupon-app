@@ -1,5 +1,96 @@
 # Git Change Description
 
+## 2026-03-20 — Order System V3 重构（多 deal 购物车 + 双状态 + Store Credit）
+
+### 数据库 (Supabase Migrations)
+
+#### 新建表和 Enum
+- **20260320000001_order_system_v3.sql**: 创建 `customer_item_status` / `merchant_item_status` enum；新建 `cart_items`（DB 持久化购物车，每张券一行）、`order_items`（核心，双状态 customer/merchant）、`store_credits`（余额）、`store_credit_transactions`（流水）四张表；修改 `orders` 表（新增 items_amount, service_fee_total, paid_at）；修改 `coupons` 表（新增 order_item_id, coupon_code）；修改 `refund_requests` 表（新增 order_item_id, refund_method）
+- **20260320000002_order_item_triggers.sql**: `auto_create_coupon_per_item()` 触发器（order_items INSERT → 自动创建 coupon + 16 位券码）；`fn_snapshot_stores_for_item()` 门店快照触发器；`sync_deal_total_sold_on_item_insert()` total_sold 同步触发器；`add_store_credit()` RPC 函数
+- **20260320000003_migrate_existing_orders.sql**: 数据迁移 — 12 条旧 orders 映射到 order_items，coupons.order_item_id 和 coupon_code 回填
+- **20260320120000_rpc_get_expired_order_items.sql**: 过期 item 查询 RPC（供 auto-refund-expired 使用）
+
+### 后端 (Edge Functions) — 全部 8 个重写/新建
+
+#### create-payment-intent（重写）
+- 入参改为 `items: [{dealId, unitPrice, promoCode?}]`（多 deal 购物车）
+- 服务端价格防篡改校验
+- `capture_method: 'automatic'`（直接 charge，取代预授权）
+- 计算 service_fee = $0.99 × distinct deal count
+
+#### create-order-v3（新建）
+- Stripe 支付成功后创建 order + order_items
+- 触发器自动创建 coupons（含 16 位券码）
+- 分摊 service fee：$0.99 / 同 Deal 张数
+- 清理 cart_items
+
+#### create-refund（重写）
+- 入参改为 `{orderItemId, refundMethod}`（per-item 退款）
+- store_credit 路径：退 unit_price + service_fee，调 `add_store_credit` RPC，立即到账
+- original_payment 路径：退 unit_price（不含 service fee），调 Stripe refunds.create
+
+#### merchant-scan（更新）
+- 移除 Stripe capture 逻辑（不再预授权）
+- 核销时更新 order_items 双状态（customer_status='used', merchant_status='unpaid'）
+- 门店快照查询改为 JOIN order_items
+
+#### stripe-webhook（简化）
+- 移除 `amount_capturable_updated` 和 `payment_intent.canceled` 处理
+- `charge.refunded` 改为 per-item 退款（通过 metadata.order_item_id）
+
+#### auto-refund-expired（更新）
+- 改为基于 order_items + coupons.expires_at 查找过期项
+- 过期统一退 store credit（含 service fee）
+- 移除 Stripe cancel PI 逻辑
+
+#### merchant-orders（更新）
+- handleList 改为 order_items 维度查询
+- handleDetail 返回 order + items 列表 + customer 信息
+- handleExport CSV 改为 order_items 维度
+
+#### user-order-detail（更新）
+- 返回 order + items 列表，每个 item 含 coupon 信息
+- timeline 增加 item 级别事件
+- 向后兼容旧订单
+
+### 用户端 (deal_joy)
+
+#### Cart 模块重写（DB 持久化）
+- **cart_item_model.dart**: 新增 DB 字段（id, userId, unitPrice 等），移除 quantity
+- **cart_repository.dart**: 新建，直接读写 cart_items 表（fetchCartItems, addToCart, removeFromCart, clearCart）
+- **cart_provider.dart**: 改为 AsyncNotifier 模式，新增 cartServiceFeeProvider（$0.99 × distinct deal 数）
+- **cart_screen.dart**: 重写，同 deal 多张券按分组卡片展示，底部结算栏拆分 subtotal/service fee/total
+
+#### Checkout 模块重写
+- **checkout_repository.dart**: 新增 `checkoutCart()`（V3 多 deal 结账），保留 `checkoutSingleDeal()`（兼容 Buy Now）
+- **checkout_screen.dart**: 支持购物车模式和单 deal 模式，显示 service fee + 退款政策提示
+- **app_router.dart**: 新增 `/checkout-cart` 路由
+
+#### Orders 模块重构
+- **order_item_model.dart**: 新建，`CustomerItemStatus` / `MerchantItemStatus` 枚举 + `OrderItemModel`（含按钮可见性 getter + 券码格式化）
+- **order_model.dart**: 新增 items 列表、itemsAmount、serviceFeeTotal、itemsByDeal getter，保留旧字段向后兼容
+- **coupon_model.dart**: 新增 orderItemId、couponCode 字段
+- **order_detail_model.dart**: 新增 items 列表
+- **orders_repository.dart**: JOIN order_items 查询，新增 requestItemRefund()
+- **coupons_repository.dart**: 通过 order_items 获取 applicable_store_ids，requestRefund 增加 refundMethod 参数
+- **coupons_provider.dart**: RefundNotifier 新增 requestItemRefund() 方法
+- **orders_screen.dart**: 订单卡片展示多 items 摘要
+- **order_detail_screen.dart**: 按 deal 分组展示 items + QR Code Bottom Sheet + Cancel Bottom Sheet（store credit / 原路退选择）
+
+#### Store Credit UI（新建）
+- **store_credit_model.dart**: StoreCredit + StoreCreditTransaction 模型
+- **store_credit_repository.dart**: 查询 store_credits / store_credit_transactions 表
+- **store_credit_provider.dart**: FutureProvider 余额 + 流水
+- **store_credit_screen.dart**: 品牌色渐变余额卡片 + 交易记录列表
+- **app_router.dart**: 新增 `/profile/store-credit` 路由
+
+### 商家端 (dealjoy_merchant)
+- **merchant_order.dart**: 新增 orderItemId、customerStatus、merchantStatus、serviceFee、couponCode 字段，新建 MerchantOrderItem 类
+- **orders_service.dart**: 适配 order_items 维度响应
+- **orders_provider.dart**: 适配新 model
+
+---
+
 ## 2026-03-17
 
 ### Deal 有效期三种模式 + Stripe 预授权支持

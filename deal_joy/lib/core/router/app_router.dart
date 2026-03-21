@@ -23,6 +23,7 @@ import '../../features/after_sales/presentation/pages/after_sales_timeline_page.
 import '../../features/after_sales/presentation/pages/after_sales_screen_args.dart';
 import '../../features/profile/presentation/screens/profile_screen.dart';
 import '../../features/profile/presentation/screens/edit_profile_screen.dart';
+import '../../features/profile/presentation/screens/store_credit_screen.dart';
 import '../../features/reviews/presentation/screens/write_review_screen.dart';
 import '../../features/merchant/presentation/screens/merchant_dashboard_screen.dart';
 import '../../features/merchant/presentation/screens/merchant_detail_screen.dart';
@@ -30,6 +31,7 @@ import '../../features/merchant/presentation/screens/photo_gallery_screen.dart';
 import '../../features/merchant/presentation/screens/qr_scanner_screen.dart';
 import '../../features/merchant/presentation/screens/brand_detail_screen.dart';
 import '../../features/chat/presentation/screens/chat_screen.dart';
+import '../../features/cart/data/models/cart_item_model.dart';
 import '../../features/cart/presentation/screens/cart_screen.dart';
 import '../widgets/main_scaffold.dart';
 import '../widgets/splash_screen.dart';
@@ -158,6 +160,12 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (_, _) => const EditProfileScreen(),
       ),
 
+      // Store Credit 余额与流水页
+      GoRoute(
+        path: '/profile/store-credit',
+        builder: (_, _) => const StoreCreditScreen(),
+      ),
+
       // Merchant static routes must come before parameterized /merchant/:id
       GoRoute(
         path: '/merchant/dashboard',
@@ -199,13 +207,21 @@ final routerProvider = Provider<GoRouter>((ref) {
             DealDetailScreen(dealId: state.pathParameters['id']!),
       ),
 
-      // Checkout flow
+      // Checkout flow — 单 deal 快速购买
       GoRoute(
         path: '/checkout/:dealId',
         builder: (_, state) => CheckoutScreen(
           dealId: state.pathParameters['dealId']!,
           purchasedMerchantId: state.uri.queryParameters['merchantId'],
         ),
+      ),
+      // Checkout flow — 购物车多 deal 结账（通过 extra 传递 cartItems）
+      GoRoute(
+        path: '/checkout-cart',
+        builder: (_, state) {
+          final items = state.extra as List<CartItemModel>?;
+          return CheckoutScreen(cartItems: items ?? const []);
+        },
       ),
       GoRoute(
         path: '/order-success/:orderId',

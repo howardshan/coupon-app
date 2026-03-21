@@ -647,57 +647,92 @@ class WithdrawalSettings {
 // =============================================================
 class CommissionConfig {
   final int freeMonths;                   // 全局免费期月数
-  final double fixedDateRate;             // 全局 fixed_date 费率
-  final double shortAfterPurchaseRate;    // 全局 short_after_purchase 费率
-  final double longAfterPurchaseRate;     // 全局 long_after_purchase 费率
+  // 新增：统一单一费率
+  final double commissionRate;            // 全局统一佣金费率
+  final double effectiveCommissionRate;   // 实际生效的统一佣金费率（商家专属 > 全局）
   final double stripeProcessingRate;      // 全局 Stripe 手续费率
   final double stripeFlatFee;             // 全局 Stripe 固定费
   final DateTime? commissionFreeUntil;    // 该商家的免费期截止时间
   final bool isInFreePeriod;              // 当前是否处于免费期内
   final bool merchantRatesActive;         // 商家专属费率是否在生效期内
-  // 实际生效的费率（已合并商家专属 + 全局）
-  final double effectiveFixedDateRate;
-  final double effectiveShortRate;
-  final double effectiveLongRate;
+  // 实际生效的 Stripe 费率
   final double effectiveStripeRate;
   final double effectiveStripeFlatFee;
 
+  // [deprecated] 旧三档费率字段，保留向后兼容，新代码请使用 commissionRate / effectiveCommissionRate
+  @Deprecated('Use commissionRate instead')
+  final double fixedDateRate;
+  @Deprecated('Use commissionRate instead')
+  final double shortAfterPurchaseRate;
+  @Deprecated('Use commissionRate instead')
+  final double longAfterPurchaseRate;
+  @Deprecated('Use effectiveCommissionRate instead')
+  final double effectiveFixedDateRate;
+  @Deprecated('Use effectiveCommissionRate instead')
+  final double effectiveShortRate;
+  @Deprecated('Use effectiveCommissionRate instead')
+  final double effectiveLongRate;
+
   const CommissionConfig({
     required this.freeMonths,
-    required this.fixedDateRate,
-    required this.shortAfterPurchaseRate,
-    required this.longAfterPurchaseRate,
+    required this.commissionRate,
+    required this.effectiveCommissionRate,
     required this.stripeProcessingRate,
     required this.stripeFlatFee,
     this.commissionFreeUntil,
     required this.isInFreePeriod,
     required this.merchantRatesActive,
-    required this.effectiveFixedDateRate,
-    required this.effectiveShortRate,
-    required this.effectiveLongRate,
     required this.effectiveStripeRate,
     required this.effectiveStripeFlatFee,
+    // [deprecated] 旧三档字段，默认值兜底
+    this.fixedDateRate = 0.15,
+    this.shortAfterPurchaseRate = 0.10,
+    this.longAfterPurchaseRate = 0.15,
+    this.effectiveFixedDateRate = 0.15,
+    this.effectiveShortRate = 0.10,
+    this.effectiveLongRate = 0.15,
   });
 
   factory CommissionConfig.fromJson(Map<String, dynamic> json) {
     final effectiveRates = json['effective_rates'] as Map<String, dynamic>? ?? {};
+
+    // 优先读新字段 commission_rate，降级到旧 fixed_date_rate
+    final globalRate = (json['commission_rate'] as num?)?.toDouble()
+        ?? (json['fixed_date_rate'] as num?)?.toDouble()
+        ?? 0.15;
+    // 优先读新字段 effective_commission_rate，降级到 effective_rates.commission_rate，再降级到旧三档第一档
+    final effectiveRate = (json['effective_commission_rate'] as num?)?.toDouble()
+        ?? (effectiveRates['commission_rate'] as num?)?.toDouble()
+        ?? (effectiveRates['fixed_date_rate'] as num?)?.toDouble()
+        ?? globalRate;
+
+    final effectiveStripeRate = (effectiveRates['stripe_processing_rate'] as num?)?.toDouble()
+        ?? (json['stripe_processing_rate'] as num?)?.toDouble()
+        ?? 0.03;
+    final effectiveStripeFlatFee = (effectiveRates['stripe_flat_fee'] as num?)?.toDouble()
+        ?? (json['stripe_flat_fee'] as num?)?.toDouble()
+        ?? 0.30;
+
     return CommissionConfig(
-      freeMonths:               json['free_months'] as int? ?? 3,
-      fixedDateRate:            (json['fixed_date_rate'] as num?)?.toDouble() ?? 0.15,
-      shortAfterPurchaseRate:   (json['short_after_purchase_rate'] as num?)?.toDouble() ?? 0.10,
-      longAfterPurchaseRate:    (json['long_after_purchase_rate'] as num?)?.toDouble() ?? 0.15,
-      stripeProcessingRate:     (json['stripe_processing_rate'] as num?)?.toDouble() ?? 0.03,
-      stripeFlatFee:            (json['stripe_flat_fee'] as num?)?.toDouble() ?? 0.30,
-      commissionFreeUntil:      json['commission_free_until'] != null
-          ? DateTime.tryParse(json['commission_free_until'] as String)
+      freeMonths:             json['free_months'] as int? ?? 3,
+      commissionRate:         globalRate,
+      effectiveCommissionRate: effectiveRate,
+      stripeProcessingRate:   (json['stripe_processing_rate'] as num?)?.toDouble() ?? 0.03,
+      stripeFlatFee:          (json['stripe_flat_fee'] as num?)?.toDouble() ?? 0.30,
+      commissionFreeUntil:    json['commission_free_until'] != null
+          ? DateTime.tryParse(json['commission_free_until'] as String? ?? '')
           : null,
-      isInFreePeriod:           json['is_in_free_period'] as bool? ?? false,
-      merchantRatesActive:      json['merchant_rates_active'] as bool? ?? false,
-      effectiveFixedDateRate:   (effectiveRates['fixed_date_rate'] as num?)?.toDouble() ?? 0.15,
-      effectiveShortRate:       (effectiveRates['short_after_purchase_rate'] as num?)?.toDouble() ?? 0.10,
-      effectiveLongRate:        (effectiveRates['long_after_purchase_rate'] as num?)?.toDouble() ?? 0.15,
-      effectiveStripeRate:      (effectiveRates['stripe_processing_rate'] as num?)?.toDouble() ?? 0.03,
-      effectiveStripeFlatFee:   (effectiveRates['stripe_flat_fee'] as num?)?.toDouble() ?? 0.30,
+      isInFreePeriod:         json['is_in_free_period'] as bool? ?? false,
+      merchantRatesActive:    json['merchant_rates_active'] as bool? ?? false,
+      effectiveStripeRate:    effectiveStripeRate,
+      effectiveStripeFlatFee: effectiveStripeFlatFee,
+      // [deprecated] 旧三档字段，解析保留以便旧代码不崩溃
+      fixedDateRate:          (json['fixed_date_rate'] as num?)?.toDouble() ?? 0.15,
+      shortAfterPurchaseRate: (json['short_after_purchase_rate'] as num?)?.toDouble() ?? 0.10,
+      longAfterPurchaseRate:  (json['long_after_purchase_rate'] as num?)?.toDouble() ?? 0.15,
+      effectiveFixedDateRate: (effectiveRates['fixed_date_rate'] as num?)?.toDouble() ?? effectiveRate,
+      effectiveShortRate:     (effectiveRates['short_after_purchase_rate'] as num?)?.toDouble() ?? effectiveRate,
+      effectiveLongRate:      (effectiveRates['long_after_purchase_rate'] as num?)?.toDouble() ?? effectiveRate,
     );
   }
 

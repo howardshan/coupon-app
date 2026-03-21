@@ -4,18 +4,28 @@ import '../../../../core/errors/app_exception.dart';
 import '../models/order_detail_model.dart';
 import '../models/order_model.dart';
 
+/// V3 订单查询 select — 含 order_items join deals/merchants/coupons
+const _orderSelect =
+    'id, user_id, order_number, total_amount, items_amount, service_fee_total, '
+    'payment_intent_id, paid_at, created_at, '
+    'order_items('
+    '  id, deal_id, unit_price, service_fee, customer_status, merchant_status, '
+    '  coupon_id, redeemed_at, refunded_at, refund_method, '
+    '  deals(id, title, image_urls, merchants(id, name)), '
+    '  coupons!order_items_coupon_id_fkey(id, qr_code, coupon_code, status, expires_at)'
+    ')';
+
 class OrdersRepository {
   final SupabaseClient _client;
 
   OrdersRepository(this._client);
 
+  /// 获取当前用户全部订单，每个订单含 order_items 列表
   Future<List<OrderModel>> fetchUserOrders(String userId) async {
     try {
       final data = await _client
           .from('orders')
-          .select(
-            'id, user_id, deal_id, coupon_id, quantity, total_amount, status, payment_intent_id, refund_reason, created_at, order_number, refund_requested_at, refunded_at, refund_rejected_at, deals(id, title, image_urls, merchants(name)), coupons!fk_orders_coupon_id(expires_at)',
-          )
+          .select(_orderSelect)
           .eq('user_id', userId)
           .order('created_at', ascending: false);
       return (data as List).map((e) => OrderModel.fromJson(e)).toList();
@@ -24,13 +34,12 @@ class OrdersRepository {
     }
   }
 
+  /// 获取单个订单详情（含 order_items）
   Future<OrderModel> fetchOrderById(String orderId) async {
     try {
       final data = await _client
           .from('orders')
-          .select(
-            'id, user_id, deal_id, coupon_id, quantity, total_amount, status, payment_intent_id, refund_reason, created_at, order_number, refund_requested_at, refunded_at, refund_rejected_at, deals(id, title, image_urls, merchants(name)), coupons!fk_orders_coupon_id(expires_at)',
-          )
+          .select(_orderSelect)
           .eq('id', orderId)
           .single();
       return OrderModel.fromJson(data);
@@ -79,7 +88,59 @@ class OrdersRepository {
     }
   }
 
-  /// 仅提交退款申请（状态改为 refund_requested），不调用 Stripe；审核通过由 Admin 调用退款
+  /// V3：通过 orderItemId 请求退款，调用 create-refund Edge Function
+  /// [refundMethod] 退款方式：'store_credit' | 'original_payment'
+  /// [reason] 退款原因，可选
+  Future<Map<String, dynamic>> requestItemRefund(
+    String orderItemId,
+    String refundMethod, {
+    String? reason,
+  }) async {
+    try {
+      final response = await _client.functions.invoke(
+        'create-refund',
+        body: {
+          'orderItemId': orderItemId,
+          'refundMethod': refundMethod,
+          if (reason != null && reason.isNotEmpty) 'reason': reason,
+        },
+      );
+
+      final rawData = response.data;
+      if (rawData is! Map) {
+        throw AppException('Unexpected response format from refund service');
+      }
+      final data = Map<String, dynamic>.from(rawData);
+
+      if (data.containsKey('error')) {
+        throw AppException(data['error'] as String);
+      }
+
+      return data; // { refundId, status, amount }
+    } on AppException {
+      rethrow;
+    } on FunctionException catch (e) {
+      // HTTP 非 2xx：从 details 中提取 Edge Function 返回的 error 字段
+      final details = e.details;
+      String message;
+      if (details is Map && details.containsKey('error')) {
+        message = details['error'].toString();
+      } else {
+        message = 'Refund request failed (${e.status})';
+      }
+      throw AppException(message);
+    } on PostgrestException catch (e) {
+      throw AppException(
+        'Failed to request refund: ${e.message}',
+        code: e.code,
+      );
+    } catch (e) {
+      throw AppException('Refund failed: $e');
+    }
+  }
+
+  /// 旧版：通过 orderId 请求退款（向后兼容，V3 建议改用 requestItemRefund）
+  @Deprecated('V3 请使用 requestItemRefund(orderItemId, refundMethod)')
   Future<void> requestRefund(String orderId, {String? reason}) async {
     try {
       await _client.from('orders').update({
@@ -107,5 +168,4 @@ class OrdersRepository {
       throw AppException('Coupon not found: ${e.message}', code: e.code);
     }
   }
-
 }

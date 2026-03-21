@@ -990,7 +990,7 @@ class _CommissionRatesCard extends StatelessWidget {
     );
   }
 
-  /// 费率卡片：三档平台抽成 + Stripe 手续费（使用实际生效费率）
+  /// 费率卡片：统一平台佣金费率 + Stripe 手续费（使用实际生效费率）
   Widget _buildRatesContent(CommissionConfig config) {
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -1022,25 +1022,12 @@ class _CommissionRatesCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
+          // 单一统一佣金费率行
           _RateRow(
-            label: 'Fixed Date Deal',
-            hint: 'Deal with a specific expiry date set by the merchant.',
-            rate: config.rateLabel(config.effectiveFixedDateRate),
-            icon: Icons.event_outlined,
-          ),
-          const Divider(height: 24, thickness: 0.5),
-          _RateRow(
-            label: 'Short-term (≤7 days)',
-            hint: 'Voucher valid 1–7 days after purchase.',
-            rate: config.rateLabel(config.effectiveShortRate),
-            icon: Icons.flash_on_outlined,
-          ),
-          const Divider(height: 24, thickness: 0.5),
-          _RateRow(
-            label: 'Long-term (>7 days)',
-            hint: 'Voucher valid 8 days or more after purchase.',
-            rate: config.rateLabel(config.effectiveLongRate),
-            icon: Icons.date_range_outlined,
+            label: 'Platform Commission',
+            hint: 'Platform takes this percentage from each redeemed voucher.',
+            rate: config.rateLabel(config.effectiveCommissionRate),
+            icon: Icons.percent_outlined,
           ),
           // Stripe 手续费
           const Divider(height: 28, thickness: 1),

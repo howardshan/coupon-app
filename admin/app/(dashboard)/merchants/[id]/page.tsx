@@ -35,12 +35,12 @@ export default async function MerchantReviewPage({
   // 读取全局默认费率（用于占位提示）
   const { data: globalConfig } = await serviceClient
     .from('platform_commission_config')
-    .select('fixed_date_rate, short_after_purchase_rate, long_after_purchase_rate, stripe_processing_rate, stripe_flat_fee')
+    .select('commission_rate, stripe_processing_rate, stripe_flat_fee')
     .single()
 
   const { data: merchant } = await supabase
     .from('merchants')
-    .select('id, user_id, name, company_name, description, contact_name, contact_email, phone, category, ein, address, status, rejection_reason, submitted_at, created_at, updated_at, brand_id, commission_free_until, commission_fixed_date_rate, commission_short_rate, commission_long_rate, commission_stripe_rate, commission_stripe_flat_fee, commission_effective_from, commission_effective_to, brands(id, name, logo_url)')
+    .select('id, user_id, name, company_name, description, contact_name, contact_email, phone, category, ein, address, status, rejection_reason, submitted_at, created_at, updated_at, brand_id, commission_free_until, commission_rate, commission_stripe_rate, commission_stripe_flat_fee, commission_effective_from, commission_effective_to, brands(id, name, logo_url)')
     .eq('id', id)
     .single()
 
@@ -152,16 +152,12 @@ export default async function MerchantReviewPage({
         <MerchantCommissionForm
           merchantId={merchant.id}
           commissionFreeUntil={(merchant as any).commission_free_until ?? null}
-          commissionFixedDateRate={(merchant as any).commission_fixed_date_rate ?? null}
-          commissionShortRate={(merchant as any).commission_short_rate ?? null}
-          commissionLongRate={(merchant as any).commission_long_rate ?? null}
+          commissionRate={(merchant as any).commission_rate ?? null}
           commissionStripeRate={(merchant as any).commission_stripe_rate ?? null}
           commissionStripeFlatFee={(merchant as any).commission_stripe_flat_fee ?? null}
           commissionEffectiveFrom={(merchant as any).commission_effective_from ?? null}
           commissionEffectiveTo={(merchant as any).commission_effective_to ?? null}
-          defaultFixedRate={Number(globalConfig?.fixed_date_rate ?? 0.15)}
-          defaultShortRate={Number(globalConfig?.short_after_purchase_rate ?? 0.10)}
-          defaultLongRate={Number(globalConfig?.long_after_purchase_rate ?? 0.15)}
+          defaultCommissionRate={Number(globalConfig?.commission_rate ?? 0.15)}
           defaultStripeRate={Number(globalConfig?.stripe_processing_rate ?? 0.03)}
           defaultStripeFlatFee={Number(globalConfig?.stripe_flat_fee ?? 0.30)}
         />
