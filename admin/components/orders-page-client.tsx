@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useTransition } from 'react'
 import OrderRefundButtons from '@/components/order-refund-buttons'
 import OrderSearchForm from '@/components/order-search-form'
+import OrdersFilterMultiSelect from '@/components/orders-filter-multi-select'
 import OrdersTableContainer from '@/components/orders-table-container'
 import { getOrderDetailStatusTags, STATUS_STYLES, STATUS_LABELS } from '@/lib/order-display-status'
 import type { OrdersListPayload } from '@/app/actions/orders'
@@ -28,10 +29,14 @@ const SORT_OPTIONS = [
   { value: 'amount_asc', label: 'Amount (low–high)' },
 ]
 
+// 筛选行内控件统一高度与宽度策略（grid 子项内 w-full）
+const FILTER_CONTROL =
+  'w-full min-w-0 px-3 py-2 border border-gray-300 rounded-lg bg-white text-gray-900'
+
 type OrdersPageClientProps = OrdersListPayload & {
   initialSearchQ?: string
   initialStatus?: string[]
-  initialMerchantId?: string
+  initialMerchantIds?: string[]
   initialDateFrom?: string
   initialDateTo?: string
   initialAmountMin?: string
@@ -73,7 +78,7 @@ export default function OrdersPageClient({
   merchantsForFilter = [],
   initialSearchQ = '',
   initialStatus = [],
-  initialMerchantId = '',
+  initialMerchantIds = [],
   initialDateFrom = '',
   initialDateTo = '',
   initialAmountMin = '',
@@ -119,15 +124,25 @@ export default function OrdersPageClient({
 
   const hasFilters = useMemo(() => {
     const q = searchParams.get('q')
-    const status = searchParams.get('status')
-    const merchant = searchParams.get('merchant')
+    const hasStatus = searchParams.getAll('status').some(Boolean)
+    const hasMerchant = searchParams.getAll('merchant').some(Boolean)
     const dateFrom = searchParams.get('date_from')
     const dateTo = searchParams.get('date_to')
     const amountMin = searchParams.get('amount_min')
     const amountMax = searchParams.get('amount_max')
     const sort = searchParams.get('sort')
     const pageNum = parseInt(searchParams.get('page') ?? '1', 10)
-    return !!(q?.trim() || status || merchant || dateFrom || dateTo || amountMin || amountMax || (sort && sort !== 'date_desc') || pageNum > 1)
+    return !!(
+      q?.trim() ||
+      hasStatus ||
+      hasMerchant ||
+      dateFrom ||
+      dateTo ||
+      amountMin ||
+      amountMax ||
+      (sort && sort !== 'date_desc') ||
+      pageNum > 1
+    )
   }, [searchParams])
 
   const totalCount = initialTotalCount
@@ -140,117 +155,115 @@ export default function OrdersPageClient({
   return (
     <div>
       <div className="flex flex-col gap-4 mb-6">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-2xl font-bold text-gray-900">Orders</h1>
-            {initialRefundCount > 0 && (
-              <span className="text-sm bg-orange-100 text-orange-700 px-3 py-1 rounded-full font-medium">
-                {initialRefundCount} refund {initialRefundCount === 1 ? 'request' : 'requests'}
-              </span>
-            )}
-          </div>
+        <div className="flex items-center gap-3 flex-wrap">
+          <h1 className="text-2xl font-bold text-gray-900">Orders</h1>
+          {initialRefundCount > 0 && (
+            <span className="text-sm bg-orange-100 text-orange-700 px-3 py-1 rounded-full font-medium">
+              {initialRefundCount} refund {initialRefundCount === 1 ? 'request' : 'requests'}
+            </span>
+          )}
+        </div>
+
+        <div className="w-full max-w-3xl">
           <OrderSearchForm
+            fullWidth
             initialValue={initialSearchQ}
             onSearch={handleSearch}
             isSearching={isPending}
           />
         </div>
 
-        {/* Filters — URL persisted */}
-        <div className="flex flex-wrap items-end gap-3 text-sm">
-          <label className="flex flex-col gap-1">
-            <span className="text-gray-600 font-medium">Status</span>
-            <select
-              value={initialStatus[0] ?? ''}
-              onChange={(e) => updateFilter({ status: e.target.value ? [e.target.value] : undefined })}
-              className="px-3 py-2 border border-gray-300 rounded-lg bg-white min-w-[140px]"
-            >
-              <option value="">All</option>
-              {STATUS_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-gray-600 font-medium">Merchant</span>
-            <select
-              value={initialMerchantId}
-              onChange={(e) => updateFilter({ merchant: e.target.value || undefined })}
-              className="px-3 py-2 border border-gray-300 rounded-lg bg-white min-w-[160px]"
-            >
-              <option value="">All</option>
-              {merchantsForFilter.map((m) => (
-                <option key={m.id} value={m.id}>{m.name}</option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-gray-600 font-medium">Date from</span>
-            <input
-              type="date"
-              value={initialDateFrom}
-              onChange={(e) => updateFilter({ date_from: e.target.value || undefined })}
-              className="px-3 py-2 border border-gray-300 rounded-lg"
-            />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-gray-600 font-medium">Date to</span>
-            <input
-              type="date"
-              value={initialDateTo}
-              onChange={(e) => updateFilter({ date_to: e.target.value || undefined })}
-              className="px-3 py-2 border border-gray-300 rounded-lg"
-            />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-gray-600 font-medium">Amount min</span>
-            <input
-              type="number"
-              min={0}
-              step={0.01}
-              placeholder="0"
-              value={initialAmountMin}
-              onChange={(e) => updateFilter({ amount_min: e.target.value || undefined })}
-              className="px-3 py-2 border border-gray-300 rounded-lg w-24"
-            />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-gray-600 font-medium">Amount max</span>
-            <input
-              type="number"
-              min={0}
-              step={0.01}
-              placeholder="—"
-              value={initialAmountMax}
-              onChange={(e) => updateFilter({ amount_max: e.target.value || undefined })}
-              className="px-3 py-2 border border-gray-300 rounded-lg w-24"
-            />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-gray-600 font-medium">Sort</span>
-            <select
-              value={initialSort}
-              onChange={(e) => updateFilter({ sort: e.target.value || undefined })}
-              className="px-3 py-2 border border-gray-300 rounded-lg bg-white min-w-[140px]"
-            >
-              {SORT_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
-          </label>
-          {hasFilters && (
-            <button
-              type="button"
-              onClick={clearFilters}
-              disabled={isPending}
-              className="px-3 py-2 text-sm font-medium border border-gray-300 rounded-lg bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors"
-            >
-              Clear filters
-            </button>
-          )}
-          {isPending && (
-            <span className="text-gray-500 text-sm py-2">Updating…</span>
-          )}
+        {/* Filters — URL persisted；网格保证各列控件同宽 */}
+        <div className="flex flex-col gap-3 text-sm">
+          <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-3 items-start">
+            <div className="min-w-0">
+              <OrdersFilterMultiSelect
+                fieldLabel="Status"
+                options={STATUS_OPTIONS}
+                selectedValues={initialStatus ?? []}
+                triggerClassName={FILTER_CONTROL}
+                onChange={(next) => updateFilter({ status: next.length ? next : undefined })}
+              />
+            </div>
+            <div className="min-w-0">
+              <OrdersFilterMultiSelect
+                fieldLabel="Merchant"
+                options={merchantsForFilter.map((m) => ({ value: m.id, label: m.name }))}
+                selectedValues={initialMerchantIds}
+                triggerClassName={FILTER_CONTROL}
+                onChange={(next) => updateFilter({ merchant: next.length ? next : undefined })}
+              />
+            </div>
+            <label className="flex min-w-0 flex-col gap-1">
+              <span className="text-gray-600 font-medium">Date from</span>
+              <input
+                type="date"
+                value={initialDateFrom}
+                onChange={(e) => updateFilter({ date_from: e.target.value || undefined })}
+                className={FILTER_CONTROL}
+              />
+            </label>
+            <label className="flex min-w-0 flex-col gap-1">
+              <span className="text-gray-600 font-medium">Date to</span>
+              <input
+                type="date"
+                value={initialDateTo}
+                onChange={(e) => updateFilter({ date_to: e.target.value || undefined })}
+                className={FILTER_CONTROL}
+              />
+            </label>
+            <label className="flex min-w-0 flex-col gap-1">
+              <span className="text-gray-600 font-medium">Amount min</span>
+              <input
+                type="number"
+                min={0}
+                step={0.01}
+                placeholder="0"
+                value={initialAmountMin}
+                onChange={(e) => updateFilter({ amount_min: e.target.value || undefined })}
+                className={FILTER_CONTROL}
+              />
+            </label>
+            <label className="flex min-w-0 flex-col gap-1">
+              <span className="text-gray-600 font-medium">Amount max</span>
+              <input
+                type="number"
+                min={0}
+                step={0.01}
+                placeholder="—"
+                value={initialAmountMax}
+                onChange={(e) => updateFilter({ amount_max: e.target.value || undefined })}
+                className={FILTER_CONTROL}
+              />
+            </label>
+            <label className="flex min-w-0 flex-col gap-1">
+              <span className="text-gray-600 font-medium">Sort</span>
+              <select
+                value={initialSort}
+                onChange={(e) => updateFilter({ sort: e.target.value || undefined })}
+                className={FILTER_CONTROL}
+              >
+                {SORT_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            {hasFilters && (
+              <button
+                type="button"
+                onClick={clearFilters}
+                disabled={isPending}
+                className="px-3 py-2 text-sm font-medium border border-gray-300 rounded-lg bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors"
+              >
+                Clear filters
+              </button>
+            )}
+            {isPending && (
+              <span className="text-gray-500 text-sm">Updating…</span>
+            )}
+          </div>
         </div>
 
         <p className="text-sm text-gray-600">
@@ -363,7 +376,7 @@ export default function OrdersPageClient({
                 <p className="text-red-600 text-sm mb-2">Failed to load orders: {initialFetchError}</p>
               ) : null}
               <p className="text-gray-400">
-                {initialSearchQ !== '' || initialStatus?.length || initialMerchantId || initialDateFrom || initialDateTo ? 'No orders match your filters.' : 'No orders yet'}
+                {initialSearchQ !== '' || initialStatus?.length || initialMerchantIds.length > 0 || initialDateFrom || initialDateTo ? 'No orders match your filters.' : 'No orders yet'}
               </p>
             </div>
           )}

@@ -48,9 +48,16 @@ type OrderSearchFormProps = {
   onSearch?: (q: string) => void
   /** 局部搜索时的 loading 状态（由父组件传入） */
   isSearching?: boolean
+  /** 占满父容器宽度（用于订单页标题下方通栏搜索） */
+  fullWidth?: boolean
 }
 
-export default function OrderSearchForm({ initialValue = '', onSearch, isSearching: isSearchingProp }: OrderSearchFormProps) {
+export default function OrderSearchForm({
+  initialValue = '',
+  onSearch,
+  isSearching: isSearchingProp,
+  fullWidth = false,
+}: OrderSearchFormProps) {
   const router = useRouter()
   const pathname = usePathname()
   const [urlPending, startTransition] = useTransition()
@@ -89,13 +96,23 @@ export default function OrderSearchForm({ initialValue = '', onSearch, isSearchi
   }, [value, pathname, router, startTransition, onSearch])
 
   return (
-    <div className="flex items-center gap-2">
+    <div
+      className={
+        fullWidth
+          ? 'flex w-full min-w-0 flex-wrap items-center gap-2'
+          : 'flex items-center gap-2'
+      }
+    >
       <input
         type="search"
         value={value}
         onChange={(e) => setValue(e.target.value)}
         placeholder="Order #, email, or deal..."
-        className="px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-[180px]"
+        className={
+          fullWidth
+            ? 'min-w-0 flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
+            : 'min-w-[180px] px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
+        }
         aria-label="Search orders by order number, email, or deal title"
       />
       {isPending && (

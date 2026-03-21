@@ -453,27 +453,3 @@ class _ErrorView extends StatelessWidget {
     );
   }
 }
-
-/// 状态标签 chip
-class _StatusChip extends StatelessWidget {
-  const _StatusChip({required this.label, this.color});
-
-  final String label;
-  final Color? color;
-
-  @override
-  Widget build(BuildContext context) {
-    final chipColor = color ?? AppColors.textSecondary;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: chipColor.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: chipColor),
-      ),
-    );
-  }
-}
