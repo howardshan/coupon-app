@@ -6,6 +6,7 @@ import { getServiceRoleClient } from '@/lib/supabase/service'
 import { sendAdminEmail } from '@/lib/email'
 import { buildM3Email } from '@/lib/email-templates/merchant/verification-approved'
 import { buildM4Email } from '@/lib/email-templates/merchant/verification-rejected'
+import { buildM16Email } from '@/lib/email-templates/merchant/deal-rejected'
 
 async function requireAdmin() {
   const supabase = await createClient()
@@ -357,6 +358,40 @@ export async function rejectDeal(dealId: string, rejectionReason?: string | null
       })
 
     if (insertError) throw new Error(insertError.message)
+  }
+
+  // 发送 M16 Deal 被驳回通知（即发即忘，不阻断主流程）
+  if (dealSnapshot?.merchant_id) {
+    const { data: merchantInfo } = await supabase
+      .from('merchants')
+      .select('user_id')
+      .eq('id', dealSnapshot.merchant_id)
+      .single()
+
+    if (merchantInfo?.user_id) {
+      const { data: userInfo } = await supabase
+        .from('users')
+        .select('email')
+        .eq('id', merchantInfo.user_id)
+        .single()
+
+      if (userInfo?.email) {
+        const merchantName = (dealSnapshot.merchants as any)?.name ?? ''
+        const { subject, html } = buildM16Email({
+          merchantName,
+          dealTitle:       dealSnapshot.title,
+          rejectionReason: reason,
+        })
+        await sendAdminEmail({
+          to:            userInfo.email,
+          subject,
+          htmlBody:      html,
+          emailCode:     'M16',
+          referenceId:   dealId,
+          recipientType: 'merchant',
+        })
+      }
+    }
   }
 
   revalidatePath('/deals')
