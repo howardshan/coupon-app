@@ -416,7 +416,7 @@ def build_admin(wb):
         ("A024", "Deal详情页", "多店 Deal 显示适用门店列表及确认状态", "", "UI显示", "中", "", ""),
         # ── 订单管理 ──
         ("A025", "订单列表页", "列出所有订单，显示订单号、Deal、用户、金额、状态", "", "UI显示", "高", "", ""),
-        ("A026", "订单列表页", "搜索框输入订单号/邮箱/Deal名，结果实时更新（debounce）", "q / OrderSearchForm", "功能操作", "高", "", ""),
+        ("A026", "订单列表页", "搜索框输入订单号/邮箱/Deal名，结果实时更新（debounce）", "q / AdminDebouncedSearchForm", "功能操作", "高", "", ""),
         ("A027", "订单列表页", "Clear 按钮清空搜索，恢复全部列表", "", "功能操作", "中", "", ""),
         ("A028", "订单列表页", "refund_requested 状态订单高亮显示（橙色背景）", "", "UI显示", "高", "", ""),
         ("A029", "订单详情页", "显示完整订单信息、核销门店（如果与下单门店不同）、退款信息", "", "UI显示", "高", "", ""),
@@ -441,7 +441,7 @@ def build_admin(wb):
         ("A044", "商家详情页", "先 Reject 后再次点击 Approve，商家状态恢复 approved", "approveMerchant / rejectMerchant", "功能操作", "高", "", "状态流转"),
         ("A045", "Deal列表页", "Sort Order 输入非数字字符时显示格式错误提示", "updateDealSortOrder / value", "边界输入", "中", "", ""),
         ("A046", "Deal列表页", "Sort Order 输入负数时显示验证错误", "updateDealSortOrder / value", "边界输入", "中", "", ""),
-        ("A047", "订单列表页", "搜索框输入 SQL 注入字符串（' OR 1=1--）不崩溃，正常返回空结果", "q / OrderSearchForm", "错误处理", "高", "", "安全性"),
+        ("A047", "订单列表页", "搜索框输入 SQL 注入字符串（' OR 1=1--）不崩溃，正常返回空结果", "q / AdminDebouncedSearchForm", "错误处理", "高", "", "安全性"),
         ("A048", "订单详情页", "对已经是 refunded 状态的订单点击 Approve Refund 时显示冲突错误", "approveRefund", "错误处理", "高", "", "重复退款"),
         ("A049", "品牌详情页", "Add Store 时选择已在该品牌内的门店，显示 Already in brand 提示", "addStoreToBrand / selectedId", "错误处理", "中", "", ""),
         ("A050", "品牌详情页", "移除品牌内最后一个门店时显示警告确认框", "removeStoreFromBrand", "边界输入", "中", "", "零门店边界"),

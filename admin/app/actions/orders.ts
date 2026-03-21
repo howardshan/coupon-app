@@ -31,7 +31,8 @@ export type OrdersListPayload = {
 export type OrdersListFilters = {
   q?: string
   status?: string[]
-  merchantId?: string
+  /** 多个商家 UUID；非法项在查询前过滤 */
+  merchantIds?: string[]
   dateFrom?: string
   dateTo?: string
   amountMin?: number
@@ -44,6 +45,15 @@ export type OrdersListFilters = {
 const DEFAULT_LIMIT = 20
 const MAX_LIMIT = 100
 
+const MERCHANT_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+function normalizeMerchantIdsForQuery(raw: string[] | undefined): string[] | null {
+  if (!raw?.length) return null
+  const out = raw.map((s) => s.trim()).filter((id) => MERCHANT_UUID_RE.test(id))
+  return out.length ? out : null
+}
+
 /** 订单列表：支持关键词、状态/商家/日期/金额筛选、排序、分页；URL 持久化 */
 export async function getOrdersList(filters: OrdersListFilters = {}): Promise<OrdersListPayload> {
   const supabase = await requireAdmin()
@@ -51,7 +61,7 @@ export async function getOrdersList(filters: OrdersListFilters = {}): Promise<Or
 
   const q = filters.q?.trim() ?? ''
   const status = filters.status?.length ? filters.status : null
-  const merchantId = filters.merchantId?.trim() || null
+  const merchantIds = normalizeMerchantIdsForQuery(filters.merchantIds)
   const dateFrom = filters.dateFrom || null
   const dateTo = filters.dateTo || null
   const amountMin = filters.amountMin
@@ -65,10 +75,10 @@ export async function getOrdersList(filters: OrdersListFilters = {}): Promise<Or
   let totalCount = 0
   let fetchError: string | null = null
 
-  if (q !== '' || status || merchantId || dateFrom || dateTo || amountMin != null || amountMax != null) {
+  if (q !== '' || status || merchantIds || dateFrom || dateTo || amountMin != null || amountMax != null) {
     const rpcParams: Record<string, unknown> = {
       search_q: q || null,
-      p_merchant_id: merchantId || null,
+      p_merchant_ids: merchantIds,
       p_status: status || null,
       p_date_from: dateFrom || null,
       p_date_to: dateTo || null,
@@ -82,7 +92,7 @@ export async function getOrdersList(filters: OrdersListFilters = {}): Promise<Or
       supabase.rpc('get_admin_orders_search', rpcParams),
       supabase.rpc('get_admin_orders_count', {
         search_q: q || null,
-        p_merchant_id: merchantId || null,
+        p_merchant_ids: merchantIds,
         p_status: status || null,
         p_date_from: dateFrom || null,
         p_date_to: dateTo || null,
@@ -113,8 +123,8 @@ export async function getOrdersList(filters: OrdersListFilters = {}): Promise<Or
         { count: 'exact' }
       )
 
-    if (merchantId) {
-      query = query.eq('deals.merchant_id', merchantId)
+    if (merchantIds && merchantIds.length > 0) {
+      query = query.in('deals.merchant_id', merchantIds)
     }
     if (status && status.length > 0) {
       query = query.in('status', status)
