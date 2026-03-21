@@ -26,17 +26,25 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json();
-    const { orderId, reason } = body;
+    const { orderItemId, refundMethod, reason } = body;
 
-    // 输入校验：orderId 必填且为非空字符串
-    if (!orderId || typeof orderId !== 'string' || orderId.trim() === '') {
+    // 参数校验：orderItemId 必填
+    if (!orderItemId || typeof orderItemId !== 'string' || orderItemId.trim() === '') {
       return new Response(
-        JSON.stringify({ error: 'orderId is required' }),
+        JSON.stringify({ error: 'orderItemId is required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
 
-    // 防止 reason 超长（数据库 text 列无硬限制，但业务上限制 500 字符）
+    // 参数校验：refundMethod 必填，只允许两种值
+    if (refundMethod !== 'store_credit' && refundMethod !== 'original_payment') {
+      return new Response(
+        JSON.stringify({ error: 'refundMethod must be store_credit or original_payment' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
+    // 防止 reason 超长（业务上限制 500 字符）
     if (reason !== undefined && reason !== null) {
       if (typeof reason !== 'string') {
         return new Response(
@@ -52,127 +60,180 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 用户 JWT 客户端：仅用于初始 SELECT，强制 RLS 行归属校验
+    // 用户 JWT 客户端：用于查询 order_item，强制 RLS 行归属校验（确保只能退自己的券）
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_ANON_KEY') ?? '',
       { global: { headers: { Authorization: authHeader } } },
     );
 
-    // Service role 客户端：绕过 RLS，用于写回 orders 和 payments
-    // （普通用户 JWT 的 RLS UPDATE 策略只允许将 status 改为 refund_requested，
-    //  无法直接写入 refunded；退款完成后需由受信任的服务端代码写入）
+    // Service role 客户端：绕过 RLS，用于写回 order_items / coupons 以及调用 RPC
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     );
 
-    // 查询订单：通过用户 JWT 客户端确保只能查到自己的订单（RLS）
-    const { data: order, error: orderErr } = await supabase
-      .from('orders')
-      .select('payment_intent_id, total_amount, status, refund_requested_at, capture_method')
-      .eq('id', orderId)
+    // 查询 order_item 以及关联 order 的信息
+    // 通过用户 JWT 客户端查询，RLS 保证只能查到自己订单下的 item
+    const { data: item, error: itemErr } = await supabase
+      .from('order_items')
+      .select(`
+        id,
+        unit_price,
+        service_fee,
+        customer_status,
+        orders!inner (
+          id,
+          user_id,
+          stripe_charge_id
+        )
+      `)
+      .eq('id', orderItemId)
       .single();
 
-    if (orderErr || !order) {
+    if (itemErr || !item) {
       return new Response(
-        JSON.stringify({ error: 'Order not found' }),
+        JSON.stringify({ error: 'Order item not found' }),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
 
-    // 仅处理「已提交退款申请」的订单（管理员审核通过时调用）
-    if (order.status !== 'refund_requested') {
-      if (order.status === 'refunded') {
-        return new Response(
-          JSON.stringify({ error: 'Refund already completed' }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-        );
-      }
-      if (order.status === 'used' || order.status === 'expired') {
-        return new Response(
-          JSON.stringify({ error: 'Cannot refund used or expired order' }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-        );
-      }
+    const order = item.orders as { id: string; user_id: string; stripe_charge_id: string };
+    const customerStatus: string = item.customer_status ?? '';
+
+    // 退款资格校验
+    // - unused: 允许两种退款方式
+    // - used: 核销后仅允许 store_credit（售后走线下）
+    // - 其他状态（refund_success / refund_pending / expired 等）：拒绝
+    if (customerStatus === 'used' && refundMethod === 'original_payment') {
       return new Response(
-        JSON.stringify({ error: 'Order must be in refund_requested status' }),
+        JSON.stringify({ error: 'Used coupons can only be refunded via store credit' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
 
+    if (customerStatus !== 'unused' && customerStatus !== 'used') {
+      return new Response(
+        JSON.stringify({ error: `Cannot refund item with status: ${customerStatus}` }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
+    const unitPrice = Number(item.unit_price ?? 0);
+    const serviceFee = Number(item.service_fee ?? 0);
     const now = new Date().toISOString();
-    // 判断是否为预授权模式：manual = 取消预授权（无需退款），automatic = 正常退款
-    const isPreAuth = order.capture_method === 'manual';
 
-    try {
-      let refundId = 'pre_auth_cancelled';
+    if (refundMethod === 'store_credit') {
+      // ── store_credit 退款流程 ──────────────────────────────────────────────
+      // 退款金额包含 service fee（平台承担手续费补偿用户）
+      const refundAmount = unitPrice + serviceFee;
 
-      if (isPreAuth) {
-        // 预授权模式：取消 PaymentIntent 而非创建退款
-        // Stripe 取消预授权不产生退款记录，资金直接释放回用户账户
-        await stripe.paymentIntents.cancel(order.payment_intent_id);
-      } else {
-        // 自动扣款模式：向 Stripe 发起退款
-        const refund = await stripe.refunds.create({
-          payment_intent: order.payment_intent_id,
-          reason: 'requested_by_customer',
-        });
-        refundId = refund.id;
+      // 调用 RPC 增加用户 store credit 余额
+      const { error: rpcErr } = await supabaseAdmin.rpc('add_store_credit', {
+        p_user_id: order.user_id,
+        p_amount: refundAmount,
+        p_order_item_id: orderItemId,
+        p_description: reason ?? 'Refund for order item',
+      });
+
+      if (rpcErr) {
+        console.error('add_store_credit rpc error:', rpcErr);
+        return new Response(
+          JSON.stringify({ error: 'Failed to add store credit' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
       }
 
-      // 使用 service role 客户端更新 orders 表
+      // 更新 order_items
       await supabaseAdmin
-        .from('orders')
+        .from('order_items')
         .update({
-          status: 'refunded',
-          refund_reason: reason ?? 'customer_request',
-          refund_requested_at: order.refund_requested_at ?? now,
+          customer_status: 'refund_success',
           refunded_at: now,
+          refund_amount: refundAmount,
+          refund_method: 'store_credit',
+          refund_reason: reason ?? null,
           updated_at: now,
         })
-        .eq('id', orderId);
-
-      // 更新 payments 表
-      await supabaseAdmin
-        .from('payments')
-        .update({
-          status: 'refunded',
-          refund_amount: order.total_amount,
-        })
-        .eq('order_id', orderId);
+        .eq('id', orderItemId);
 
       // 将关联优惠券标记为已退款
       await supabaseAdmin
         .from('coupons')
-        .update({ status: 'refunded' })
-        .eq('order_id', orderId);
+        .update({ status: 'refunded', updated_at: now })
+        .eq('order_item_id', orderItemId);
 
       return new Response(
         JSON.stringify({
-          refundId,
-          // 预授权取消时 status 用 'cancelled'，正常退款用 'succeeded'
-          status: isPreAuth ? 'cancelled' : 'succeeded',
-          amount: Number(order.total_amount),
+          success: true,
+          refundMethod: 'store_credit',
+          refundAmount,
+          status: 'refund_success',
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
-    } catch (stripeErr: unknown) {
-      // Stripe 操作失败：将订单标记为 refund_failed
+
+    } else {
+      // ── original_payment 退款流程 ─────────────────────────────────────────
+      // 退款金额不含 service fee（Stripe 手续费无法追回）
+      const refundAmount = unitPrice;
+
+      if (!order.stripe_charge_id) {
+        return new Response(
+          JSON.stringify({ error: 'No Stripe charge found for this order' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
+
+      let stripeRefundId: string;
+      try {
+        // 向 Stripe 发起单券金额退款
+        const refund = await stripe.refunds.create({
+          charge: order.stripe_charge_id,
+          amount: Math.round(refundAmount * 100), // 转换为分（cents）
+          metadata: { order_item_id: orderItemId },
+        });
+        stripeRefundId = refund.id;
+      } catch (stripeErr: unknown) {
+        const message = stripeErr instanceof Error ? stripeErr.message : 'Stripe refund failed';
+        console.error('Stripe refund error:', stripeErr);
+        return new Response(
+          JSON.stringify({ error: message }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
+
+      // Stripe 退款发起成功，先标记为 refund_pending
+      // 等待 stripe-webhook 处理 charge.refunded 事件后再更新为 refund_success
       await supabaseAdmin
-        .from('orders')
+        .from('order_items')
         .update({
-          status: 'refund_failed',
+          customer_status: 'refund_pending',
+          refund_amount: refundAmount,
+          refund_method: 'original_payment',
+          refund_reason: reason ?? null,
           updated_at: now,
         })
-        .eq('id', orderId);
+        .eq('id', orderItemId);
 
-      const message = stripeErr instanceof Error ? stripeErr.message : 'Stripe refund failed';
+      // 将关联优惠券标记为已退款
+      await supabaseAdmin
+        .from('coupons')
+        .update({ status: 'refunded', updated_at: now })
+        .eq('order_item_id', orderItemId);
+
       return new Response(
-        JSON.stringify({ error: message }),
-        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        JSON.stringify({
+          success: true,
+          refundMethod: 'original_payment',
+          refundAmount,
+          stripeRefundId,
+          status: 'refund_pending',
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
+
   } catch (err) {
     console.error('create-refund error:', err);
     return new Response(

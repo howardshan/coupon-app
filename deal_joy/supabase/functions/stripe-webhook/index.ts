@@ -33,7 +33,8 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 // ─── 事件处理：payment_intent.succeeded ─────────────────────────────────────
-// 支付成功：更新订单状态，写入 payments 记录（幂等：检查 payment_intent_id 唯一约束）
+// 支付成功：写入 payments 审计记录，同时更新 orders.paid_at（如为 null）
+// 幂等：payments 表 payment_intent_id 有 UNIQUE 约束
 async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent): Promise<void> {
   const paymentIntentId = paymentIntent.id;
   const chargeId = typeof paymentIntent.latest_charge === 'string'
@@ -63,7 +64,7 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent): Prom
   // 通过 payment_intent_id 找到对应订单
   const { data: order, error: orderErr } = await supabase
     .from('orders')
-    .select('id, user_id, total_amount, status')
+    .select('id, user_id, total_amount, status, paid_at')
     .eq('payment_intent_id', paymentIntentId)
     .maybeSingle();
 
@@ -78,20 +79,25 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent): Prom
     return;
   }
 
-  // 更新订单：记录 stripe_charge_id（如果支付成功时已有 charge）
+  // 更新订单：记录 stripe_charge_id，并在 paid_at 为 null 时补填支付时间
+  const orderUpdateFields: Record<string, unknown> = {
+    updated_at: new Date().toISOString(),
+  };
   if (chargeId) {
-    const { error: updateOrderErr } = await supabase
-      .from('orders')
-      .update({
-        stripe_charge_id: chargeId,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', order.id);
+    orderUpdateFields.stripe_charge_id = chargeId;
+  }
+  if (!order.paid_at) {
+    orderUpdateFields.paid_at = new Date().toISOString();
+  }
 
-    if (updateOrderErr) {
-      console.error('[payment_intent.succeeded] 更新订单 charge_id 失败:', updateOrderErr);
-      // 非致命错误，继续写 payments 记录
-    }
+  const { error: updateOrderErr } = await supabase
+    .from('orders')
+    .update(orderUpdateFields)
+    .eq('id', order.id);
+
+  if (updateOrderErr) {
+    console.error('[payment_intent.succeeded] 更新订单失败:', updateOrderErr);
+    // 非致命错误，继续写 payments 记录
   }
 
   // 插入 payments 审计记录
@@ -117,7 +123,7 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent): Prom
     throw new Error(`插入 payments 失败: ${insertPaymentErr.message}`);
   }
 
-  console.log(`[payment_intent.succeeded] 完成 order=${order.id}`);
+  console.log(`[payment_intent.succeeded] 完成 order=${order.id} paid_at=${orderUpdateFields.paid_at ?? '已有值'}`);
 }
 
 // ─── 事件处理：payment_intent.payment_failed ─────────────────────────────────
@@ -174,15 +180,17 @@ async function handlePaymentFailed(paymentIntent: Stripe.PaymentIntent): Promise
 }
 
 // ─── 事件处理：charge.refunded ────────────────────────────────────────────────
-// 退款完成：更新 orders 状态为 refunded，更新 coupons 状态为 refunded，
-// 更新 payments 记录的退款金额和状态
+// 退款完成（Order V3 per-item 退款模式）：
+//   - 有 order_item_id（来自 refund.metadata）：仅更新对应 order_item 的退款状态
+//   - 无 order_item_id（旧订单兼容）：保持原有整单退款逻辑
+// 同时更新 payments 表退款金额和状态
 async function handleChargeRefunded(charge: Stripe.Charge): Promise<void> {
   const chargeId = charge.id;
   const paymentIntentId = typeof charge.payment_intent === 'string'
     ? charge.payment_intent
     : charge.payment_intent?.id ?? null;
 
-  // 退款金额（Stripe 单位为 cents，转为元）
+  // 退款金额（Stripe 单位为 cents，转为美元）
   const refundAmountCents = charge.amount_refunded ?? 0;
   const refundAmount = refundAmountCents / 100;
 
@@ -195,7 +203,14 @@ async function handleChargeRefunded(charge: Stripe.Charge): Promise<void> {
     return;
   }
 
-  // 通过 payment_intent_id 找到订单
+  // 从最新的 refund 对象的 metadata 中获取 order_item_id
+  // Stripe charge.refunds 是分页列表，取第一条（最新退款）
+  const latestRefund = charge.refunds?.data?.[0];
+  const orderItemId = latestRefund?.metadata?.order_item_id ?? null;
+
+  console.log(`[charge.refunded] order_item_id=${orderItemId ?? '无（旧订单兼容模式）'}`);
+
+  // 通过 payment_intent_id 找到订单（无论哪种模式都需要）
   const { data: order, error: orderErr } = await supabase
     .from('orders')
     .select('id, status')
@@ -212,37 +227,69 @@ async function handleChargeRefunded(charge: Stripe.Charge): Promise<void> {
     return;
   }
 
-  // 更新订单状态为 refunded
-  const { error: updateOrderErr } = await supabase
-    .from('orders')
-    .update({
-      status: 'refunded',
-      stripe_charge_id: chargeId,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', order.id);
+  const now = new Date().toISOString();
 
-  if (updateOrderErr) {
-    console.error('[charge.refunded] 更新订单状态失败:', updateOrderErr);
-    throw new Error(`更新订单状态失败: ${updateOrderErr.message}`);
+  if (orderItemId) {
+    // ── per-item 退款模式（Order V3）────────────────────────────────────────
+    // 从 refund 对象获取本次退款金额（单条 refund，不是累计金额）
+    const itemRefundAmountCents = latestRefund?.amount ?? 0;
+    const itemRefundAmount = itemRefundAmountCents / 100;
+
+    const { error: updateItemErr } = await supabase
+      .from('order_items')
+      .update({
+        customer_status: 'refund_success',
+        refunded_at: now,
+        refund_amount: itemRefundAmount,
+        updated_at: now,
+      })
+      .eq('id', orderItemId);
+
+    if (updateItemErr) {
+      console.error('[charge.refunded] 更新 order_item 退款状态失败:', updateItemErr);
+      throw new Error(`更新 order_item 失败: ${updateItemErr.message}`);
+    }
+
+    console.log(
+      `[charge.refunded] per-item 退款完成 order_item=${orderItemId} refund=${itemRefundAmount}`,
+    );
+  } else {
+    // ── 旧订单兼容：整单退款模式 ─────────────────────────────────────────────
+    // 更新订单状态为 refunded
+    const { error: updateOrderErr } = await supabase
+      .from('orders')
+      .update({
+        status: 'refunded',
+        stripe_charge_id: chargeId,
+        updated_at: now,
+      })
+      .eq('id', order.id);
+
+    if (updateOrderErr) {
+      console.error('[charge.refunded] 更新订单状态失败:', updateOrderErr);
+      throw new Error(`更新订单状态失败: ${updateOrderErr.message}`);
+    }
+
+    // 更新该订单下所有优惠券状态为 refunded
+    const { error: updateCouponErr } = await supabase
+      .from('coupons')
+      .update({ status: 'refunded' })
+      .eq('order_id', order.id);
+
+    if (updateCouponErr) {
+      console.error('[charge.refunded] 更新优惠券状态失败:', updateCouponErr);
+      // 非致命，继续更新 payments
+    }
+
+    console.log(`[charge.refunded] 整单退款完成 order=${order.id} refund=${refundAmount}`);
   }
 
-  // 更新该订单下所有优惠券状态为 refunded
-  const { error: updateCouponErr } = await supabase
-    .from('coupons')
-    .update({ status: 'refunded' })
-    .eq('order_id', order.id);
-
-  if (updateCouponErr) {
-    console.error('[charge.refunded] 更新优惠券状态失败:', updateCouponErr);
-    // 非致命，继续更新 payments
-  }
-
-  // P1 fix: 更新 payments 表退款信息时只对已存在的行做 UPDATE，不做 upsert INSERT。
+  // ── 更新 payments 表退款信息（两种模式都执行）────────────────────────────
+  // P1 fix: 只做 UPDATE，不做 upsert INSERT。
   // upsert 的 INSERT 路径需要填充所有 NOT NULL 列（user_id, amount, currency），
   // 但 charge.refunded 事件不携带这些字段，若行不存在则会触发 NOT NULL 违规。
   // 正常业务流程下 payment_intent.succeeded 总先于 charge.refunded 到达；
-  // 若行确实不存在，只记录警告，不影响已完成的订单/优惠券状态更新。
+  // 若行确实不存在，只记录警告。
   const { data: existingPayment, error: checkPaymentErr } = await supabase
     .from('payments')
     .select('id')
@@ -268,11 +315,11 @@ async function handleChargeRefunded(charge: Stripe.Charge): Promise<void> {
 
     if (updatePaymentErr) {
       console.error('[charge.refunded] 更新 payments 退款信息失败:', updatePaymentErr);
-      // 记录但不抛出，订单和优惠券已更新成功
+      // 记录但不抛出，主要业务逻辑已完成
     }
   }
 
-  console.log(`[charge.refunded] 完成 order=${order.id} refund=${refundAmount}`);
+  console.log(`[charge.refunded] 处理完成 order=${order.id}`);
 }
 
 // ─── 事件处理：charge.dispute.created ────────────────────────────────────────
@@ -313,105 +360,6 @@ async function handleDisputeCreated(dispute: Stripe.Dispute): Promise<void> {
   } else {
     console.warn(`[charge.dispute.created] 未找到对应订单 charge=${chargeId}`);
   }
-}
-
-// ─── 事件处理：payment_intent.amount_capturable_updated ───────────────────────
-// 预授权成功：将订单状态更新为 authorized，is_captured = false
-async function handleAmountCapturableUpdated(pi: Stripe.PaymentIntent): Promise<void> {
-  const paymentIntentId = pi.id;
-  console.log(`[amount_capturable_updated] pi=${paymentIntentId}`);
-
-  const { data: order, error: orderErr } = await supabase
-    .from('orders')
-    .select('id, status')
-    .eq('payment_intent_id', paymentIntentId)
-    .maybeSingle();
-
-  if (orderErr) {
-    console.error('[amount_capturable_updated] 查询订单失败:', orderErr);
-    throw new Error(`查询订单失败: ${orderErr.message}`);
-  }
-
-  if (!order) {
-    // 订单可能由客户端在授权成功后写入，存在竞态；记录警告但不抛出
-    console.warn(`[amount_capturable_updated] 未找到对应订单 pi=${paymentIntentId}`);
-    return;
-  }
-
-  // 更新订单状态为 authorized，标记 is_captured = false
-  const { error: updateErr } = await supabase
-    .from('orders')
-    .update({
-      status: 'authorized',
-      is_captured: false,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', order.id);
-
-  if (updateErr) {
-    console.error('[amount_capturable_updated] 更新订单状态失败:', updateErr);
-    throw new Error(`更新订单状态失败: ${updateErr.message}`);
-  }
-
-  // 同时激活关联优惠券（状态改为 active，可供使用）
-  await supabase
-    .from('coupons')
-    .update({ status: 'active' })
-    .eq('order_id', order.id);
-
-  console.log(`[amount_capturable_updated] 完成 order=${order.id} → authorized`);
-}
-
-// ─── 事件处理：payment_intent.canceled ────────────────────────────────────────
-// 预授权取消（用户在核销前退款）：更新订单为 refunded，coupon 为 refunded
-async function handlePaymentIntentCanceled(pi: Stripe.PaymentIntent): Promise<void> {
-  const paymentIntentId = pi.id;
-  console.log(`[payment_intent.canceled] pi=${paymentIntentId}`);
-
-  const { data: order, error: orderErr } = await supabase
-    .from('orders')
-    .select('id, status')
-    .eq('payment_intent_id', paymentIntentId)
-    .maybeSingle();
-
-  if (orderErr) {
-    console.error('[payment_intent.canceled] 查询订单失败:', orderErr);
-    throw new Error(`查询订单失败: ${orderErr.message}`);
-  }
-
-  if (!order) {
-    console.warn(`[payment_intent.canceled] 未找到对应订单 pi=${paymentIntentId}`);
-    return;
-  }
-
-  // 已经是 refunded 状态则跳过（幂等）
-  if (order.status === 'refunded') {
-    console.log(`[payment_intent.canceled] order=${order.id} 已是 refunded，跳过`);
-    return;
-  }
-
-  const now = new Date().toISOString();
-
-  const { error: updateErr } = await supabase
-    .from('orders')
-    .update({
-      status: 'refunded',
-      refunded_at: now,
-      updated_at: now,
-    })
-    .eq('id', order.id);
-
-  if (updateErr) {
-    console.error('[payment_intent.canceled] 更新订单状态失败:', updateErr);
-    throw new Error(`更新订单状态失败: ${updateErr.message}`);
-  }
-
-  await supabase
-    .from('coupons')
-    .update({ status: 'refunded' })
-    .eq('order_id', order.id);
-
-  console.log(`[payment_intent.canceled] 完成 order=${order.id} → refunded`);
 }
 
 // ─── 主处理器 ────────────────────────────────────────────────────────────────
@@ -478,16 +426,6 @@ Deno.serve(async (req) => {
 
       case 'charge.refunded':
         await handleChargeRefunded(event.data.object as Stripe.Charge);
-        break;
-
-      case 'payment_intent.amount_capturable_updated':
-        // 预授权成功：更新订单状态为 authorized，is_captured = false
-        await handleAmountCapturableUpdated(event.data.object as Stripe.PaymentIntent);
-        break;
-
-      case 'payment_intent.canceled':
-        // 预授权取消（未核销时用户退款）：更新订单为 refunded
-        await handlePaymentIntentCanceled(event.data.object as Stripe.PaymentIntent);
         break;
 
       case 'charge.dispute.created':

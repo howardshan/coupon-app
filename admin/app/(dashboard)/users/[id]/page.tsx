@@ -41,16 +41,16 @@ export default async function UserDetailPage({
   const bannedUntil = authUser?.user?.banned_until
   const isBanned = bannedUntil && new Date(bannedUntil) > new Date()
 
-  // 购买记录（orders）
-  const { data: orders } = await supabase
+  // 购买记录（orders）— 用 service client 绕过 RLS
+  const { data: orders } = await serviceClient
     .from('orders')
     .select('id, deal_id, quantity, total_price, status, created_at, deals(title, merchants(name))')
     .eq('user_id', id)
     .order('created_at', { ascending: false })
     .limit(50)
 
-  // 券使用记录（coupons）
-  const { data: coupons } = await supabase
+  // 券使用记录（coupons）— 用 service client 绕过 RLS
+  const { data: coupons } = await serviceClient
     .from('coupons')
     .select('id, deal_id, status, qr_code, used_at, expires_at, created_at, void_reason, voided_at, deals(title, merchants(name))')
     .eq('user_id', id)

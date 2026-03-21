@@ -1,0 +1,62 @@
+{
+  "module": "commission-simplify",
+  "review_date": "2026-03-20",
+  "reviewer": "Claude Sonnet 4.6",
+  "summary": "将 Admin 管理端三档佣金费率（fixed_date_rate / short_after_purchase_rate / long_after_purchase_rate）简化为统一单一 commission_rate，共修改 5 个文件。",
+  "files_modified": [
+    "admin/components/commission-config-form.tsx",
+    "admin/components/merchant-commission-form.tsx",
+    "admin/app/actions/admin.ts",
+    "admin/app/(dashboard)/finance/page.tsx",
+    "admin/app/(dashboard)/merchants/[id]/page.tsx"
+  ],
+  "issues": [
+    {
+      "severity": "P0",
+      "file": "admin/app/actions/admin.ts",
+      "description": "updateMerchantCommission 函数签名仍包含已废弃的 commission_fixed_date_rate / commission_short_rate / commission_long_rate 字段，与新表结构不一致，写库会失败。",
+      "status": "FIXED",
+      "fix": "将参数改为 commission_rate: number | null，移除三个旧字段。"
+    },
+    {
+      "severity": "P0",
+      "file": "admin/app/actions/admin.ts",
+      "description": "updateCommissionConfig 写库时仍传 fixed_date_rate / short_after_purchase_rate / long_after_purchase_rate，与新表结构不一致。",
+      "status": "FIXED",
+      "fix": "改为写入 commission_rate 单一字段。"
+    },
+    {
+      "severity": "P0",
+      "file": "admin/app/(dashboard)/finance/page.tsx",
+      "description": "select 中查询三个旧列名，若列已被删除会导致 Supabase 报错，CommissionConfigForm 接受到的 config 对象也缺少 commission_rate 字段。",
+      "status": "FIXED",
+      "fix": "select 改为 commission_rate 单一字段。"
+    },
+    {
+      "severity": "P0",
+      "file": "admin/app/(dashboard)/merchants/[id]/page.tsx",
+      "description": "1) 全局配置 select 仍查旧三列；2) 商家 select 仍查旧三列；3) MerchantCommissionForm props 传旧字段名，编译报类型错误且运行时值为 undefined。",
+      "status": "FIXED",
+      "fix": "全局配置 select 改为 commission_rate；商家 select 改为 commission_rate；props 更新为 commissionRate / defaultCommissionRate。"
+    },
+    {
+      "severity": "P1",
+      "file": "admin/components/commission-config-form.tsx",
+      "description": "旧接口 CommissionConfig 仍定义三个费率字段，与新 select 返回结构不匹配，TypeScript 会报类型错误。",
+      "status": "FIXED",
+      "fix": "CommissionConfig interface 改为只含 commission_rate: number。"
+    },
+    {
+      "severity": "P1",
+      "file": "admin/components/merchant-commission-form.tsx",
+      "description": "Props interface 定义了 commissionFixedDateRate / commissionShortRate / commissionLongRate / defaultFixedRate / defaultShortRate / defaultLongRate，与新调用侧不一致，导致类型错误。",
+      "status": "FIXED",
+      "fix": "Props 改为 commissionRate / defaultCommissionRate，移除旧字段；handleClearAll 同步更新。"
+    }
+  ],
+  "no_issues": [],
+  "notes": [
+    "数据库层面需要同步执行 migration：在 platform_commission_config 表新增 commission_rate 列（或重命名），在 merchants 表新增 commission_rate 列（或重命名）。本次审查仅覆盖前端 + Server Action 代码层，DB migration 不在本次修改范围内。",
+    "merchant-commission-form.tsx tooltip 注释保留中文（符合规范，注释中文、UI 英文）。"
+  ]
+}

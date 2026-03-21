@@ -162,7 +162,8 @@ async function handleVerify(
       merchant_id,
       deal_id,
       order_id,
-      orders!coupons_order_id_fkey (
+      order_item_id,
+      order_items (
         applicable_store_ids
       ),
       deals!inner (
@@ -186,8 +187,8 @@ async function handleVerify(
 
   // 检查门店是否有权核销此券（优先用购买时门店快照）
   // deno-lint-ignore no-explicit-any
-  const orderData = (coupon as any).orders;
-  const snapshotStoreIds: string[] | null = orderData?.applicable_store_ids ?? null;
+  const itemData = (coupon as any).order_items;
+  const snapshotStoreIds: string[] | null = itemData?.applicable_store_ids ?? null;
   const storeCheckResult = await checkStoreRedemptionEligibility(
     supabase, coupon.deal_id, merchantId, snapshotStoreIds
   );
@@ -290,10 +291,10 @@ async function handleRedeem(
     return errorResponse('invalid_request', 'coupon_id is required');
   }
 
-  // 查询券的当前状态，JOIN orders 获取门店快照和支付模式
+  // 查询券的当前状态，JOIN order_items 获取门店快照
   const { data: coupon, error: queryError } = await supabase
     .from('coupons')
-    .select('id, status, merchant_id, expires_at, redeemed_at, deal_id, order_id, orders!coupons_order_id_fkey(applicable_store_ids, payment_intent_id, capture_method)')
+    .select('id, status, merchant_id, expires_at, redeemed_at, deal_id, order_id, order_item_id, order_items(applicable_store_ids)')
     .eq('id', couponId)
     .single();
 
@@ -303,8 +304,8 @@ async function handleRedeem(
 
   // 安全检查：用购买时门店快照验证门店权限
   // deno-lint-ignore no-explicit-any
-  const redeemOrderData = (coupon as any).orders;
-  const redeemSnapshotIds: string[] | null = redeemOrderData?.applicable_store_ids ?? null;
+  const redeemItemData = (coupon as any).order_items;
+  const redeemSnapshotIds: string[] | null = redeemItemData?.applicable_store_ids ?? null;
   const storeCheckResult = await checkStoreRedemptionEligibility(
     supabase, coupon.deal_id, merchantId, redeemSnapshotIds
   );
@@ -336,17 +337,7 @@ async function handleRedeem(
     return errorResponse('expired', 'This voucher has expired');
   }
 
-  // 预授权模式检查：距离过期不足 1 小时则拒绝核销（防止 capture 后 PI 旋即失效）
-  // deno-lint-ignore no-explicit-any
-  const orderData = (coupon as any).orders;
-  const captureMethod: string = orderData?.capture_method ?? 'automatic';
-  if (captureMethod === 'manual') {
-    const expiresAt = new Date(coupon.expires_at);
-    const oneHourFromNow = new Date(Date.now() + 60 * 60 * 1000);
-    if (expiresAt < oneHourFromNow) {
-      return errorResponse('expiring_soon', 'Deal expires soon, cannot redeem', coupon.expires_at, 400);
-    }
-  }
+  // V3: 不再需要预授权检查（已改为直接 charge）
 
   const now = new Date().toISOString();
 
@@ -367,30 +358,21 @@ async function handleRedeem(
     return errorResponse('server_error', 'Failed to redeem voucher', undefined, 500);
   }
 
-  // 预授权模式（short_after_purchase）：核销成功后立即 capture Stripe PI
-  if (captureMethod === 'manual') {
-    const paymentIntentId: string = orderData?.payment_intent_id ?? '';
-    if (paymentIntentId) {
-      const captureRes = await fetch(
-        `https://api.stripe.com/v1/payment_intents/${paymentIntentId}/capture`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${STRIPE_SECRET_KEY}`,
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
-        },
-      );
-      if (!captureRes.ok) {
-        const errText = await captureRes.text();
-        console.error(`merchant-scan: capture 失败 payment_intent=${paymentIntentId}`, errText);
-        // capture 失败 = 核销失败，回滚 coupon 状态为 active
-        await supabase
-          .from('coupons')
-          .update({ status: 'active', redeemed_at: null, redeemed_by_merchant_id: null, redeemed_at_merchant_id: null, used_at: null })
-          .eq('id', couponId);
-        return errorResponse('payment_capture_failed', 'Payment capture failed, please try again', undefined, 402);
-      }
+  // V3: 更新 order_items 双状态（customer_status='used', merchant_status='unpaid'）
+  if (coupon.order_item_id) {
+    const { error: itemUpdateError } = await supabase
+      .from('order_items')
+      .update({
+        customer_status: 'used',
+        merchant_status: 'unpaid',
+        redeemed_merchant_id: merchantId,
+        redeemed_at: now,
+        redeemed_by: actorUserId,
+      })
+      .eq('id', coupon.order_item_id);
+
+    if (itemUpdateError) {
+      console.error('order_items update error:', itemUpdateError);
     }
   }
 
@@ -409,23 +391,7 @@ async function handleRedeem(
     console.error('redemption_log insert error:', logError);
   }
 
-  // 核销成功后，若为预授权订单（is_captured = false）则触发扣款
-  // 使用 fire-and-forget 模式：capture 失败不中断核销流程，记录日志待人工处理
-  // deno-lint-ignore no-explicit-any
-  const captureOrderData = (coupon as any).orders;
-  if (captureOrderData?.is_captured === false) {
-    const captureUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/capture-payment`;
-    fetch(captureUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
-      },
-      body: JSON.stringify({ orderId: coupon.order_id }),
-    }).catch((e: Error) => {
-      console.error('[merchant-scan/redeem] capture-payment failed:', e.message);
-    });
-  }
+  // V3: 不再需要 capture（已改为直接 charge）
 
   return jsonResponse({ redeemed_at: now, coupon_id: couponId });
 }

@@ -1,6 +1,8 @@
 // 用户端订单详情模型（与 user-order-detail Edge Function 返回结构一致）
+// V3 新增：items 字段，从 json['order']['items'] 解析 OrderItemModel 列表
 
 import 'package:flutter/material.dart';
+import 'order_item_model.dart';
 
 // =============================================================
 // TimelineEvent — 时间线单节点
@@ -136,6 +138,9 @@ class OrderDetailModel {
 
   final OrderTimeline timeline;
 
+  /// V3 新增：order items 列表，从 json['order']['items'] 或 json['items'] 解析
+  final List<OrderItemModel> items;
+
   const OrderDetailModel({
     required this.id,
     required this.orderNumber,
@@ -164,10 +169,20 @@ class OrderDetailModel {
     this.refundedAt,
     this.refundRejectedAt,
     required this.timeline,
+    this.items = const [],
   });
 
   factory OrderDetailModel.fromJson(Map<String, dynamic> json) {
     final timelineJson = json['timeline'] as List<dynamic>? ?? [];
+
+    // V3：解析 items 列表（Edge Function 将 items 放在 json['order']['items'] 或顶层 json['items']）
+    // 顶层直接传入时用 json['items']，通过 order 包装时调用方应先解包 json['order']
+    final rawItems = json['items'] as List?;
+    final items = rawItems
+            ?.map((e) => OrderItemModel.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const <OrderItemModel>[];
+
     return OrderDetailModel(
       id: json['id'] as String,
       orderNumber: json['order_number'] as String? ?? 'DJ-????????',
@@ -208,6 +223,7 @@ class OrderDetailModel {
           ? DateTime.parse(json['refund_rejected_at'] as String)
           : null,
       timeline: OrderTimeline.fromJsonList(timelineJson),
+      items: items,
     );
   }
 

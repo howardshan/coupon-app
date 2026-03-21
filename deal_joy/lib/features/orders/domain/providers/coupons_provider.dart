@@ -65,12 +65,17 @@ class RefundNotifier extends AsyncNotifier<void> {
   Future<void> build() async {}
 
   /// 通过 couponId 请求退款（券详情页使用）
-  Future<bool> requestRefund(String couponId, {String? reason}) async {
+  /// [refundMethod] 退款方式：'store_credit' | 'original_payment'，默认 'original_payment'
+  Future<bool> requestRefund(
+    String couponId, {
+    String? reason,
+    String refundMethod = 'original_payment',
+  }) async {
     state = const AsyncValue.loading();
     state = await AsyncValue.guard(
       () => ref
           .read(couponsRepositoryProvider)
-          .requestRefund(couponId, reason: reason),
+          .requestRefund(couponId, reason: reason, refundMethod: refundMethod),
     );
     if (!state.hasError) {
       // 刷新券列表和订单列表
@@ -81,7 +86,32 @@ class RefundNotifier extends AsyncNotifier<void> {
     return !state.hasError;
   }
 
-  /// 通过 orderId 请求退款（订单列表/退款页使用）
+  /// V3：通过 orderItemId 直接请求退款（订单详情页 item 维度退款）
+  /// [refundMethod] 退款方式：'store_credit' | 'original_payment'，默认 'original_payment'
+  Future<bool> requestItemRefund(
+    String orderItemId, {
+    String refundMethod = 'original_payment',
+    String? reason,
+  }) async {
+    state = const AsyncValue.loading();
+    state = await AsyncValue.guard(
+      () => ref
+          .read(couponsRepositoryProvider)
+          .requestRefundByItemId(
+            orderItemId,
+            refundMethod: refundMethod,
+            reason: reason,
+          ),
+    );
+    if (!state.hasError) {
+      // 刷新券列表和订单列表
+      ref.invalidate(userCouponsProvider);
+      ref.invalidate(userOrdersProvider);
+    }
+    return !state.hasError;
+  }
+
+  /// 通过 orderId 请求退款（旧版订单列表/退款页使用，向后兼容）
   Future<bool> requestRefundByOrderId(String orderId,
       {String? reason}) async {
     state = const AsyncValue.loading();
@@ -98,7 +128,6 @@ class RefundNotifier extends AsyncNotifier<void> {
     }
     return !state.hasError;
   }
-
 }
 
 final refundNotifierProvider =
