@@ -21,7 +21,7 @@ class TimelineEvent {
 
   factory TimelineEvent.fromJson(Map<String, dynamic> json) {
     return TimelineEvent(
-      event: json['event'] as String,
+      event: json['event'] as String? ?? '',
       timestamp: json['timestamp'] != null
           ? DateTime.parse(json['timestamp'] as String)
           : null,
@@ -183,45 +183,41 @@ class OrderDetailModel {
             .toList() ??
         const <OrderItemModel>[];
 
+    // 辅助函数：同时尝试 snake_case 和 camelCase 字段名
+    T? pick<T>(String snake, String camel) =>
+        (json[snake] ?? json[camel]) as T?;
+    DateTime? pickDate(String snake, String camel) {
+      final v = json[snake] ?? json[camel];
+      return v != null ? DateTime.tryParse(v as String) : null;
+    }
+
     return OrderDetailModel(
-      id: json['id'] as String,
-      orderNumber: json['order_number'] as String? ?? 'DJ-????????',
-      status: json['status'] as String? ?? 'unused',
-      dealId: json['deal_id'] as String? ?? '',
-      dealTitle: json['deal_title'] as String? ?? '',
-      dealOriginalPrice: (json['deal_original_price'] as num?)?.toDouble() ?? 0.0,
-      dealDiscountPrice: (json['deal_discount_price'] as num?)?.toDouble() ?? 0.0,
-      dealImageUrl: json['deal_image_url'] as String?,
-      merchantName: json['merchant_name'] as String?,
-      quantity: (json['quantity'] as num?)?.toInt() ?? 1,
-      unitPrice: (json['unit_price'] as num?)?.toDouble() ?? 0.0,
-      totalAmount: (json['total_amount'] as num?)?.toDouble() ?? 0.0,
-      paymentIntentIdMasked: json['payment_intent_id_masked'] as String?,
-      paymentStatus: json['payment_status'] as String?,
-      refundAmount: (json['refund_amount'] as num?)?.toDouble(),
-      refundReason: json['refund_reason'] as String?,
-      couponId: json['coupon_id'] as String?,
-      couponCode: json['coupon_code'] as String?,
-      couponStatus: json['coupon_status'] as String?,
-      couponExpiresAt: json['coupon_expires_at'] != null
-          ? DateTime.parse(json['coupon_expires_at'] as String)
-          : null,
-      couponUsedAt: json['coupon_used_at'] != null
-          ? DateTime.parse(json['coupon_used_at'] as String)
-          : null,
-      createdAt: DateTime.parse(json['created_at'] as String),
-      updatedAt: json['updated_at'] != null
-          ? DateTime.parse(json['updated_at'] as String)
-          : null,
-      refundRequestedAt: json['refund_requested_at'] != null
-          ? DateTime.parse(json['refund_requested_at'] as String)
-          : null,
-      refundedAt: json['refunded_at'] != null
-          ? DateTime.parse(json['refunded_at'] as String)
-          : null,
-      refundRejectedAt: json['refund_rejected_at'] != null
-          ? DateTime.parse(json['refund_rejected_at'] as String)
-          : null,
+      id: pick<String>('id', 'id') ?? '',
+      orderNumber: pick<String>('order_number', 'orderNumber') ?? '',
+      status: pick<String>('status', 'status') ?? 'unused',
+      dealId: pick<String>('deal_id', 'dealId') ?? '',
+      dealTitle: pick<String>('deal_title', 'dealTitle') ?? '',
+      dealOriginalPrice: (pick<num>('deal_original_price', 'dealOriginalPrice'))?.toDouble() ?? 0.0,
+      dealDiscountPrice: (pick<num>('deal_discount_price', 'dealDiscountPrice'))?.toDouble() ?? 0.0,
+      dealImageUrl: pick<String>('deal_image_url', 'dealImageUrl'),
+      merchantName: pick<String>('merchant_name', 'merchantName'),
+      quantity: (pick<num>('quantity', 'quantity'))?.toInt() ?? 1,
+      unitPrice: (pick<num>('unit_price', 'unitPrice'))?.toDouble() ?? 0.0,
+      totalAmount: (pick<num>('total_amount', 'totalAmount'))?.toDouble() ?? 0.0,
+      paymentIntentIdMasked: pick<String>('payment_intent_id_masked', 'paymentIntentIdMasked'),
+      paymentStatus: pick<String>('payment_status', 'paymentStatus'),
+      refundAmount: (pick<num>('refund_amount', 'refundAmount'))?.toDouble(),
+      refundReason: pick<String>('refund_reason', 'refundReason'),
+      couponId: pick<String>('coupon_id', 'couponId'),
+      couponCode: pick<String>('coupon_code', 'couponCode'),
+      couponStatus: pick<String>('coupon_status', 'couponStatus'),
+      couponExpiresAt: pickDate('coupon_expires_at', 'couponExpiresAt'),
+      couponUsedAt: pickDate('coupon_used_at', 'couponUsedAt'),
+      createdAt: pickDate('created_at', 'createdAt') ?? DateTime.now(),
+      updatedAt: pickDate('updated_at', 'updatedAt'),
+      refundRequestedAt: pickDate('refund_requested_at', 'refundRequestedAt'),
+      refundedAt: pickDate('refunded_at', 'refundedAt'),
+      refundRejectedAt: pickDate('refund_rejected_at', 'refundRejectedAt'),
       timeline: OrderTimeline.fromJsonList(timelineJson),
       items: items,
     );

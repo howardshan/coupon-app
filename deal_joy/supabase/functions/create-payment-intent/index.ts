@@ -116,7 +116,8 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { items, userId } = body;
+    const { items, userId, paymentMethod } = body;
+    // paymentMethod: 'card' | 'google' | 'apple'（用于决定 PaymentIntent 的支付方式类型）
 
     // ---------- 基础参数校验 ----------
     if (!userId) {
@@ -135,6 +136,42 @@ Deno.serve(async (req) => {
       }
       if (typeof item.unitPrice !== 'number' || item.unitPrice <= 0) {
         return errorResponse(`items[${i}].unitPrice must be a positive number`);
+      }
+    }
+
+    // ---------- 获取或创建 Stripe Customer ----------
+    // 查询用户信息（email、name、已有的 stripe_customer_id）
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('stripe_customer_id, email, full_name')
+      .eq('id', userId)
+      .single();
+
+    if (userError) {
+      console.error('查询用户信息失败:', userError);
+      return errorResponse('Failed to fetch user info', 500);
+    }
+
+    let stripeCustomerId: string | null = userData?.stripe_customer_id ?? null;
+
+    if (!stripeCustomerId) {
+      // 首次支付：在 Stripe 创建 Customer 并保存到 DB
+      const customer = await stripe.customers.create({
+        email: userData?.email ?? undefined,
+        name: userData?.full_name ?? undefined,
+        metadata: { user_id: userId },
+      });
+      stripeCustomerId = customer.id;
+
+      // 写回 users 表（service_role 绕过 RLS）
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ stripe_customer_id: stripeCustomerId })
+        .eq('id', userId);
+
+      if (updateError) {
+        // 写入失败不阻断支付，只记录日志
+        console.error('保存 stripe_customer_id 失败:', updateError);
       }
     }
 
@@ -238,9 +275,9 @@ Deno.serve(async (req) => {
     }
     subtotal = Math.round(subtotal * 100) / 100;
 
-    // serviceFee = $0.99 × 不同 deal 的数量
-    const distinctDealCount = dealIds.length;
-    const serviceFee = Math.round(0.99 * distinctDealCount * 100) / 100;
+    // serviceFee = $0.99 × 券总数量（每张券收一次）
+    const totalItemCount = items.length;
+    const serviceFee = Math.round(0.99 * totalItemCount * 100) / 100;
 
     // ---------- 处理优惠码并计算折扣 ----------
     const resultItems: Array<{
@@ -282,22 +319,39 @@ Deno.serve(async (req) => {
     }
 
     // ---------- 创建 Stripe PaymentIntent（直接 charge） ----------
-    const paymentIntent = await stripe.paymentIntents.create({
+    // 根据前端选择的支付方式，限定 PaymentIntent 的支付类型
+    // 'card' → 只显示信用卡输入（不显示 Link/Google Pay 等）
+    // 'google'/'apple' → 使用 automatic_payment_methods（Platform Pay 需要）
+    const isCardOnly = paymentMethod === 'card';
+    const piParams: Record<string, unknown> = {
       amount: Math.round(totalAmount * 100),  // 转为美分
       currency: 'usd',
-      capture_method: 'automatic',             // V3: 直接扣款，不再预授权
-      automatic_payment_methods: { enabled: true },
+      capture_method: 'automatic',             // V3: 直接扣款
+      customer: stripeCustomerId ?? undefined, // 关联 Stripe Customer
       metadata: {
         user_id: userId,
         deal_ids: dealIds.join(','),
         item_count: String(items.length),
-        distinct_deal_count: String(distinctDealCount),
+        total_item_count: String(totalItemCount),
         subtotal: subtotal.toFixed(2),
         service_fee: serviceFee.toFixed(2),
         total_discount: totalDiscount.toFixed(2),
         total_amount: totalAmount.toFixed(2),
       },
-    });
+    };
+    if (isCardOnly) {
+      // 信用卡模式：只允许 card，禁用 Link
+      // setup_future_usage 放在 card 级别，不触发 Link 保存选项
+      piParams.payment_method_types = ['card'];
+      piParams.payment_method_options = {
+        card: { setup_future_usage: 'off_session' },
+      };
+    } else {
+      // Google Pay / Apple Pay：启用所有支付方式
+      piParams.automatic_payment_methods = { enabled: true };
+      piParams.setup_future_usage = 'off_session';
+    }
+    const paymentIntent = await stripe.paymentIntents.create(piParams as any);
 
     // ---------- 原子递增所有已使用的优惠码计数 ----------
     // 在 PaymentIntent 创建成功后才递增，避免支付失败导致计数错误
@@ -310,10 +364,26 @@ Deno.serve(async (req) => {
       }
     }
 
+    // 为 PaymentSheet 生成 Ephemeral Key（用于显示已保存卡片 + "Save card" 选项）
+    let ephemeralKeySecret: string | null = null;
+    if (stripeCustomerId) {
+      try {
+        const ephemeralKey = await stripe.ephemeralKeys.create(
+          { customer: stripeCustomerId },
+          { apiVersion: '2023-10-16' },
+        );
+        ephemeralKeySecret = ephemeralKey.secret ?? null;
+      } catch (ekErr) {
+        console.error('生成 Ephemeral Key 失败（不阻断支付）:', ekErr);
+      }
+    }
+
     return new Response(
       JSON.stringify({
         clientSecret: paymentIntent.client_secret,
         paymentIntentId: paymentIntent.id,
+        customerId: stripeCustomerId,
+        ephemeralKey: ephemeralKeySecret,
         subtotal,
         serviceFee,
         totalDiscount,

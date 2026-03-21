@@ -116,8 +116,8 @@ final cartTotalPriceProvider = Provider<double>((ref) {
   return items.fold(0.0, (sum, item) => sum + item.unitPrice);
 });
 
-/// Service fee：$0.99 × 不重复 deal 数量
+/// Service fee：$0.99 × 券总数量（每张券收一次）
 final cartServiceFeeProvider = Provider<double>((ref) {
-  final distinctCount = ref.watch(cartDistinctDealCountProvider);
-  return 0.99 * distinctCount;
+  final totalCount = ref.watch(cartTotalCountProvider);
+  return 0.99 * totalCount;
 });

@@ -146,7 +146,12 @@ serve(async (req: Request) => {
       deals (
         id,
         title,
-        image_urls
+        image_urls,
+        usage_rules,
+        refund_policy,
+        expires_at,
+        discount_price,
+        original_price
       ),
       coupons!order_items_coupon_id_fkey (
         id,
@@ -307,6 +312,12 @@ serve(async (req: Request) => {
         refundAmount: item.refund_amount != null ? Number(item.refund_amount) : null,
         refundReason: item.refund_reason ?? null,
         selectedOptions: item.selected_options ?? null,
+        // Deal 额外信息（用于详情页展示）
+        usageRules: deal?.usage_rules ?? [],
+        refundPolicy: deal?.refund_policy ?? null,
+        dealExpiresAt: deal?.expires_at ?? null,
+        dealOriginalPrice: deal?.original_price != null ? Number(deal.original_price) : null,
+        dealDiscountPrice: deal?.discount_price != null ? Number(deal.discount_price) : null,
       };
     });
   } else {

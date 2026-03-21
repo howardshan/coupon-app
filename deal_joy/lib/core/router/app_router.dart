@@ -14,6 +14,7 @@ import '../../features/checkout/presentation/screens/order_success_screen.dart';
 import '../../features/deals/presentation/screens/history_screen.dart';
 import '../../features/deals/presentation/screens/saved_deals_screen.dart';
 import '../../features/orders/presentation/screens/orders_screen.dart';
+import '../../features/orders/presentation/screens/to_review_screen.dart';
 import '../../features/orders/presentation/screens/coupon_screen.dart';
 import '../../features/orders/presentation/screens/coupons_screen.dart';
 import '../../features/orders/presentation/screens/order_detail_screen.dart';
@@ -24,6 +25,7 @@ import '../../features/after_sales/presentation/pages/after_sales_screen_args.da
 import '../../features/profile/presentation/screens/profile_screen.dart';
 import '../../features/profile/presentation/screens/edit_profile_screen.dart';
 import '../../features/profile/presentation/screens/store_credit_screen.dart';
+import '../../features/profile/presentation/screens/payment_methods_screen.dart';
 import '../../features/reviews/presentation/screens/write_review_screen.dart';
 import '../../features/merchant/presentation/screens/merchant_dashboard_screen.dart';
 import '../../features/merchant/presentation/screens/merchant_detail_screen.dart';
@@ -166,6 +168,12 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (_, _) => const StoreCreditScreen(),
       ),
 
+      // Payment Methods 已保存卡片管理页
+      GoRoute(
+        path: '/profile/payment-methods',
+        builder: (_, _) => const PaymentMethodsScreen(),
+      ),
+
       // Merchant static routes must come before parameterized /merchant/:id
       GoRoute(
         path: '/merchant/dashboard',
@@ -247,11 +255,16 @@ final routerProvider = Provider<GoRouter>((ref) {
       // Orders (standalone, accessible from profile)
       GoRoute(path: '/orders', builder: (_, _) => const OrdersScreen()),
 
-      // Order detail (single order)
+      // 待评价页面
+      GoRoute(path: '/to-review', builder: (_, _) => const ToReviewScreen()),
+
+      // Order detail (single order, optional dealId filter)
       GoRoute(
         path: '/order/:orderId',
-        builder: (_, state) =>
-            OrderDetailScreen(orderId: state.pathParameters['orderId']!),
+        builder: (_, state) => OrderDetailScreen(
+          orderId: state.pathParameters['orderId']!,
+          filterDealId: state.uri.queryParameters['dealId'],
+        ),
       ),
 
       // Saved deals (collection)
