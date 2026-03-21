@@ -22,6 +22,8 @@ class CartItemModel {
   final double? originalPrice;
   final String merchantName;
   final String? merchantId;
+  // 每账号限购数量快照，-1 表示无限制
+  final int maxPerAccount;
 
   const CartItemModel({
     required this.id,
@@ -37,6 +39,7 @@ class CartItemModel {
     this.originalPrice,
     required this.merchantName,
     this.merchantId,
+    this.maxPerAccount = -1,
   });
 
   /// 从 Supabase 查询结果解析（含 deals join merchants 嵌套）
@@ -72,6 +75,7 @@ class CartItemModel {
       originalPrice: (deal['original_price'] as num?)?.toDouble(),
       merchantName: merchant['name'] as String? ?? '',
       merchantId: merchant['id'] as String?,
+      maxPerAccount: deal['max_per_account'] as int? ?? -1,
     );
   }
 }

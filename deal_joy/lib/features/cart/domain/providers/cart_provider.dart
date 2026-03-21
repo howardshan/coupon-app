@@ -50,6 +50,25 @@ class CartNotifier extends AsyncNotifier<List<CartItemModel>> {
     });
   }
 
+  /// 从已有 CartItemModel 复制一份加入购物车（数量 +1 用）
+  Future<void> addDealFromCartItem(CartItemModel item) async {
+    final user = await ref.read(currentUserProvider.future);
+    if (user == null) return;
+
+    state = const AsyncLoading();
+    state = await AsyncValue.guard(() async {
+      await _repo.addToCart(
+        userId: user.id,
+        dealId: item.dealId,
+        unitPrice: item.unitPrice,
+        purchasedMerchantId: item.purchasedMerchantId,
+        applicableStoreIds: item.applicableStoreIds,
+        selectedOptions: item.selectedOptions,
+      );
+      return _repo.fetchCartItems(user.id);
+    });
+  }
+
   /// 移除指定 cart_item（通过主键 id）
   Future<void> removeItem(String cartItemId) async {
     final user = await ref.read(currentUserProvider.future);

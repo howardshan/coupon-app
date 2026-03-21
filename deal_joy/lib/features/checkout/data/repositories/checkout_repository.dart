@@ -127,36 +127,44 @@ class CheckoutRepository {
       throw const PaymentException('User not authenticated', code: 'unauthenticated');
     }
 
-    final total = unitPrice * quantity;
+    // V3: 单 deal 也走 items 数组格式
+    // 构建 items：quantity 张同一 deal
+    final items = List.generate(quantity, (_) => {
+      'dealId': dealId,
+      'unitPrice': unitPrice,
+      if (promoCode != null) 'promoCode': promoCode,
+    });
 
-    // 1. 创建 PaymentIntent（旧版单 deal）
-    final piResponse = await _createPaymentIntentSingle(
-      amount: total,
-      dealId: dealId,
+    // 1. 创建 PaymentIntent（V3 格式）
+    final piResponse = await _createPaymentIntentV3(
+      items: items,
       userId: userId,
-      promoCode: promoCode,
     );
 
     final clientSecret = piResponse['clientSecret'] as String? ?? '';
     final paymentIntentId = piResponse['paymentIntentId'] as String? ?? '';
-    final captureMethod = piResponse['captureMethod'] as String? ?? 'automatic';
+    final totalAmount = (piResponse['totalAmount'] as num?)?.toDouble() ?? unitPrice * quantity;
 
     // 2. 弹出 Stripe 支付表单
     await _presentPaymentSheet(clientSecret);
 
-    // 3. 直接写入 orders 表
-    final orderId = await _insertOrder(
-      userId: userId,
-      dealId: dealId,
-      quantity: quantity,
-      total: total,
+    // 3. 调用 create-order-v3 创建订单（触发器自动创建 coupons）
+    final orderResult = await _createOrderV3(
       paymentIntentId: paymentIntentId,
-      purchasedMerchantId: purchasedMerchantId,
-      selectedOptions: selectedOptions,
-      captureMethod: captureMethod,
+      userId: userId,
+      items: items.map((item) => {
+        'dealId': item['dealId'],
+        'unitPrice': item['unitPrice'],
+        if (purchasedMerchantId != null) 'purchasedMerchantId': purchasedMerchantId,
+        if (selectedOptions != null) 'selectedOptions': selectedOptions,
+      }).toList(),
+      serviceFeeTotal: (piResponse['serviceFee'] as num?)?.toDouble() ?? 0.99,
+      subtotal: (piResponse['subtotal'] as num?)?.toDouble() ?? unitPrice * quantity,
+      totalAmount: totalAmount,
+      cartItemIds: [],
     );
 
-    return CheckoutResult(orderId: orderId);
+    return orderResult;
   }
 
   // ────────────────────────────────────────────────────────────────

@@ -5,9 +5,11 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../data/models/cart_item_model.dart';
 import '../../domain/providers/cart_provider.dart';
+import '../../../auth/domain/providers/auth_provider.dart';
 
 class CartScreen extends ConsumerWidget {
   const CartScreen({super.key});
@@ -181,7 +183,7 @@ class _EmptyCart extends StatelessWidget {
 }
 
 // ── 同一 deal 分组卡片 ─────────────────────────────────────────
-// 显示 deal 标题 + 商家名作为组头，每张券独立一行
+// 一行 Deal 信息 + 数量选择器（+/-），底层每张券是独立 cart_item 行
 class _DealGroup extends ConsumerWidget {
   final List<CartItemModel> items;
 
@@ -190,199 +192,210 @@ class _DealGroup extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final first = items.first;
-    final hasMultiple = items.length > 1;
+    final quantity = items.length;
+    final subtotal = first.unitPrice * quantity;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
+    return Dismissible(
+      key: ValueKey('deal_group_${first.dealId}'),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 20),
+        decoration: BoxDecoration(
+          color: Colors.red.shade400,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: const Icon(Icons.delete_outline, color: Colors.white),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // ── 组头：图片 + deal 标题 + 商家名 ──────────────
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 缩略图
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: first.dealImageUrl.isNotEmpty
-                      ? CachedNetworkImage(
-                          imageUrl: first.dealImageUrl,
-                          width: 72,
-                          height: 72,
-                          fit: BoxFit.cover,
-                          placeholder: (_, _) => _ImagePlaceholder(),
-                          errorWidget: (_, _, _) => _ImagePlaceholder(),
-                        )
-                      : _ImagePlaceholder(),
-                ),
-                const SizedBox(width: 12),
-                // 文字信息
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+      // 滑动删除：移除该 deal 的所有券
+      onDismissed: (_) {
+        for (final item in items) {
+          ref.read(cartProvider.notifier).removeItem(item.id);
+        }
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 缩略图
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: first.dealImageUrl.isNotEmpty
+                  ? CachedNetworkImage(
+                      imageUrl: first.dealImageUrl,
+                      width: 72,
+                      height: 72,
+                      fit: BoxFit.cover,
+                      placeholder: (_, _) => _ImagePlaceholder(),
+                      errorWidget: (_, _, _) => _ImagePlaceholder(),
+                    )
+                  : _ImagePlaceholder(),
+            ),
+            const SizedBox(width: 12),
+            // 中间：标题 + 商家 + 单价
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    first.dealTitle,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    first.merchantName,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  // 单价 + 小计
+                  Row(
                     children: [
                       Text(
-                        first.dealTitle,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
+                        '\$${first.unitPrice.toStringAsFixed(2)}',
                         style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        first.merchantName,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      // 单价
-                      Text(
-                        '\$${first.unitPrice.toStringAsFixed(2)} / voucher',
-                        style: const TextStyle(
-                          fontSize: 13,
+                          fontSize: 16,
                           fontWeight: FontWeight.bold,
                           color: AppColors.primary,
                         ),
+                      ),
+                      if (quantity > 1) ...[
+                        const SizedBox(width: 8),
+                        Text(
+                          '= \$${subtotal.toStringAsFixed(2)}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            // 右侧：数量选择器
+            Column(
+              children: [
+                const SizedBox(height: 8),
+                Container(
+                  decoration: BoxDecoration(
+                    border: Border.all(color: AppColors.surfaceVariant),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // 减少按钮
+                      _QtyBtn(
+                        icon: quantity > 1 ? Icons.remove : Icons.delete_outline,
+                        color: quantity > 1 ? AppColors.textPrimary : Colors.red,
+                        onTap: () {
+                          // 移除该 deal 组的最后一个 cart_item
+                          ref.read(cartProvider.notifier).removeItem(items.last.id);
+                        },
+                      ),
+                      // 数量
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Text(
+                          '$quantity',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      // 增加按钮
+                      _QtyBtn(
+                        icon: Icons.add,
+                        color: AppColors.primary,
+                        onTap: () async {
+                          // 从 cart_item 元数据中读取 max_per_account
+                          final maxPerAccount = first.maxPerAccount;
+                          if (maxPerAccount > 0) {
+                            final userId = ref.read(currentUserProvider).value?.id;
+                            if (userId != null) {
+                              // 查询该用户已购买且未退款的该 deal 数量
+                              final res = await Supabase.instance.client
+                                  .from('order_items')
+                                  .select('id, orders!inner(user_id)')
+                                  .eq('deal_id', first.dealId)
+                                  .eq('orders.user_id', userId)
+                                  .neq('customer_status', 'refund_success');
+                              final purchasedCount = (res as List).length;
+                              // 购物车中当前 deal 已有数量（含本组）
+                              final cartCount = quantity; // quantity = items.length
+                              if (purchasedCount + cartCount >= maxPerAccount) {
+                                final ctx = context;
+                                if (ctx.mounted) {
+                                  ScaffoldMessenger.of(ctx).showSnackBar(
+                                    const SnackBar(
+                                      content: Text("You've reached the purchase limit for this deal"),
+                                      behavior: SnackBarBehavior.floating,
+                                    ),
+                                  );
+                                }
+                                return;
+                              }
+                            }
+                          }
+                          // 复制第一个 item 的信息，新增一行 cart_item
+                          ref.read(cartProvider.notifier).addDealFromCartItem(first);
+                        },
                       ),
                     ],
                   ),
                 ),
               ],
             ),
-          ),
-
-          // ── 分割线（多张券时显示）────────────────────────
-          if (hasMultiple)
-            const Divider(height: 1, color: AppColors.surfaceVariant),
-
-          // ── 每张券独立行 ─────────────────────────────────
-          ...items.map(
-            (item) => _VoucherRow(
-              item: item,
-              isLast: item == items.last,
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 }
 
-// ── 单张券行 ──────────────────────────────────────────────────
-class _VoucherRow extends ConsumerWidget {
-  final CartItemModel item;
-  final bool isLast;
+// ── 数量按钮 ──────────────────────────────────────────────────
+class _QtyBtn extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
 
-  const _VoucherRow({required this.item, required this.isLast});
+  const _QtyBtn({required this.icon, required this.color, required this.onTap});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          child: Row(
-            children: [
-              // 券标识图标
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(
-                  Icons.confirmation_number_outlined,
-                  size: 16,
-                  color: AppColors.primary,
-                ),
-              ),
-              const SizedBox(width: 10),
-              // 券说明文字
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      '1 Voucher',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    // 若有选项快照，展示选项摘要
-                    if (item.selectedOptions != null &&
-                        item.selectedOptions!.isNotEmpty)
-                      Text(
-                        _summarizeOptions(item.selectedOptions!),
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: AppColors.textSecondary,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                  ],
-                ),
-              ),
-              // 单价
-              Text(
-                '\$${item.unitPrice.toStringAsFixed(2)}',
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-              const SizedBox(width: 8),
-              // 移除按钮
-              GestureDetector(
-                onTap: () =>
-                    ref.read(cartProvider.notifier).removeItem(item.id),
-                child: const Icon(
-                  Icons.close,
-                  size: 16,
-                  color: AppColors.textHint,
-                ),
-              ),
-            ],
-          ),
-        ),
-        // 分割线（非最后一行时显示）
-        if (!isLast)
-          const Divider(
-            height: 1,
-            indent: 12,
-            endIndent: 12,
-            color: AppColors.surfaceVariant,
-          ),
-      ],
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 32,
+        height: 32,
+        decoration: const BoxDecoration(shape: BoxShape.circle),
+        child: Icon(icon, size: 18, color: color),
+      ),
     );
-  }
-
-  /// 将 selectedOptions Map 转为可读摘要字符串
-  String _summarizeOptions(Map<String, dynamic> options) {
-    return options.entries
-        .map((e) => '${e.key}: ${e.value}')
-        .join(', ');
   }
 }
 

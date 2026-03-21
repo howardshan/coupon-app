@@ -19,6 +19,13 @@ import '../../domain/providers/checkout_provider.dart';
 //   1. 购物车结账（cartItems 非空）：展示购物车所有 deal，调 checkoutCart
 //   2. 单 deal 快速购买（dealId 非空）：保持原有单 deal 模式，调 checkoutSingleDeal
 // ──────────────────────────────────────────────────────────────────────────────
+// 支付方式选项
+const _paymentMethods = [
+  {'id': 'apple', 'name': 'Apple Pay', 'sub': 'Secure 1-click payment', 'icon': Icons.phone_iphone},
+  {'id': 'google', 'name': 'Google Pay', 'sub': 'Fast checkout', 'icon': Icons.g_mobiledata},
+  {'id': 'card', 'name': 'Credit Card', 'sub': 'Visa / Mastercard / Amex', 'icon': Icons.credit_card},
+];
+
 class CheckoutScreen extends ConsumerStatefulWidget {
   /// 单 deal 快速购买时传入
   final String? dealId;
@@ -44,6 +51,9 @@ class CheckoutScreen extends ConsumerStatefulWidget {
 }
 
 class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
+  // 支付方式
+  String _selectedPayment = 'apple';
+
   // 单 deal 模式数量
   int _quantity = 1;
 
@@ -192,7 +202,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       final result = await repo.checkoutSingleDeal(
         userId: userId,
         dealId: widget.dealId!,
-        unitPrice: total / _quantity,
+        unitPrice: deal!.discountPrice,
         quantity: _quantity,
         promoCode: _promoResult?.code,
         purchasedMerchantId: widget.purchasedMerchantId,
@@ -314,6 +324,27 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
             ),
             const SizedBox(height: 20),
 
+            // ── 支付方式 ──────────────────────────────────────────
+            const Text('Payment Method',
+                style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                    color: AppColors.textSecondary,
+                    letterSpacing: 0.8)),
+            const SizedBox(height: 10),
+            ...(_paymentMethods.map((method) {
+              final isSelected = _selectedPayment == method['id'];
+              return GestureDetector(
+                onTap: () => setState(
+                    () => _selectedPayment = method['id'] as String),
+                child: _PaymentMethodCard(
+                  method: method,
+                  isSelected: isSelected,
+                ),
+              );
+            })),
+            const SizedBox(height: 20),
+
             // ── 价格明细 ──────────────────────────────────────────
             Container(
               padding: const EdgeInsets.all(18),
@@ -397,8 +428,10 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
 
     return dealAsync.when(
       data: (deal) {
-        // 限购：取 deal 库存限制（上限 10）
-        final maxPerPerson = deal.stockLimit.clamp(1, 10);
+        // 综合 stock_limit 和 max_per_account 取更严格的上限
+        final maxByStock = deal.stockLimit <= 0 ? 99 : deal.stockLimit.clamp(1, 99);
+        final maxByAccount = deal.maxPerAccount <= 0 ? 99 : deal.maxPerAccount.clamp(1, 99);
+        final maxPerPerson = (maxByStock < maxByAccount ? maxByStock : maxByAccount).clamp(1, 99);
 
         final subtotal = deal.discountPrice * _quantity;
         final discount = _promoResult?.calculatedDiscount ?? 0;
@@ -526,7 +559,11 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                         const Text('Quantity',
                             style: TextStyle(fontWeight: FontWeight.w500, fontSize: 15)),
                         Text(
-                          'Maximum $maxPerPerson per person',
+                          deal.maxPerAccount > 0
+                              ? 'Limit ${deal.maxPerAccount} per account'
+                              : (deal.stockLimit <= 0
+                                  ? 'No purchase limit'
+                                  : 'Maximum $maxPerPerson available'),
                           style:
                               const TextStyle(fontSize: 11, color: AppColors.textHint),
                         ),
@@ -677,6 +714,27 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                       ),
                     ],
                   ),
+                const SizedBox(height: 20),
+
+                // ── 支付方式 ─────────────────────────────────────
+                const Text('Payment Method',
+                    style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                        letterSpacing: 0.8)),
+                const SizedBox(height: 10),
+                ...(_paymentMethods.map((method) {
+                  final isSelected = _selectedPayment == method['id'];
+                  return GestureDetector(
+                    onTap: () => setState(
+                        () => _selectedPayment = method['id'] as String),
+                    child: _PaymentMethodCard(
+                      method: method,
+                      isSelected: isSelected,
+                    ),
+                  );
+                })),
                 const SizedBox(height: 20),
 
                 // ── 价格明细 ─────────────────────────────────────
@@ -920,6 +978,91 @@ class _PriceRow extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ── 支付方式选择卡片 ──────────────────────────────────────────
+class _PaymentMethodCard extends StatelessWidget {
+  final Map<String, Object> method;
+  final bool isSelected;
+
+  const _PaymentMethodCard({required this.method, required this.isSelected});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isSelected ? AppColors.primary : Colors.transparent,
+          width: 2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 8,
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: method['id'] == 'apple'
+                  ? AppColors.textPrimary
+                  : AppColors.primary.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(
+              method['icon'] as IconData,
+              color: method['id'] == 'apple' ? Colors.white : AppColors.primary,
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(method['name'] as String,
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
+                Text(method['sub'] as String,
+                    style: const TextStyle(
+                        fontSize: 12, color: AppColors.textSecondary)),
+              ],
+            ),
+          ),
+          Container(
+            width: 20,
+            height: 20,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: isSelected ? AppColors.primary : AppColors.textHint,
+                width: 2,
+              ),
+            ),
+            child: isSelected
+                ? Center(
+                    child: Container(
+                      width: 10,
+                      height: 10,
+                      decoration: const BoxDecoration(
+                        color: AppColors.primary,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  )
+                : null,
+          ),
+        ],
+      ),
     );
   }
 }

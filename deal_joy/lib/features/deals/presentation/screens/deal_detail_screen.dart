@@ -12,6 +12,7 @@ import '../../data/models/review_model.dart';
 import '../../domain/providers/deals_provider.dart';
 import '../../domain/providers/history_provider.dart';
 import '../../../cart/domain/providers/cart_provider.dart';
+import '../../../auth/domain/providers/auth_provider.dart';
 
 class DealDetailScreen extends ConsumerWidget {
   final String dealId;
@@ -1755,17 +1756,26 @@ class _PurchaseNotes extends StatelessWidget {
             value: deal.refundPolicy,
           ),
           const SizedBox(height: 12),
-          const _NoteRow(
-            icon: Icons.rule,
-            label: 'Rules',
-            value: '1 deal per table per visit',
-          ),
-          const SizedBox(height: 12),
-          const _NoteRow(
-            icon: Icons.block,
-            label: 'Note',
-            value: 'Cannot be combined with other offers',
-          ),
+          // 使用规则（从 DB 读取，按条目展示）
+          ...deal.usageRules.asMap().entries.map((entry) {
+            return Padding(
+              padding: EdgeInsets.only(top: entry.key > 0 ? 12 : 0),
+              child: _NoteRow(
+                icon: entry.key == 0 ? Icons.rule : Icons.info_outline,
+                label: entry.key == 0 ? 'Rules' : 'Note',
+                value: entry.value,
+              ),
+            );
+          }),
+          // 限购提示（max_per_account > 0 时显示）
+          if (deal.maxPerAccount > 0) ...[
+            const SizedBox(height: 12),
+            _NoteRow(
+              icon: Icons.person_outline,
+              label: 'Limit',
+              value: 'Maximum ${deal.maxPerAccount} per account',
+            ),
+          ],
         ],
       ),
     );
@@ -2888,8 +2898,8 @@ class _BottomBar extends ConsumerWidget {
     return incomplete;
   }
 
-  /// 选项校验 + buy now
-  void _handleBuyNow(BuildContext context, WidgetRef ref, DealModel deal) {
+  /// 选项校验 + 限购校验 + buy now
+  Future<void> _handleBuyNow(BuildContext context, WidgetRef ref, DealModel deal) async {
     // 校验选项组
     if (deal.optionGroups.isNotEmpty) {
       final selections = ref.read(dealOptionSelectionsProvider(deal.id));
@@ -2905,6 +2915,34 @@ class _BottomBar extends ConsumerWidget {
         return;
       }
     }
+
+    // 限购校验（max_per_account > 0 时）
+    if (deal.maxPerAccount > 0) {
+      final userId = ref.read(currentUserProvider).value?.id;
+      if (userId != null) {
+        // 查询该用户已购买且未退款的该 deal 数量
+        final res = await Supabase.instance.client
+            .from('order_items')
+            .select('id, orders!inner(user_id)')
+            .eq('deal_id', deal.id)
+            .eq('orders.user_id', userId)
+            .neq('customer_status', 'refund_success');
+        final purchasedCount = (res as List).length;
+        if (purchasedCount >= deal.maxPerAccount) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text("You've reached the purchase limit for this deal"),
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
+          return;
+        }
+      }
+    }
+
+    if (!context.mounted) return;
 
     final isBrandDeal = deal.applicableMerchantIds != null &&
         deal.applicableMerchantIds!.isNotEmpty;
@@ -3032,7 +3070,7 @@ class _BottomBar extends ConsumerWidget {
             // Add to Cart 按钮（橙色，截图色号 #FF9500）
             Expanded(
               child: GestureDetector(
-                onTap: () {
+                onTap: () async {
                   // 校验选项组
                   if (deal.optionGroups.isNotEmpty) {
                     final selections = ref.read(dealOptionSelectionsProvider(deal.id));
@@ -3048,14 +3086,44 @@ class _BottomBar extends ConsumerWidget {
                       return;
                     }
                   }
+                  // 限购校验（max_per_account > 0 时）
+                  if (deal.maxPerAccount > 0) {
+                    final userId = ref.read(currentUserProvider).value?.id;
+                    if (userId != null) {
+                      // 查询该用户已购买且未退款的该 deal 数量
+                      final res = await Supabase.instance.client
+                          .from('order_items')
+                          .select('id, orders!inner(user_id)')
+                          .eq('deal_id', deal.id)
+                          .eq('orders.user_id', userId)
+                          .neq('customer_status', 'refund_success');
+                      final purchasedCount = (res as List).length;
+                      // 购物车中该 deal 数量
+                      final cartItems = ref.read(cartProvider).valueOrNull ?? [];
+                      final cartCount = cartItems.where((c) => c.dealId == deal.id).length;
+                      if (purchasedCount + cartCount >= deal.maxPerAccount) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text("You've reached the purchase limit for this deal"),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        }
+                        return;
+                      }
+                    }
+                  }
                   ref.read(cartProvider.notifier).addDeal(deal);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Added to cart'),
-                      duration: Duration(seconds: 1),
-                      behavior: SnackBarBehavior.floating,
-                    ),
-                  );
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Added to cart'),
+                        duration: Duration(seconds: 1),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  }
                 },
                 child: Container(
                   height: 48,

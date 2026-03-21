@@ -454,9 +454,9 @@ class _ErrorView extends StatelessWidget {
   }
 }
 
-/// 状态标签 chip
-class _StatusChip extends StatelessWidget {
-  const _StatusChip({required this.label, this.color});
+/// 时间线状态标签 chip
+class _TimelineStatusChip extends StatelessWidget {
+  const _TimelineStatusChip({required this.label, this.color});
 
   final String label;
   final Color? color;

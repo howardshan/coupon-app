@@ -56,6 +56,10 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
   late final TextEditingController _maxPerPersonController;
   final Set<String> _selectedDays = {};
   bool _isStackable = true;
+  // 使用规则标签列表
+  late List<String> _usageRules;
+  // 每账户限购输入框
+  late final TextEditingController _maxPerAccountController;
 
   // 多店适用（仅连锁店显示）
   bool _isMultiStore = false;
@@ -117,6 +121,10 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
     _maxPerPersonController = TextEditingController(
       text: deal.maxPerPerson?.toString() ?? '',
     );
+    // 每账户限购：-1 表示无限制，显示为空
+    _maxPerAccountController = TextEditingController(
+      text: deal.maxPerAccount > 0 ? deal.maxPerAccount.toString() : '',
+    );
 
     _selectedDealCategoryId = deal.dealCategoryId;
     _isUnlimited = deal.isUnlimited;
@@ -134,6 +142,8 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
     }
     // 选项组回填
     _optionGroups = List.of(deal.optionGroups);
+    // 使用规则回填
+    _usageRules = List.of(deal.usageRules);
     // 使用须知附图回填
     _existingUsageNoteImageUrls = List.of(deal.usageNoteImages);
     // 竖版详情图回填
@@ -150,6 +160,7 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
     _stockController.dispose();
     _validityDaysController.dispose();
     _maxPerPersonController.dispose();
+    _maxPerAccountController.dispose();
     super.dispose();
   }
 
@@ -301,6 +312,11 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
             ? _selectedStoreIds.toList()
             : null,
         optionGroups: _optionGroups,
+        // 使用规则和每账户限购
+        usageRules: _usageRules,
+        maxPerAccount: _maxPerAccountController.text.isNotEmpty
+            ? (int.tryParse(_maxPerAccountController.text) ?? -1)
+            : -1,
         images: widget.deal.images,
         createdAt: widget.deal.createdAt,
         updatedAt: DateTime.now(),
@@ -1143,6 +1159,14 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
               : 'No Limit',
         ),
         _summaryRow('Stacking', _isStackable ? 'Allowed' : 'Not Allowed'),
+        _summaryRow(
+          'Max Per Account',
+          _maxPerAccountController.text.isNotEmpty
+              ? _maxPerAccountController.text
+              : 'No Limit',
+        ),
+        if (_usageRules.isNotEmpty)
+          _summaryRow('Usage Rules', _usageRules.join(', ')),
         if (_isMultiStore && _selectedStoreIds.isNotEmpty)
           _summaryRow('Locations', '${_selectedStoreIds.length} stores'),
       ],
@@ -1197,6 +1221,24 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
           inputFormatters: [FilteringTextInputFormatter.digitsOnly],
         ),
         const SizedBox(height: 12),
+        // 每账户限购数量
+        _buildTextField(
+          fieldKey: const ValueKey('deal_edit_max_per_account_field'),
+          controller: _maxPerAccountController,
+          label: 'Max Per Account (Optional)',
+          hint: 'Leave empty for no limit',
+          keyboardType: TextInputType.number,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+        ),
+        const SizedBox(height: 16),
+        // 使用规则标签（多条文本，可添加/删除）
+        _sectionLabel('Usage Rules (Optional)'),
+        const SizedBox(height: 8),
+        _buildUsageRulesInput(
+          rules: _usageRules,
+          onChanged: (rules) => setState(() => _usageRules = rules),
+        ),
+        const SizedBox(height: 12),
         Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
@@ -1236,6 +1278,103 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
         // 多店适用选择（仅连锁店显示）
         _buildMultiStoreSection(),
       ],
+    );
+  }
+
+  // ============================================================
+  // 使用规则标签输入组件（Chip 方式，可添加/删除多条规则）
+  // ============================================================
+  Widget _buildUsageRulesInput({
+    required List<String> rules,
+    required ValueChanged<List<String>> onChanged,
+  }) {
+    final controller = TextEditingController();
+    return StatefulBuilder(
+      builder: (context, setLocalState) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 已添加的规则 Chip 列表
+            if (rules.isNotEmpty)
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: rules.map((rule) {
+                  return Chip(
+                    label: Text(
+                      rule,
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                    deleteIcon: const Icon(Icons.close, size: 16),
+                    onDeleted: () {
+                      final updated = List<String>.from(rules)..remove(rule);
+                      onChanged(updated);
+                    },
+                    backgroundColor: const Color(0xFFFFF3EE),
+                    side: const BorderSide(color: Color(0xFFFF6B35)),
+                    labelStyle: const TextStyle(color: Color(0xFFFF6B35)),
+                  );
+                }).toList(),
+              ),
+            if (rules.isNotEmpty) const SizedBox(height: 8),
+            // 输入框 + 添加按钮
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: controller,
+                    decoration: InputDecoration(
+                      hintText: 'e.g. No takeout, Reservation required',
+                      hintStyle: const TextStyle(
+                        fontSize: 13,
+                        color: Color(0xFFAAAAAA),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: Color(0xFFE0E0E0)),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: Color(0xFFE0E0E0)),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: Color(0xFFFF6B35)),
+                      ),
+                    ),
+                    onSubmitted: (val) {
+                      final trimmed = val.trim();
+                      if (trimmed.isEmpty || rules.contains(trimmed)) return;
+                      final updated = List<String>.from(rules)..add(trimmed);
+                      onChanged(updated);
+                      controller.clear();
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                TextButton.icon(
+                  onPressed: () {
+                    final trimmed = controller.text.trim();
+                    if (trimmed.isEmpty || rules.contains(trimmed)) return;
+                    final updated = List<String>.from(rules)..add(trimmed);
+                    onChanged(updated);
+                    controller.clear();
+                  },
+                  icon: const Icon(Icons.add, size: 18, color: Color(0xFFFF6B35)),
+                  label: const Text(
+                    'Add',
+                    style: TextStyle(color: Color(0xFFFF6B35)),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        );
+      },
     );
   }
 

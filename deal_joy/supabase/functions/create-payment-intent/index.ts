@@ -143,7 +143,7 @@ Deno.serve(async (req) => {
 
     const { data: deals, error: dealsError } = await supabase
       .from('deals')
-      .select('id, discount_price, is_active, expires_at')
+      .select('id, discount_price, is_active, expires_at, max_per_account')
       .in('id', dealIds);
 
     if (dealsError) {
@@ -151,8 +151,8 @@ Deno.serve(async (req) => {
       return errorResponse('Failed to validate deals', 500);
     }
 
-    // 构建 dealId → deal 映射
-    const dealMap = new Map<string, { discount_price: number; is_active: boolean; expires_at: string }>();
+    // 构建 dealId → deal 映射（含 max_per_account 字段）
+    const dealMap = new Map<string, { discount_price: number; is_active: boolean; expires_at: string; max_per_account: number | null }>();
     for (const deal of (deals ?? [])) {
       dealMap.set(deal.id, deal);
     }
@@ -177,6 +177,56 @@ Deno.serve(async (req) => {
       if (Math.abs(item.unitPrice - dbPrice) > 0.01) {
         return errorResponse(
           `Price mismatch for deal ${item.dealId}: expected $${dbPrice.toFixed(2)}, got $${item.unitPrice.toFixed(2)}`,
+        );
+      }
+    }
+
+    // ---------- 限购校验：查该用户已购买数量 ----------
+    // 先获取该用户的所有 order_id（非退款完成的订单）
+    const { data: userOrders, error: ordersError } = await supabase
+      .from('orders')
+      .select('id')
+      .eq('user_id', userId);
+
+    if (ordersError) {
+      console.error('查询用户订单失败:', ordersError);
+      return errorResponse('Failed to check purchase limits', 500);
+    }
+
+    const userOrderIds = (userOrders ?? []).map((o: { id: string }) => o.id);
+
+    // 对每个 distinct deal 校验限购
+    for (const dealId of dealIds) {
+      const dealData = dealMap.get(dealId);
+      if (!dealData) continue;
+
+      const maxPerAccount = dealData.max_per_account ?? -1;
+      // -1 或 0 表示无限制
+      if (maxPerAccount <= 0) continue;
+
+      // 查该用户针对此 deal 的已购（非退款成功）order_items 数量
+      let purchasedCount = 0;
+      if (userOrderIds.length > 0) {
+        const { count, error: countError } = await supabase
+          .from('order_items')
+          .select('id', { count: 'exact', head: true })
+          .eq('deal_id', dealId)
+          .in('order_id', userOrderIds)
+          .neq('customer_status', 'refund_success');
+
+        if (countError) {
+          console.error(`查询 deal ${dealId} 购买数量失败:`, countError);
+          return errorResponse('Failed to check purchase limits', 500);
+        }
+        purchasedCount = count ?? 0;
+      }
+
+      // 本次请求中该 deal 的购买数量
+      const requestedCount = items.filter((i: { dealId: string }) => i.dealId === dealId).length;
+
+      if (purchasedCount + requestedCount > maxPerAccount) {
+        return errorResponse(
+          `Purchase limit exceeded for this deal: maximum ${maxPerAccount} per account (already purchased ${purchasedCount})`,
         );
       }
     }
