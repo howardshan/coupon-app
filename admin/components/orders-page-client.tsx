@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useTransition } from 'react'
 import OrderRefundButtons from '@/components/order-refund-buttons'
 import OrderSearchForm from '@/components/order-search-form'
+import OrdersFilterMultiSelect from '@/components/orders-filter-multi-select'
 import OrdersTableContainer from '@/components/orders-table-container'
 import { getOrderDetailStatusTags, STATUS_STYLES, STATUS_LABELS } from '@/lib/order-display-status'
 import type { OrdersListPayload } from '@/app/actions/orders'
@@ -35,7 +36,7 @@ const FILTER_CONTROL =
 type OrdersPageClientProps = OrdersListPayload & {
   initialSearchQ?: string
   initialStatus?: string[]
-  initialMerchantId?: string
+  initialMerchantIds?: string[]
   initialDateFrom?: string
   initialDateTo?: string
   initialAmountMin?: string
@@ -77,7 +78,7 @@ export default function OrdersPageClient({
   merchantsForFilter = [],
   initialSearchQ = '',
   initialStatus = [],
-  initialMerchantId = '',
+  initialMerchantIds = [],
   initialDateFrom = '',
   initialDateTo = '',
   initialAmountMin = '',
@@ -123,15 +124,25 @@ export default function OrdersPageClient({
 
   const hasFilters = useMemo(() => {
     const q = searchParams.get('q')
-    const status = searchParams.get('status')
-    const merchant = searchParams.get('merchant')
+    const hasStatus = searchParams.getAll('status').some(Boolean)
+    const hasMerchant = searchParams.getAll('merchant').some(Boolean)
     const dateFrom = searchParams.get('date_from')
     const dateTo = searchParams.get('date_to')
     const amountMin = searchParams.get('amount_min')
     const amountMax = searchParams.get('amount_max')
     const sort = searchParams.get('sort')
     const pageNum = parseInt(searchParams.get('page') ?? '1', 10)
-    return !!(q?.trim() || status || merchant || dateFrom || dateTo || amountMin || amountMax || (sort && sort !== 'date_desc') || pageNum > 1)
+    return !!(
+      q?.trim() ||
+      hasStatus ||
+      hasMerchant ||
+      dateFrom ||
+      dateTo ||
+      amountMin ||
+      amountMax ||
+      (sort && sort !== 'date_desc') ||
+      pageNum > 1
+    )
   }, [searchParams])
 
   const totalCount = initialTotalCount
@@ -164,33 +175,25 @@ export default function OrdersPageClient({
 
         {/* Filters — URL persisted；网格保证各列控件同宽 */}
         <div className="flex flex-col gap-3 text-sm">
-          <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-3 items-end">
-            <label className="flex min-w-0 flex-col gap-1">
-              <span className="text-gray-600 font-medium">Status</span>
-              <select
-                value={initialStatus[0] ?? ''}
-                onChange={(e) => updateFilter({ status: e.target.value ? [e.target.value] : undefined })}
-                className={FILTER_CONTROL}
-              >
-                <option value="">All</option>
-                {STATUS_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
-            </label>
-            <label className="flex min-w-0 flex-col gap-1">
-              <span className="text-gray-600 font-medium">Merchant</span>
-              <select
-                value={initialMerchantId}
-                onChange={(e) => updateFilter({ merchant: e.target.value || undefined })}
-                className={FILTER_CONTROL}
-              >
-                <option value="">All</option>
-                {merchantsForFilter.map((m) => (
-                  <option key={m.id} value={m.id}>{m.name}</option>
-                ))}
-              </select>
-            </label>
+          <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-3 items-start">
+            <div className="min-w-0">
+              <OrdersFilterMultiSelect
+                fieldLabel="Status"
+                options={STATUS_OPTIONS}
+                selectedValues={initialStatus ?? []}
+                triggerClassName={FILTER_CONTROL}
+                onChange={(next) => updateFilter({ status: next.length ? next : undefined })}
+              />
+            </div>
+            <div className="min-w-0">
+              <OrdersFilterMultiSelect
+                fieldLabel="Merchant"
+                options={merchantsForFilter.map((m) => ({ value: m.id, label: m.name }))}
+                selectedValues={initialMerchantIds}
+                triggerClassName={FILTER_CONTROL}
+                onChange={(next) => updateFilter({ merchant: next.length ? next : undefined })}
+              />
+            </div>
             <label className="flex min-w-0 flex-col gap-1">
               <span className="text-gray-600 font-medium">Date from</span>
               <input
@@ -373,7 +376,7 @@ export default function OrdersPageClient({
                 <p className="text-red-600 text-sm mb-2">Failed to load orders: {initialFetchError}</p>
               ) : null}
               <p className="text-gray-400">
-                {initialSearchQ !== '' || initialStatus?.length || initialMerchantId || initialDateFrom || initialDateTo ? 'No orders match your filters.' : 'No orders yet'}
+                {initialSearchQ !== '' || initialStatus?.length || initialMerchantIds.length > 0 || initialDateFrom || initialDateTo ? 'No orders match your filters.' : 'No orders yet'}
               </p>
             </div>
           )}
