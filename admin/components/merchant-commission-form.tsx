@@ -165,8 +165,8 @@ export default function MerchantCommissionForm({
             Status:{' '}
             {commissionFreeUntil ? (
               isActive
-                ? <span className="text-green-600 font-medium">Active — free until {new Date(commissionFreeUntil).toLocaleDateString()}, commission starts next day</span>
-                : <span className="text-gray-400">Expired ({new Date(commissionFreeUntil).toLocaleDateString()})</span>
+                ? <span className="text-green-600 font-medium">Active — free until {new Date(commissionFreeUntil).toLocaleDateString('en-US')}, commission starts next day</span>
+                : <span className="text-gray-400">Expired ({new Date(commissionFreeUntil).toLocaleDateString('en-US')})</span>
             ) : <span className="text-gray-400">No free period</span>}
           </p>
         </div>

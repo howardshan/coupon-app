@@ -231,7 +231,7 @@ export default function UsersPageClient({
                     )}
                   </td>
                   <td className="px-4 py-3 text-gray-500">
-                    {u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}
+                    {u.created_at ? new Date(u.created_at).toLocaleDateString('en-US') : '—'}
                   </td>
                 </tr>
               ))}
