@@ -1,15 +1,18 @@
 'use client'
 
-import { useCallback, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useTransition } from 'react'
+import AdminDebouncedSearchForm from '@/components/admin-debounced-search-form'
+import AdminListScrollArea from '@/components/admin-list-scroll-area'
 import OrderRefundButtons from '@/components/order-refund-buttons'
-import OrderSearchForm from '@/components/order-search-form'
 import OrdersFilterMultiSelect from '@/components/orders-filter-multi-select'
-import OrdersTableContainer from '@/components/orders-table-container'
+import { buildAdminListUrl, buildAdminListUrlPage } from '@/lib/admin-list-url'
 import { getOrderDetailStatusTags, STATUS_STYLES, STATUS_LABELS } from '@/lib/order-display-status'
 import type { OrdersListPayload } from '@/app/actions/orders'
+
+const ORDERS_PATH = '/orders'
 
 const STATUS_OPTIONS = [
   { value: 'unused', label: 'Unused' },
@@ -46,29 +49,6 @@ type OrdersPageClientProps = OrdersListPayload & {
   initialLimit?: number
 }
 
-function buildOrdersUrl(params: URLSearchParams, updates: Record<string, string | number | undefined | string[]>) {
-  const next = new URLSearchParams(params)
-  for (const [key, val] of Object.entries(updates)) {
-    if (val === undefined || val === '') {
-      next.delete(key)
-    } else if (Array.isArray(val)) {
-      next.delete(key)
-      val.forEach((v) => next.append(key, v))
-    } else {
-      next.set(key, String(val))
-    }
-  }
-  next.delete('page')
-  next.set('page', '1')
-  return `/orders?${next.toString()}`
-}
-
-function buildOrdersUrlPage(params: URLSearchParams, page: number) {
-  const next = new URLSearchParams(params)
-  next.set('page', String(Math.max(1, page)))
-  return `/orders?${next.toString()}`
-}
-
 export default function OrdersPageClient({
   orders: initialOrders,
   totalCount: initialTotalCount,
@@ -91,7 +71,9 @@ export default function OrdersPageClient({
   const searchParams = useSearchParams()
   const [isPending, startTransition] = useTransition()
   const searchParamsRef = useRef(searchParams)
-  searchParamsRef.current = searchParams
+  useEffect(() => {
+    searchParamsRef.current = searchParams
+  }, [searchParams])
 
   const returnToOrders = useMemo(() => {
     const qs = searchParams.toString()
@@ -100,25 +82,27 @@ export default function OrdersPageClient({
 
   const handleSearch = useCallback((q: string) => {
     startTransition(() => {
-      router.replace(buildOrdersUrl(searchParamsRef.current, { q: q || undefined }))
+      router.replace(
+        buildAdminListUrl(ORDERS_PATH, searchParamsRef.current, { q: q || undefined })
+      )
     })
   }, [router])
 
   const updateFilter = useCallback((updates: Record<string, string | number | undefined | string[]>) => {
     startTransition(() => {
-      router.replace(buildOrdersUrl(searchParamsRef.current, updates))
+      router.replace(buildAdminListUrl(ORDERS_PATH, searchParamsRef.current, updates))
     })
   }, [router])
 
   const goToPage = useCallback((page: number) => {
     startTransition(() => {
-      router.replace(buildOrdersUrlPage(searchParamsRef.current, page))
+      router.replace(buildAdminListUrlPage(ORDERS_PATH, searchParamsRef.current, page))
     })
   }, [router])
 
   const clearFilters = useCallback(() => {
     startTransition(() => {
-      router.replace('/orders')
+      router.replace(ORDERS_PATH)
     })
   }, [router])
 
@@ -165,11 +149,14 @@ export default function OrdersPageClient({
         </div>
 
         <div className="w-full max-w-3xl">
-          <OrderSearchForm
+          <AdminDebouncedSearchForm
             fullWidth
             initialValue={initialSearchQ}
-            onSearch={handleSearch}
-            isSearching={isPending}
+            onQueryChange={handleSearch}
+            isQueryPending={isPending}
+            placeholder="Order #, email, or deal…"
+            ariaLabel="Search orders by order number, email, or deal title"
+            inlineLoadingText="Searching…"
           />
         </div>
 
@@ -273,7 +260,7 @@ export default function OrdersPageClient({
         </p>
       </div>
 
-      <OrdersTableContainer>
+      <AdminListScrollArea>
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
@@ -289,9 +276,28 @@ export default function OrdersPageClient({
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {(initialOrders as any[])?.map((o: any) => {
-                const raw = o.coupons
-                const first = Array.isArray(raw) ? raw[0] : raw
+              {(initialOrders as unknown[] | null | undefined)?.map((row) => {
+                const o = row as {
+                  id: string
+                  order_number?: string
+                  status: string
+                  total_amount: number
+                  quantity: number
+                  created_at: string
+                  refund_rejected_at?: string | null
+                  coupon_expires_at?: string | null
+                  deal_expires_at?: string | null
+                  coupons?: unknown
+                  deals?: {
+                    id?: string
+                    title?: string
+                    expires_at?: string | null
+                    merchants?: { name?: string }
+                  } | null
+                  users?: { email?: string } | null
+                }
+                const couponRaw = o.coupons
+                const first = Array.isArray(couponRaw) ? couponRaw[0] : couponRaw
                 const redeemedId = first?.redeemed_at_merchant_id
                 const redeemedName = redeemedId ? initialRedeemedMerchantNames[redeemedId] : null
                 const orderForDisplay = {
@@ -381,15 +387,16 @@ export default function OrdersPageClient({
             </div>
           )}
         </div>
+      </AdminListScrollArea>
 
-        {/* Pagination */}
+        {/* Pagination — 放在滚动区外便于始终可见 */}
         {totalPages > 1 && (
-          <div className="mt-4 flex items-center justify-center gap-2 flex-wrap">
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
             <button
               type="button"
               onClick={() => goToPage(page - 1)}
               disabled={page <= 1 || isPending}
-              className="px-3 py-1.5 text-sm font-medium border border-gray-300 rounded-lg bg-white text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+              className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Previous
             </button>
@@ -400,13 +407,12 @@ export default function OrdersPageClient({
               type="button"
               onClick={() => goToPage(page + 1)}
               disabled={page >= totalPages || isPending}
-              className="px-3 py-1.5 text-sm font-medium border border-gray-300 rounded-lg bg-white text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+              className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Next
             </button>
           </div>
         )}
-      </OrdersTableContainer>
     </div>
   )
 }
