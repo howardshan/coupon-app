@@ -51,17 +51,18 @@ final filteredDealsProvider = Provider.autoDispose.family<
 
     final allDeals = dealsAsync.valueOrNull ?? [];
 
-    final vouchers =
-        allDeals.where((d) => d.dealType == 'voucher').toList();
-    var regulars =
-        allDeals.where((d) => d.dealType != 'voucher').toList();
-
-    // 按选中分类过滤
+    // 先按分类过滤全部 deals
+    var filtered = allDeals;
     if (selectedCategory != null) {
-      regulars = regulars
+      filtered = allDeals
           .where((d) => d.dealCategoryId == selectedCategory)
           .toList();
     }
+
+    final vouchers =
+        filtered.where((d) => d.dealType == 'voucher').toList();
+    final regulars =
+        filtered.where((d) => d.dealType != 'voucher').toList();
 
     return (vouchers: vouchers, regulars: regulars);
   },

@@ -71,6 +71,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         children: [
           RefreshIndicator(
             onRefresh: () async {
+              ref.invalidate(userLocationProvider); // 刷新 GPS 坐标
               ref.invalidate(featuredDealsProvider);
               ref.invalidate(dealsListProvider);
               ref.invalidate(merchantListProvider);
@@ -507,10 +508,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     metro: _pendingMetro,
                     city: city,
                   );
+                  ref.invalidate(merchantListProvider);
+                  ref.invalidate(featuredDealsProvider);
+                  ref.invalidate(dealsListProvider);
                   setState(() => _locationMenuOpen = false);
                 },
                 onNearMeSelected: () {
+                  debugPrint('[DEBUG] HomeScreen → Near Me 被选中');
                   ref.read(isNearMeProvider.notifier).state = true;
+                  debugPrint('[DEBUG] HomeScreen → isNearMe 设为 true, 开始 invalidate providers');
+                  ref.invalidate(userLocationProvider); // 重新获取 GPS 坐标
+                  ref.invalidate(merchantListProvider);
+                  ref.invalidate(featuredDealsProvider);
+                  ref.invalidate(dealsListProvider);
                   setState(() => _locationMenuOpen = false);
                 },
                 isNearMeSelected: ref.read(isNearMeProvider),
@@ -624,7 +634,7 @@ class _LocationDropdown extends StatelessWidget {
         ..._locationData.keys.map((state) {
           return _LocationItem(
             label: state,
-            selected: location.state == state,
+            selected: !isNearMeSelected && location.state == state,
             hasChildren: true,
             onTap: () {
               onStateChange(state);

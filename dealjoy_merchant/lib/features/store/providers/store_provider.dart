@@ -46,6 +46,9 @@ class StoreNotifier extends AsyncNotifier<StoreInfo> {
     String? description,
     String? phone,
     String? address,
+    String? city,
+    double? lat,
+    double? lng,
   }) async {
     final current = state.valueOrNull;
     if (current == null) return;
@@ -66,6 +69,9 @@ class StoreNotifier extends AsyncNotifier<StoreInfo> {
         description: description,
         phone: phone,
         address: address,
+        city: city,
+        lat: lat,
+        lng: lng,
       );
     } catch (e, st) {
       // 失败时回滚本地状态

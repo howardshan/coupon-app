@@ -7,14 +7,6 @@ import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../auth/domain/providers/auth_provider.dart';
 
-void _comingSoon(BuildContext context) =>
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Coming soon'),
-        duration: Duration(seconds: 2),
-      ),
-    );
-
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
 
@@ -70,7 +62,7 @@ class _ProfileBody extends StatelessWidget {
                 Row(
                   children: [
                     GestureDetector(
-                      onTap: () => _comingSoon(context),
+                      onTap: () => context.push('/profile/edit'),
                       child: Stack(
                         children: [
                           CircleAvatar(
@@ -118,7 +110,7 @@ class _ProfileBody extends StatelessWidget {
                     const SizedBox(width: 16),
                     Expanded(
                       child: GestureDetector(
-                        onTap: () => _comingSoon(context),
+                        onTap: () => context.push('/profile/edit'),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -152,117 +144,6 @@ class _ProfileBody extends StatelessWidget {
                     ),
                   ],
                 ),
-                const SizedBox(height: 16),
-
-                // ── Gold Member card ────────────────────────────
-                GestureDetector(
-                  onTap: () => _comingSoon(context),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 14,
-                    ),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFFFEF3C7), Color(0xFFFDE68A)],
-                        begin: Alignment.centerLeft,
-                        end: Alignment.centerRight,
-                      ),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  const Icon(
-                                    Icons.card_membership,
-                                    color: Color(0xFF92400E),
-                                    size: 18,
-                                  ),
-                                  const SizedBox(width: 6),
-                                  const Flexible(
-                                    child: Text(
-                                      'GOLD MEMBER',
-                                      style: TextStyle(
-                                        color: Color(0xFF78350F),
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                        letterSpacing: 0.5,
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: List.generate(
-                                      5,
-                                      (i) => Icon(
-                                        i == 0
-                                            ? Icons.star
-                                            : Icons.star_border,
-                                        size: 10,
-                                        color: const Color(0xFFD97706),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 4),
-                              const Text(
-                                'GROWTH VALUE 0 / 500',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  color: Color(0xFF92400E),
-                                  letterSpacing: 0.5,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Container(
-                          height: 36,
-                          width: 1,
-                          color: const Color(0xFF92400E).withValues(alpha: 0.2),
-                          margin: const EdgeInsets.symmetric(horizontal: 12),
-                        ),
-                        const Row(
-                          children: [
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Member Center',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.bold,
-                                    color: Color(0xFF78350F),
-                                  ),
-                                ),
-                                Text(
-                                  '7 Benefits',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: Color(0xFF92400E),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            Icon(
-                              Icons.chevron_right,
-                              size: 16,
-                              color: Color(0xFF78350F),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
               ],
             ),
           ),
@@ -288,11 +169,6 @@ class _ProfileBody extends StatelessWidget {
                   icon: Icons.confirmation_number_outlined,
                   label: 'Coupons',
                   onTap: () => context.push('/coupons'),
-                ),
-                _IconGridItem(
-                  icon: Icons.toll_outlined,
-                  label: 'Joy Coins',
-                  onTap: () => _comingSoon(context),
                 ),
               ],
             ),
@@ -366,36 +242,6 @@ class _ProfileBody extends StatelessWidget {
             ),
           ),
 
-          const SizedBox(height: 12),
-
-          // ── Utilities ────────────────────────────────────────
-          _SectionCard(
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _BoxedIconItem(
-                  icon: Icons.phone_android_outlined,
-                  label: 'Recharge',
-                  onTap: () => _comingSoon(context),
-                ),
-                _BoxedIconItem(
-                  icon: Icons.receipt_outlined,
-                  label: 'Invoice',
-                  onTap: () => context.push('/orders'),
-                ),
-                _BoxedIconItem(
-                  icon: Icons.rate_review_outlined,
-                  label: 'Review Team',
-                  onTap: () => _comingSoon(context),
-                ),
-                _BoxedIconItem(
-                  icon: Icons.volunteer_activism_outlined,
-                  label: 'Charity',
-                  onTap: () => _comingSoon(context),
-                ),
-              ],
-            ),
-          ),
 
           if (showMerchantDashboard) ...[
             const SizedBox(height: 12),
@@ -639,44 +485,3 @@ class _IconGridItem extends StatelessWidget {
   }
 }
 
-// ── Boxed icon + label (for utilities) ──────────────────────────────────────
-class _BoxedIconItem extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback? onTap;
-
-  const _BoxedIconItem({
-    required this.icon,
-    required this.label,
-    this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: AppColors.surfaceVariant,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppColors.surfaceVariant),
-            ),
-            child: Icon(icon, color: AppColors.textSecondary, size: 20),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 10,
-              color: AppColors.textSecondary,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}

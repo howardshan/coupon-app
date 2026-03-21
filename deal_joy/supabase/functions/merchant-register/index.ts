@@ -15,6 +15,9 @@ interface RegisterRequest {
   category: string;
   ein: string;
   address: string;
+  city?: string;
+  lat?: number;
+  lng?: number;
   // 注册类型: single（独立门店）/ multiple（连锁品牌）
   registration_type?: 'single' | 'multiple';
   // 连锁注册时的品牌信息
@@ -173,6 +176,9 @@ Deno.serve(async (req: Request) => {
         category: body.category,
         ein: body.ein,
         address: body.address,
+        city: body.city || null,
+        lat: body.lat || null,
+        lng: body.lng || null,
         status: "pending",
         submitted_at: new Date().toISOString(),
       })

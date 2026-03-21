@@ -12,7 +12,7 @@ export default async function DealsPage() {
     // 增加 applicable_merchant_ids 字段
     const { data } = await supabase
       .from('deals')
-      .select('id, title, discount_price, original_price, is_active, expires_at, created_at, sort_order, applicable_merchant_ids, merchant_id, merchants(name, brand_id, brands(name))')
+      .select('id, title, discount_price, original_price, is_active, deal_status, expires_at, created_at, sort_order, applicable_merchant_ids, merchant_id, merchants(name, brand_id, brands(name))')
       .order('created_at', { ascending: false })
       .limit(50)
     deals = data
@@ -112,7 +112,7 @@ export default async function DealsPage() {
                   )}
                   <td className="px-4 py-3">
                     <Link href={`/deals/${d.id}`} className="inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded-lg border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors">
-                      {d.is_active ? 'View' : 'Review'}
+                      {d.is_active || d.deal_status === 'inactive' ? 'View' : 'Review'}
                     </Link>
                   </td>
                 </tr>

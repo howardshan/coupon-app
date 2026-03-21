@@ -330,7 +330,14 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
         ),
       );
 
-      context.pop();
+      // 克隆后旧 deal 已下架，回到列表页而非 detail 页
+      final isBrandDeal = widget.deal.applicableMerchantIds != null &&
+          widget.deal.applicableMerchantIds!.isNotEmpty;
+      if (isBrandDeal) {
+        context.go('/brand-manage/deals');
+      } else {
+        context.go('/deals');
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

@@ -35,6 +35,27 @@ function errorResponse(message: string, status = 400): Response {
   return jsonResponse({ error: message }, status);
 }
 
+// brand deal 权限检查：允许 deal 创建者或同品牌 owner/admin 操作
+async function checkDealAccess(
+  admin: ReturnType<typeof createClient>,
+  existingMerchantId: string,
+  currentMerchantId: string,
+  userId: string,
+): Promise<boolean> {
+  if (existingMerchantId === currentMerchantId) return true;
+  // 检查是否同品牌 + brand_admins
+  const { data: myM } = await admin.from("merchants").select("brand_id").eq("id", currentMerchantId).single();
+  const { data: dealM } = await admin.from("merchants").select("brand_id").eq("id", existingMerchantId).single();
+  if (!myM?.brand_id || !dealM?.brand_id || myM.brand_id !== dealM.brand_id) return false;
+  const { data: ba } = await admin
+    .from("brand_admins")
+    .select("role")
+    .eq("brand_id", myM.brand_id)
+    .eq("user_id", userId)
+    .maybeSingle();
+  return !!ba;
+}
+
 // =============================================================
 // 主入口
 // =============================================================
@@ -128,7 +149,7 @@ Deno.serve(async (req: Request) => {
     // ----------------------------------------------------------
     if (req.method === "PATCH" && dealId && subPath === "status") {
       const body = await req.json();
-      return await handleToggleStatus(supabaseAdmin, merchantId, dealId, body);
+      return await handleToggleStatus(supabaseAdmin, merchantId, dealId, body, user.id);
     }
 
     // ----------------------------------------------------------
@@ -136,14 +157,14 @@ Deno.serve(async (req: Request) => {
     // ----------------------------------------------------------
     if (req.method === "PATCH" && dealId && !subPath) {
       const body = await req.json();
-      return await handleUpdateDeal(supabaseAdmin, merchantId, dealId, body);
+      return await handleUpdateDeal(supabaseAdmin, merchantId, dealId, body, user.id);
     }
 
     // ----------------------------------------------------------
     // DELETE /merchant-deals/:id — 删除 deal（仅 inactive）
     // ----------------------------------------------------------
     if (req.method === "DELETE" && dealId && !subPath) {
-      return await handleDeleteDeal(supabaseAdmin, merchantId, dealId);
+      return await handleDeleteDeal(supabaseAdmin, merchantId, dealId, user.id);
     }
 
     // ----------------------------------------------------------
@@ -151,7 +172,7 @@ Deno.serve(async (req: Request) => {
     // ----------------------------------------------------------
     if (req.method === "POST" && dealId && subPath === "images") {
       const body = await req.json();
-      return await handleAddImage(supabaseAdmin, merchantId, dealId, body);
+      return await handleAddImage(supabaseAdmin, merchantId, dealId, body, user.id);
     }
 
     // ----------------------------------------------------------
@@ -276,6 +297,12 @@ async function handleGetDeals(
     created_at,
     updated_at,
     applicable_merchant_ids,
+    short_name,
+    dishes,
+    detail_images,
+    deal_type,
+    deal_category_id,
+    badge_text,
     deal_images (
       id,
       image_url,
@@ -475,7 +502,8 @@ async function handleUpdateDeal(
   admin: ReturnType<typeof createClient>,
   merchantId: string,
   dealId: string,
-  body: Record<string, unknown>
+  body: Record<string, unknown>,
+  userId: string = "",
 ): Promise<Response> {
   // 验证所有权，读取旧 deal 完整信息
   const { data: existing, error: fetchError } = await admin
@@ -488,14 +516,11 @@ async function handleUpdateDeal(
     return errorResponse("Deal not found", 404);
   }
 
-  if (existing.merchant_id !== merchantId) {
+  if (!(await checkDealAccess(admin, existing.merchant_id, merchantId, userId))) {
     return errorResponse("Access denied: not your deal", 403);
   }
 
-  // pending 状态的 deal 不允许编辑（审核中）
-  if (existing.deal_status === "pending") {
-    return errorResponse("Cannot edit deal while under review", 400);
-  }
+  // pending / active 均可编辑；实质修改走克隆，旧版 Deal 留档
 
   // 价格校验
   if (body.original_price !== undefined && body.discount_price !== undefined) {
@@ -648,6 +673,50 @@ async function handleUpdateDeal(
     })
     .eq("id", dealId);
 
+  // 7. 旧 deal 下未核销券作废（merchant_edit），对应订单标记 voided
+  const { data: unusedRows, error: unusedSelErr } = await admin
+    .from("coupons")
+    .select("order_id")
+    .eq("deal_id", dealId)
+    .eq("status", "unused");
+
+  if (unusedSelErr) {
+    console.error("[handleUpdateDeal] select unused coupons:", unusedSelErr);
+    return errorResponse("Failed to void coupons on old deal", 500);
+  }
+
+  if (unusedRows && unusedRows.length > 0) {
+    const nowIso = new Date().toISOString();
+    const { error: voidCoupErr } = await admin
+      .from("coupons")
+      .update({
+        status:      "voided",
+        void_reason: "merchant_edit",
+        voided_at:   nowIso,
+      })
+      .eq("deal_id", dealId)
+      .eq("status", "unused");
+
+    if (voidCoupErr) {
+      console.error("[handleUpdateDeal] void coupons:", voidCoupErr);
+      return errorResponse("Failed to void coupons: " + voidCoupErr.message, 500);
+    }
+
+    const orderIds = [...new Set(
+      (unusedRows as { order_id: string }[]).map((r) => r.order_id),
+    )];
+    for (const oid of orderIds) {
+      const { error: ordErr } = await admin
+        .from("orders")
+        .update({ status: "voided", updated_at: nowIso })
+        .eq("id", oid)
+        .eq("status", "unused");
+      if (ordErr) {
+        console.error("[handleUpdateDeal] void order", oid, ordErr);
+      }
+    }
+  }
+
   return jsonResponse({ deal: newDeal });
 }
 
@@ -659,7 +728,8 @@ async function handleToggleStatus(
   admin: ReturnType<typeof createClient>,
   merchantId: string,
   dealId: string,
-  body: Record<string, unknown>
+  body: Record<string, unknown>,
+  userId: string = "",
 ): Promise<Response> {
   if (body.is_active === undefined) {
     return errorResponse("Missing required field: is_active", 400);
@@ -680,7 +750,7 @@ async function handleToggleStatus(
     return errorResponse("Deal not found", 404);
   }
 
-  if (existing.merchant_id !== merchantId) {
+  if (!(await checkDealAccess(admin, existing.merchant_id, merchantId, userId))) {
     return errorResponse("Access denied: not your deal", 403);
   }
 
@@ -733,15 +803,30 @@ async function handleBatchReorder(
     return errorResponse("items array is required", 400);
   }
 
-  // 验证所有 deal 都属于该商家
+  // 验证所有 deal 都属于该商家（含品牌共享的 deal）
   const dealIds = items.map((i) => i.id);
-  const { data: deals } = await admin
+  // 1. 自己创建的 deal
+  const { data: ownDeals } = await admin
     .from("deals")
     .select("id")
     .eq("merchant_id", merchantId)
     .in("id", dealIds);
+  const ownedIds = new Set((ownDeals ?? []).map((d: { id: string }) => d.id));
 
-  const ownedIds = new Set((deals ?? []).map((d: { id: string }) => d.id));
+  // 2. 通过 deal_applicable_stores 关联到本店的品牌 deal
+  const remaining = dealIds.filter((id) => !ownedIds.has(id));
+  if (remaining.length > 0) {
+    const { data: sharedDeals } = await admin
+      .from("deal_applicable_stores")
+      .select("deal_id")
+      .eq("store_id", merchantId)
+      .eq("status", "active")
+      .in("deal_id", remaining);
+    for (const sd of (sharedDeals ?? [])) {
+      ownedIds.add(sd.deal_id);
+    }
+  }
+
   const unauthorized = dealIds.filter((id) => !ownedIds.has(id));
   if (unauthorized.length > 0) {
     return errorResponse(`Access denied for deals: ${unauthorized.join(", ")}`, 403);
@@ -766,7 +851,8 @@ async function handleBatchReorder(
 async function handleDeleteDeal(
   admin: ReturnType<typeof createClient>,
   merchantId: string,
-  dealId: string
+  dealId: string,
+  userId: string = "",
 ): Promise<Response> {
   // 验证所有权和状态
   const { data: existing, error: fetchError } = await admin
@@ -779,7 +865,7 @@ async function handleDeleteDeal(
     return errorResponse("Deal not found", 404);
   }
 
-  if (existing.merchant_id !== merchantId) {
+  if (!(await checkDealAccess(admin, existing.merchant_id, merchantId, userId))) {
     return errorResponse("Access denied: not your deal", 403);
   }
 
@@ -810,7 +896,8 @@ async function handleAddImage(
   admin: ReturnType<typeof createClient>,
   merchantId: string,
   dealId: string,
-  body: Record<string, unknown>
+  body: Record<string, unknown>,
+  userId: string = "",
 ): Promise<Response> {
   if (!body.image_url) {
     return errorResponse("Missing required field: image_url", 400);
@@ -827,7 +914,7 @@ async function handleAddImage(
     return errorResponse("Deal not found", 404);
   }
 
-  if (existing.merchant_id !== merchantId) {
+  if (!(await checkDealAccess(admin, existing.merchant_id, merchantId, userId))) {
     return errorResponse("Access denied: not your deal", 403);
   }
 

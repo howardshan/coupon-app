@@ -305,3 +305,45 @@ export async function rejectDeal(dealId: string, rejectionReason?: string | null
   revalidatePath('/deals')
   revalidatePath(`/deals/${dealId}`)
 }
+
+// 封禁用户（设置 ban_duration）
+export async function banUser(userId: string, durationDays: number) {
+  await requireAdmin()
+  const supabase = getServiceRoleClient()
+
+  const { error } = await supabase.auth.admin.updateUserById(userId, {
+    ban_duration: `${durationDays * 24}h`,
+  })
+
+  if (error) throw new Error(error.message)
+  revalidatePath(`/users/${userId}`)
+  revalidatePath('/users')
+}
+
+// 永久封禁用户
+export async function banUserPermanently(userId: string) {
+  await requireAdmin()
+  const supabase = getServiceRoleClient()
+
+  const { error } = await supabase.auth.admin.updateUserById(userId, {
+    ban_duration: `${365 * 100 * 24}h`,
+  })
+
+  if (error) throw new Error(error.message)
+  revalidatePath(`/users/${userId}`)
+  revalidatePath('/users')
+}
+
+// 解除封禁
+export async function unbanUser(userId: string) {
+  await requireAdmin()
+  const supabase = getServiceRoleClient()
+
+  const { error } = await supabase.auth.admin.updateUserById(userId, {
+    ban_duration: 'none',
+  })
+
+  if (error) throw new Error(error.message)
+  revalidatePath(`/users/${userId}`)
+  revalidatePath('/users')
+}

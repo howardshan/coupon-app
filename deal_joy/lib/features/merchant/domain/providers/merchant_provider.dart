@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../shared/providers/supabase_provider.dart';
 import '../../../deals/domain/providers/deals_provider.dart';
@@ -17,15 +18,21 @@ final merchantListProvider = FutureProvider<List<MerchantModel>>((ref) async {
 
   if (isNearMe) {
     final loc = await ref.watch(userLocationProvider.future);
-    return repo.fetchMerchantsNearby(
+    debugPrint('[DEBUG] merchantListProvider → Near Me 模式, GPS=(${loc.lat}, ${loc.lng}), category=$category');
+    final results = await repo.fetchMerchantsNearby(
       lat: loc.lat,
       lng: loc.lng,
       category: category,
     );
+    debugPrint('[DEBUG] merchantListProvider → Near Me 返回 ${results.length} 家店');
+    return results;
   }
 
   final city = ref.watch(selectedLocationProvider).city;
-  return repo.fetchMerchants(city: city, category: category);
+  debugPrint('[DEBUG] merchantListProvider → 城市模式, city=$city, category=$category');
+  final results = await repo.fetchMerchants(city: city, category: category);
+  debugPrint('[DEBUG] merchantListProvider → 城市模式返回 ${results.length} 家店');
+  return results;
 });
 
 /// 搜索商家 — 由 searchQueryProvider 驱动

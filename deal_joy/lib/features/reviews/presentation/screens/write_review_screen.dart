@@ -6,6 +6,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/providers/supabase_provider.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../auth/domain/providers/auth_provider.dart';
+import '../../../deals/domain/providers/deals_provider.dart';
 
 class WriteReviewScreen extends ConsumerStatefulWidget {
   final String dealId;
@@ -41,6 +42,9 @@ class _WriteReviewScreenState extends ConsumerState<WriteReviewScreen> {
         'comment': _commentCtrl.text.trim(),
       });
       if (mounted) {
+        // 提交后立即刷新详情与评价列表，避免 Riverpod 缓存导致需重启才看到
+        ref.invalidate(dealReviewsProvider(widget.dealId));
+        ref.invalidate(dealDetailProvider(widget.dealId));
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Review submitted!'),

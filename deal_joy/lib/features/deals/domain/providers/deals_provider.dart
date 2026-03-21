@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../../../core/constants/app_constants.dart';
@@ -26,9 +27,30 @@ final selectedCategoryProvider = StateProvider<String>((ref) => 'All');
 final searchQueryProvider = StateProvider<String>((ref) => '');
 
 // 首页展示券：sort_order 不为空的 active deal，按 sort_order 升序
+// Near Me 模式用 GPS 半径过滤；城市模式按选中城市过滤
 final featuredDealsProvider = FutureProvider<List<DealModel>>((ref) async {
   final repo = ref.watch(dealsRepositoryProvider);
-  return repo.fetchFeaturedDeals();
+  final isNearMe = ref.watch(isNearMeProvider);
+
+  if (isNearMe) {
+    // Near Me：用 searchDealsNearby RPC，只保留有 sort_order 的 deal
+    final loc = await ref.watch(userLocationProvider.future);
+    debugPrint('[DEBUG] featuredDealsProvider → Near Me GPS=(${loc.lat}, ${loc.lng})');
+    final allNearby = await repo.searchDealsNearby(
+      lat: loc.lat,
+      lng: loc.lng,
+      radiusMeters: 32187, // ~20 英里，和 store list 一致
+    );
+    final results = allNearby.where((d) => d.sortOrder != null).toList();
+    debugPrint('[DEBUG] featuredDealsProvider → Near Me 返回 ${results.length} 条 (总nearby=${allNearby.length})');
+    return results;
+  }
+
+  final city = ref.watch(selectedLocationProvider).city;
+  debugPrint('[DEBUG] featuredDealsProvider → 城市模式, city=$city');
+  final results = await repo.fetchFeaturedDeals(city: city);
+  debugPrint('[DEBUG] featuredDealsProvider → 返回 ${results.length} 条');
+  return results;
 });
 
 // Deals 列表（Near Me 用 GPS 搜索；城市模式用精确 city 匹配）
@@ -42,12 +64,15 @@ final dealsListProvider = FutureProvider.family<List<DealModel>, int>((
 
   if (isNearMe) {
     final loc = await ref.watch(userLocationProvider.future);
-    return repo.searchDealsNearby(
+    debugPrint('[DEBUG] dealsListProvider → Near Me 模式, GPS=(${loc.lat}, ${loc.lng}), category=$category');
+    final results = await repo.searchDealsNearby(
       lat: loc.lat,
       lng: loc.lng,
       category: category,
       page: page,
     );
+    debugPrint('[DEBUG] dealsListProvider → Near Me 返回 ${results.length} 条');
+    return results;
   }
 
   final city = ref.watch(selectedLocationProvider).city;
@@ -106,12 +131,15 @@ final userLocationProvider = FutureProvider<({double lat, double lng})>((
 ) async {
   try {
     LocationPermission permission = await Geolocator.checkPermission();
+    debugPrint('[DEBUG] userLocationProvider → checkPermission=$permission');
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
+      debugPrint('[DEBUG] userLocationProvider → requestPermission 结果=$permission');
     }
     if (permission == LocationPermission.deniedForever ||
         permission == LocationPermission.denied) {
       // 权限被拒，使用 Dallas 默认坐标
+      debugPrint('[DEBUG] userLocationProvider → 权限被拒，使用 Dallas 默认坐标');
       return (lat: AppConstants.dallasLat, lng: AppConstants.dallasLng);
     }
     final position = await Geolocator.getCurrentPosition(
@@ -120,8 +148,10 @@ final userLocationProvider = FutureProvider<({double lat, double lng})>((
         distanceFilter: 100,
       ),
     );
+    debugPrint('[DEBUG] userLocationProvider → 真实 GPS=(${position.latitude}, ${position.longitude})');
     return (lat: position.latitude, lng: position.longitude);
-  } catch (_) {
+  } catch (e) {
+    debugPrint('[DEBUG] userLocationProvider → 异常: $e，使用 Dallas 默认坐标');
     return (lat: AppConstants.dallasLat, lng: AppConstants.dallasLng);
   }
 });
