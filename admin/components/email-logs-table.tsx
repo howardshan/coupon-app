@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
 import { getEmailLogHtmlBody } from '@/app/actions/email-logs'
 
@@ -56,10 +56,12 @@ export default function EmailLogsTable({
   totalCount: number
 }) {
   const [preview, setPreview] = useState<{ subject: string; html: string } | null>(null)
-  const [pending, startTransition] = useTransition()
+  // 仅当前点击行显示 Loading，避免 useTransition 全局 isPending 牵连所有按钮
+  const [previewLoadingId, setPreviewLoadingId] = useState<string | null>(null)
 
-  function openPreview(id: string) {
-    startTransition(async () => {
+  async function openPreview(id: string) {
+    setPreviewLoadingId(id)
+    try {
       const res = await getEmailLogHtmlBody(id)
       if ('error' in res && res.error === 'Forbidden') {
         alert('Access denied.')
@@ -70,7 +72,10 @@ export default function EmailLogsTable({
         return
       }
       setPreview({ subject: res.subject, html: res.htmlBody })
-    })
+    } finally {
+      // 避免并发点击时先完成的请求把后发起的 loading 清掉
+      setPreviewLoadingId(cur => (cur === id ? null : cur))
+    }
   }
 
   return (
@@ -126,10 +131,10 @@ export default function EmailLogsTable({
                       <button
                         type="button"
                         onClick={() => openPreview(row.id)}
-                        disabled={pending}
+                        disabled={previewLoadingId === row.id}
                         className="text-blue-600 hover:text-blue-800 text-xs font-medium disabled:opacity-50"
                       >
-                        {pending ? 'Loading…' : 'View HTML'}
+                        {previewLoadingId === row.id ? 'Loading…' : 'View HTML'}
                       </button>
                     </td>
                   </tr>
