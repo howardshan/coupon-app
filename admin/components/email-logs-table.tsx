@@ -44,6 +44,18 @@ function formatDt(iso: string | null) {
   }
 }
 
+/** 弹窗内展示：列表行元数据 + 拉取后的 HTML */
+type EmailPreviewState = {
+  html: string
+  created_at: string
+  sent_at: string | null
+  email_code: string
+  recipient_email: string
+  recipient_type: string
+  status: string
+  subject: string
+}
+
 export default function EmailLogsTable({
   rows,
   page,
@@ -55,11 +67,12 @@ export default function EmailLogsTable({
   totalPages: number
   totalCount: number
 }) {
-  const [preview, setPreview] = useState<{ subject: string; html: string } | null>(null)
+  const [preview, setPreview] = useState<EmailPreviewState | null>(null)
   // 仅当前点击行显示 Loading，避免 useTransition 全局 isPending 牵连所有按钮
   const [previewLoadingId, setPreviewLoadingId] = useState<string | null>(null)
 
-  async function openPreview(id: string) {
+  async function openPreview(row: EmailLogListRow) {
+    const { id } = row
     setPreviewLoadingId(id)
     try {
       const res = await getEmailLogHtmlBody(id)
@@ -71,7 +84,16 @@ export default function EmailLogsTable({
         alert(res.error)
         return
       }
-      setPreview({ subject: res.subject, html: res.htmlBody })
+      setPreview({
+        html: res.htmlBody,
+        created_at: row.created_at,
+        sent_at: row.sent_at,
+        email_code: row.email_code,
+        recipient_email: row.recipient_email,
+        recipient_type: row.recipient_type,
+        status: row.status,
+        subject: row.subject,
+      })
     } finally {
       // 避免并发点击时先完成的请求把后发起的 loading 清掉
       setPreviewLoadingId(cur => (cur === id ? null : cur))
@@ -130,7 +152,7 @@ export default function EmailLogsTable({
                     <td className="px-4 py-3">
                       <button
                         type="button"
-                        onClick={() => openPreview(row.id)}
+                        onClick={() => openPreview(row)}
                         disabled={previewLoadingId === row.id}
                         className="text-blue-600 hover:text-blue-800 text-xs font-medium disabled:opacity-50"
                       >
@@ -184,7 +206,7 @@ export default function EmailLogsTable({
                 <h2 id="email-preview-title" className="text-lg font-semibold text-gray-900">
                   Email preview
                 </h2>
-                <p className="text-sm text-gray-500 mt-1 break-all">{preview.subject}</p>
+                <p className="text-xs text-gray-400 mt-1">Same fields as the log list, plus rendered HTML below.</p>
               </div>
               <button
                 type="button"
@@ -195,12 +217,51 @@ export default function EmailLogsTable({
                 ×
               </button>
             </div>
-            {/* 预留标题栏后剩余高度给 iframe；长邮件在 iframe 内滚动 */}
+            {/* 与总览表对齐的元数据 */}
+            <div className="shrink-0 px-5 py-3 border-b border-gray-100 bg-gray-50/80">
+              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                <div>
+                  <dt className="text-xs font-medium text-gray-500 uppercase tracking-wide">Created</dt>
+                  <dd className="mt-0.5 text-gray-900 tabular-nums">{formatDt(preview.created_at)}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-medium text-gray-500 uppercase tracking-wide">Sent</dt>
+                  <dd className="mt-0.5 text-gray-900 tabular-nums">{formatDt(preview.sent_at)}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-medium text-gray-500 uppercase tracking-wide">Code</dt>
+                  <dd className="mt-0.5 font-mono text-gray-900">{preview.email_code}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-medium text-gray-500 uppercase tracking-wide">Type</dt>
+                  <dd className="mt-0.5 capitalize text-gray-900">{preview.recipient_type}</dd>
+                </div>
+                <div className="sm:col-span-2">
+                  <dt className="text-xs font-medium text-gray-500 uppercase tracking-wide">Recipient</dt>
+                  <dd className="mt-0.5 text-gray-900 break-all">{preview.recipient_email}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-medium text-gray-500 uppercase tracking-wide">Status</dt>
+                  <dd className="mt-0.5">
+                    <span
+                      className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${statusBadgeClass(preview.status)}`}
+                    >
+                      {preview.status}
+                    </span>
+                  </dd>
+                </div>
+                <div className="sm:col-span-2">
+                  <dt className="text-xs font-medium text-gray-500 uppercase tracking-wide">Subject</dt>
+                  <dd className="mt-0.5 text-gray-900 break-words">{preview.subject}</dd>
+                </div>
+              </dl>
+            </div>
+            {/* 预留标题与元数据后剩余高度给 iframe；长邮件在 iframe 内滚动 */}
             <div className="flex-1 min-h-0 p-4">
               {preview.html ? (
                 <iframe
                   title="Email HTML preview"
-                  className="w-full min-h-[min(50dvh,320px)] h-[min(75dvh,calc(90dvh-11rem))] border border-gray-200 rounded-lg bg-white"
+                  className="w-full min-h-[min(45dvh,280px)] h-[min(70dvh,calc(90dvh_-_18rem))] border border-gray-200 rounded-lg bg-white"
                   sandbox="allow-same-origin"
                   srcDoc={preview.html}
                 />
