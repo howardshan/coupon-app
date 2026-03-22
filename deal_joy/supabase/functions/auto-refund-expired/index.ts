@@ -11,6 +11,8 @@
 // 更新 coupons: status = 'expired'
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { sendEmail } from '../_shared/email.ts';
+import { buildC5Email } from '../_shared/email-templates/customer/auto-refund.ts';
 
 // CORS 响应头
 const corsHeaders = {
@@ -190,6 +192,25 @@ Deno.serve(async (req) => {
 
         summary.succeeded += 1;
         console.log(`auto-refund-expired: item=${itemId} 处理成功，退款 ${refundAmount}`);
+
+        // 发送 C5 邮件（即发即忘，不阻断批处理）
+        try {
+          const { data: userInfo } = await supabaseAdmin
+            .from('users').select('email').eq('id', item.user_id).single();
+          const { data: itemDetail } = await supabaseAdmin
+            .from('order_items').select('deal_id, deals(title)').eq('id', itemId).single();
+          const dealTitle = (itemDetail as any)?.deals?.title as string | undefined;
+
+          if (userInfo?.email) {
+            const { subject, html } = buildC5Email({ refundAmount, dealTitle });
+            await sendEmail(supabaseAdmin, {
+              to: userInfo.email, subject, htmlBody: html,
+              emailCode: 'C5', referenceId: itemId, recipientType: 'customer', userId: item.user_id,
+            });
+          }
+        } catch (emailErr) {
+          console.error(`auto-refund-expired: C5 email error for item=${itemId}:`, emailErr);
+        }
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);
         console.error(`auto-refund-expired: item=${itemId} 处理失败 —`, errMsg);

@@ -11,6 +11,9 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { resolveAuth, requirePermission } from "../_shared/auth.ts";
+import { sendEmail } from '../_shared/email.ts';
+import { buildC3Email } from '../_shared/email-templates/customer/coupon-redeemed.ts';
+import { buildM7Email } from '../_shared/email-templates/merchant/coupon-redeemed.ts';
 
 // Stripe Secret Key（用于 manual capture 时调用 Stripe API）
 const STRIPE_SECRET_KEY = Deno.env.get('STRIPE_SECRET_KEY') ?? '';
@@ -294,7 +297,7 @@ async function handleRedeem(
   // 查询券的当前状态，JOIN order_items 获取门店快照
   const { data: coupon, error: queryError } = await supabase
     .from('coupons')
-    .select('id, status, merchant_id, expires_at, redeemed_at, deal_id, order_id, order_item_id, order_items(applicable_store_ids)')
+    .select('id, status, merchant_id, expires_at, redeemed_at, deal_id, order_id, order_item_id, qr_code, user_id, order_items(applicable_store_ids)')
     .eq('id', couponId)
     .single();
 
@@ -392,6 +395,54 @@ async function handleRedeem(
   }
 
   // V3: 不再需要 capture（已改为直接 charge）
+
+  // 发送邮件（即发即忘，不阻断核销流程）
+  try {
+    const { data: dealInfo } = await supabase
+      .from('deals').select('title').eq('id', coupon.deal_id).single();
+    const dealTitle = (dealInfo?.title as string | undefined) ?? 'Unknown Deal';
+
+    const { data: itemInfo } = await supabase
+      .from('order_items').select('unit_price').eq('id', coupon.order_item_id).single();
+    const unitPrice = Number((itemInfo as any)?.unit_price ?? 0);
+
+    const { data: merchantInfo } = await supabase
+      .from('merchants').select('name, user_id').eq('id', merchantId).single();
+    const merchantName = (merchantInfo?.name as string | undefined) ?? '';
+
+    // 脱敏 coupon code（仅显示后4位）
+    const rawCode = ((coupon as any).qr_code as string) ?? '';
+    const maskedCode = rawCode.length > 4 ? `****${rawCode.slice(-4)}` : rawCode;
+
+    // C3：发给客户
+    const customerUserId = ((coupon as any).user_id as string | null);
+    if (customerUserId) {
+      const { data: customerUser } = await supabase
+        .from('users').select('email').eq('id', customerUserId).single();
+      if (customerUser?.email) {
+        const { subject, html } = buildC3Email({ dealTitle, merchantName, redeemedAt: now, unitPrice });
+        await sendEmail(supabase, {
+          to: customerUser.email, subject, htmlBody: html,
+          emailCode: 'C3', referenceId: couponId, recipientType: 'customer', userId: customerUserId,
+        });
+      }
+    }
+
+    // M7：发给商家
+    if (merchantInfo?.user_id) {
+      const { data: merchantUser } = await supabase
+        .from('users').select('email').eq('id', merchantInfo.user_id).single();
+      if (merchantUser?.email) {
+        const { subject, html } = buildM7Email({ merchantName, dealTitle, couponCode: maskedCode, redeemedAt: now, unitPrice });
+        await sendEmail(supabase, {
+          to: merchantUser.email, subject, htmlBody: html,
+          emailCode: 'M7', referenceId: couponId, recipientType: 'merchant', merchantId,
+        });
+      }
+    }
+  } catch (emailErr) {
+    console.error('merchant-scan redeem: email error:', emailErr);
+  }
 
   return jsonResponse({ redeemed_at: now, coupon_id: couponId });
 }

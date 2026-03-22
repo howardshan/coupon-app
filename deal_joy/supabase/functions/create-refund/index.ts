@@ -1,5 +1,8 @@
 import Stripe from 'https://esm.sh/stripe@14?target=deno';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2?target=deno';
+import { sendEmail } from '../_shared/email.ts';
+import { buildC7Email } from '../_shared/email-templates/customer/refund-requested.ts';
+import { buildC6Email } from '../_shared/email-templates/customer/store-credit-added.ts';
 
 const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {
   apiVersion: '2024-04-10',
@@ -79,6 +82,7 @@ Deno.serve(async (req) => {
       .from('order_items')
       .select(`
         id,
+        deal_id,
         unit_price,
         service_fee,
         customer_status,
@@ -163,6 +167,33 @@ Deno.serve(async (req) => {
         .update({ status: 'refunded', updated_at: now })
         .eq('order_item_id', orderItemId);
 
+      // 发送邮件（即发即忘，不阻断核心流程）
+      try {
+        const { data: userInfo } = await supabaseAdmin
+          .from('users').select('email').eq('id', order.user_id).single();
+        const { data: dealInfo } = await supabaseAdmin
+          .from('deals').select('title').eq('id', (item as any).deal_id).single();
+        const dealTitle = (dealInfo?.title as string | undefined);
+
+        if (userInfo?.email) {
+          // C6：Store credit 余额到账
+          const { subject: c6Subject, html: c6Html } = buildC6Email({ creditAmount: refundAmount, dealTitle });
+          await sendEmail(supabaseAdmin, {
+            to: userInfo.email, subject: c6Subject, htmlBody: c6Html,
+            emailCode: 'C6', referenceId: orderItemId, recipientType: 'customer', userId: order.user_id,
+          });
+
+          // C7：退款申请已受理
+          const { subject: c7Subject, html: c7Html } = buildC7Email({ refundAmount, refundMethod: 'store_credit', dealTitle });
+          await sendEmail(supabaseAdmin, {
+            to: userInfo.email, subject: c7Subject, htmlBody: c7Html,
+            emailCode: 'C7', referenceId: orderItemId, recipientType: 'customer', userId: order.user_id,
+          });
+        }
+      } catch (emailErr) {
+        console.error('create-refund: email error (store_credit):', emailErr);
+      }
+
       return new Response(
         JSON.stringify({
           success: true,
@@ -221,6 +252,26 @@ Deno.serve(async (req) => {
         .from('coupons')
         .update({ status: 'refunded', updated_at: now })
         .eq('order_item_id', orderItemId);
+
+      // 发送邮件（即发即忘，不阻断核心流程）
+      try {
+        const { data: userInfo } = await supabaseAdmin
+          .from('users').select('email').eq('id', order.user_id).single();
+        const { data: dealInfo } = await supabaseAdmin
+          .from('deals').select('title').eq('id', (item as any).deal_id).single();
+        const dealTitle = (dealInfo?.title as string | undefined);
+
+        if (userInfo?.email) {
+          // C7：退款申请已受理（原支付方式，3-5 个工作日）
+          const { subject: c7Subject, html: c7Html } = buildC7Email({ refundAmount, refundMethod: 'original_payment', dealTitle });
+          await sendEmail(supabaseAdmin, {
+            to: userInfo.email, subject: c7Subject, htmlBody: c7Html,
+            emailCode: 'C7', referenceId: orderItemId, recipientType: 'customer', userId: order.user_id,
+          });
+        }
+      } catch (emailErr) {
+        console.error('create-refund: email error (original_payment):', emailErr);
+      }
 
       return new Response(
         JSON.stringify({

@@ -4,7 +4,7 @@
 // 收件人：商家注册邮箱
 // =============================================================
 
-import { wrapInLayout, escapeHtml, formatDate, buildInfoTable } from '../../base-layout.ts'
+import { wrapInLayout, escapeHtml, formatDate, buildInfoTable } from '../base-layout.ts'
 
 export interface M3VerificationApprovedData {
   merchantName:          string   // 商家名称
