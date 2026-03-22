@@ -1,5 +1,8 @@
 import Stripe from 'https://esm.sh/stripe@14?target=deno';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { sendEmail } from '../_shared/email.ts';
+import { buildC2Email } from '../_shared/email-templates/customer/order-confirmation.ts';
+import { buildM5Email } from '../_shared/email-templates/merchant/new-order.ts';
 
 // Stripe 客户端（验证 PaymentIntent 状态）
 const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {
@@ -235,7 +238,115 @@ Deno.serve(async (req) => {
     }
 
     // ----------------------------------------------------------------
-    // 8. 返回结果
+    // 8. 发送邮件（即发即忘，不阻断核心流程）
+    // ----------------------------------------------------------------
+    try {
+      // 查询客户邮箱
+      const { data: userInfo } = await serviceClient
+        .from('users').select('email').eq('id', userId).single();
+
+      // 查询涉及的所有 deal 信息（title + merchant 的 user_id）
+      const uniqueDealIds = [...new Set(items.map((i: { dealId: string }) => i.dealId))];
+      const { data: dealRows } = await serviceClient
+        .from('deals')
+        .select('id, title, discount_price, merchant_id, merchants(id, name, user_id)')
+        .in('id', uniqueDealIds);
+
+      const dealMap: Record<string, { title: string; discountPrice: number; merchantId: string; merchantName: string; merchantUserId: string }> = {};
+      for (const d of (dealRows ?? [])) {
+        const m = (d as any).merchants;
+        dealMap[d.id] = {
+          title:          d.title,
+          discountPrice:  Number(d.discount_price ?? 0),
+          merchantId:     d.merchant_id,
+          merchantName:   m?.name ?? '',
+          merchantUserId: m?.user_id ?? '',
+        };
+      }
+
+      // C2：发给客户，汇总订单明细
+      if (userInfo?.email) {
+        // 按 dealId 合并数量
+        const itemSummaryMap: Record<string, { dealTitle: string; unitPrice: number; quantity: number }> = {};
+        for (const item of items) {
+          if (!itemSummaryMap[item.dealId]) {
+            itemSummaryMap[item.dealId] = {
+              dealTitle: dealMap[item.dealId]?.title ?? 'Unknown Deal',
+              unitPrice: Number(item.unitPrice),
+              quantity:  0,
+            };
+          }
+          itemSummaryMap[item.dealId].quantity += 1;
+        }
+
+        const { subject, html } = buildC2Email({
+          customerEmail: userInfo.email,
+          orderNumber,
+          items:         Object.values(itemSummaryMap),
+          subtotal:      Number(subtotal ?? 0),
+          serviceFee:    Number(serviceFeeTotal ?? 0),
+          totalAmount:   Number(totalAmount),
+        });
+        await sendEmail(serviceClient, {
+          to:            userInfo.email,
+          subject,
+          htmlBody:      html,
+          emailCode:     'C2',
+          referenceId:   orderId,
+          recipientType: 'customer',
+          userId,
+        });
+      }
+
+      // M5：按商家分组，每个商家发一封新订单通知
+      const merchantItemsMap: Record<string, { merchantUserId: string; merchantName: string; items: Array<{ dealTitle: string; quantity: number; unitPrice: number }> }> = {};
+      for (const item of items) {
+        const deal = dealMap[item.dealId];
+        if (!deal?.merchantUserId) continue;
+        if (!merchantItemsMap[deal.merchantId]) {
+          merchantItemsMap[deal.merchantId] = {
+            merchantUserId: deal.merchantUserId,
+            merchantName:   deal.merchantName,
+            items:          [],
+          };
+        }
+        const existing = merchantItemsMap[deal.merchantId].items.find(i => i.dealTitle === deal.title);
+        if (existing) {
+          existing.quantity += 1;
+        } else {
+          merchantItemsMap[deal.merchantId].items.push({ dealTitle: deal.title, quantity: 1, unitPrice: Number(item.unitPrice) });
+        }
+      }
+
+      for (const [merchantId, info] of Object.entries(merchantItemsMap)) {
+        const { data: merchantUser } = await serviceClient
+          .from('users').select('email').eq('id', info.merchantUserId).single();
+        if (!merchantUser?.email) continue;
+
+        const merchantTotal = info.items.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0);
+        const { subject, html } = buildM5Email({
+          merchantName:  info.merchantName,
+          orderNumber,
+          items:         info.items,
+          totalAmount:   merchantTotal,
+        });
+        await sendEmail(serviceClient, {
+          to:            merchantUser.email,
+          subject,
+          htmlBody:      html,
+          emailCode:     'M5',
+          referenceId:   orderId,
+          recipientType: 'merchant',
+          merchantId,
+        });
+      }
+    } catch (emailErr) {
+      // 邮件失败不阻断订单流程
+      console.error('create-order-v3: email sending error:', emailErr);
+    }
+
+    // ----------------------------------------------------------------
+    // 9. 返回结果
     // ----------------------------------------------------------------
     return jsonResponse({
       orderId,

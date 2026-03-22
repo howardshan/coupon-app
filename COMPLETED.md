@@ -165,6 +165,14 @@
   - `admin/app/actions/admin.ts` — `updateDealSortOrder`
   - `admin/app/(dashboard)/deals/page.tsx` — sort_order 列
 
+#### Admin 邮件侧栏 + Email Log ✅
+- 状态：已完成，侧栏「Email」分组展开（Email Settings / Email Log），日志列表分页 + HTML 预览
+- 受保护文件：
+  - `admin/components/sidebar.tsx` — admin 导航含 Email 分组
+  - `admin/app/(dashboard)/settings/email-logs/page.tsx`
+  - `admin/components/email-logs-table.tsx`
+  - `admin/app/actions/email-logs.ts` — `getEmailLogHtmlBody`
+
 ---
 
 ## 更新记录
@@ -176,6 +184,7 @@
 | 2026-03-12 | Brand Management 改版 + 门店确认入口 + Brand Deals 过滤 | Claude |
 | 2026-03-13 | Brand Deal 创建/审批/客户端展示 — RPC 类型修复 + 商家详情页关联查询 + provider autoDispose | Claude |
 | 2026-03-13 | Brand 鉴权/门店切换 + Logo 上传/客户端展示 + 首页固定头部 — 全部加入保护清单 | Claude |
+| 2026-03-21 | Admin 侧栏 Email 分组 + Email Log 页面与预览 Action | Claude |
 
 ---
 
