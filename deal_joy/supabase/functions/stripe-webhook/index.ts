@@ -4,6 +4,8 @@
 
 import Stripe from 'https://esm.sh/stripe@14?target=deno';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2?target=deno';
+import { sendEmail } from '../_shared/email.ts';
+import { buildC8Email } from '../_shared/email-templates/customer/refund-completed.ts';
 
 // ─── Stripe 客户端初始化 ─────────────────────────────────────────────────────
 const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {
@@ -317,6 +319,44 @@ async function handleChargeRefunded(charge: Stripe.Charge): Promise<void> {
       console.error('[charge.refunded] 更新 payments 退款信息失败:', updatePaymentErr);
       // 记录但不抛出，主要业务逻辑已完成
     }
+  }
+
+  // 发送 C8 邮件（即发即忘，不阻断 webhook 响应）
+  try {
+    // 获取客户邮箱
+    const { data: orderDetail } = await supabase
+      .from('orders').select('user_id').eq('id', order.id).single();
+    const userId = orderDetail?.user_id as string | null;
+
+    if (userId) {
+      const { data: userInfo } = await supabase
+        .from('users').select('email').eq('id', userId).single();
+
+      if (userInfo?.email) {
+        // 从 Stripe charge 获取银行卡末四位
+        const cardLast4 = (charge.payment_method_details as any)?.card?.last4 as string | undefined;
+
+        // 如果是 per-item 退款，尝试获取 deal 标题
+        let dealTitle: string | undefined;
+        if (orderItemId) {
+          const { data: itemDetail } = await supabase
+            .from('order_items').select('deal_id, deals(title)').eq('id', orderItemId).single();
+          dealTitle = (itemDetail as any)?.deals?.title as string | undefined;
+        }
+
+        const itemRefundAmount = orderItemId
+          ? (latestRefund?.amount ?? 0) / 100
+          : refundAmount;
+
+        const { subject, html } = buildC8Email({ refundAmount: itemRefundAmount, cardLast4, dealTitle });
+        await sendEmail(supabase, {
+          to: userInfo.email, subject, htmlBody: html,
+          emailCode: 'C8', referenceId: orderItemId ?? order.id, recipientType: 'customer', userId,
+        });
+      }
+    }
+  } catch (emailErr) {
+    console.error('[charge.refunded] C8 email error:', emailErr);
   }
 
   console.log(`[charge.refunded] 处理完成 order=${order.id}`);
