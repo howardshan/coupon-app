@@ -9,6 +9,11 @@ import {
   normalizeAttachmentKeys,
   recordAfterSalesEvent,
 } from "../_shared/after-sales.ts";
+import { sendEmail, getAdminRecipients } from "../_shared/email.ts";
+import { buildC10Email } from "../_shared/email-templates/customer/after-sales-approved.ts";
+import { buildC11Email } from "../_shared/email-templates/customer/after-sales-rejected.ts";
+import { buildM12Email } from "../_shared/email-templates/merchant/platform-review-result.ts";
+import { buildA6Email } from "../_shared/email-templates/admin/after-sales-closed.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -319,6 +324,76 @@ async function handleApprove(
       note: `Refunded (${refundResult.status})`,
       extra: { refund_id: refundResult.refundId },
     });
+    // C10 + M12 + A6：平台批准后通知客户、商家和管理员（fire-and-forget）
+    (async () => {
+      try {
+        const { data: reqInfo } = await supabase
+          .from("after_sales_requests")
+          .select("user_id, merchant_id, refund_amount, coupons(deal_id, deals(title))")
+          .eq("id", requestId)
+          .single();
+        const dealTitle = (reqInfo as any)?.coupons?.deals?.title as string | undefined;
+        const requestIdShort = requestId.slice(0, 8).toUpperCase();
+        const refundAmount = Number(reqInfo?.refund_amount ?? updated.refund_amount ?? 0);
+        const { data: adminUser } = await supabase
+          .from("users").select("full_name").eq("id", admin.userId).single();
+        const adminReviewerName = adminUser?.full_name as string | undefined;
+
+        // C10：通知客户平台已批准退款
+        if (reqInfo?.user_id) {
+          const { data: customerUser } = await supabase
+            .from("users").select("email").eq("id", reqInfo.user_id).single();
+          if (customerUser?.email) {
+            const { subject: c10Subject, html: c10Html } = buildC10Email({
+              requestId: requestIdShort, refundAmount,
+              refundMethod: "original_payment", dealTitle,
+            });
+            await sendEmail(supabase, {
+              to: customerUser.email, subject: c10Subject, htmlBody: c10Html,
+              emailCode: "C10", referenceId: requestId, recipientType: "customer",
+              userId: reqInfo.user_id,
+            });
+          }
+        }
+
+        // M12：通知商家平台最终裁决（已批准）
+        if (reqInfo?.merchant_id) {
+          const { data: merchantInfo } = await supabase
+            .from("merchants").select("name, user_id").eq("id", reqInfo.merchant_id).single();
+          if (merchantInfo) {
+            const { data: merchantUser } = await supabase
+              .from("users").select("email").eq("id", merchantInfo.user_id).single();
+            if (merchantUser?.email) {
+              const { subject: m12Subject, html: m12Html } = buildM12Email({
+                merchantName: merchantInfo.name, requestId: requestIdShort,
+                decision: "approved", platformNote: note, refundAmount,
+              });
+              await sendEmail(supabase, {
+                to: merchantUser.email, subject: m12Subject, htmlBody: m12Html,
+                emailCode: "M12", referenceId: requestId, recipientType: "merchant",
+                merchantId: reqInfo.merchant_id,
+              });
+            }
+          }
+        }
+
+        // A6：管理员结案存档通知（已批准）
+        const adminEmails = await getAdminRecipients(supabase, "A6");
+        if (adminEmails.length > 0) {
+          const { subject: a6Subject, html: a6Html } = buildA6Email({
+            requestId: requestIdShort, decision: "approved",
+            platformNote: note, adminReviewerName, refundAmount, dealTitle,
+          });
+          await sendEmail(supabase, {
+            to: adminEmails, subject: a6Subject, htmlBody: a6Html,
+            emailCode: "A6", referenceId: requestId, recipientType: "admin",
+          });
+        }
+      } catch (err) {
+        console.warn("[platform-after-sales] approve email failed", err);
+      }
+    })();
+
     const refreshed = await fetchAdminRequest(supabase, requestId);
     const hydrated = await decorateAfterSalesRequest(supabase, refreshed);
     const fallback = await decorateAfterSalesRequest(supabase, updated);
@@ -419,6 +494,74 @@ async function handleReject(
     note,
     attachments,
   });
+  // C11 + M12 + A6：平台拒绝后通知客户、商家和管理员（fire-and-forget）
+  (async () => {
+    try {
+      const { data: reqInfo } = await supabase
+        .from("after_sales_requests")
+        .select("user_id, merchant_id, coupons(deal_id, deals(title))")
+        .eq("id", requestId)
+        .single();
+      const dealTitle = (reqInfo as any)?.coupons?.deals?.title as string | undefined;
+      const requestIdShort = requestId.slice(0, 8).toUpperCase();
+      const { data: adminUser } = await supabase
+        .from("users").select("full_name").eq("id", admin.userId).single();
+      const adminReviewerName = adminUser?.full_name as string | undefined;
+
+      // C11：通知客户平台已拒绝
+      if (reqInfo?.user_id) {
+        const { data: customerUser } = await supabase
+          .from("users").select("email").eq("id", reqInfo.user_id).single();
+        if (customerUser?.email) {
+          const { subject: c11Subject, html: c11Html } = buildC11Email({
+            requestId: requestIdShort, rejectionNote: note, dealTitle,
+          });
+          await sendEmail(supabase, {
+            to: customerUser.email, subject: c11Subject, htmlBody: c11Html,
+            emailCode: "C11", referenceId: requestId, recipientType: "customer",
+            userId: reqInfo.user_id,
+          });
+        }
+      }
+
+      // M12：通知商家平台最终裁决（已拒绝）
+      if (reqInfo?.merchant_id) {
+        const { data: merchantInfo } = await supabase
+          .from("merchants").select("name, user_id").eq("id", reqInfo.merchant_id).single();
+        if (merchantInfo) {
+          const { data: merchantUser } = await supabase
+            .from("users").select("email").eq("id", merchantInfo.user_id).single();
+          if (merchantUser?.email) {
+            const { subject: m12Subject, html: m12Html } = buildM12Email({
+              merchantName: merchantInfo.name, requestId: requestIdShort,
+              decision: "rejected", platformNote: note,
+            });
+            await sendEmail(supabase, {
+              to: merchantUser.email, subject: m12Subject, htmlBody: m12Html,
+              emailCode: "M12", referenceId: requestId, recipientType: "merchant",
+              merchantId: reqInfo.merchant_id,
+            });
+          }
+        }
+      }
+
+      // A6：管理员结案存档通知（已拒绝）
+      const adminEmails = await getAdminRecipients(supabase, "A6");
+      if (adminEmails.length > 0) {
+        const { subject: a6Subject, html: a6Html } = buildA6Email({
+          requestId: requestIdShort, decision: "rejected",
+          platformNote: note, adminReviewerName, dealTitle,
+        });
+        await sendEmail(supabase, {
+          to: adminEmails, subject: a6Subject, htmlBody: a6Html,
+          emailCode: "A6", referenceId: requestId, recipientType: "admin",
+        });
+      }
+    } catch (err) {
+      console.warn("[platform-after-sales] reject email failed", err);
+    }
+  })();
+
   const refreshed = await fetchAdminRequest(supabase, requestId);
   const hydrated = await decorateAfterSalesRequest(supabase, refreshed);
   const fallback = await decorateAfterSalesRequest(supabase, data);

@@ -10,6 +10,10 @@ import {
   recordAfterSalesEvent,
 } from "../_shared/after-sales.ts";
 import { resolveAuth, requirePermission } from "../_shared/auth.ts";
+import { sendEmail } from "../_shared/email.ts";
+import { buildC13Email } from "../_shared/email-templates/customer/after-sales-merchant-replied.ts";
+import { buildM10Email } from "../_shared/email-templates/merchant/after-sales-approved.ts";
+import { buildM11Email } from "../_shared/email-templates/merchant/after-sales-rejected-escalated.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -357,6 +361,54 @@ async function handleApprove(
       note: `Refunded (${refundResult.status})`,
       extra: { refund_id: refundResult.refundId },
     });
+    // C13 + M10：通知客户已批准，通知商家确认（fire-and-forget）
+    (async () => {
+      try {
+        const { data: reqInfo } = await supabase
+          .from("after_sales_requests")
+          .select("user_id, coupons(deal_id, deals(title))")
+          .eq("id", requestId)
+          .single();
+        const { data: merchantInfo } = await supabase
+          .from("merchants").select("name").eq("id", auth.merchantId).single();
+        const merchantName = merchantInfo?.name ?? "";
+        const dealTitle = (reqInfo as any)?.coupons?.deals?.title as string | undefined;
+        const requestIdShort = requestId.slice(0, 8).toUpperCase();
+        const refundAmount = Number(updated.refund_amount ?? 0);
+
+        if (reqInfo?.user_id) {
+          const { data: customerUser } = await supabase
+            .from("users").select("email").eq("id", reqInfo.user_id).single();
+          if (customerUser?.email) {
+            const { subject: c13Subject, html: c13Html } = buildC13Email({
+              requestId: requestIdShort, merchantName, decision: "approved",
+              merchantNote: note, refundAmount, dealTitle,
+            });
+            await sendEmail(supabase, {
+              to: customerUser.email, subject: c13Subject, htmlBody: c13Html,
+              emailCode: "C13", referenceId: requestId, recipientType: "customer",
+              userId: reqInfo.user_id,
+            });
+          }
+        }
+
+        const { data: merchantUser } = await supabase
+          .from("users").select("email").eq("id", auth.userId).single();
+        if (merchantUser?.email) {
+          const { subject: m10Subject, html: m10Html } = buildM10Email({
+            merchantName, requestId: requestIdShort, refundAmount,
+          });
+          await sendEmail(supabase, {
+            to: merchantUser.email, subject: m10Subject, htmlBody: m10Html,
+            emailCode: "M10", referenceId: requestId, recipientType: "merchant",
+            merchantId: auth.merchantId,
+          });
+        }
+      } catch (err) {
+        console.warn("[merchant-after-sales] approve email failed", err);
+      }
+    })();
+
     const refreshed = await fetchMerchantRequest(supabase, auth, requestId);
     const hydrated = await decorateAfterSalesRequest(supabase, refreshed);
     const fallback = await decorateAfterSalesRequest(supabase, updated);
@@ -462,6 +514,53 @@ async function handleReject(
     note,
     attachments,
   });
+  // C13 + M11：通知客户已拒绝，通知商家拒绝已记录（fire-and-forget）
+  (async () => {
+    try {
+      const { data: reqInfo } = await supabase
+        .from("after_sales_requests")
+        .select("user_id, coupons(deal_id, deals(title))")
+        .eq("id", requestId)
+        .single();
+      const { data: merchantInfo } = await supabase
+        .from("merchants").select("name").eq("id", auth.merchantId).single();
+      const merchantName = merchantInfo?.name ?? "";
+      const dealTitle = (reqInfo as any)?.coupons?.deals?.title as string | undefined;
+      const requestIdShort = requestId.slice(0, 8).toUpperCase();
+
+      if (reqInfo?.user_id) {
+        const { data: customerUser } = await supabase
+          .from("users").select("email").eq("id", reqInfo.user_id).single();
+        if (customerUser?.email) {
+          const { subject: c13Subject, html: c13Html } = buildC13Email({
+            requestId: requestIdShort, merchantName, decision: "rejected",
+            merchantNote: note, dealTitle,
+          });
+          await sendEmail(supabase, {
+            to: customerUser.email, subject: c13Subject, htmlBody: c13Html,
+            emailCode: "C13", referenceId: requestId, recipientType: "customer",
+            userId: reqInfo.user_id,
+          });
+        }
+      }
+
+      const { data: merchantUser } = await supabase
+        .from("users").select("email").eq("id", auth.userId).single();
+      if (merchantUser?.email) {
+        const { subject: m11Subject, html: m11Html } = buildM11Email({
+          merchantName, requestId: requestIdShort,
+        });
+        await sendEmail(supabase, {
+          to: merchantUser.email, subject: m11Subject, htmlBody: m11Html,
+          emailCode: "M11", referenceId: requestId, recipientType: "merchant",
+          merchantId: auth.merchantId,
+        });
+      }
+    } catch (err) {
+      console.warn("[merchant-after-sales] reject email failed", err);
+    }
+  })();
+
   const refreshed = await fetchMerchantRequest(supabase, auth, requestId);
   const hydrated = await decorateAfterSalesRequest(supabase, refreshed);
   const fallback = await decorateAfterSalesRequest(supabase, data);
