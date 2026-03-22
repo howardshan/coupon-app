@@ -167,14 +167,15 @@ export default function EmailLogsTable({
 
       {preview && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/50 p-4 sm:p-6 overflow-y-auto"
           role="dialog"
           aria-modal="true"
           aria-labelledby="email-preview-title"
         >
-          <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] flex flex-col">
-            <div className="px-5 py-4 border-b border-gray-200 flex justify-between items-start gap-4">
-              <div>
+          {/* 宽度随视口收窄；高度不超过视口，避免又扁又宽 */}
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl sm:max-w-3xl min-w-0 max-h-[min(90dvh,56rem)] my-auto flex flex-col overflow-hidden">
+            <div className="shrink-0 px-5 py-4 border-b border-gray-200 flex justify-between items-start gap-4">
+              <div className="min-w-0 pr-2">
                 <h2 id="email-preview-title" className="text-lg font-semibold text-gray-900">
                   Email preview
                 </h2>
@@ -183,17 +184,18 @@ export default function EmailLogsTable({
               <button
                 type="button"
                 onClick={() => setPreview(null)}
-                className="text-gray-400 hover:text-gray-700 text-xl leading-none px-2"
+                className="shrink-0 text-gray-400 hover:text-gray-700 text-xl leading-none px-2"
                 aria-label="Close"
               >
                 ×
               </button>
             </div>
+            {/* 预留标题栏后剩余高度给 iframe；长邮件在 iframe 内滚动 */}
             <div className="flex-1 min-h-0 p-4">
               {preview.html ? (
                 <iframe
                   title="Email HTML preview"
-                  className="w-full h-[min(70vh,600px)] border border-gray-200 rounded-lg bg-white"
+                  className="w-full min-h-[min(50dvh,320px)] h-[min(75dvh,calc(90dvh-11rem))] border border-gray-200 rounded-lg bg-white"
                   sandbox="allow-same-origin"
                   srcDoc={preview.html}
                 />
