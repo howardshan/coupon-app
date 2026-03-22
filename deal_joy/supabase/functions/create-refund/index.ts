@@ -3,6 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2?target=deno
 import { sendEmail } from '../_shared/email.ts';
 import { buildC7Email } from '../_shared/email-templates/customer/refund-requested.ts';
 import { buildC6Email } from '../_shared/email-templates/customer/store-credit-added.ts';
+import { buildM8Email } from '../_shared/email-templates/merchant/pre-redemption-refund.ts';
 
 const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {
   apiVersion: '2024-04-10',
@@ -172,7 +173,7 @@ Deno.serve(async (req) => {
         const { data: userInfo } = await supabaseAdmin
           .from('users').select('email').eq('id', order.user_id).single();
         const { data: dealInfo } = await supabaseAdmin
-          .from('deals').select('title').eq('id', (item as any).deal_id).single();
+          .from('deals').select('title, merchant_id, merchants(name, user_id)').eq('id', (item as any).deal_id).single();
         const dealTitle = (dealInfo?.title as string | undefined);
 
         if (userInfo?.email) {
@@ -189,6 +190,27 @@ Deno.serve(async (req) => {
             to: userInfo.email, subject: c7Subject, htmlBody: c7Html,
             emailCode: 'C7', referenceId: orderItemId, recipientType: 'customer', userId: order.user_id,
           });
+        }
+
+        // M8：券未核销就退款时通知商家
+        if (customerStatus === 'unused') {
+          const merchantData = (dealInfo as any)?.merchants;
+          const merchantUserId = merchantData?.user_id as string | null;
+          const merchantName   = (merchantData?.name as string | undefined) ?? '';
+          if (merchantUserId) {
+            const { data: merchantUser } = await supabaseAdmin
+              .from('users').select('email').eq('id', merchantUserId).single();
+            const { data: merchantRow } = await supabaseAdmin
+              .from('merchants').select('id').eq('user_id', merchantUserId).single();
+            if (merchantUser?.email) {
+              const { subject: m8Subject, html: m8Html } = buildM8Email({ merchantName, dealTitle, refundAmount });
+              await sendEmail(supabaseAdmin, {
+                to: merchantUser.email, subject: m8Subject, htmlBody: m8Html,
+                emailCode: 'M8', referenceId: orderItemId, recipientType: 'merchant',
+                merchantId: (merchantRow as any)?.id,
+              });
+            }
+          }
         }
       } catch (emailErr) {
         console.error('create-refund: email error (store_credit):', emailErr);
@@ -258,7 +280,7 @@ Deno.serve(async (req) => {
         const { data: userInfo } = await supabaseAdmin
           .from('users').select('email').eq('id', order.user_id).single();
         const { data: dealInfo } = await supabaseAdmin
-          .from('deals').select('title').eq('id', (item as any).deal_id).single();
+          .from('deals').select('title, merchant_id, merchants(name, user_id)').eq('id', (item as any).deal_id).single();
         const dealTitle = (dealInfo?.title as string | undefined);
 
         if (userInfo?.email) {
@@ -268,6 +290,25 @@ Deno.serve(async (req) => {
             to: userInfo.email, subject: c7Subject, htmlBody: c7Html,
             emailCode: 'C7', referenceId: orderItemId, recipientType: 'customer', userId: order.user_id,
           });
+        }
+
+        // M8：券未核销就退款时通知商家（original_payment 路径只允许 unused 状态，无需额外判断）
+        const merchantData = (dealInfo as any)?.merchants;
+        const merchantUserId = merchantData?.user_id as string | null;
+        const merchantName   = (merchantData?.name as string | undefined) ?? '';
+        if (merchantUserId) {
+          const { data: merchantUser } = await supabaseAdmin
+            .from('users').select('email').eq('id', merchantUserId).single();
+          const { data: merchantRow } = await supabaseAdmin
+            .from('merchants').select('id').eq('user_id', merchantUserId).single();
+          if (merchantUser?.email) {
+            const { subject: m8Subject, html: m8Html } = buildM8Email({ merchantName, dealTitle, refundAmount });
+            await sendEmail(supabaseAdmin, {
+              to: merchantUser.email, subject: m8Subject, htmlBody: m8Html,
+              emailCode: 'M8', referenceId: orderItemId, recipientType: 'merchant',
+              merchantId: (merchantRow as any)?.id,
+            });
+          }
         }
       } catch (emailErr) {
         console.error('create-refund: email error (original_payment):', emailErr);
