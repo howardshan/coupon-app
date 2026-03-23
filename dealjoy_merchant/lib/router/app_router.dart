@@ -22,6 +22,7 @@ import '../features/orders/pages/orders_list_page.dart';
 import '../features/orders/pages/order_detail_page.dart';
 import '../features/settings/pages/settings_page.dart';
 import '../features/settings/pages/notification_preferences_page.dart';
+import '../features/settings/pages/email_preferences_page.dart';
 import '../features/settings/pages/help_center_page.dart';
 import '../features/settings/pages/account_security_page.dart';
 import '../features/store/pages/staff_manage_page.dart';
@@ -335,6 +336,10 @@ final appRouter = GoRouter(
             GoRoute(
               path: 'notifications',
               builder: (context, state) => const NotificationPreferencesPage(),
+            ),
+            GoRoute(
+              path: 'email-notifications',
+              builder: (context, state) => const EmailPreferencesPage(),
             ),
             GoRoute(
               path: 'help',

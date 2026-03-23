@@ -26,6 +26,7 @@ import '../../features/profile/presentation/screens/profile_screen.dart';
 import '../../features/profile/presentation/screens/edit_profile_screen.dart';
 import '../../features/profile/presentation/screens/store_credit_screen.dart';
 import '../../features/profile/presentation/screens/payment_methods_screen.dart';
+import '../../features/profile/presentation/screens/email_preferences_screen.dart';
 import '../../features/reviews/presentation/screens/write_review_screen.dart';
 import '../../features/merchant/presentation/screens/merchant_dashboard_screen.dart';
 import '../../features/merchant/presentation/screens/merchant_detail_screen.dart';
@@ -172,6 +173,12 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/profile/payment-methods',
         builder: (_, _) => const PaymentMethodsScreen(),
+      ),
+
+      // 邮件通知偏好设置页
+      GoRoute(
+        path: '/profile/email-notifications',
+        builder: (_, _) => const EmailPreferencesScreen(),
       ),
 
       // Merchant static routes must come before parameterized /merchant/:id

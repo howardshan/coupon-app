@@ -1,11 +1,11 @@
 # CrunchyPlum 邮件系统开发计划书
 
 > **创建日期：** 2026-03-21
-> **最后更新：** 2026-03-23（v4 — Phase 1–6 实现状态同步）
+> **最后更新：** 2026-03-23（v5 — Phase 6 客户端/商家端邮件偏好 UI 完成）
 > **发件域名：** crunchyplum.com
 > **邮件服务商：** SMTP2GO
 > **邮件内容语言：** 英文（面向北美 Dallas 市场）
-> **状态：** 34/37 已实现（3 种待处理，见 Phase 6）
+> **状态：** 34/37 已实现；Phase 6 核心功能全部完成（剩余 A1/A8 超出范围，M15 等待触发点）
 
 > ⚠️ **品牌变更说明（2026-03-21）：** 项目已因版权/法律原因从 **DealJoy** 正式更名为 **CrunchyPlum**。
 > 所有面向用户的邮件内容（subject、HTML body、FROM 名称、Logo 文字、页脚）均已更新为 CrunchyPlum。
@@ -834,13 +834,13 @@ deal_joy/lib/features/profile/
 
 ---
 
-### Phase 6 — 用户偏好设置 + 剩余功能（部分完成）
+### Phase 6 — 用户偏好设置 + 剩余功能 ✅ 核心功能已完成
 
 **目标：** 完成用户/商家偏好设置 UI、Admin 邮件日志预览、剩余邮件类型。
 
-- [ ] 客户端邮件偏好设置 UI（C3、C4、C13）— 未开始
-- [ ] 商家端邮件偏好设置 UI（M5、M6、M7、M13）— 未开始
-- [ ] Admin `/settings/email-logs` 页面（含 HTML 内容预览弹窗）— 未开始
+- [x] 客户端邮件偏好设置 UI（C3、C4、C13）
+- [x] 商家端邮件偏好设置 UI（M5、M6、M7、M13）
+- [x] Admin `/settings/email-logs` 页面（含 HTML 内容预览弹窗）
 - [x] A4 — 大额退款预警（`create-refund`，阈值 $200，两条退款路径均已集成）
 - [x] A7 + M14 — 提现申请通知（`merchant-withdrawal`）
 - [x] M15 — 提现完成邮件模板已创建；集成点待「提现审批通过 Admin Action」实现
