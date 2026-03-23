@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../models/coupon_info.dart';
 import '../providers/scan_provider.dart';
+import '../../orders/providers/orders_provider.dart';
 
 class RedemptionSuccessPage extends ConsumerStatefulWidget {
   const RedemptionSuccessPage({
@@ -56,6 +57,8 @@ class _RedemptionSuccessPageState
 
     // 页面进入时播放动画
     _animController.forward();
+    // 核销成功后刷新订单列表（避免需要手动刷新）
+    ref.invalidate(ordersNotifierProvider);
   }
 
   @override

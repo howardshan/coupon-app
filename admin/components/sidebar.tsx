@@ -10,22 +10,33 @@ interface SidebarProps {
   email: string
 }
 
-const adminNav = [
-  { href: '/dashboard', label: 'Overview', icon: '📊' },
-  { href: '/users', label: 'Users', icon: '👥' },
-  { href: '/merchants', label: 'Merchants', icon: '🏪' },
-  { href: '/brands', label: 'Brands', icon: '🏢' },
-  { href: '/deals', label: 'Deals', icon: '🏷️' },
-  { href: '/orders', label: 'Orders', icon: '📦' },
-  { href: '/finance', label: 'Finance', icon: '💰' },
-  { href: '/closures', label: 'Closures', icon: '🔒' },
-  { href: '/support', label: 'Support', icon: '💬' },
-  { href: '/tax-rates', label: 'Tax Rates', icon: '🧾' },
+type NavLink = { kind: 'link'; href: string; label: string; icon: string }
+type NavGroup = { kind: 'group'; label: string; icon: string; children: { href: string; label: string }[] }
+type NavEntry = NavLink | NavGroup
+
+const adminNav: NavEntry[] = [
+  { kind: 'link', href: '/dashboard', label: 'Overview', icon: '📊' },
+  { kind: 'link', href: '/users', label: 'Users', icon: '👥' },
+  { kind: 'link', href: '/merchants', label: 'Merchants', icon: '🏪' },
+  { kind: 'link', href: '/brands', label: 'Brands', icon: '🏢' },
+  { kind: 'link', href: '/deals', label: 'Deals', icon: '🏷️' },
+  { kind: 'link', href: '/orders', label: 'Orders', icon: '📦' },
+  { kind: 'link', href: '/finance', label: 'Finance', icon: '💰' },
+  { kind: 'link', href: '/closures', label: 'Closures', icon: '🔒' },
+  { kind: 'link', href: '/support', label: 'Support', icon: '💬' },
+  { kind: 'link', href: '/tax-rates', label: 'Tax Rates', icon: '🧾' },
+  {
+    kind: 'group', label: 'Settings', icon: '⚙️',
+    children: [
+      { href: '/settings/email-types', label: 'Email Types' },
+      { href: '/settings/email-logs', label: 'Email Logs' },
+    ],
+  },
 ]
 
 const merchantNav: NavLink[] = [
-  { href: '/dashboard', label: 'Dashboard', icon: '📊' },
-  { href: '/deals', label: 'My Deals', icon: '🏷️' },
+  { kind: 'link', href: '/dashboard', label: 'Dashboard', icon: '📊' },
+  { kind: 'link', href: '/deals', label: 'My Deals', icon: '🏷️' },
 ]
 
 function isOnEmailRoute(pathname: string) {

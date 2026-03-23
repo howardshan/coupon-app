@@ -240,39 +240,81 @@ export async function getOrdersList(filters: OrdersListFilters = {}): Promise<Or
   }
 }
 
-/** 管理员通过退款：调用 create-refund Edge Function 执行 Stripe 退款并更新订单/券/支付状态 */
+/** 管理员通过退款：将该订单下 refund_pending 的 items 标记为 refund_success */
 export async function approveRefund(orderId: string) {
   await requireAdmin()
 
   const supabase = getServiceRoleClient()
-  const { data, error } = await supabase.functions.invoke('create-refund', {
-    body: { orderId },
-  })
+  const now = new Date().toISOString()
 
-  if (error) throw new Error(error.message)
+  // 查出该订单下状态为 refund_pending / refund_review 的 items
+  const { data: items } = await supabase
+    .from('order_items')
+    .select('id, customer_status')
+    .eq('order_id', orderId)
+    .in('customer_status', ['refund_pending', 'refund_review'])
 
-  const body = data as { error?: string } | null
-  if (body?.error) throw new Error(body.error)
+  if (items && items.length > 0) {
+    // V3 订单：直接将 refund_pending items 标记为 refund_success
+    const itemIds = items.map(i => i.id)
+    const { error } = await supabase
+      .from('order_items')
+      .update({
+        customer_status: 'refund_success',
+        refunded_at: now,
+        updated_at: now,
+      })
+      .in('id', itemIds)
+    if (error) throw new Error(error.message)
+  } else {
+    // 旧订单兼容：直接更新 orders.status
+    const { error } = await supabase
+      .from('orders')
+      .update({ status: 'refunded', refunded_at: now, updated_at: now })
+      .eq('id', orderId)
+    if (error) throw new Error(error.message)
+  }
 
   revalidatePath('/orders')
   revalidatePath(`/orders/${orderId}`)
 }
 
-/** 管理员拒绝退款：订单状态改回 unused，并写入 refund_rejected_at 供详情页展示 Refund Rejected */
+/** 管理员拒绝退款：将 refund_pending 的 items 标记为 refund_reject */
 export async function rejectRefund(orderId: string) {
   await requireAdmin()
 
   const supabase = getServiceRoleClient()
-  const { error } = await supabase
-    .from('orders')
-    .update({
-      status: 'unused',
-      refund_rejected_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', orderId)
+  const now = new Date().toISOString()
 
-  if (error) throw new Error(error.message)
+  // V3 订单：将 refund_pending / refund_review items 标记为 refund_reject
+  const { data: items } = await supabase
+    .from('order_items')
+    .select('id')
+    .eq('order_id', orderId)
+    .in('customer_status', ['refund_pending', 'refund_review'])
+
+  if (items && items.length > 0) {
+    const { error } = await supabase
+      .from('order_items')
+      .update({
+        customer_status: 'refund_reject',
+        updated_at: now,
+      })
+      .in('id', items.map(i => i.id))
+    if (error) throw new Error(error.message)
+  } else {
+    // 旧订单兼容
+    const { error } = await supabase
+      .from('orders')
+      .update({
+        status: 'unused',
+        refund_rejected_at: now,
+        updated_at: now,
+      })
+      .eq('id', orderId)
+    if (error) throw new Error(error.message)
+  }
+
   revalidatePath('/orders')
   revalidatePath(`/orders/${orderId}`)
 }

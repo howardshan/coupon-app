@@ -23,6 +23,7 @@ class OrderTile extends StatelessWidget {
     final amountFormatter = NumberFormat.currency(symbol: '\$');
 
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),

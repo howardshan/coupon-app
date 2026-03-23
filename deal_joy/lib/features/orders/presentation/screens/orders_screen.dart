@@ -143,7 +143,18 @@ class OrdersScreen extends ConsumerWidget {
     final ordersAsync = ref.watch(userOrdersProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('My Orders')),
+      appBar: AppBar(
+        title: const Text('My Orders'),
+        leading: Navigator.of(context).canPop()
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () => Navigator.of(context).pop(),
+              )
+            : IconButton(
+                icon: const Icon(Icons.home_outlined),
+                onPressed: () => context.go('/home'),
+              ),
+      ),
       body: ordersAsync.when(
         data: (orders) {
           final entries = _buildOrderEntries(orders);
