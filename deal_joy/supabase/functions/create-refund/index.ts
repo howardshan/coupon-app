@@ -279,14 +279,26 @@ Deno.serve(async (req) => {
       // 退款商品价 + 税，不含 service fee（service fee 不退）
       const itemRefundable = unitPrice + taxAmount;
 
-      // 混合支付时按比例拆分：store credit 部分退回 store credit，card 部分退回信用卡
+      // 混合支付时优先退 store credit：先退完 credit 部分，剩余退信用卡
       let cardRefundAmount = itemRefundable;
       let creditRefundAmount = 0;
 
-      if (isPartialStoreCredit && orderTotalAmount > 0) {
-        // store credit 在整单中的占比
-        const creditRatio = storeCreditUsed / orderTotalAmount;
-        creditRefundAmount = Math.round(itemRefundable * creditRatio * 100) / 100;
+      if (isPartialStoreCredit && storeCreditUsed > 0) {
+        // 查询该订单下已退款 items 中已退还的 store credit 总额
+        const { data: refundedItems } = await supabaseAdmin
+          .from('order_items')
+          .select('refund_credit_amount')
+          .eq('order_id', order.id)
+          .in('customer_status', ['refund_success', 'refund_pending']);
+
+        const alreadyRefundedCredit = (refundedItems ?? [])
+          .reduce((sum: number, r: { refund_credit_amount: number | null }) =>
+            sum + Number(r.refund_credit_amount ?? 0), 0);
+
+        // 剩余可退的 store credit 额度
+        const remainingCredit = Math.max(0, storeCreditUsed - alreadyRefundedCredit);
+        // 优先退 store credit，不超过本 item 的可退金额
+        creditRefundAmount = Math.round(Math.min(remainingCredit, itemRefundable) * 100) / 100;
         cardRefundAmount = Math.round((itemRefundable - creditRefundAmount) * 100) / 100;
       }
 
@@ -348,6 +360,7 @@ Deno.serve(async (req) => {
           customer_status: refundStatus,
           refunded_at: refundStatus === 'refund_success' ? now : null,
           refund_amount: totalRefundAmount,
+          refund_credit_amount: creditRefundAmount, // 记录本 item 退了多少 store credit
           refund_method: 'original_payment',
           refund_reason: reason ?? null,
           updated_at: now,
@@ -370,7 +383,7 @@ Deno.serve(async (req) => {
 
         if (userInfo?.email) {
           // C7：退款申请已受理（原支付方式，3-5 个工作日）
-          const { subject: c7Subject, html: c7Html } = buildC7Email({ refundAmount, refundMethod: 'original_payment', dealTitle });
+          const { subject: c7Subject, html: c7Html } = buildC7Email({ refundAmount: totalRefundAmount, refundMethod: 'original_payment', dealTitle });
           await sendEmail(supabaseAdmin, {
             to: userInfo.email, subject: c7Subject, htmlBody: c7Html,
             emailCode: 'C7', referenceId: orderItemId, recipientType: 'customer', userId: order.user_id,
@@ -387,7 +400,7 @@ Deno.serve(async (req) => {
           const { data: merchantRow } = await supabaseAdmin
             .from('merchants').select('id').eq('user_id', merchantUserId).single();
           if (merchantUser?.email) {
-            const { subject: m8Subject, html: m8Html } = buildM8Email({ merchantName, dealTitle, refundAmount });
+            const { subject: m8Subject, html: m8Html } = buildM8Email({ merchantName, dealTitle, refundAmount: totalRefundAmount });
             await sendEmail(supabaseAdmin, {
               to: merchantUser.email, subject: m8Subject, htmlBody: m8Html,
               emailCode: 'M8', referenceId: orderItemId, recipientType: 'merchant',
@@ -397,12 +410,12 @@ Deno.serve(async (req) => {
         }
 
         // A4：大额退款告警
-        if (refundAmount >= LARGE_REFUND_THRESHOLD) {
+        if (totalRefundAmount >= LARGE_REFUND_THRESHOLD) {
           const adminEmails = await getAdminRecipients(supabaseAdmin, 'A4');
           if (adminEmails.length > 0) {
             const { subject: a4Subject, html: a4Html } = buildA4Email({
               orderId: (item as any).order_id ?? orderItemId,
-              refundAmount, refundMethod: 'original_payment',
+              refundAmount: totalRefundAmount, refundMethod: 'original_payment',
               dealTitle, threshold: LARGE_REFUND_THRESHOLD,
             });
             await sendEmail(supabaseAdmin, {

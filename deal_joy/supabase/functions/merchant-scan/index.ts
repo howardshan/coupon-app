@@ -176,7 +176,7 @@ async function handleVerify(
         full_name
       )
     `)
-    .eq('qr_code', normalizedCode)
+    .or(`qr_code.eq.${normalizedCode},coupon_code.eq.${normalizedCode.toUpperCase()}`)
     .maybeSingle();
 
   if (error) {

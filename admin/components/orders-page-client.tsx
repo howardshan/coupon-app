@@ -318,8 +318,20 @@ export default function OrdersPageClient({
                 const first = Array.isArray(raw) ? raw[0] : raw
                 const redeemedId = first?.redeemed_at_merchant_id
                 const redeemedName = redeemedId ? initialRedeemedMerchantNames[redeemedId] : null
+                // V3 订单从 order_items 推导聚合状态；旧订单沿用 orders.status
+                const items = o.order_items as { customer_status?: string }[] | null
+                const v3Status = (() => {
+                  if (!items || items.length === 0) return null
+                  const statuses = items.map(i => i.customer_status ?? 'unused')
+                  if (statuses.every(s => s === 'refund_success')) return 'refunded'
+                  if (statuses.some(s => s === 'refund_pending')) return 'refund_requested'
+                  if (statuses.every(s => s === 'used')) return 'used'
+                  if (statuses.some(s => s === 'used')) return 'used'
+                  return null
+                })()
+                const effectiveStatus = v3Status ?? o.status
                 const orderForDisplay = {
-                  status: o.status,
+                  status: effectiveStatus,
                   refund_rejected_at: o.refund_rejected_at,
                   coupon_expires_at: first?.expires_at ?? o.coupon_expires_at ?? null,
                   deal_expires_at: o.deal_expires_at,
@@ -330,7 +342,7 @@ export default function OrdersPageClient({
                 const extraCount = statusTags.length - 2
 
                 return (
-                  <tr key={o.id} className={o.status === 'refund_requested' ? 'bg-orange-50/60' : 'hover:bg-gray-50'}>
+                  <tr key={o.id} className={effectiveStatus === 'refund_requested' ? 'bg-orange-50/60' : 'hover:bg-gray-50'}>
                     <td className="px-4 py-3 font-mono text-gray-700">
                       <Link href={`/orders/${o.id}`} className="text-blue-600 hover:underline">
                         {o.order_number ?? `DJ-${String(o.id).slice(0, 8).toUpperCase()}`}
@@ -387,8 +399,8 @@ export default function OrdersPageClient({
                             +{extraCount}
                           </Link>
                         )}
-                        {o.status === 'refund_requested' && (
-                          <OrderRefundButtons orderId={o.id} initialStatus={o.status} />
+                        {effectiveStatus === 'refund_requested' && (
+                          <OrderRefundButtons orderId={o.id} initialStatus={effectiveStatus} />
                         )}
                       </div>
                     </td>

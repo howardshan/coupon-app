@@ -696,17 +696,15 @@ class _ActionButtonsState extends ConsumerState<_ActionButtons> {
     final orderId = widget.coupon.orderId;
     String paymentIntentId = '';
     double storeCreditUsed = 0;
-    double orderTotalAmount = 0;
 
     try {
       final orderData = await Supabase.instance.client
           .from('orders')
-          .select('payment_intent_id, store_credit_used, total_amount')
+          .select('payment_intent_id, store_credit_used')
           .eq('id', orderId)
           .single();
       paymentIntentId = orderData['payment_intent_id'] as String? ?? '';
       storeCreditUsed = (orderData['store_credit_used'] as num?)?.toDouble() ?? 0;
-      orderTotalAmount = (orderData['total_amount'] as num?)?.toDouble() ?? 0;
     } catch (_) {
       // 查询失败不阻断，按普通支付处理
     }
@@ -723,15 +721,13 @@ class _ActionButtonsState extends ConsumerState<_ActionButtons> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) {
-        // 混合支付时计算单张券的 store credit 占比
+        // 混合支付时展示优先退 store credit 的说明
         String originalPaymentSubtitle = 'Service fee non-refundable · 5-10 business days';
-        if (isPartialStoreCredit && orderTotalAmount > 0) {
-          // 用订单级别的金额展示 store credit / card 拆分
-          final creditPart = (storeCreditUsed * 100).roundToDouble() / 100;
-          final cardPart = ((orderTotalAmount - storeCreditUsed) * 100).roundToDouble() / 100;
+        if (isPartialStoreCredit && storeCreditUsed > 0) {
+          final creditFmt = storeCreditUsed.toStringAsFixed(2);
           originalPaymentSubtitle =
-              'Card \$${cardPart.toStringAsFixed(2)} to card, '
-              'Credit \$${creditPart.toStringAsFixed(2)} to Store Credit\n'
+              'Store Credit portion (\$$creditFmt) refunds to Store Credit first, '
+              'remainder to card\n'
               'Service fee non-refundable · 5-10 business days';
         }
 
