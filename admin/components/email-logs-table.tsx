@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { getEmailLogHtmlBody } from '@/app/actions/email-logs'
 
 export type EmailLogListRow = {
@@ -44,6 +45,24 @@ function formatDt(iso: string | null) {
   }
 }
 
+/** 计算要展示的页码列表（含省略号） */
+function buildPageNumbers(current: number, total: number): (number | '...')[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1)
+
+  const pages: (number | '...')[] = [1]
+
+  if (current > 3) pages.push('...')
+
+  const start = Math.max(2, current - 1)
+  const end   = Math.min(total - 1, current + 1)
+  for (let i = start; i <= end; i++) pages.push(i)
+
+  if (current < total - 2) pages.push('...')
+
+  pages.push(total)
+  return pages
+}
+
 /** 弹窗内展示：列表行元数据 + 拉取后的 HTML */
 type EmailPreviewState = {
   html: string
@@ -61,15 +80,31 @@ export default function EmailLogsTable({
   page,
   totalPages,
   totalCount,
+  isFiltered,
 }: {
   rows: EmailLogListRow[]
   page: number
   totalPages: number
   totalCount: number
+  isFiltered: boolean
 }) {
   const [preview, setPreview] = useState<EmailPreviewState | null>(null)
   // 仅当前点击行显示 Loading，避免 useTransition 全局 isPending 牵连所有按钮
   const [previewLoadingId, setPreviewLoadingId] = useState<string | null>(null)
+
+  // 用于构建保留筛选参数的分页链接
+  const sp = useSearchParams()
+
+  function buildPageUrl(newPage: number) {
+    const params = new URLSearchParams(sp.toString())
+    if (newPage === 1) {
+      params.delete('page')
+    } else {
+      params.set('page', String(newPage))
+    }
+    const qs = params.size > 0 ? `?${params.toString()}` : ''
+    return `/settings/email-logs${qs}`
+  }
 
   async function openPreview(row: EmailLogListRow) {
     const { id } = row
@@ -85,14 +120,14 @@ export default function EmailLogsTable({
         return
       }
       setPreview({
-        html: res.htmlBody,
-        created_at: row.created_at,
-        sent_at: row.sent_at,
-        email_code: row.email_code,
+        html:            res.htmlBody,
+        created_at:      row.created_at,
+        sent_at:         row.sent_at,
+        email_code:      row.email_code,
         recipient_email: row.recipient_email,
-        recipient_type: row.recipient_type,
-        status: row.status,
-        subject: row.subject,
+        recipient_type:  row.recipient_type,
+        status:          row.status,
+        subject:         row.subject,
       })
     } finally {
       // 避免并发点击时先完成的请求把后发起的 loading 清掉
@@ -100,12 +135,28 @@ export default function EmailLogsTable({
     }
   }
 
+  const pageNumbers = buildPageNumbers(page, totalPages)
+  const rangeStart  = totalCount === 0 ? 0 : (page - 1) * 25 + 1
+  const rangeEnd    = Math.min(page * 25, totalCount)
+
   return (
     <>
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="px-5 py-3 border-b border-gray-100 flex justify-between items-center">
           <p className="text-sm text-gray-500">
-            Total <span className="font-semibold text-gray-900">{totalCount}</span> records
+            {totalCount === 0 ? (
+              'No records found'
+            ) : (
+              <>
+                Showing{' '}
+                <span className="font-semibold text-gray-900">
+                  {rangeStart}–{rangeEnd}
+                </span>{' '}
+                of{' '}
+                <span className="font-semibold text-gray-900">{totalCount}</span>{' '}
+                {isFiltered ? 'filtered records' : 'records'}
+              </>
+            )}
           </p>
         </div>
         <div className="overflow-x-auto">
@@ -125,7 +176,9 @@ export default function EmailLogsTable({
               {rows.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-4 py-12 text-center text-gray-400">
-                    No email logs yet. Sent mail will appear here.
+                    {isFiltered
+                      ? 'No records match the current filters.'
+                      : 'No email logs yet. Sent mail will appear here.'}
                   </td>
                 </tr>
               ) : (
@@ -135,7 +188,10 @@ export default function EmailLogsTable({
                       {formatDt(row.created_at)}
                     </td>
                     <td className="px-4 py-3 font-mono text-gray-900">{row.email_code}</td>
-                    <td className="px-4 py-3 text-gray-700 max-w-[200px] truncate" title={row.recipient_email}>
+                    <td
+                      className="px-4 py-3 text-gray-700 max-w-[200px] truncate"
+                      title={row.recipient_email}
+                    >
                       {row.recipient_email}
                     </td>
                     <td className="px-4 py-3 capitalize text-gray-600">{row.recipient_type}</td>
@@ -146,7 +202,10 @@ export default function EmailLogsTable({
                         {row.status}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-gray-700 max-w-xs truncate" title={row.subject}>
+                    <td
+                      className="px-4 py-3 text-gray-700 max-w-xs truncate"
+                      title={row.subject}
+                    >
                       {row.subject}
                     </td>
                     <td className="px-4 py-3">
@@ -165,33 +224,62 @@ export default function EmailLogsTable({
             </tbody>
           </table>
         </div>
+
+        {/* 分页 */}
         {totalPages > 1 && (
-          <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between text-sm">
+          <div className="px-5 py-3 border-t border-gray-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-sm">
             <span className="text-gray-500">
               Page {page} of {totalPages}
             </span>
-            <div className="flex gap-2">
-              {page > 1 && (
+            <div className="flex items-center gap-1">
+              {/* Previous */}
+              {page > 1 ? (
                 <Link
-                  href={`/settings/email-logs?page=${page - 1}`}
-                  className="px-3 py-1 rounded-lg border border-gray-200 hover:bg-gray-50"
+                  href={buildPageUrl(page - 1)}
+                  className="px-3 py-1 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700"
                 >
-                  Previous
+                  ←
                 </Link>
+              ) : (
+                <span className="px-3 py-1 rounded-lg border border-gray-100 text-gray-300 cursor-default">←</span>
               )}
-              {page < totalPages && (
+
+              {/* 页码 */}
+              {pageNumbers.map((n, idx) =>
+                n === '...' ? (
+                  <span key={`ellipsis-${idx}`} className="px-2 py-1 text-gray-400">…</span>
+                ) : (
+                  <Link
+                    key={n}
+                    href={buildPageUrl(n)}
+                    className={`px-3 py-1 rounded-lg border text-sm transition-colors ${
+                      n === page
+                        ? 'bg-blue-600 text-white border-blue-600 font-medium'
+                        : 'border-gray-200 hover:bg-gray-50 text-gray-700'
+                    }`}
+                  >
+                    {n}
+                  </Link>
+                )
+              )}
+
+              {/* Next */}
+              {page < totalPages ? (
                 <Link
-                  href={`/settings/email-logs?page=${page + 1}`}
-                  className="px-3 py-1 rounded-lg border border-gray-200 hover:bg-gray-50"
+                  href={buildPageUrl(page + 1)}
+                  className="px-3 py-1 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700"
                 >
-                  Next
+                  →
                 </Link>
+              ) : (
+                <span className="px-3 py-1 rounded-lg border border-gray-100 text-gray-300 cursor-default">→</span>
               )}
             </div>
           </div>
         )}
       </div>
 
+      {/* 邮件 HTML 预览弹窗 */}
       {preview && (
         <div
           className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/50 p-4 sm:p-6 overflow-y-auto"
@@ -199,7 +287,6 @@ export default function EmailLogsTable({
           aria-modal="true"
           aria-labelledby="email-preview-title"
         >
-          {/* 宽度随视口收窄；高度不超过视口，避免又扁又宽 */}
           <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl sm:max-w-3xl min-w-0 max-h-[min(90dvh,56rem)] my-auto flex flex-col overflow-hidden">
             <div className="shrink-0 px-5 py-4 border-b border-gray-200 flex justify-between items-start gap-4">
               <div className="min-w-0 pr-2">
@@ -217,7 +304,7 @@ export default function EmailLogsTable({
                 ×
               </button>
             </div>
-            {/* 与总览表对齐的元数据 */}
+            {/* 元数据区 */}
             <div className="shrink-0 px-5 py-3 border-b border-gray-100 bg-gray-50/80">
               <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
                 <div>
@@ -243,9 +330,7 @@ export default function EmailLogsTable({
                 <div>
                   <dt className="text-xs font-medium text-gray-500 uppercase tracking-wide">Status</dt>
                   <dd className="mt-0.5">
-                    <span
-                      className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${statusBadgeClass(preview.status)}`}
-                    >
+                    <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${statusBadgeClass(preview.status)}`}>
                       {preview.status}
                     </span>
                   </dd>
@@ -256,7 +341,7 @@ export default function EmailLogsTable({
                 </div>
               </dl>
             </div>
-            {/* 预留标题与元数据后剩余高度给 iframe；长邮件在 iframe 内滚动 */}
+            {/* HTML 预览 */}
             <div className="flex-1 min-h-0 p-4">
               {preview.html ? (
                 <iframe

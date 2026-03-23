@@ -1,13 +1,23 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import { Suspense } from 'react'
 import EmailLogsTable from '@/components/email-logs-table'
+import EmailLogsFilters from '@/components/email-logs-filters'
 
 const PAGE_SIZE = 25
 
 export default async function EmailLogsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string }>
+  searchParams: Promise<{
+    page?:   string
+    status?: string
+    type?:   string
+    code?:   string
+    email?:  string
+    from?:   string
+    to?:     string
+  }>
 }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -23,17 +33,38 @@ export default async function EmailLogsPage({
 
   const params = await searchParams
   const page = Math.max(1, parseInt(params.page ?? '1', 10) || 1)
-  const from = (page - 1) * PAGE_SIZE
-  const to = from + PAGE_SIZE - 1
+  const rangeFrom = (page - 1) * PAGE_SIZE
+  const rangeTo   = rangeFrom + PAGE_SIZE - 1
 
-  const { data: rows, count, error } = await supabase
+  // 构建带筛选条件的查询
+  let query = supabase
     .from('email_logs')
     .select(
       'id, recipient_email, recipient_type, email_code, reference_id, subject, status, smtp2go_message_id, error_message, sent_at, created_at',
       { count: 'exact' }
     )
     .order('created_at', { ascending: false })
-    .range(from, to)
+
+  if (params.status && params.status !== 'all') {
+    query = query.eq('status', params.status)
+  }
+  if (params.type && params.type !== 'all') {
+    query = query.eq('recipient_type', params.type)
+  }
+  if (params.code) {
+    query = query.eq('email_code', params.code.toUpperCase())
+  }
+  if (params.email) {
+    query = query.ilike('recipient_email', `%${params.email}%`)
+  }
+  if (params.from) {
+    query = query.gte('created_at', `${params.from}T00:00:00.000Z`)
+  }
+  if (params.to) {
+    query = query.lte('created_at', `${params.to}T23:59:59.999Z`)
+  }
+
+  const { data: rows, count, error } = await query.range(rangeFrom, rangeTo)
 
   if (error) {
     return (
@@ -46,6 +77,13 @@ export default async function EmailLogsPage({
   const totalCount = count ?? 0
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE))
 
+  // 是否存在活跃筛选条件
+  const isFiltered = !!(
+    (params.status && params.status !== 'all') ||
+    (params.type   && params.type   !== 'all') ||
+    params.code || params.email || params.from || params.to
+  )
+
   return (
     <div>
       <div className="mb-6">
@@ -55,11 +93,17 @@ export default async function EmailLogsPage({
         </p>
       </div>
 
+      {/* 筛选栏（useSearchParams 需要 Suspense 包裹） */}
+      <Suspense>
+        <EmailLogsFilters />
+      </Suspense>
+
       <EmailLogsTable
         rows={rows ?? []}
         page={page}
         totalPages={totalPages}
         totalCount={totalCount}
+        isFiltered={isFiltered}
       />
     </div>
   )
