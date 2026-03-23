@@ -1629,20 +1629,6 @@ class _CancelSheetState extends ConsumerState<_CancelSheet> {
     }
   }
 
-  /// 计算单张券中 Store Credit 占的金额（按比例）
-  double get _itemCreditPortion {
-    if (!_isPartialStoreCredit || widget.orderTotalAmount <= 0) return 0;
-    final itemTotal = widget.item.unitPrice + (widget.item.serviceFee);
-    final ratio = widget.storeCreditUsed / widget.orderTotalAmount;
-    return (itemTotal * ratio * 100).roundToDouble() / 100;
-  }
-
-  /// 计算单张券中刷卡占的金额
-  double get _itemCardPortion {
-    final itemTotal = widget.item.unitPrice + widget.item.serviceFee;
-    return ((itemTotal - _itemCreditPortion) * 100).roundToDouble() / 100;
-  }
-
   /// 根据支付方式构建退款选项列表
   List<Widget> _buildRefundOptions(bool isCancel) {
     if (_isPaidByStoreCredit) {
@@ -1662,9 +1648,10 @@ class _CancelSheetState extends ConsumerState<_CancelSheet> {
     // 混合支付时的 Original Payment 说明文案
     String originalPaymentSubtitle;
     if (_isPartialStoreCredit && isCancel) {
+      final creditUsedFmt = widget.storeCreditUsed.toStringAsFixed(2);
       originalPaymentSubtitle =
-          'Card \$${_itemCardPortion.toStringAsFixed(2)} to card, '
-          'Credit \$${_itemCreditPortion.toStringAsFixed(2)} to Store Credit\n'
+          'Store Credit portion (\$$creditUsedFmt) refunds to Store Credit first, '
+          'remainder to card\n'
           'Service fee non-refundable · 5-10 business days';
     } else {
       originalPaymentSubtitle = isCancel

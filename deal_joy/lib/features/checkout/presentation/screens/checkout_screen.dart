@@ -11,8 +11,10 @@ import '../../../auth/domain/providers/auth_provider.dart';
 import '../../../cart/data/models/cart_item_model.dart';
 import '../../../cart/domain/providers/cart_provider.dart';
 import '../../../deals/domain/providers/deals_provider.dart';
+import '../../data/models/billing_address_model.dart';
 import '../../data/repositories/checkout_repository.dart';
 import '../../domain/providers/checkout_provider.dart';
+import '../../domain/providers/billing_address_provider.dart';
 import '../../../profile/domain/providers/store_credit_provider.dart';
 import '../../domain/providers/tax_rate_provider.dart';
 
@@ -85,7 +87,12 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   // 支付处理中
   bool _isProcessing = false;
 
-  // 账单地址
+  // 账单地址 — 多地址管理
+  List<BillingAddressModel> _savedAddresses = [];
+  String? _selectedAddressId;       // 选中的已保存地址 ID，null 表示新增模式
+  bool _isAddingNewAddress = false; // 是否显示新增地址表单
+  bool _saveAsDefault = false;      // 勾选：Save as default billing address
+  bool _saveForFuture = false;      // 勾选：Save for future use
   final _addressLine1Ctrl = TextEditingController();
   final _addressLine2Ctrl = TextEditingController();
   final _cityCtrl = TextEditingController();
@@ -122,34 +129,67 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     }
   }
 
-  /// 从 DB 加载已保存的 billing address（只执行一次）
+  /// 从 billing_addresses 表加载已保存地址（只执行一次）
   Future<void> _loadSavedAddress() async {
     final user = await ref.read(currentUserProvider.future);
     if (user == null) return;
-    final data = await Supabase.instance.client
-        .from('users')
-        .select('billing_address_line1, billing_address_line2, billing_city, billing_state, billing_postal_code, billing_country')
-        .eq('id', user.id)
-        .single();
+    final repo = ref.read(billingAddressRepositoryProvider);
+    // 自动迁移 users 表中的旧地址
+    await repo.migrateFromUsersTable(user.id);
+    final addresses = await repo.fetchAll(user.id);
     if (mounted) {
       setState(() {
-        _addressLine1Ctrl.text = data['billing_address_line1'] as String? ?? '';
-        _addressLine2Ctrl.text = data['billing_address_line2'] as String? ?? '';
-        _cityCtrl.text = data['billing_city'] as String? ?? '';
-        _stateCtrl.text = data['billing_state'] as String? ?? '';
-        _postalCodeCtrl.text = data['billing_postal_code'] as String? ?? '';
-        _country = data['billing_country'] as String? ?? 'US';
+        _savedAddresses = addresses;
+        if (addresses.isNotEmpty) {
+          // 默认选中 default 地址或第一个
+          final defaultAddr = addresses.firstWhere(
+            (a) => a.isDefault,
+            orElse: () => addresses.first,
+          );
+          _selectedAddressId = defaultAddr.id;
+          _fillFormFromAddress(defaultAddr);
+          _isAddingNewAddress = false;
+        } else {
+          // 没有已保存地址，直接显示新增表单
+          _isAddingNewAddress = true;
+          _saveForFuture = true;
+          _saveAsDefault = true;
+        }
       });
     }
   }
 
-  /// 信用卡模式下按钮可用条件：卡片完整 + 必填地址已填
-  bool get _canPayByCard =>
-      _cardComplete &&
-      _addressLine1Ctrl.text.trim().isNotEmpty &&
-      _cityCtrl.text.trim().isNotEmpty &&
-      _stateCtrl.text.trim().isNotEmpty &&
-      _postalCodeCtrl.text.trim().isNotEmpty;
+  /// 用已保存地址填充表单控制器
+  void _fillFormFromAddress(BillingAddressModel addr) {
+    _addressLine1Ctrl.text = addr.addressLine1;
+    _addressLine2Ctrl.text = addr.addressLine2;
+    _cityCtrl.text = addr.city;
+    _stateCtrl.text = addr.state;
+    _postalCodeCtrl.text = addr.postalCode;
+    _country = addr.country;
+  }
+
+  /// 清空表单
+  void _clearAddressForm() {
+    _addressLine1Ctrl.clear();
+    _addressLine2Ctrl.clear();
+    _cityCtrl.clear();
+    _stateCtrl.clear();
+    _postalCodeCtrl.clear();
+    _country = 'US';
+  }
+
+  /// 信用卡模式下按钮可用条件：卡片完整 + 有选中地址或新增表单已填
+  bool get _canPayByCard {
+    if (!_cardComplete) return false;
+    // 选中了已有地址
+    if (_selectedAddressId != null && !_isAddingNewAddress) return true;
+    // 新增模式需要必填字段
+    return _addressLine1Ctrl.text.trim().isNotEmpty &&
+        _cityCtrl.text.trim().isNotEmpty &&
+        _stateCtrl.text.trim().isNotEmpty &&
+        _postalCodeCtrl.text.trim().isNotEmpty;
+  }
 
   // ── 优惠码操作（单 deal 模式专用） ──────────────────────────────
 
@@ -250,18 +290,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       );
 
       // 支付成功后异步保存 billing address（fire-and-forget）
-      if (_selectedPayment == 'card' && _addressLine1Ctrl.text.trim().isNotEmpty) {
-        Supabase.instance.client.from('users').update({
-          'billing_address_line1': _addressLine1Ctrl.text.trim(),
-          'billing_address_line2': _addressLine2Ctrl.text.trim(),
-          'billing_city': _cityCtrl.text.trim(),
-          'billing_state': _stateCtrl.text.trim(),
-          'billing_postal_code': _postalCodeCtrl.text.trim(),
-          'billing_country': _country,
-        }).eq('id', userId).then((_) {}).catchError((e) {
-          debugPrint('保存 billing address 失败: $e');
-        });
-      }
+      _saveBillingAddressAfterPayment(userId);
 
       if (mounted) {
         // 清空购物车 + 刷新 Store Credit 余额
@@ -346,18 +375,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       );
 
       // 支付成功后异步保存 billing address（fire-and-forget）
-      if (_selectedPayment == 'card' && _addressLine1Ctrl.text.trim().isNotEmpty) {
-        Supabase.instance.client.from('users').update({
-          'billing_address_line1': _addressLine1Ctrl.text.trim(),
-          'billing_address_line2': _addressLine2Ctrl.text.trim(),
-          'billing_city': _cityCtrl.text.trim(),
-          'billing_state': _stateCtrl.text.trim(),
-          'billing_postal_code': _postalCodeCtrl.text.trim(),
-          'billing_country': _country,
-        }).eq('id', userId).then((_) {}).catchError((e) {
-          debugPrint('保存 billing address 失败: $e');
-        });
-      }
+      _saveBillingAddressAfterPayment(userId);
 
       if (mounted) {
         // 单 deal 快速购买，不经过购物车，无需清理购物车状态
@@ -372,6 +390,45 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       if (mounted) _showPaymentFailedDialog('Error: $e');
     } finally {
       if (mounted) setState(() => _isProcessing = false);
+    }
+  }
+
+  /// 支付成功后保存账单地址（fire-and-forget）
+  void _saveBillingAddressAfterPayment(String userId) {
+    if (_selectedPayment != 'card') return;
+    if (_addressLine1Ctrl.text.trim().isEmpty) return;
+
+    // 始终同步到 users 表（保持向后兼容）
+    Supabase.instance.client.from('users').update({
+      'billing_address_line1': _addressLine1Ctrl.text.trim(),
+      'billing_address_line2': _addressLine2Ctrl.text.trim(),
+      'billing_city': _cityCtrl.text.trim(),
+      'billing_state': _stateCtrl.text.trim(),
+      'billing_postal_code': _postalCodeCtrl.text.trim(),
+      'billing_country': _country,
+    }).eq('id', userId).then((_) {}).catchError((e) {
+      debugPrint('保存 billing address 到 users 表失败: $e');
+    });
+
+    // 如果是新增地址且勾选了「Save for future use」，保存到 billing_addresses 表
+    if (_isAddingNewAddress && _saveForFuture) {
+      final repo = ref.read(billingAddressRepositoryProvider);
+      repo.create(
+        userId: userId,
+        label: _saveAsDefault ? 'Default' : '',
+        addressLine1: _addressLine1Ctrl.text.trim(),
+        addressLine2: _addressLine2Ctrl.text.trim(),
+        city: _cityCtrl.text.trim(),
+        state: _stateCtrl.text.trim(),
+        postalCode: _postalCodeCtrl.text.trim(),
+        country: _country,
+        isDefault: _saveAsDefault,
+      ).then((_) {
+        // 刷新已保存地址列表缓存
+        ref.invalidate(savedBillingAddressesProvider);
+      }).catchError((e) {
+        debugPrint('保存新 billing address 失败: $e');
+      });
     }
   }
 
@@ -1200,7 +1257,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     );
   }
 
-  // ── 账单地址表单（Credit Card 模式专用） ──────────────────────────
+  // ── 账单地址区域（Credit Card 模式专用） ──────────────────────────
 
   Widget _buildBillingAddressForm() {
     return Container(
@@ -1218,93 +1275,321 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
             style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
           ),
           const SizedBox(height: 12),
-          // 地址第一行
-          TextField(
-            controller: _addressLine1Ctrl,
-            onChanged: (_) => setState(() {}),
-            decoration: const InputDecoration(
-              labelText: 'Address Line 1',
-              hintText: '123 Main St',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-          ),
-          const SizedBox(height: 10),
-          // 地址第二行（可选）
-          TextField(
-            controller: _addressLine2Ctrl,
-            decoration: const InputDecoration(
-              labelText: 'Address Line 2 (optional)',
-              hintText: 'Apt, Suite, etc.',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-          ),
-          const SizedBox(height: 10),
-          // 城市 + 州
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _cityCtrl,
-                  onChanged: (_) => setState(() {}),
-                  decoration: const InputDecoration(
-                    labelText: 'City',
-                    border: OutlineInputBorder(),
-                    isDense: true,
+
+          // ── 已保存地址列表 ──────────────────────────────────────
+          if (_savedAddresses.isNotEmpty) ...[
+            ..._savedAddresses.map((addr) {
+              final isSelected = _selectedAddressId == addr.id && !_isAddingNewAddress;
+              return GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  setState(() {
+                    _selectedAddressId = addr.id;
+                    _isAddingNewAddress = false;
+                    _fillFormFromAddress(addr);
+                  });
+                },
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? AppColors.primary.withValues(alpha: 0.05)
+                        : Colors.white,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: isSelected ? AppColors.primary : AppColors.surfaceVariant,
+                      width: isSelected ? 2 : 1,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      // 选中圆圈
+                      Container(
+                        width: 20,
+                        height: 20,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: isSelected ? AppColors.primary : AppColors.textHint,
+                            width: 2,
+                          ),
+                        ),
+                        child: isSelected
+                            ? Center(
+                                child: Container(
+                                  width: 10,
+                                  height: 10,
+                                  decoration: const BoxDecoration(
+                                    color: AppColors.primary,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                              )
+                            : null,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                if (addr.label.isNotEmpty)
+                                  Text(
+                                    addr.label,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                if (addr.isDefault) ...[
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.primary.withValues(alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: const Text(
+                                      'Default',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.primary,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              addr.summary,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: AppColors.textSecondary,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: TextField(
-                  controller: _stateCtrl,
-                  onChanged: (_) => setState(() {}),
-                  decoration: const InputDecoration(
-                    labelText: 'State',
-                    hintText: 'TX',
-                    border: OutlineInputBorder(),
-                    isDense: true,
+              );
+            }),
+            const SizedBox(height: 4),
+
+            // ── Add New Address 按钮 ────────────────────────────
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () {
+                setState(() {
+                  _isAddingNewAddress = true;
+                  _selectedAddressId = null;
+                  _clearAddressForm();
+                  _saveAsDefault = false;
+                  _saveForFuture = true;
+                });
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: _isAddingNewAddress
+                        ? AppColors.primary
+                        : AppColors.surfaceVariant,
+                    width: _isAddingNewAddress ? 2 : 1,
+                    style: _isAddingNewAddress
+                        ? BorderStyle.solid
+                        : BorderStyle.solid,
                   ),
+                  color: _isAddingNewAddress
+                      ? AppColors.primary.withValues(alpha: 0.05)
+                      : Colors.transparent,
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          // 邮编 + 国家
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _postalCodeCtrl,
-                  onChanged: (_) => setState(() {}),
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: 'ZIP Code',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: DropdownButtonFormField<String>(
-                  initialValue: _country,
-                  decoration: const InputDecoration(
-                    labelText: 'Country',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  items: const [
-                    DropdownMenuItem(value: 'US', child: Text('US')),
-                    DropdownMenuItem(value: 'CA', child: Text('Canada')),
-                    DropdownMenuItem(value: 'CN', child: Text('China')),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.add_circle_outline,
+                      size: 18,
+                      color: _isAddingNewAddress
+                          ? AppColors.primary
+                          : AppColors.textSecondary,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Add New Address',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: _isAddingNewAddress
+                            ? AppColors.primary
+                            : AppColors.textSecondary,
+                      ),
+                    ),
                   ],
-                  onChanged: (v) => setState(() => _country = v ?? 'US'),
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
+
+          // ── 新增地址表单（无已保存地址时始终显示，有地址时点击 Add New 后显示） ──
+          if (_isAddingNewAddress || _savedAddresses.isEmpty) ...[
+            if (_savedAddresses.isNotEmpty) const SizedBox(height: 12),
+            // 地址第一行
+            TextField(
+              controller: _addressLine1Ctrl,
+              onChanged: (_) => setState(() {}),
+              decoration: const InputDecoration(
+                labelText: 'Address Line 1',
+                hintText: '123 Main St',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 10),
+            // 地址第二行（可选）
+            TextField(
+              controller: _addressLine2Ctrl,
+              decoration: const InputDecoration(
+                labelText: 'Address Line 2 (optional)',
+                hintText: 'Apt, Suite, etc.',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 10),
+            // 城市 + 州
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _cityCtrl,
+                    onChanged: (_) => setState(() {}),
+                    decoration: const InputDecoration(
+                      labelText: 'City',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: TextField(
+                    controller: _stateCtrl,
+                    onChanged: (_) => setState(() {}),
+                    decoration: const InputDecoration(
+                      labelText: 'State',
+                      hintText: 'TX',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            // 邮编 + 国家
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _postalCodeCtrl,
+                    onChanged: (_) => setState(() {}),
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'ZIP Code',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    initialValue: _country,
+                    decoration: const InputDecoration(
+                      labelText: 'Country',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'US', child: Text('US')),
+                      DropdownMenuItem(value: 'CA', child: Text('Canada')),
+                      DropdownMenuItem(value: 'CN', child: Text('China')),
+                    ],
+                    onChanged: (v) => setState(() => _country = v ?? 'US'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            // ── 两个勾选框 ──────────────────────────────────────
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => setState(() => _saveForFuture = !_saveForFuture),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: Checkbox(
+                      value: _saveForFuture,
+                      onChanged: (v) => setState(() => _saveForFuture = v ?? false),
+                      activeColor: AppColors.primary,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Save for future use',
+                    style: TextStyle(fontSize: 13, color: AppColors.textPrimary),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 6),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => setState(() {
+                _saveAsDefault = !_saveAsDefault;
+                // 设默认时自动勾选保存
+                if (_saveAsDefault) _saveForFuture = true;
+              }),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: Checkbox(
+                      value: _saveAsDefault,
+                      onChanged: (v) {
+                        setState(() {
+                          _saveAsDefault = v ?? false;
+                          if (_saveAsDefault) _saveForFuture = true;
+                        });
+                      },
+                      activeColor: AppColors.primary,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Save as default billing address',
+                    style: TextStyle(fontSize: 13, color: AppColors.textPrimary),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
