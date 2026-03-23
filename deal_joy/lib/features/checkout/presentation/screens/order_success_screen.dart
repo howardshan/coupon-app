@@ -16,6 +16,15 @@ class OrderSuccessScreen extends ConsumerWidget {
     final orderAsync = ref.watch(orderDetailProvider(orderId));
 
     return Scaffold(
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.close),
+          onPressed: () => context.go('/home'),
+        ),
+        title: const Text('Order Confirmed'),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+      ),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(32),

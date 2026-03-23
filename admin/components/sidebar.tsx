@@ -19,6 +19,7 @@ const adminNav = [
   { href: '/finance', label: 'Finance', icon: '💰' },
   { href: '/closures', label: 'Closures', icon: '🔒' },
   { href: '/support', label: 'Support', icon: '💬' },
+  { href: '/tax-rates', label: 'Tax Rates', icon: '🧾' },
 ]
 
 const merchantNav = [

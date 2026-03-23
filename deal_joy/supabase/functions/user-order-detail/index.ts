@@ -107,7 +107,8 @@ serve(async (req: Request) => {
       refund_requested_at,
       refunded_at,
       refund_rejected_at,
-      purchased_merchant_id
+      purchased_merchant_id,
+      store_credit_used
     `)
     .eq('id', orderId)
     .single();
@@ -491,6 +492,7 @@ serve(async (req: Request) => {
       serviceFeeTotal: Number(order.service_fee_total ?? 0),
       totalAmount: Number(order.total_amount ?? 0),
       paymentIntentId: maskPaymentIntentId(order.payment_intent_id as string | null),
+      storeCreditUsed: Number(order.store_credit_used ?? 0),
       paidAt: (order.paid_at as string | null) ?? null,
       createdAt: order.created_at,
       items,

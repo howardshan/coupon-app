@@ -5,6 +5,7 @@ import '../../../../shared/providers/supabase_provider.dart';
 import '../../../auth/domain/providers/auth_provider.dart';
 import '../../data/models/coupon_model.dart';
 import '../../data/repositories/coupons_repository.dart';
+import '../../../profile/domain/providers/store_credit_provider.dart';
 import 'orders_provider.dart';
 
 /// CouponsRepository Provider
@@ -78,10 +79,12 @@ class RefundNotifier extends AsyncNotifier<void> {
           .requestRefund(couponId, reason: reason, refundMethod: refundMethod),
     );
     if (!state.hasError) {
-      // 刷新券列表和订单列表
+      // 刷新券列表、订单列表和 store credit 余额
       ref.invalidate(userCouponsProvider);
       ref.invalidate(couponDetailProvider(couponId));
       ref.invalidate(userOrdersProvider);
+      ref.invalidate(storeCreditBalanceProvider);
+      ref.invalidate(storeCreditTransactionsProvider);
     }
     return !state.hasError;
   }
@@ -104,9 +107,11 @@ class RefundNotifier extends AsyncNotifier<void> {
           ),
     );
     if (!state.hasError) {
-      // 刷新券列表和订单列表
+      // 刷新券列表、订单列表和 store credit 余额
       ref.invalidate(userCouponsProvider);
       ref.invalidate(userOrdersProvider);
+      ref.invalidate(storeCreditBalanceProvider);
+      ref.invalidate(storeCreditTransactionsProvider);
     }
     return !state.hasError;
   }
@@ -121,10 +126,12 @@ class RefundNotifier extends AsyncNotifier<void> {
           .requestRefundByOrderId(orderId, reason: reason),
     );
     if (!state.hasError) {
-      // 刷新券列表和订单列表
+      // 刷新券列表、订单列表和 store credit 余额
       ref.invalidate(userCouponsProvider);
       ref.invalidate(userOrdersProvider);
       ref.invalidate(orderDetailProvider(orderId));
+      ref.invalidate(storeCreditBalanceProvider);
+      ref.invalidate(storeCreditTransactionsProvider);
     }
     return !state.hasError;
   }

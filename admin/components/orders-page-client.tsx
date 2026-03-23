@@ -32,6 +32,7 @@ type OrdersPageClientProps = OrdersListPayload & {
   initialSearchQ?: string
   initialStatus?: string[]
   initialMerchantId?: string
+  initialCustomerId?: string
   initialDateFrom?: string
   initialDateTo?: string
   initialAmountMin?: string
@@ -71,9 +72,11 @@ export default function OrdersPageClient({
   fetchError: initialFetchError,
   refundCount: initialRefundCount,
   merchantsForFilter = [],
+  customersForFilter = [],
   initialSearchQ = '',
   initialStatus = [],
   initialMerchantId = '',
+  initialCustomerId = '',
   initialDateFrom = '',
   initialDateTo = '',
   initialAmountMin = '',
@@ -121,13 +124,14 @@ export default function OrdersPageClient({
     const q = searchParams.get('q')
     const status = searchParams.get('status')
     const merchant = searchParams.get('merchant')
+    const customer = searchParams.get('customer')
     const dateFrom = searchParams.get('date_from')
     const dateTo = searchParams.get('date_to')
     const amountMin = searchParams.get('amount_min')
     const amountMax = searchParams.get('amount_max')
     const sort = searchParams.get('sort')
     const pageNum = parseInt(searchParams.get('page') ?? '1', 10)
-    return !!(q?.trim() || status || merchant || dateFrom || dateTo || amountMin || amountMax || (sort && sort !== 'date_desc') || pageNum > 1)
+    return !!(q?.trim() || status || merchant || customer || dateFrom || dateTo || amountMin || amountMax || (sort && sort !== 'date_desc') || pageNum > 1)
   }, [searchParams])
 
   const totalCount = initialTotalCount
@@ -183,6 +187,40 @@ export default function OrdersPageClient({
                 <option key={m.id} value={m.id}>{m.name}</option>
               ))}
             </select>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-gray-600 font-medium">Customer</span>
+            <input
+              type="text"
+              list="customer-filter-list"
+              placeholder="Email or ID"
+              defaultValue={
+                initialCustomerId
+                  ? customersForFilter.find((c) => c.id === initialCustomerId)?.email ?? initialCustomerId
+                  : ''
+              }
+              onBlur={(e) => {
+                const val = e.target.value.trim()
+                if (!val) {
+                  updateFilter({ customer: undefined })
+                  return
+                }
+                // 先匹配下拉列表中的 email → id
+                const match = customersForFilter.find((c) => c.email === val)
+                updateFilter({ customer: match ? match.id : val })
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  (e.target as HTMLInputElement).blur()
+                }
+              }}
+              className="px-3 py-2 border border-gray-300 rounded-lg bg-white min-w-[200px]"
+            />
+            <datalist id="customer-filter-list">
+              {customersForFilter.map((c) => (
+                <option key={c.id} value={c.email} />
+              ))}
+            </datalist>
           </label>
           <label className="flex flex-col gap-1">
             <span className="text-gray-600 font-medium">Date from</span>
@@ -266,7 +304,6 @@ export default function OrdersPageClient({
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Order #</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Deal</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Merchant</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Redeemed At</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Customer</th>
@@ -299,18 +336,22 @@ export default function OrdersPageClient({
                         {o.order_number ?? `DJ-${String(o.id).slice(0, 8).toUpperCase()}`}
                       </Link>
                     </td>
-                    <td className="px-4 py-3 font-medium text-gray-900">
-                      {o.deals?.id ? (
-                        <Link href={`/deals/${o.deals.id}?returnTo=${encodeURIComponent(returnToOrders)}`} className="text-blue-600 hover:underline">
-                          {o.deals?.title ?? '—'}
-                        </Link>
-                      ) : (
-                        <Link href={`/orders/${o.id}`} className="text-blue-600 hover:underline">
-                          {o.deals?.title ?? '—'}
-                        </Link>
-                      )}
+                    <td className="px-4 py-3 text-gray-600">
+                      {(() => {
+                        const items = o.order_items as any[] | null
+                        if (items && items.length > 0) {
+                          const uniqueMerchants = new Map<string, string>()
+                          for (const item of items) {
+                            const m = Array.isArray(item.deals?.merchants) ? item.deals.merchants[0] : item.deals?.merchants
+                            if (m?.id && !uniqueMerchants.has(m.id)) {
+                              uniqueMerchants.set(m.id, m.name)
+                            }
+                          }
+                          return Array.from(uniqueMerchants.values()).join(', ') || '—'
+                        }
+                        return o.deals?.merchants?.name ?? '—'
+                      })()}
                     </td>
-                    <td className="px-4 py-3 text-gray-600">{o.deals?.merchants?.name ?? '—'}</td>
                     <td className="px-4 py-3 text-gray-600">
                       {redeemedName ? (
                         <span className="text-xs">{redeemedName}</span>
@@ -321,9 +362,11 @@ export default function OrdersPageClient({
                     <td className="px-4 py-3 text-gray-600">{o.users?.email ?? '—'}</td>
                     <td className="px-4 py-3 text-gray-900">
                       ${o.total_amount}
-                      {o.quantity > 1 && (
-                        <span className="text-gray-400 text-xs ml-1">×{o.quantity}</span>
-                      )}
+                      {(() => {
+                        const items = o.order_items as any[] | null
+                        const qty = items && items.length > 0 ? items.length : o.quantity
+                        return qty > 1 ? <span className="text-gray-400 text-xs ml-1">×{qty}</span> : null
+                      })()}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1.5 flex-wrap">
@@ -363,7 +406,7 @@ export default function OrdersPageClient({
                 <p className="text-red-600 text-sm mb-2">Failed to load orders: {initialFetchError}</p>
               ) : null}
               <p className="text-gray-400">
-                {initialSearchQ !== '' || initialStatus?.length || initialMerchantId || initialDateFrom || initialDateTo ? 'No orders match your filters.' : 'No orders yet'}
+                {initialSearchQ !== '' || initialStatus?.length || initialMerchantId || initialCustomerId || initialDateFrom || initialDateTo ? 'No orders match your filters.' : 'No orders yet'}
               </p>
             </div>
           )}

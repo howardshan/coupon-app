@@ -26,12 +26,14 @@ export type OrdersListPayload = {
   fetchError: string | null
   refundCount: number
   merchantsForFilter: { id: string; name: string }[]
+  customersForFilter: { id: string; email: string }[]
 }
 
 export type OrdersListFilters = {
   q?: string
   status?: string[]
   merchantId?: string
+  customerId?: string
   dateFrom?: string
   dateTo?: string
   amountMin?: number
@@ -52,6 +54,17 @@ export async function getOrdersList(filters: OrdersListFilters = {}): Promise<Or
   const q = filters.q?.trim() ?? ''
   const status = filters.status?.length ? filters.status : null
   const merchantId = filters.merchantId?.trim() || null
+  // 支持 email 或 UUID 输入：如果不是 UUID 格式，按 email 查找 user_id
+  let customerId = filters.customerId?.trim() || null
+  if (customerId && !customerId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+    const { data: matchedUser } = await adminSupabase
+      .from('users')
+      .select('id')
+      .ilike('email', customerId)
+      .limit(1)
+      .maybeSingle()
+    customerId = matchedUser?.id ?? 'no-match'
+  }
   const dateFrom = filters.dateFrom || null
   const dateTo = filters.dateTo || null
   const amountMin = filters.amountMin
@@ -65,10 +78,10 @@ export async function getOrdersList(filters: OrdersListFilters = {}): Promise<Or
   let totalCount = 0
   let fetchError: string | null = null
 
-  if (q !== '' || status || merchantId || dateFrom || dateTo || amountMin != null || amountMax != null) {
+  if (q !== '' || status || merchantId || customerId || dateFrom || dateTo || amountMin != null || amountMax != null) {
     const rpcParams: Record<string, unknown> = {
       search_q: q || null,
-      p_merchant_id: merchantId || null,
+      p_merchant_ids: merchantId ? [merchantId] : null,
       p_status: status || null,
       p_date_from: dateFrom || null,
       p_date_to: dateTo || null,
@@ -77,17 +90,19 @@ export async function getOrdersList(filters: OrdersListFilters = {}): Promise<Or
       p_sort: sort,
       p_limit: limit,
       p_offset: offset,
+      p_customer_id: customerId || null,
     }
     const [listRes, countRes] = await Promise.all([
       supabase.rpc('get_admin_orders_search', rpcParams),
       supabase.rpc('get_admin_orders_count', {
         search_q: q || null,
-        p_merchant_id: merchantId || null,
+        p_merchant_ids: merchantId ? [merchantId] : null,
         p_status: status || null,
         p_date_from: dateFrom || null,
         p_date_to: dateTo || null,
         p_amount_min: amountMin ?? null,
         p_amount_max: amountMax ?? null,
+        p_customer_id: customerId || null,
       }),
     ])
     if (listRes.error) fetchError = listRes.error.message
@@ -108,13 +123,17 @@ export async function getOrdersList(filters: OrdersListFilters = {}): Promise<Or
         created_at,
         users ( email ),
         deals ( id, title, merchants ( name ) ),
-        coupons!fk_orders_coupon_id ( redeemed_at_merchant_id, expires_at )
-        `,
+        coupons!fk_orders_coupon_id ( redeemed_at_merchant_id, expires_at ),
+        order_items ( deal_id, customer_status, deals ( id, title, merchants ( id, name ) ) )
+`,
         { count: 'exact' }
       )
 
     if (merchantId) {
       query = query.eq('deals.merchant_id', merchantId)
+    }
+    if (customerId) {
+      query = query.eq('user_id', customerId)
     }
     if (status && status.length > 0) {
       query = query.in('status', status)
@@ -194,6 +213,22 @@ export async function getOrdersList(filters: OrdersListFilters = {}): Promise<Or
       merchantsForFilterList = names ?? []
     }
   }
+  // 获取有订单的客户列表用于过滤
+  const { data: orderUsers } = await adminSupabase
+    .from('orders')
+    .select('user_id')
+    .limit(500)
+  const userIds = [...new Set((orderUsers ?? []).map((r: { user_id: string }) => r.user_id).filter(Boolean))]
+  let customersForFilterList: { id: string; email: string }[] = []
+  if (userIds.length > 0) {
+    const { data: userRows } = await adminSupabase
+      .from('users')
+      .select('id, email')
+      .in('id', userIds)
+      .order('email')
+    customersForFilterList = (userRows ?? []).map((u: { id: string; email: string }) => ({ id: u.id, email: u.email }))
+  }
+
   return {
     orders,
     totalCount,
@@ -201,6 +236,7 @@ export async function getOrdersList(filters: OrdersListFilters = {}): Promise<Or
     fetchError,
     refundCount,
     merchantsForFilter: merchantsForFilterList,
+    customersForFilter: customersForFilterList,
   }
 }
 

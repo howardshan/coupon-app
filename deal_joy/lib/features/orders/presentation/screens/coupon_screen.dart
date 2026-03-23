@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../data/models/coupon_model.dart';
 import '../../domain/providers/coupons_provider.dart';
@@ -691,43 +692,150 @@ class _ActionButtonsState extends ConsumerState<_ActionButtons> {
 
   // 请求退款
   Future<void> _requestRefund() async {
-    final confirmed = await showDialog<bool>(
+    // 先查询订单的支付信息（payment_intent_id, store_credit_used, total_amount）
+    final orderId = widget.coupon.orderId;
+    String paymentIntentId = '';
+    double storeCreditUsed = 0;
+    double orderTotalAmount = 0;
+
+    try {
+      final orderData = await Supabase.instance.client
+          .from('orders')
+          .select('payment_intent_id, store_credit_used, total_amount')
+          .eq('id', orderId)
+          .single();
+      paymentIntentId = orderData['payment_intent_id'] as String? ?? '';
+      storeCreditUsed = (orderData['store_credit_used'] as num?)?.toDouble() ?? 0;
+      orderTotalAmount = (orderData['total_amount'] as num?)?.toDouble() ?? 0;
+    } catch (_) {
+      // 查询失败不阻断，按普通支付处理
+    }
+
+    final isFullStoreCredit = paymentIntentId.contains('store_credit');
+    final isPartialStoreCredit = !isFullStoreCredit && storeCreditUsed > 0;
+
+    if (!mounted) return;
+
+    // 弹出选择退款方式的 Bottom Sheet
+    final refundMethod = await showModalBottomSheet<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Request Refund'),
-        content: const Text(
-          'Are you sure you want to refund this coupon? '
-          'This action cannot be undone.',
-        ),
-        actions: [
-          TextButton(
-            key: const ValueKey('coupon_refund_cancel_btn'),
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            key: const ValueKey('coupon_refund_confirm_btn'),
-            onPressed: () => Navigator.of(ctx).pop(true),
-            style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.error,
-                foregroundColor: Colors.white),
-            child: const Text('Refund'),
-          ),
-        ],
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
+      builder: (ctx) {
+        // 混合支付时计算单张券的 store credit 占比
+        String originalPaymentSubtitle = 'Service fee non-refundable · 5-10 business days';
+        if (isPartialStoreCredit && orderTotalAmount > 0) {
+          // 用订单级别的金额展示 store credit / card 拆分
+          final creditPart = (storeCreditUsed * 100).roundToDouble() / 100;
+          final cardPart = ((orderTotalAmount - storeCreditUsed) * 100).roundToDouble() / 100;
+          originalPaymentSubtitle =
+              'Card \$${cardPart.toStringAsFixed(2)} to card, '
+              'Credit \$${creditPart.toStringAsFixed(2)} to Store Credit\n'
+              'Service fee non-refundable · 5-10 business days';
+        }
+
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Cancel Voucher',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+
+              // 全额 Store Credit 支付：只显示 Store Credit 选项
+              if (isFullStoreCredit) ...[
+                ListTile(
+                  leading: const Icon(Icons.account_balance_wallet, color: AppColors.success),
+                  title: const Text('Store Credit', style: TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: const Text('Full amount incl. service fee · Instant'),
+                  trailing: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: AppColors.success.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text('Only Option',
+                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.success)),
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: BorderSide(color: AppColors.success.withValues(alpha: 0.3)),
+                  ),
+                  tileColor: AppColors.success.withValues(alpha: 0.05),
+                  onTap: () => Navigator.pop(ctx, 'store_credit'),
+                ),
+              ] else ...[
+                // 非全额 Store Credit：显示两个选项
+                ListTile(
+                  leading: const Icon(Icons.account_balance_wallet, color: AppColors.success),
+                  title: const Text('Store Credit', style: TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: const Text('Refund including service fee · Instant'),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: BorderSide(color: AppColors.success.withValues(alpha: 0.3)),
+                  ),
+                  tileColor: AppColors.success.withValues(alpha: 0.05),
+                  onTap: () => Navigator.pop(ctx, 'store_credit'),
+                ),
+                const SizedBox(height: 12),
+                ListTile(
+                  leading: const Icon(Icons.credit_card, color: AppColors.textSecondary),
+                  title: const Text('Original Payment', style: TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: Text(originalPaymentSubtitle),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: const BorderSide(color: AppColors.surfaceVariant),
+                  ),
+                  onTap: () => Navigator.pop(ctx, 'original_payment'),
+                ),
+              ],
+              const SizedBox(height: 16),
+              // 取消按钮
+              SizedBox(
+                width: double.infinity,
+                child: TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Keep Voucher'),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
 
-    if (confirmed != true) return;
+    if (refundMethod == null) return;
 
     setState(() => _isRefunding = true);
-    final success = await ref
-        .read(refundNotifierProvider.notifier)
-        .requestRefund(widget.coupon.id);
+
+    // 优先用 orderItemId 走 V3 退款流程
+    final orderItemId = widget.coupon.orderItemId;
+    bool success;
+    if (orderItemId != null && orderItemId.isNotEmpty) {
+      success = await ref
+          .read(refundNotifierProvider.notifier)
+          .requestItemRefund(orderItemId, refundMethod: refundMethod);
+    } else {
+      // 旧版兼容：用 couponId 退款
+      success = await ref
+          .read(refundNotifierProvider.notifier)
+          .requestRefund(widget.coupon.id, refundMethod: refundMethod);
+    }
+
     if (mounted) {
       setState(() => _isRefunding = false);
       if (success) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Refund requested successfully.')),
+          SnackBar(
+            content: Text(refundMethod == 'store_credit'
+                ? 'Refunded to Store Credit instantly'
+                : 'Refund processing, 5-10 business days'),
+          ),
         );
         context.pop();
       } else {

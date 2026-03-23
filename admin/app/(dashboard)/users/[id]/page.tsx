@@ -44,7 +44,7 @@ export default async function UserDetailPage({
   // 购买记录（orders）— 用 service client 绕过 RLS
   const { data: orders } = await serviceClient
     .from('orders')
-    .select('id, deal_id, quantity, total_price, status, created_at, deals(title, merchants(name))')
+    .select('id, order_number, total_amount, status, created_at, deals(title, merchants(name)), order_items(id, deal_id, unit_price, customer_status, deals(title, merchants(name)))')
     .eq('user_id', id)
     .order('created_at', { ascending: false })
     .limit(50)
@@ -58,10 +58,10 @@ export default async function UserDetailPage({
     .limit(50)
 
   // 统计
-  const totalSpent = orders?.reduce((sum, o) => sum + (o.total_price ?? 0), 0) ?? 0
+  const totalSpent = orders?.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0) ?? 0
   const totalOrders = orders?.length ?? 0
   const usedCoupons = coupons?.filter(c => c.status === 'used').length ?? 0
-  const activeCoupons = coupons?.filter(c => c.status === 'active').length ?? 0
+  const activeCoupons = coupons?.filter(c => c.status === 'unused').length ?? 0
 
   return (
     <div className="space-y-6">
@@ -146,7 +146,8 @@ export default async function UserDetailPage({
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                <th className="text-left px-4 py-2 font-medium text-gray-600">Deal</th>
+                <th className="text-left px-4 py-2 font-medium text-gray-600">Order</th>
+                <th className="text-left px-4 py-2 font-medium text-gray-600">Deal(s)</th>
                 <th className="text-left px-4 py-2 font-medium text-gray-600">Merchant</th>
                 <th className="text-left px-4 py-2 font-medium text-gray-600">Qty</th>
                 <th className="text-left px-4 py-2 font-medium text-gray-600">Total</th>
@@ -155,22 +156,70 @@ export default async function UserDetailPage({
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {orders.map(o => (
-                <tr key={o.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-2 text-gray-900">
-                    <Link href={`/orders/${o.id}`} className="text-blue-600 hover:underline">
-                      {(o.deals as any)?.title ?? '—'}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-2 text-gray-600">{(o.deals as any)?.merchants?.name ?? '—'}</td>
-                  <td className="px-4 py-2 text-gray-600">{o.quantity ?? 1}</td>
-                  <td className="px-4 py-2 text-gray-900 font-medium">${(o.total_price ?? 0).toFixed(2)}</td>
-                  <td className="px-4 py-2">
-                    <OrderStatusBadge status={o.status} />
-                  </td>
-                  <td className="px-4 py-2 text-gray-500">{new Date(o.created_at).toLocaleDateString()}</td>
-                </tr>
-              ))}
+              {orders.map(o => {
+                const items = (o as any).order_items as any[] | null
+                const hasItems = items && items.length > 0
+
+                // V3: 从 order_items 提取 deal 和商家信息
+                const uniqueDeals = new Map<string, { title: string; merchantName: string }>()
+                if (hasItems) {
+                  for (const item of items) {
+                    const d = item.deals as any
+                    const m = Array.isArray(d?.merchants) ? d.merchants[0] : d?.merchants
+                    if (d && !uniqueDeals.has(item.deal_id)) {
+                      uniqueDeals.set(item.deal_id, { title: d.title, merchantName: m?.name ?? '—' })
+                    }
+                  }
+                }
+
+                const dealNames = hasItems
+                  ? Array.from(uniqueDeals.values()).map(d => d.title)
+                  : [(o.deals as any)?.title ?? '—']
+                const merchantNames = hasItems
+                  ? [...new Set(Array.from(uniqueDeals.values()).map(d => d.merchantName))]
+                  : [(o.deals as any)?.merchants?.name ?? '—']
+                const qty = hasItems ? items.length : 1
+
+                return (
+                  <tr key={o.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-2 text-gray-700 font-mono">
+                      <Link href={`/orders/${o.id}`} className="text-blue-600 hover:underline">
+                        {(o as any).order_number ?? o.id.slice(0, 8)}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-2 text-gray-900">
+                      {dealNames.slice(0, 2).map((name, i) => (
+                        <div key={i}>{name}</div>
+                      ))}
+                      {dealNames.length > 2 && (
+                        <span className="text-xs text-gray-500">+{dealNames.length - 2} more</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2 text-gray-600">{merchantNames.join(', ')}</td>
+                    <td className="px-4 py-2 text-gray-600">{qty}</td>
+                    <td className="px-4 py-2 text-gray-900 font-medium">${(Number(o.total_amount) || 0).toFixed(2)}</td>
+                    <td className="px-4 py-2">
+                      {hasItems ? (
+                        <div className="flex flex-wrap gap-1">
+                          {(() => {
+                            const statusCounts: Record<string, number> = {}
+                            for (const item of items) {
+                              const s = item.customer_status as string
+                              statusCounts[s] = (statusCounts[s] ?? 0) + 1
+                            }
+                            return Object.entries(statusCounts).map(([s, count]) => (
+                              <OrderStatusBadge key={s} status={s} count={count > 1 ? count : undefined} />
+                            ))
+                          })()}
+                        </div>
+                      ) : (
+                        <OrderStatusBadge status={o.status} />
+                      )}
+                    </td>
+                    <td className="px-4 py-2 text-gray-500">{new Date(o.created_at).toLocaleDateString()}</td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         ) : (
@@ -223,17 +272,33 @@ export default async function UserDetailPage({
 }
 
 // 订单状态 Badge
-function OrderStatusBadge({ status }: { status: string }) {
+function OrderStatusBadge({ status, count }: { status: string; count?: number }) {
   const styles: Record<string, string> = {
+    unused: 'bg-blue-100 text-blue-700',
+    used: 'bg-gray-100 text-gray-600',
+    expired: 'bg-red-100 text-red-700',
+    refund_pending: 'bg-amber-100 text-amber-700',
+    refund_review: 'bg-orange-100 text-orange-700',
+    refund_reject: 'bg-amber-100 text-amber-700',
+    refund_success: 'bg-purple-100 text-purple-700',
     paid: 'bg-green-100 text-green-700',
     pending: 'bg-yellow-100 text-yellow-700',
     refunded: 'bg-red-100 text-red-700',
     voided: 'bg-gray-100 text-gray-600',
     captured: 'bg-blue-100 text-blue-700',
   }
+  const labels: Record<string, string> = {
+    unused: 'Unused',
+    used: 'Used',
+    expired: 'Expired',
+    refund_pending: 'Refund Pending',
+    refund_review: 'Refund Review',
+    refund_reject: 'Rejected',
+    refund_success: 'Refunded',
+  }
   return (
     <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${styles[status] ?? 'bg-gray-100 text-gray-600'}`}>
-      {status}
+      {labels[status] ?? status}{count != null ? ` ×${count}` : ''}
     </span>
   )
 }
@@ -241,10 +306,11 @@ function OrderStatusBadge({ status }: { status: string }) {
 // 券状态 Badge
 function CouponStatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
+    unused: 'bg-blue-100 text-blue-700',
     active: 'bg-green-100 text-green-700',
-    used: 'bg-blue-100 text-blue-700',
-    expired: 'bg-gray-100 text-gray-600',
-    refunded: 'bg-red-100 text-red-700',
+    used: 'bg-gray-100 text-gray-600',
+    expired: 'bg-red-100 text-red-700',
+    refunded: 'bg-purple-100 text-purple-700',
     voided: 'bg-gray-100 text-gray-600',
     gifted: 'bg-purple-100 text-purple-700',
   }

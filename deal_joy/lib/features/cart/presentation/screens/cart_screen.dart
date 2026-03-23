@@ -388,6 +388,7 @@ class _QtyBtn extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Container(
         width: 32,
@@ -507,6 +508,7 @@ class _CheckoutBar extends ConsumerWidget {
                 ),
                 // 结算按钮：跳转到购物车多 deal 结账页，传入当前购物车列表
                 GestureDetector(
+                  behavior: HitTestBehavior.opaque,
                   onTap: () {
                     final items = ref.read(cartProvider).valueOrNull;
                     if (items == null || items.isEmpty) return;

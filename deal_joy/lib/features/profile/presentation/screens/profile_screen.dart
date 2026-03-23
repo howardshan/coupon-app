@@ -21,6 +21,7 @@ class ProfileScreen extends ConsumerWidget {
           name: user?.fullName ?? 'User',
           email: user?.email ?? '',
           avatarUrl: user?.avatarUrl,
+          phone: user?.phone,
           showMerchantDashboard: user?.role == 'merchant',
           onSignOut: () => ref.read(authNotifierProvider.notifier).signOut(),
         ),
@@ -35,6 +36,7 @@ class _ProfileBody extends StatelessWidget {
   final String name;
   final String email;
   final String? avatarUrl;
+  final String? phone;
   final bool showMerchantDashboard;
   final VoidCallback onSignOut;
 
@@ -42,6 +44,7 @@ class _ProfileBody extends StatelessWidget {
     required this.name,
     required this.email,
     this.avatarUrl,
+    this.phone,
     this.showMerchantDashboard = false,
     required this.onSignOut,
   });
@@ -170,6 +173,11 @@ class _ProfileBody extends StatelessWidget {
                   label: 'Coupons',
                   onTap: () => context.push('/coupons'),
                 ),
+                _IconGridItem(
+                  icon: Icons.account_balance_wallet_outlined,
+                  label: 'Credit',
+                  onTap: () => context.push('/profile/store-credit'),
+                ),
               ],
             ),
           ),
@@ -245,35 +253,55 @@ class _ProfileBody extends StatelessWidget {
 
           const SizedBox(height: 12),
 
-          // ── Payment Methods 入口 ──────────────────────────────
+          // ── Account Settings ──────────────────────────────────
           _SectionCard(
-            child: ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceVariant,
-                  borderRadius: BorderRadius.circular(10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Account Settings',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: AppColors.textPrimary,
+                  ),
                 ),
-                child: const Icon(
-                  Icons.credit_card_outlined,
-                  color: AppColors.textSecondary,
-                  size: 20,
+                const SizedBox(height: 8),
+                _SettingsTile(
+                  icon: Icons.phone_outlined,
+                  title: 'Phone Number',
+                  subtitle: phone != null && phone!.isNotEmpty && phone != 'skipped'
+                      ? phone!
+                      : 'Not set',
+                  onTap: () => context.push('/profile/change-phone'),
                 ),
-              ),
-              title: const Text(
-                'Payment Methods',
-                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-              ),
-              subtitle: const Text(
-                'Manage saved cards',
-                style: TextStyle(fontSize: 12, color: AppColors.textHint),
-              ),
-              trailing: const Icon(
-                Icons.chevron_right,
-                color: AppColors.textHint,
-              ),
-              onTap: () => context.push('/profile/payment-methods'),
+                const Divider(height: 1),
+                _SettingsTile(
+                  icon: Icons.email_outlined,
+                  title: 'Email',
+                  subtitle: email,
+                  onTap: () => context.push('/profile/change-email'),
+                ),
+                const Divider(height: 1),
+                _SettingsTile(
+                  icon: Icons.lock_outline,
+                  title: 'Change Password',
+                  onTap: () => context.push('/profile/change-password'),
+                ),
+                const Divider(height: 1),
+                _SettingsTile(
+                  icon: Icons.credit_card_outlined,
+                  title: 'Payment Methods',
+                  subtitle: 'Manage saved cards',
+                  onTap: () => context.push('/profile/payment-methods'),
+                ),
+                const Divider(height: 1),
+                _SettingsTile(
+                  icon: Icons.location_on_outlined,
+                  title: 'Billing Address',
+                  onTap: () => context.push('/profile/billing-address'),
+                ),
+              ],
             ),
           ),
 
@@ -482,6 +510,54 @@ class _SectionCard extends StatelessWidget {
         ],
       ),
       child: child,
+    );
+  }
+}
+
+// ── Account Settings 列表项 ───────────────────────────────────────────────────
+class _SettingsTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String? subtitle;
+  final VoidCallback? onTap;
+
+  const _SettingsTile({
+    required this.icon,
+    required this.title,
+    this.subtitle,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      dense: true,
+      leading: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceVariant,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Icon(icon, color: AppColors.textSecondary, size: 20),
+      ),
+      title: Text(
+        title,
+        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+      ),
+      subtitle: subtitle != null
+          ? Text(
+              subtitle!,
+              style: const TextStyle(fontSize: 12, color: AppColors.textHint),
+              overflow: TextOverflow.ellipsis,
+            )
+          : null,
+      trailing: const Icon(
+        Icons.chevron_right,
+        color: AppColors.textHint,
+        size: 18,
+      ),
+      onTap: onTap,
     );
   }
 }

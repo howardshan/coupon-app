@@ -130,12 +130,16 @@ class _MeituanOrderBodyState extends ConsumerState<_MeituanOrderBody> {
         // 主滚动区域
         CustomScrollView(
           slivers: [
-            // 顶部状态横幅（带返回按钮）
-            SliverToBoxAdapter(
-              child: _StatusBanner(
-                status: overallStatus,
-                orderId: widget.orderId,
+            // 顶部普通 AppBar（不显示大号状态横幅）
+            SliverAppBar(
+              pinned: true,
+              title: Text(
+                widget.filterDealId != null ? 'Voucher Detail' : 'Order Detail',
+                style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
               ),
+              backgroundColor: Colors.white,
+              foregroundColor: AppColors.textPrimary,
+              elevation: 0.5,
             ),
 
             // 每个 deal 分组：摘要卡片 + 券状态行
@@ -148,6 +152,9 @@ class _MeituanOrderBodyState extends ConsumerState<_MeituanOrderBody> {
                 child: _DealSummaryCard(
                   dealItems: items,
                   isExpanded: isExpanded,
+                  paymentIntentId: detail.paymentIntentIdMasked,
+                  storeCreditUsed: detail.storeCreditUsed,
+                  orderTotalAmount: detail.totalAmount,
                   onToggleExpand: () {
                     setState(() {
                       _expandedGroups[dealId] = !isExpanded;
@@ -328,12 +335,20 @@ class _DealSummaryCard extends ConsumerWidget {
   final bool isExpanded;
   final VoidCallback onToggleExpand;
   final VoidCallback onRefreshOrder;
+  final String? paymentIntentId;
+  /// 本单使用的 Store Credit 金额
+  final double storeCreditUsed;
+  /// 订单原始总金额（未扣 Store Credit）
+  final double orderTotalAmount;
 
   const _DealSummaryCard({
     required this.dealItems,
     required this.isExpanded,
     required this.onToggleExpand,
     required this.onRefreshOrder,
+    this.paymentIntentId,
+    this.storeCreditUsed = 0.0,
+    this.orderTotalAmount = 0.0,
   });
 
   @override
@@ -469,6 +484,9 @@ class _DealSummaryCard extends ConsumerWidget {
               isExpanded: isExpanded,
               onToggle: onToggleExpand,
               onRefreshOrder: onRefreshOrder,
+              paymentIntentId: paymentIntentId,
+              storeCreditUsed: storeCreditUsed,
+              orderTotalAmount: orderTotalAmount,
             ),
           if (usedItems.isNotEmpty)
             _CouponStatusRow(
@@ -479,6 +497,9 @@ class _DealSummaryCard extends ConsumerWidget {
               isExpanded: isExpanded && unusedItems.isEmpty,
               onToggle: unusedItems.isEmpty ? onToggleExpand : null,
               onRefreshOrder: onRefreshOrder,
+              paymentIntentId: paymentIntentId,
+              storeCreditUsed: storeCreditUsed,
+              orderTotalAmount: orderTotalAmount,
             ),
           if (refundedItems.isNotEmpty)
             _CouponStatusRow(
@@ -491,6 +512,9 @@ class _DealSummaryCard extends ConsumerWidget {
               isExpanded: false,
               onToggle: null,
               onRefreshOrder: onRefreshOrder,
+              paymentIntentId: paymentIntentId,
+              storeCreditUsed: storeCreditUsed,
+              orderTotalAmount: orderTotalAmount,
             ),
           if (otherItems.isNotEmpty)
             _CouponStatusRow(
@@ -501,6 +525,9 @@ class _DealSummaryCard extends ConsumerWidget {
               isExpanded: false,
               onToggle: null,
               onRefreshOrder: onRefreshOrder,
+              paymentIntentId: paymentIntentId,
+              storeCreditUsed: storeCreditUsed,
+              orderTotalAmount: orderTotalAmount,
             ),
         ],
       ),
@@ -518,6 +545,11 @@ class _CouponStatusRow extends ConsumerWidget {
   final bool isExpanded;
   final VoidCallback? onToggle;
   final VoidCallback onRefreshOrder;
+  final String? paymentIntentId;
+  /// 本单使用的 Store Credit 金额
+  final double storeCreditUsed;
+  /// 订单原始总金额（未扣 Store Credit）
+  final double orderTotalAmount;
 
   const _CouponStatusRow({
     required this.label,
@@ -527,6 +559,9 @@ class _CouponStatusRow extends ConsumerWidget {
     required this.isExpanded,
     required this.onToggle,
     required this.onRefreshOrder,
+    this.paymentIntentId,
+    this.storeCreditUsed = 0.0,
+    this.orderTotalAmount = 0.0,
   });
 
   @override
@@ -585,7 +620,11 @@ class _CouponStatusRow extends ConsumerWidget {
           const Divider(height: 1, color: Color(0xFFF0F0F0)),
           ...items.map((item) => _CouponDetailRow(
                 item: item,
+                allItems: items,
+                paymentIntentId: paymentIntentId,
                 onRefreshOrder: onRefreshOrder,
+                storeCreditUsed: storeCreditUsed,
+                orderTotalAmount: orderTotalAmount,
               )),
         ],
 
@@ -599,9 +638,22 @@ class _CouponStatusRow extends ConsumerWidget {
 
 class _CouponDetailRow extends ConsumerWidget {
   final OrderItemModel item;
+  final List<OrderItemModel> allItems;
+  final String? paymentIntentId;
   final VoidCallback onRefreshOrder;
+  /// 本单使用的 Store Credit 金额
+  final double storeCreditUsed;
+  /// 订单原始总金额（未扣 Store Credit）
+  final double orderTotalAmount;
 
-  const _CouponDetailRow({required this.item, required this.onRefreshOrder});
+  const _CouponDetailRow({
+    required this.item,
+    required this.allItems,
+    this.paymentIntentId,
+    required this.onRefreshOrder,
+    this.storeCreditUsed = 0.0,
+    this.orderTotalAmount = 0.0,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -698,6 +750,11 @@ class _CouponDetailRow extends ConsumerWidget {
   // 展示取消/退款 Bottom Sheet
   void _showCancelSheet(
       BuildContext context, WidgetRef ref, OrderItemModel item) {
+    // 找同 deal 的所有 unused items（用于多张券选数量）
+    final sameDealUnused = allItems
+        .where((i) => i.dealId == item.dealId && i.customerStatus == CustomerItemStatus.unused)
+        .toList();
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -707,20 +764,31 @@ class _CouponDetailRow extends ConsumerWidget {
       ),
       builder: (_) => _CancelSheet(
         item: item,
-        onConfirm: (refundMethod) async {
+        totalUnusedCount: sameDealUnused.length,
+        allUnusedItems: sameDealUnused,
+        paymentIntentId: paymentIntentId,
+        storeCreditUsed: storeCreditUsed,
+        orderTotalAmount: orderTotalAmount,
+        onConfirm: (refundMethod, {int cancelCount = 1}) async {
           final navigator = Navigator.of(context);
           final messenger = ScaffoldMessenger.of(context);
-          final success = await ref
-              .read(refundNotifierProvider.notifier)
-              .requestItemRefund(
-                item.id,
-                refundMethod: refundMethod,
-              );
+          // 退指定数量的券
+          final itemsToCancel = sameDealUnused.take(cancelCount).toList();
+          int successCount = 0;
+          for (final cancelItem in itemsToCancel) {
+            final ok = await ref
+                .read(refundNotifierProvider.notifier)
+                .requestItemRefund(
+                  cancelItem.id,
+                  refundMethod: refundMethod,
+                );
+            if (ok) successCount++;
+          }
           navigator.pop();
-          if (success) {
+          if (successCount > 0) {
             messenger.showSnackBar(
-              const SnackBar(
-                content: Text('Refund request submitted successfully'),
+              SnackBar(
+                content: Text('$successCount voucher${successCount > 1 ? 's' : ''} cancelled successfully'),
                 behavior: SnackBarBehavior.floating,
               ),
             );
@@ -728,7 +796,7 @@ class _CouponDetailRow extends ConsumerWidget {
           } else {
             messenger.showSnackBar(
               const SnackBar(
-                content: Text('Failed to submit refund request'),
+                content: Text('Failed to cancel voucher'),
                 behavior: SnackBarBehavior.floating,
                 backgroundColor: AppColors.error,
               ),
@@ -939,48 +1007,145 @@ class _OrderInfoSection extends StatelessWidget {
           ),
 
           // 支付方式
-          if (detail.paymentStatus != null)
-            _InfoRowCopy(
-              label: 'Payment',
-              value: _formatPaymentStatus(detail.paymentStatus!),
-              canCopy: false,
-            ),
+          _InfoRowCopy(
+            label: 'Payment',
+            value: _resolvePaymentMethod(detail),
+            canCopy: false,
+          ),
 
           const Divider(height: 20, color: Color(0xFFF0F0F0)),
 
-          // 小计
-          _PriceRow(
-            label: 'Subtotal',
-            value: amountFmt.format(detail.totalAmount - totalServiceFee),
-            isTotal: false,
-          ),
+          // ── 费用明细 ──────────────────────────────────────
+          const Text('Price Breakdown',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+          const SizedBox(height: 8),
 
-          // Service fee（如有）
-          if (totalServiceFee > 0)
-            _PriceRow(
-              label: 'Service Fee',
-              value: amountFmt.format(totalServiceFee),
-              isTotal: false,
+          // 每个 deal 的价格
+          ...detail.items.fold<Map<String, _DealPriceSummary>>({}, (map, item) {
+            final title = item.dealTitle.isNotEmpty ? item.dealTitle : 'Deal';
+            map.putIfAbsent(title, () => _DealPriceSummary(title: title, unitPrice: item.unitPrice));
+            map[title]!.count++;
+            return map;
+          }).values.map((d) => Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(child: Text(
+                  '${d.title} × ${d.count}',
+                  style: const TextStyle(fontSize: 13, color: AppColors.textPrimary),
+                  maxLines: 1, overflow: TextOverflow.ellipsis,
+                )),
+                Text(amountFmt.format(d.unitPrice * d.count),
+                    style: const TextStyle(fontSize: 13)),
+              ],
             ),
+          )),
+
+          // Service Fee
+          if (totalServiceFee > 0)
+            _SimpleRow('Service Fee (\$0.99 × ${detail.items.length})',
+                amountFmt.format(totalServiceFee)),
+
+          // Tax（从 items 的 taxAmount 汇总，或从 detail 读取）
+          // 如果 detail 有 tax 相关字段可以展示
+
+          const Divider(height: 16, color: Color(0xFFF0F0F0)),
+
+          // Total
+          _SimpleRow('Total', amountFmt.format(detail.totalAmount),
+              isBold: true, valueColor: AppColors.textPrimary),
 
           const SizedBox(height: 8),
 
-          // 总计
-          _PriceRow(
-            label: 'Total Paid',
-            value: amountFmt.format(detail.totalAmount),
-            isTotal: true,
-          ),
+          // ── 支付方式明细 ────────────────────────────────────
+          const Text('Payment',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+          const SizedBox(height: 8),
+
+          // Store Credit 支付
+          if (detail.storeCreditUsed > 0)
+            _SimpleRow('Store Credit', amountFmt.format(detail.storeCreditUsed),
+                valueColor: AppColors.success),
+
+          // Card / Google Pay 支付（总额减去 Store Credit）
+          if (detail.totalAmount - detail.storeCreditUsed > 0)
+            _SimpleRow(
+              _resolvePaymentMethod(detail),
+              amountFmt.format(detail.totalAmount - detail.storeCreditUsed),
+            ),
+
+          // 全额 Store Credit 时
+          if (detail.totalAmount - detail.storeCreditUsed <= 0 && detail.storeCreditUsed > 0)
+            const Padding(
+              padding: EdgeInsets.only(top: 2),
+              child: Text('Fully paid by Store Credit',
+                  style: TextStyle(fontSize: 12, color: AppColors.success, fontStyle: FontStyle.italic)),
+            ),
+
+          // ── 退款信息 ──────────────────────────────────────
+          ...(() {
+            final refundedItems = detail.items
+                .where((i) => i.customerStatus == CustomerItemStatus.refundSuccess ||
+                    i.customerStatus == CustomerItemStatus.refundPending)
+                .toList();
+            if (refundedItems.isEmpty) return <Widget>[];
+
+            final totalRefund = refundedItems.fold<double>(0, (s, i) => s + (i.refundAmount ?? i.unitPrice));
+            final storeCreditRefunds = refundedItems.where((i) => i.refundMethod == 'store_credit').toList();
+            final originalRefunds = refundedItems.where((i) => i.refundMethod == 'original_payment').toList();
+            final pendingRefunds = refundedItems.where((i) => i.customerStatus == CustomerItemStatus.refundPending).toList();
+
+            return <Widget>[
+              const Divider(height: 20, color: Color(0xFFF0F0F0)),
+              const Text('Refunds',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+              const SizedBox(height: 8),
+
+              if (storeCreditRefunds.isNotEmpty)
+                _SimpleRow(
+                  'To Store Credit (${storeCreditRefunds.length} voucher${storeCreditRefunds.length > 1 ? "s" : ""})',
+                  amountFmt.format(storeCreditRefunds.fold<double>(0, (s, i) => s + (i.refundAmount ?? i.unitPrice))),
+                  valueColor: AppColors.success,
+                ),
+
+              if (originalRefunds.isNotEmpty)
+                _SimpleRow(
+                  'To Original Payment (${originalRefunds.length})',
+                  amountFmt.format(originalRefunds.fold<double>(0, (s, i) => s + (i.refundAmount ?? i.unitPrice))),
+                ),
+
+              if (pendingRefunds.isNotEmpty)
+                _SimpleRow(
+                  'Refund Processing (${pendingRefunds.length})',
+                  amountFmt.format(pendingRefunds.fold<double>(0, (s, i) => s + (i.refundAmount ?? i.unitPrice))),
+                  valueColor: AppColors.warning,
+                ),
+
+              _SimpleRow('Total Refunded', amountFmt.format(totalRefund),
+                  isBold: true, valueColor: AppColors.error),
+            ];
+          })(),
         ],
       ),
     );
   }
 
-  String _formatPaymentStatus(String status) {
+  bool _isPaidByStoreCredit(OrderDetailModel detail) {
+    // 全额 Store Credit：store_credit_used >= total_amount
+    return detail.storeCreditUsed > 0 &&
+        detail.storeCreditUsed >= detail.totalAmount;
+  }
+
+  String _resolvePaymentMethod(OrderDetailModel detail) {
+    if (_isPaidByStoreCredit(detail)) return 'Store Credit';
+    final status = detail.paymentStatus ?? '';
     return switch (status.toLowerCase()) {
       'succeeded' => 'Credit Card',
       'paid' => 'Credit Card',
-      _ => status[0].toUpperCase() + status.substring(1),
+      _ => status.isNotEmpty
+          ? status[0].toUpperCase() + status.substring(1)
+          : 'Credit Card',
     };
   }
 }
@@ -991,11 +1156,13 @@ class _InfoRowCopy extends StatelessWidget {
   final String label;
   final String value;
   final bool canCopy;
+  final TextStyle? valueStyle;
 
   const _InfoRowCopy({
     required this.label,
     required this.value,
     required this.canCopy,
+    this.valueStyle,
   });
 
   @override
@@ -1018,7 +1185,7 @@ class _InfoRowCopy extends StatelessWidget {
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(
+              style: valueStyle ?? const TextStyle(
                 fontSize: 13,
                 color: AppColors.textPrimary,
                 fontWeight: FontWeight.w500,
@@ -1186,37 +1353,50 @@ class _BottomActionBar extends ConsumerWidget {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => _CancelSheet(
-        item: item,
-        onConfirm: (refundMethod) async {
-          final navigator = Navigator.of(context);
-          final messenger = ScaffoldMessenger.of(context);
-          final success = await ref
-              .read(refundNotifierProvider.notifier)
-              .requestItemRefund(
-                item.id,
-                refundMethod: refundMethod,
+      builder: (_) {
+        // 所有 unused 的券
+        final allUnused = detail.items
+            .where((i) => i.showCancel)
+            .toList();
+        return _CancelSheet(
+          item: item,
+          totalUnusedCount: allUnused.length,
+          allUnusedItems: allUnused,
+          paymentIntentId: detail.paymentIntentIdMasked,
+          storeCreditUsed: detail.storeCreditUsed,
+          orderTotalAmount: detail.totalAmount,
+          onConfirm: (refundMethod, {int cancelCount = 1}) async {
+            final navigator = Navigator.of(context);
+            final messenger = ScaffoldMessenger.of(context);
+            final itemsToCancel = allUnused.take(cancelCount).toList();
+            int successCount = 0;
+            for (final cancelItem in itemsToCancel) {
+              final ok = await ref
+                  .read(refundNotifierProvider.notifier)
+                  .requestItemRefund(cancelItem.id, refundMethod: refundMethod);
+              if (ok) successCount++;
+            }
+            navigator.pop();
+            if (successCount > 0) {
+              messenger.showSnackBar(
+                SnackBar(
+                  content: Text('$successCount voucher${successCount > 1 ? 's' : ''} cancelled'),
+                  behavior: SnackBarBehavior.floating,
+                ),
               );
-          navigator.pop();
-          if (success) {
-            messenger.showSnackBar(
-              const SnackBar(
-                content: Text('Refund request submitted successfully'),
-                behavior: SnackBarBehavior.floating,
-              ),
-            );
-            ref.invalidate(userOrderDetailProvider(orderId));
-          } else {
-            messenger.showSnackBar(
-              const SnackBar(
-                content: Text('Failed to submit refund request'),
-                behavior: SnackBarBehavior.floating,
-                backgroundColor: AppColors.error,
-              ),
-            );
-          }
-        },
-      ),
+              ref.invalidate(userOrderDetailProvider(orderId));
+            } else {
+              messenger.showSnackBar(
+                const SnackBar(
+                  content: Text('Failed to cancel'),
+                  behavior: SnackBarBehavior.floating,
+                  backgroundColor: AppColors.error,
+                ),
+              );
+            }
+          },
+        );
+      },
     );
   }
 }
@@ -1398,22 +1578,125 @@ class _QrCodeSheet extends StatelessWidget {
 
 class _CancelSheet extends ConsumerStatefulWidget {
   final OrderItemModel item;
-  final Future<void> Function(String refundMethod) onConfirm;
+  final int totalUnusedCount;
+  final List<OrderItemModel> allUnusedItems;
+  final String? paymentIntentId; // 用于判断是否全额 Store Credit 支付
+  final double storeCreditUsed;  // 本单使用的 Store Credit 金额
+  final double orderTotalAmount; // 订单原始总金额（未扣 Store Credit）
+  final Future<void> Function(String refundMethod, {int cancelCount}) onConfirm;
 
-  const _CancelSheet({required this.item, required this.onConfirm});
+  const _CancelSheet({
+    required this.item,
+    this.totalUnusedCount = 1,
+    this.allUnusedItems = const [],
+    this.paymentIntentId,
+    this.storeCreditUsed = 0.0,
+    this.orderTotalAmount = 0.0,
+    required this.onConfirm,
+  });
 
   @override
   ConsumerState<_CancelSheet> createState() => _CancelSheetState();
 }
 
 class _CancelSheetState extends ConsumerState<_CancelSheet> {
-  // 退款方式选择（默认 store_credit）
   String _selectedMethod = 'store_credit';
   bool _isSubmitting = false;
+  late int _cancelCount;
+
+  // 是否全额 Store Credit 支付
+  bool get _isPaidByStoreCredit {
+    // 优先用 storeCreditUsed 判断（piId 可能被 mask 后丢失 store_credit 前缀）
+    if (widget.storeCreditUsed > 0 && widget.orderTotalAmount > 0 &&
+        widget.storeCreditUsed >= widget.orderTotalAmount) {
+      return true;
+    }
+    final piId = widget.paymentIntentId ?? '';
+    return piId.contains('store_credit');
+  }
+
+  // 是否混合支付（部分 Store Credit + 部分刷卡）
+  bool get _isPartialStoreCredit =>
+      !_isPaidByStoreCredit && widget.storeCreditUsed > 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _cancelCount = 1;
+    // 全额 Store Credit 支付时锁定退款方式
+    if (_isPaidByStoreCredit) {
+      _selectedMethod = 'store_credit';
+    }
+  }
+
+  /// 计算单张券中 Store Credit 占的金额（按比例）
+  double get _itemCreditPortion {
+    if (!_isPartialStoreCredit || widget.orderTotalAmount <= 0) return 0;
+    final itemTotal = widget.item.unitPrice + (widget.item.serviceFee);
+    final ratio = widget.storeCreditUsed / widget.orderTotalAmount;
+    return (itemTotal * ratio * 100).roundToDouble() / 100;
+  }
+
+  /// 计算单张券中刷卡占的金额
+  double get _itemCardPortion {
+    final itemTotal = widget.item.unitPrice + widget.item.serviceFee;
+    return ((itemTotal - _itemCreditPortion) * 100).roundToDouble() / 100;
+  }
+
+  /// 根据支付方式构建退款选项列表
+  List<Widget> _buildRefundOptions(bool isCancel) {
+    if (_isPaidByStoreCredit) {
+      // 全额 Store Credit 支付：只能退回 Store Credit
+      return [
+        _RefundMethodOption(
+          selected: true,
+          title: 'Store Credit',
+          subtitle: 'Full amount incl. service fee · Instant',
+          badge: 'Only Option',
+          badgeColor: AppColors.success,
+          onTap: () {},
+        ),
+      ];
+    }
+
+    // 混合支付时的 Original Payment 说明文案
+    String originalPaymentSubtitle;
+    if (_isPartialStoreCredit && isCancel) {
+      originalPaymentSubtitle =
+          'Card \$${_itemCardPortion.toStringAsFixed(2)} to card, '
+          'Credit \$${_itemCreditPortion.toStringAsFixed(2)} to Store Credit\n'
+          'Service fee non-refundable · 5-10 business days';
+    } else {
+      originalPaymentSubtitle = isCancel
+          ? 'Excluding service fee · 5-10 business days'
+          : '5-10 business days to original card';
+    }
+
+    return [
+      _RefundMethodOption(
+        selected: _selectedMethod == 'store_credit',
+        title: 'Store Credit',
+        subtitle: isCancel
+            ? 'Full amount incl. service fee · Instant'
+            : 'Processed within 1-2 business days',
+        badge: 'Recommended',
+        badgeColor: AppColors.success,
+        onTap: () => setState(() => _selectedMethod = 'store_credit'),
+      ),
+      const SizedBox(height: 12),
+      _RefundMethodOption(
+        selected: _selectedMethod == 'original_payment',
+        title: 'Original Payment',
+        subtitle: originalPaymentSubtitle,
+        onTap: () => setState(() => _selectedMethod = 'original_payment'),
+      ),
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
     final isCancel = widget.item.showCancel;
+    final totalUnused = widget.totalUnusedCount;
 
     return Padding(
       padding: EdgeInsets.fromLTRB(
@@ -1441,7 +1724,7 @@ class _CancelSheetState extends ConsumerState<_CancelSheet> {
 
           // 标题
           Text(
-            isCancel ? 'Cancel' : 'Request Refund',
+            isCancel ? 'Cancel Voucher' : 'Request Refund',
             style: const TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w700,
@@ -1458,40 +1741,68 @@ class _CancelSheetState extends ConsumerState<_CancelSheet> {
               color: AppColors.textSecondary,
             ),
           ),
+          // 多张券时显示数量选择器
+          if (totalUnused > 1) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceVariant.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Cancel how many?',
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                  ),
+                  Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.remove_circle_outline, size: 24),
+                        onPressed: _cancelCount > 1
+                            ? () => setState(() => _cancelCount--)
+                            : null,
+                        color: AppColors.primary,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Text(
+                          '$_cancelCount',
+                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.add_circle_outline, size: 24),
+                        onPressed: _cancelCount < totalUnused
+                            ? () => setState(() => _cancelCount++)
+                            : null,
+                        color: AppColors.primary,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 20),
 
-          // 选项1：Store Credit（推荐）
-          _RefundMethodOption(
-            selected: _selectedMethod == 'store_credit',
-            title: 'Store Credit',
-            subtitle: isCancel
-                ? 'Full amount incl. service fee · Instant'
-                : 'Processed within 1-2 business days',
-            badge: 'Recommended',
-            badgeColor: AppColors.success,
-            onTap: () => setState(() => _selectedMethod = 'store_credit'),
-          ),
-          const SizedBox(height: 12),
-
-          // 选项2：Original Payment
-          _RefundMethodOption(
-            selected: _selectedMethod == 'original_payment',
-            title: 'Original Payment',
-            subtitle: isCancel
-                ? 'Excluding service fee · 5-10 business days'
-                : '5-10 business days to original card',
-            onTap: () =>
-                setState(() => _selectedMethod = 'original_payment'),
-          ),
+          // 判断是否全额 Store Credit 支付（payment_intent_id 含 store_credit）
+          ..._buildRefundOptions(isCancel),
           const SizedBox(height: 24),
 
-          // 确认按钮
+          // 确认按钮（全额 Store Credit 时自动锁定为 store_credit）
           ElevatedButton(
             onPressed: _isSubmitting
                 ? null
                 : () async {
                     setState(() => _isSubmitting = true);
-                    await widget.onConfirm(_selectedMethod);
+                    await widget.onConfirm(_selectedMethod, cancelCount: _cancelCount);
                     if (mounted) {
                       setState(() => _isSubmitting = false);
                     }
@@ -1642,6 +1953,53 @@ class _RefundMethodOption extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ── Deal 价格汇总辅助类 ────────────────────────────────────
+class _DealPriceSummary {
+  final String title;
+  final double unitPrice;
+  int count = 0;
+
+  _DealPriceSummary({required this.title, required this.unitPrice});
+}
+
+// ── 简单行（label + value）────────────────────────────────────
+class _SimpleRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final bool isBold;
+  final Color? valueColor;
+
+  const _SimpleRow(this.label, this.value, {this.isBold = false, this.valueColor});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Expanded(
+            child: Text(label,
+              style: TextStyle(
+                fontSize: isBold ? 14 : 13,
+                fontWeight: isBold ? FontWeight.w700 : FontWeight.normal,
+                color: isBold ? AppColors.textPrimary : AppColors.textSecondary,
+              ),
+            ),
+          ),
+          Text(value,
+            style: TextStyle(
+              fontSize: isBold ? 15 : 13,
+              fontWeight: isBold ? FontWeight.w700 : FontWeight.w500,
+              color: valueColor ?? AppColors.textPrimary,
+            ),
+          ),
+        ],
       ),
     );
   }

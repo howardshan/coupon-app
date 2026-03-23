@@ -10,6 +10,7 @@ type SearchParams = {
   q?: string
   status?: string | string[]
   merchant?: string
+  customer?: string
   date_from?: string
   date_to?: string
   amount_min?: string
@@ -47,6 +48,7 @@ export default async function OrdersPage({
     q: params.q,
     status: statusArr,
     merchantId: params.merchant,
+    customerId: params.customer,
     dateFrom: params.date_from,
     dateTo: params.date_to,
     amountMin: Number.isFinite(amountMin) ? amountMin : undefined,
@@ -65,9 +67,11 @@ export default async function OrdersPage({
         fetchError={payload.fetchError}
         refundCount={payload.refundCount}
         merchantsForFilter={payload.merchantsForFilter}
+        customersForFilter={payload.customersForFilter}
         initialSearchQ={params.q ?? ''}
         initialStatus={statusArr}
         initialMerchantId={params.merchant}
+        initialCustomerId={params.customer}
         initialDateFrom={params.date_from}
         initialDateTo={params.date_to}
         initialAmountMin={params.amount_min}

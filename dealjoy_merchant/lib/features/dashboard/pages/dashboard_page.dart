@@ -50,7 +50,11 @@ class DashboardPage extends ConsumerWidget {
     AsyncValue<DashboardData> dashboardAsync,
     bool isOnline,
   ) {
-    final merchantName = dashboardAsync.valueOrNull?.stats.merchantName ?? 'My Store';
+    // 优先从 storeProvider 读门店名（准确），降级用 dashboard API 的名字
+    final storeName = ref.watch(storeProvider).valueOrNull?.name;
+    final merchantName = (storeName != null && storeName.isNotEmpty)
+        ? storeName
+        : (dashboardAsync.valueOrNull?.stats.merchantName ?? 'My Store');
     final isToggling = ref.watch(dashboardProvider).isLoading;
 
     return AppBar(

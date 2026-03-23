@@ -58,6 +58,7 @@ class CheckoutRepository {
     List<String>? cartItemIds,
     String paymentMethod = 'card', // 'card' | 'google' | 'apple'
     BillingDetails? billingDetails,
+    double storeCreditUsed = 0.0, // Store Credit 抵扣金额
   }) async {
     if (userId.isEmpty) {
       throw const PaymentException('User not authenticated', code: 'unauthenticated');
@@ -78,18 +79,41 @@ class CheckoutRepository {
             })
         .toList();
 
-    // 2. 调用新版 create-payment-intent（v3 多 deal 版本）
+    // 2. 调用新版 create-payment-intent（v3 多 deal 版本），传入 Store Credit
     final piResponse = await _createPaymentIntentV3(
       items: items,
       userId: userId,
       paymentMethod: paymentMethod,
+      storeCreditUsed: storeCreditUsed,
     );
 
-    final clientSecret = piResponse['clientSecret'] as String? ?? '';
-    final paymentIntentId = piResponse['paymentIntentId'] as String? ?? '';
     final serviceFeeTotal = (piResponse['serviceFee'] as num?)?.toDouble() ?? 0.0;
     final subtotal = (piResponse['subtotal'] as num?)?.toDouble() ?? 0.0;
     final totalAmount = (piResponse['totalAmount'] as num?)?.toDouble() ?? 0.0;
+    final totalTax = (piResponse['totalTax'] as num?)?.toDouble() ?? 0.0;
+
+    // 检查 Store Credit 是否全额覆盖（后端返回特殊标记）
+    final fullyCovered = piResponse['fullyCoveredByCredit'] as bool? ?? false;
+
+    if (fullyCovered) {
+      // Store Credit 全额覆盖，跳过 Stripe，直接创建订单
+      final orderResult = await _createOrderV3(
+        paymentIntentId: 'store_credit_${DateTime.now().millisecondsSinceEpoch}',
+        userId: userId,
+        items: items,
+        serviceFeeTotal: serviceFeeTotal,
+        subtotal: subtotal,
+        totalAmount: totalAmount,
+        totalTax: totalTax,
+        cartItemIds: cartItemIds,
+        storeCreditUsed: storeCreditUsed,
+        skipStripeVerification: true,
+      );
+      return orderResult;
+    }
+
+    final clientSecret = piResponse['clientSecret'] as String? ?? '';
+    final paymentIntentId = piResponse['paymentIntentId'] as String? ?? '';
 
     // 从后端响应中读取 Stripe Customer 信息（用于显示已保存的卡片）
     final customerId = piResponse['customerId'] as String?;
@@ -113,7 +137,9 @@ class CheckoutRepository {
       serviceFeeTotal: serviceFeeTotal,
       subtotal: subtotal,
       totalAmount: totalAmount,
+      totalTax: totalTax,
       cartItemIds: cartItemIds,
+      storeCreditUsed: storeCreditUsed,
     );
 
     return orderResult;
@@ -137,6 +163,7 @@ class CheckoutRepository {
     String? promoCode,
     String paymentMethod = 'card',
     BillingDetails? billingDetails,
+    double storeCreditUsed = 0.0, // Store Credit 抵扣金额
   }) async {
     if (userId.isEmpty) {
       throw const PaymentException('User not authenticated', code: 'unauthenticated');
@@ -150,16 +177,47 @@ class CheckoutRepository {
       if (promoCode != null) 'promoCode': promoCode,
     });
 
-    // 1. 创建 PaymentIntent（V3 格式，传入支付方式）
+    // 1. 创建 PaymentIntent（V3 格式，传入支付方式和 Store Credit）
     final piResponse = await _createPaymentIntentV3(
       items: items,
       userId: userId,
       paymentMethod: paymentMethod,
+      storeCreditUsed: storeCreditUsed,
     );
+
+    final totalAmount = (piResponse['totalAmount'] as num?)?.toDouble() ?? unitPrice * quantity;
+    final serviceFeeTotal = (piResponse['serviceFee'] as num?)?.toDouble() ?? 0.99;
+    final subtotal = (piResponse['subtotal'] as num?)?.toDouble() ?? unitPrice * quantity;
+    final singleTotalTax = (piResponse['totalTax'] as num?)?.toDouble() ?? 0.0;
+
+    // 检查 Store Credit 是否全额覆盖
+    final fullyCovered = piResponse['fullyCoveredByCredit'] as bool? ?? false;
+
+    final orderItems = items.map((item) => {
+      'dealId': item['dealId'],
+      'unitPrice': item['unitPrice'],
+      if (purchasedMerchantId != null) 'purchasedMerchantId': purchasedMerchantId,
+      if (selectedOptions != null) 'selectedOptions': selectedOptions,
+    }).toList();
+
+    if (fullyCovered) {
+      // Store Credit 全额覆盖，跳过 Stripe
+      return await _createOrderV3(
+        paymentIntentId: 'store_credit_${DateTime.now().millisecondsSinceEpoch}',
+        userId: userId,
+        items: orderItems,
+        serviceFeeTotal: serviceFeeTotal,
+        subtotal: subtotal,
+        totalAmount: totalAmount,
+        totalTax: singleTotalTax,
+        cartItemIds: [],
+        storeCreditUsed: storeCreditUsed,
+        skipStripeVerification: true,
+      );
+    }
 
     final clientSecret = piResponse['clientSecret'] as String? ?? '';
     final paymentIntentId = piResponse['paymentIntentId'] as String? ?? '';
-    final totalAmount = (piResponse['totalAmount'] as num?)?.toDouble() ?? unitPrice * quantity;
     // 从后端响应中读取 Stripe Customer 信息（用于显示已保存的卡片）
     final customerId = piResponse['customerId'] as String?;
     final ephemeralKey = piResponse['ephemeralKey'] as String?;
@@ -175,22 +233,17 @@ class CheckoutRepository {
     );
 
     // 3. 调用 create-order-v3 创建订单（触发器自动创建 coupons）
-    final orderResult = await _createOrderV3(
+    return await _createOrderV3(
       paymentIntentId: paymentIntentId,
       userId: userId,
-      items: items.map((item) => {
-        'dealId': item['dealId'],
-        'unitPrice': item['unitPrice'],
-        if (purchasedMerchantId != null) 'purchasedMerchantId': purchasedMerchantId,
-        if (selectedOptions != null) 'selectedOptions': selectedOptions,
-      }).toList(),
-      serviceFeeTotal: (piResponse['serviceFee'] as num?)?.toDouble() ?? 0.99,
-      subtotal: (piResponse['subtotal'] as num?)?.toDouble() ?? unitPrice * quantity,
+      items: orderItems,
+      serviceFeeTotal: serviceFeeTotal,
+      subtotal: subtotal,
       totalAmount: totalAmount,
+      totalTax: singleTotalTax,
       cartItemIds: [],
+      storeCreditUsed: storeCreditUsed,
     );
-
-    return orderResult;
   }
 
   // ────────────────────────────────────────────────────────────────
@@ -282,11 +335,12 @@ class CheckoutRepository {
   // 私有辅助方法
   // ────────────────────────────────────────────────────────────────
 
-  /// 调用新版 create-payment-intent（V3 多 deal）
+  /// 调用新版 create-payment-intent（V3 多 deal），支持 Store Credit 抵扣
   Future<Map<String, dynamic>> _createPaymentIntentV3({
     required List<Map<String, dynamic>> items,
     required String userId,
     String paymentMethod = 'card',
+    double storeCreditUsed = 0.0,
   }) async {
     try {
       final response = await _client.functions.invoke(
@@ -295,6 +349,7 @@ class CheckoutRepository {
           'items': items,
           'userId': userId,
           'paymentMethod': paymentMethod,
+          if (storeCreditUsed > 0) 'storeCreditUsed': storeCreditUsed,
         },
       );
 
@@ -404,7 +459,7 @@ class CheckoutRepository {
     }
   }
 
-  /// 调用 create-order-v3 Edge Function 创建多 deal 订单
+  /// 调用 create-order-v3 Edge Function 创建多 deal 订单，支持 Store Credit 抵扣
   Future<CheckoutResult> _createOrderV3({
     required String paymentIntentId,
     required String userId,
@@ -412,7 +467,10 @@ class CheckoutRepository {
     required double serviceFeeTotal,
     required double subtotal,
     required double totalAmount,
+    double totalTax = 0.0,
     List<String>? cartItemIds,
+    double storeCreditUsed = 0.0,
+    bool skipStripeVerification = false, // Store Credit 全额覆盖时跳过 Stripe 验证
   }) async {
     try {
       final response = await _client.functions.invoke(
@@ -424,7 +482,10 @@ class CheckoutRepository {
           'serviceFeeTotal': serviceFeeTotal,
           'subtotal': subtotal,
           'totalAmount': totalAmount,
+          'totalTax': totalTax,
           'cartItemIds': cartItemIds,
+          if (storeCreditUsed > 0) 'storeCreditUsed': storeCreditUsed,
+          if (skipStripeVerification) 'skipStripeVerification': true,
         },
       );
 

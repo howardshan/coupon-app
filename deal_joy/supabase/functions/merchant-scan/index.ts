@@ -163,7 +163,7 @@ async function handleVerify(
       deal_id,
       order_id,
       order_item_id,
-      order_items (
+      order_items!coupons_order_item_id_fkey (
         applicable_store_ids
       ),
       deals!inner (
@@ -294,7 +294,7 @@ async function handleRedeem(
   // 查询券的当前状态，JOIN order_items 获取门店快照
   const { data: coupon, error: queryError } = await supabase
     .from('coupons')
-    .select('id, status, merchant_id, expires_at, redeemed_at, deal_id, order_id, order_item_id, order_items(applicable_store_ids)')
+    .select('id, status, merchant_id, expires_at, redeemed_at, deal_id, order_id, order_item_id, order_items!coupons_order_item_id_fkey(applicable_store_ids)')
     .eq('id', couponId)
     .single();
 
