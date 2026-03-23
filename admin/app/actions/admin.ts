@@ -346,9 +346,10 @@ export async function rejectDeal(dealId: string, rejectionReason?: string | null
 
   if (updateError) throw new Error(updateError.message)
 
-  // 插入驳回历史记录（含 deal 快照）
+  // 插入驳回历史记录（含 deal 快照），取回新记录 ID 用于邮件幂等 key
+  let rejectionId: string | null = null
   if (reason) {
-    const { error: insertError } = await supabase
+    const { data: rejectionRow, error: insertError } = await supabase
       .from('deal_rejections')
       .insert({
         deal_id: dealId,
@@ -356,11 +357,15 @@ export async function rejectDeal(dealId: string, rejectionReason?: string | null
         rejected_by: user?.id ?? null,
         deal_snapshot: dealSnapshot ?? null,
       })
+      .select('id')
+      .single()
 
     if (insertError) throw new Error(insertError.message)
+    rejectionId = rejectionRow?.id ?? null
   }
 
   // 发送 M16 Deal 被驳回通知（即发即忘，不阻断主流程）
+  // referenceId 使用驳回记录 ID（而非 dealId），确保同一 Deal 多次驳回都能发送邮件
   if (dealSnapshot?.merchant_id) {
     const { data: merchantInfo } = await supabase
       .from('merchants')
@@ -387,7 +392,7 @@ export async function rejectDeal(dealId: string, rejectionReason?: string | null
           subject,
           htmlBody:      html,
           emailCode:     'M16',
-          referenceId:   dealId,
+          referenceId:   rejectionId ?? dealId,
           recipientType: 'merchant',
         })
       }
