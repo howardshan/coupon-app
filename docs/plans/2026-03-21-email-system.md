@@ -1,11 +1,11 @@
 # CrunchyPlum 邮件系统开发计划书
 
 > **创建日期：** 2026-03-21
-> **最后更新：** 2026-03-23（v6 — 新增 M17 Deal 审批通过通知需求）
+> **最后更新：** 2026-03-23（v7 — 新增 C14 管理员拒绝退款通知需求）
 > **发件域名：** crunchyplum.com
 > **邮件服务商：** SMTP2GO
 > **邮件内容语言：** 英文（面向北美 Dallas 市场）
-> **状态：** 34/38 已实现；M17 待实现（新增需求）；A1/A8 超出范围；M15 等待触发点
+> **状态：** 34/39 已实现；C14/M17 待实现（新增需求）；A1/A8 超出范围；M15 等待触发点
 
 > ⚠️ **品牌变更说明（2026-03-21）：** 项目已因版权/法律原因从 **DealJoy** 正式更名为 **CrunchyPlum**。
 > 所有面向用户的邮件内容（subject、HTML body、FROM 名称、Logo 文字、页脚）均已更新为 CrunchyPlum。
@@ -166,7 +166,7 @@ CREATE TABLE email_type_settings (
   updated_by       UUID REFERENCES users(id)
 );
 
--- 预置全部 37 种邮件类型
+-- 预置全部 39 种邮件类型
 -- C 系列（客户端）
 INSERT INTO email_type_settings (email_code, email_name, recipient_type, user_configurable) VALUES
   ('C1',  '注册欢迎邮件',           'customer', FALSE),  -- 关键，不可关闭
@@ -181,7 +181,8 @@ INSERT INTO email_type_settings (email_code, email_name, recipient_type, user_co
   ('C10', '售后审核通过通知',        'customer', FALSE),
   ('C11', '售后审核拒绝通知',        'customer', FALSE),
   ('C12', '密码重置邮件',           'customer', FALSE),  -- 安全关键，不可关闭
-  ('C13', '商家已回复售后通知',      'customer', TRUE);
+  ('C13', '商家已回复售后通知',      'customer', TRUE),
+  ('C14', '管理员拒绝退款通知',      'customer', FALSE);  -- 退款关键通知，不可关闭
 
 -- M 系列（商家端）
 INSERT INTO email_type_settings (email_code, email_name, recipient_type, user_configurable) VALUES
@@ -329,6 +330,7 @@ CREATE POLICY "merchant_own" ON merchant_email_preferences
 | C11 | 售后审核拒绝通知 | 平台拒绝申请 | `platform-after-sales` | ✗ | 拒绝原因、申诉渠道、客服联系方式 |
 | C12 | 密码重置邮件 | 用户申请重置密码 | Supabase Auth 自定义模板 | ✗ | 重置链接（1 小时内有效） |
 | C13 | 商家已回复售后通知 | 商家提交售后处理意见 | `merchant-after-sales` | ✓ | 商家回复内容、案件当前状态、后续步骤 |
+| C14 | 管理员拒绝退款通知 | 管理员最终拒绝用户的退款申请 | `admin-refund`（reject 分支） | ✗ | 申请编号、拒绝原因、订单信息、客服联系方式 |
 
 ### 4.2 商家端邮件（M 系列）
 
@@ -846,16 +848,18 @@ deal_joy/lib/features/profile/
 - [x] A7 + M14 — 提现申请通知（`merchant-withdrawal`）
 - [x] M15 — 提现完成邮件模板已创建；集成点待「提现审批通过 Admin Action」实现
 - [ ] M17 — Deal 审批通过通知 — **新增需求（2026-03-23）**，需新建模板 + 在 `setDealActive` 中集成
+- [ ] C14 — 管理员拒绝退款通知 — **新增需求（2026-03-23）**，需新建模板 + 在 `admin-refund` reject 分支中集成
 - [ ] A1 — 管理员账户创建通知 — 超出当前范围，暂不实现
 - [ ] A8 — 系统异常告警邮件 — 超出当前范围，需全局错误捕获机制，暂不实现
 
 > ⚠️ **注意：** A4 告警阈值原计划为 $500，实际实现为 $200（`LARGE_REFUND_THRESHOLD = 200`）。
 
-#### 剩余 4 种未实现邮件类型汇总
+#### 剩余 5 种未实现邮件类型汇总
 
 | 编号 | 名称 | 原因 | 建议处理方式 |
 |------|------|------|------------|
 | M17 | Deal 审批通过通知 | 新增需求，`setDealActive` 目前无发邮件逻辑 | 新建模板 `admin/lib/email-templates/merchant/deal-approved.ts`，在 `setDealActive` 中调用 `sendAdminEmail()` |
+| C14 | 管理员拒绝退款通知 | 新增需求，`admin-refund` reject 路径无通知客户逻辑；approve 路径已由 Stripe Webhook → C8 覆盖 | 新建模板 `customer/admin-refund-rejected.ts`，在 `admin-refund` reject 分支中调用 `sendEmail()` |
 | M15 | 提现完成通知 | 模板已创建，无触发点 | 实现「提现审批通过」Admin Action 时集成 |
 | A1 | 管理员账户创建通知 | 未在任何 Phase 中实现 | 有需要时在 Admin 创建管理员账户的 Server Action 中添加 |
 | A8 | 系统异常告警邮件 | 需全局错误捕获架构 | 视运维需求决定是否实现 |
@@ -897,6 +901,7 @@ deal_joy/lib/features/profile/
 | C11 | 售后审核拒绝通知 | ✗ | Phase 4 | ✅ |
 | C12 | 密码重置邮件 | ✗ | Phase 1 | ✅ |
 | C13 | 商家已回复售后通知 | ✓ | Phase 4 | ✅ |
+| C14 | 管理员拒绝退款通知 | ✗ | Phase 6 | ❌ 未实现（新增需求） |
 | M1 | 商家注册欢迎邮件 | ✗ | Phase 3 | ✅ |
 | M2 | 认证申请受理通知 | ✗ | Phase 3 | ✅ |
 | M3 | 商户认证通过通知 | ✗ | Phase 3 | ✅ |
