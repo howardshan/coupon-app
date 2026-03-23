@@ -13,6 +13,9 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { resolveAuth, requirePermission } from "../_shared/auth.ts";
+import { sendEmail, getAdminRecipients } from "../_shared/email.ts";
+import { buildM14Email } from "../_shared/email-templates/merchant/withdrawal-request.ts";
+import { buildA7Email } from "../_shared/email-templates/admin/withdrawal-pending.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -291,6 +294,52 @@ async function handleWithdraw(
 
   // TODO: 调用 Stripe Transfer/Payout API 执行实际转账（V2）
   // 这里先创建记录，后续通过 webhook 或 cron 处理实际转账
+
+  // M14 + A7：通知商家申请已受理，同时告知管理员（fire-and-forget）
+  (async () => {
+    try {
+      // 查询商家名称和用户邮箱
+      const { data: merchantInfo } = await admin
+        .from("merchants").select("name, user_id").eq("id", merchantId).single();
+      if (merchantInfo) {
+        const { data: userInfo } = await admin
+          .from("users").select("email").eq("id", merchantInfo.user_id).single();
+
+        // M14：通知商家
+        if (userInfo?.email) {
+          const { subject: m14Subject, html: m14Html } = buildM14Email({
+            merchantName: merchantInfo.name,
+            withdrawalId: withdrawal.id,
+            amount,
+            requestedAt: withdrawal.requested_at,
+          });
+          await sendEmail(admin, {
+            to: userInfo.email, subject: m14Subject, htmlBody: m14Html,
+            emailCode: "M14", referenceId: withdrawal.id, recipientType: "merchant",
+            merchantId,
+          });
+        }
+
+        // A7：通知管理员
+        const adminEmails = await getAdminRecipients(admin, "A7");
+        if (adminEmails.length > 0) {
+          const { subject: a7Subject, html: a7Html } = buildA7Email({
+            merchantName: merchantInfo.name,
+            merchantId,
+            withdrawalId: withdrawal.id,
+            amount,
+            requestedAt: withdrawal.requested_at,
+          });
+          await sendEmail(admin, {
+            to: adminEmails, subject: a7Subject, htmlBody: a7Html,
+            emailCode: "A7", referenceId: withdrawal.id, recipientType: "admin",
+          });
+        }
+      }
+    } catch (err) {
+      console.warn("[merchant-withdrawal] email notification failed", err);
+    }
+  })();
 
   return jsonResponse({ withdrawal }, 201);
 }
