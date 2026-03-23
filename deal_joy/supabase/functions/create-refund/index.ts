@@ -90,11 +90,15 @@ Deno.serve(async (req) => {
         deal_id,
         unit_price,
         service_fee,
+        tax_amount,
         customer_status,
         orders!inner (
           id,
           user_id,
-          stripe_charge_id
+          stripe_charge_id,
+          payment_intent_id,
+          total_amount,
+          store_credit_used
         )
       `)
       .eq('id', orderItemId)
@@ -107,8 +111,30 @@ Deno.serve(async (req) => {
       );
     }
 
-    const order = item.orders as { id: string; user_id: string; stripe_charge_id: string };
+    const order = item.orders as {
+      id: string;
+      user_id: string;
+      stripe_charge_id: string | null;
+      payment_intent_id: string | null;
+      total_amount: number;
+      store_credit_used: number;
+    };
     const customerStatus: string = item.customer_status ?? '';
+    const storeCreditUsed = Number(order.store_credit_used ?? 0);
+    const orderTotalAmount = Number(order.total_amount ?? 0);
+
+    // 判断是否全额 Store Credit 支付（payment_intent_id 以 store_credit_ 开头）
+    const isFullStoreCredit = (order.payment_intent_id ?? '').startsWith('store_credit_');
+    // 判断是否混合支付（部分 Store Credit + 部分刷卡）
+    const isPartialStoreCredit = !isFullStoreCredit && storeCreditUsed > 0;
+
+    // 全额 Store Credit 支付时，不允许 original_payment 退款方式
+    if (isFullStoreCredit && refundMethod === 'original_payment') {
+      return new Response(
+        JSON.stringify({ error: 'This order was fully paid with Store Credit. Please choose Store Credit refund.' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
 
     // 退款资格校验
     // - unused: 允许两种退款方式
@@ -130,12 +156,14 @@ Deno.serve(async (req) => {
 
     const unitPrice = Number(item.unit_price ?? 0);
     const serviceFee = Number(item.service_fee ?? 0);
+    // tax_amount：购买时收取的税款，退款时需要一并退还
+    const taxAmount = Number(item.tax_amount ?? 0);
     const now = new Date().toISOString();
 
     if (refundMethod === 'store_credit') {
       // ── store_credit 退款流程 ──────────────────────────────────────────────
-      // 退款金额包含 service fee（平台承担手续费补偿用户）
-      const refundAmount = unitPrice + serviceFee;
+      // 退款金额包含 service fee 和 tax（平台承担手续费补偿用户，税款全额退还）
+      const refundAmount = unitPrice + serviceFee + taxAmount;
 
       // 调用 RPC 增加用户 store credit 余额
       const { error: rpcErr } = await supabaseAdmin.rpc('add_store_credit', {
@@ -248,41 +276,78 @@ Deno.serve(async (req) => {
 
     } else {
       // ── original_payment 退款流程 ─────────────────────────────────────────
-      // 退款金额不含 service fee（Stripe 手续费无法追回）
-      const refundAmount = unitPrice;
+      // 退款商品价 + 税，不含 service fee（service fee 不退）
+      const itemRefundable = unitPrice + taxAmount;
 
-      if (!order.stripe_charge_id) {
-        return new Response(
-          JSON.stringify({ error: 'No Stripe charge found for this order' }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-        );
+      // 混合支付时按比例拆分：store credit 部分退回 store credit，card 部分退回信用卡
+      let cardRefundAmount = itemRefundable;
+      let creditRefundAmount = 0;
+
+      if (isPartialStoreCredit && orderTotalAmount > 0) {
+        // store credit 在整单中的占比
+        const creditRatio = storeCreditUsed / orderTotalAmount;
+        creditRefundAmount = Math.round(itemRefundable * creditRatio * 100) / 100;
+        cardRefundAmount = Math.round((itemRefundable - creditRefundAmount) * 100) / 100;
       }
 
-      let stripeRefundId: string;
-      try {
-        // 向 Stripe 发起单券金额退款
-        const refund = await stripe.refunds.create({
-          charge: order.stripe_charge_id,
-          amount: Math.round(refundAmount * 100), // 转换为分（cents）
-          metadata: { order_item_id: orderItemId },
+      // 信用卡部分退款（如果有的话）
+      let stripeRefundId: string | null = null;
+      if (cardRefundAmount > 0) {
+        if (!order.stripe_charge_id && !order.payment_intent_id) {
+          return new Response(
+            JSON.stringify({ error: 'No Stripe payment found for this order' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+          );
+        }
+
+        try {
+          // 向 Stripe 发起信用卡部分退款
+          const refundParams: Record<string, unknown> = {
+            amount: Math.round(cardRefundAmount * 100),
+            metadata: { order_item_id: orderItemId },
+          };
+          if (order.stripe_charge_id) {
+            refundParams.charge = order.stripe_charge_id;
+          } else {
+            refundParams.payment_intent = order.payment_intent_id;
+          }
+          const refund = await stripe.refunds.create(refundParams as any);
+          stripeRefundId = refund.id;
+        } catch (stripeErr: unknown) {
+          const message = stripeErr instanceof Error ? stripeErr.message : 'Stripe refund failed';
+          console.error('Stripe refund error:', stripeErr);
+          return new Response(
+            JSON.stringify({ error: message }),
+            { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+          );
+        }
+      }
+
+      // Store Credit 部分退回余额（混合支付时）
+      if (creditRefundAmount > 0) {
+        const { error: rpcErr } = await supabaseAdmin.rpc('add_store_credit', {
+          p_user_id: order.user_id,
+          p_amount: creditRefundAmount,
+          p_order_item_id: orderItemId,
+          p_description: reason ?? 'Partial refund (store credit portion)',
         });
-        stripeRefundId = refund.id;
-      } catch (stripeErr: unknown) {
-        const message = stripeErr instanceof Error ? stripeErr.message : 'Stripe refund failed';
-        console.error('Stripe refund error:', stripeErr);
-        return new Response(
-          JSON.stringify({ error: message }),
-          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-        );
+        if (rpcErr) {
+          console.error('add_store_credit rpc error (partial refund):', rpcErr);
+          // Store Credit 退回失败不阻断，但记录警告
+        }
       }
 
-      // Stripe 退款发起成功，先标记为 refund_pending
-      // 等待 stripe-webhook 处理 charge.refunded 事件后再更新为 refund_success
+      // 标记退款状态
+      // 有 Stripe 退款则 refund_pending（等 webhook），纯 store credit 退回则直接 refund_success
+      const refundStatus = stripeRefundId ? 'refund_pending' : 'refund_success';
+      const totalRefundAmount = cardRefundAmount + creditRefundAmount;
+
       await supabaseAdmin
         .from('order_items')
         .update({
-          customer_status: 'refund_pending',
-          refund_amount: refundAmount,
+          customer_status: refundStatus,
+          refunded_at: refundStatus === 'refund_success' ? now : null,
+          refund_amount: totalRefundAmount,
           refund_method: 'original_payment',
           refund_reason: reason ?? null,
           updated_at: now,
@@ -354,9 +419,11 @@ Deno.serve(async (req) => {
         JSON.stringify({
           success: true,
           refundMethod: 'original_payment',
-          refundAmount,
+          refundAmount: totalRefundAmount,
+          cardRefundAmount,
+          creditRefundAmount,
           stripeRefundId,
-          status: 'refund_pending',
+          status: refundStatus,
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );

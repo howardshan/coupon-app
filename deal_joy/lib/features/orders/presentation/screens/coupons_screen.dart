@@ -258,7 +258,7 @@ class _MerchantCouponGroup extends StatelessWidget {
           ),
           const Divider(height: 16, indent: 14, endIndent: 14),
 
-          // 按券名合并后的列表
+          // 按券名合并后的列表 — 点击跳转到 order deal detail 页
           ...dealMap.entries.map((entry) {
             final dealCoupons = entry.value;
             final first = dealCoupons.first;
@@ -267,7 +267,7 @@ class _MerchantCouponGroup extends StatelessWidget {
               imageUrl: first.dealImageUrl,
               quantity: dealCoupons.length,
               expiresAt: first.expiresAt,
-              onTap: () => context.push('/coupon/${first.id}'),
+              onTap: () => context.push('/order/${first.orderId}?dealId=${first.dealId}'),
             );
           }),
           const SizedBox(height: 8),
@@ -505,7 +505,7 @@ class _ExpiringSoonSection extends StatelessWidget {
               quantity: dealCoupons.length,
               expiresAt: first.expiresAt,
               showUrgent: true,
-              onTap: () => context.push('/coupon/${first.id}'),
+              onTap: () => context.push('/order/${first.orderId}?dealId=${first.dealId}'),
             );
           }),
           const SizedBox(height: 4),

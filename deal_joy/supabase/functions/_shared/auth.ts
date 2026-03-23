@@ -261,9 +261,11 @@ export async function resolveAuth(
     const ownedId = ownedStores && ownedStores.length > 0
       ? ownedStores[0].id
       : null;
+    console.log(`[resolveAuth] ownedStores=${JSON.stringify(ownedStores)}, ownedId=${ownedId}, merchantIds=${merchantIds.join(',')}, includes=${ownedId ? merchantIds.includes(ownedId) : 'N/A'}`);
     merchantId = ownedId && merchantIds.includes(ownedId)
       ? ownedId
       : merchantIds[0];
+    console.log(`[resolveAuth] final merchantId=${merchantId}`);
   }
 
   // 5. 生成权限列表

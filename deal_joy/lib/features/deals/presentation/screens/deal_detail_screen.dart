@@ -288,6 +288,7 @@ class _MoreMenuSheet extends ConsumerWidget {
                   child: Align(
                     alignment: Alignment.centerRight,
                     child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
                       onTap: () => Navigator.pop(context),
                       child: const Icon(Icons.close, size: 22, color: AppColors.textSecondary),
                     ),
@@ -418,6 +419,7 @@ class _MenuDealSection extends StatelessWidget {
             const Spacer(),
             if (onViewAll != null)
               GestureDetector(
+                behavior: HitTestBehavior.opaque,
                 onTap: onViewAll,
                 child: const Row(
                   children: [
@@ -454,6 +456,7 @@ class _MenuDealCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: () {
         Navigator.pop(context);
         context.push('/deals/${deal.id}');
@@ -555,6 +558,7 @@ class _MenuIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -600,6 +604,7 @@ class _AdaptiveCircleButton extends StatelessWidget {
     // progress 1: 无背景 + 深色图标
     final showCircle = progress < 0.9;
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Container(
         width: 40,
@@ -639,6 +644,7 @@ class _AdaptiveSaveButton extends ConsumerWidget {
     final showCircle = progress < 0.9;
 
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: () =>
           ref.read(savedDealsNotifierProvider.notifier).toggle(dealId),
       child: Container(
@@ -778,6 +784,7 @@ class _ImageGalleryState extends State<_ImageGallery> {
                 const SizedBox(width: 8),
                 // 相册按钮：点击打开全屏图片查看器
                 GestureDetector(
+                  behavior: HitTestBehavior.opaque,
                   onTap: () => _openFullscreenGallery(context, urls, _currentPage),
                   child: Container(
                     padding: const EdgeInsets.all(6),
@@ -850,6 +857,7 @@ class _FullscreenGalleryDialogState extends State<_FullscreenGalleryDialog> {
   Widget build(BuildContext context) {
     return GestureDetector(
       // 点击任意处关闭
+      behavior: HitTestBehavior.opaque,
       onTap: () => Navigator.pop(context),
       child: Scaffold(
         backgroundColor: Colors.black,
@@ -966,6 +974,7 @@ class _PriceSection extends StatelessWidget {
                 // Reg Price 列（可点击弹出说明）
                 Flexible(
                   child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
                     onTap: () {
                       showDialog(
                         context: context,
@@ -1274,6 +1283,7 @@ class _VariantSelectorDelegate extends SliverPersistentHeaderDelegate {
 
             return GestureDetector(
               key: ValueKey('deal_variant_item_${d.id}'),
+              behavior: HitTestBehavior.opaque,
               onTap: isCurrent
                   ? null
                   : () => context.push('/deals/${d.id}'),
@@ -1611,6 +1621,7 @@ class _OptionGroupsSelectorState extends ConsumerState<_OptionGroupsSelector> {
           ...group.items.map((item) {
             final isSelected = selected.contains(item.id);
             return GestureDetector(
+              behavior: HitTestBehavior.opaque,
               onTap: () => _toggleItem(group, item.id),
               child: Container(
                 margin: const EdgeInsets.only(bottom: 6),
@@ -2044,6 +2055,7 @@ class _ActionCircle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Container(
         width: 40,
@@ -2139,6 +2151,7 @@ class _ApplicableStores extends StatelessWidget {
   Widget _buildStoreCard(BuildContext context, MerchantSummary merchant) {
     final coverUrl = merchant.homepageCoverUrl;
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: () => context.push('/merchant/${merchant.id}'),
       child: Container(
         decoration: BoxDecoration(
@@ -2216,6 +2229,7 @@ class _ApplicableStores extends StatelessWidget {
                   // Phone
                   if (merchant.phone != null && merchant.phone!.isNotEmpty)
                     GestureDetector(
+                      behavior: HitTestBehavior.opaque,
                       onTap: () => launchUrl(
                         Uri.parse('tel:${merchant.phone}'),
                         mode: LaunchMode.externalApplication,
@@ -2305,6 +2319,7 @@ class _MultiStoreList extends StatelessWidget {
             return Padding(
               padding: const EdgeInsets.only(top: 8),
               child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
                 onTap: () => context.push('/merchant/$storeId'),
                 child: Container(
                   decoration: BoxDecoration(
@@ -2401,6 +2416,7 @@ class _MultiStoreList extends StatelessWidget {
                       // 拨号按钮
                       if (phone.isNotEmpty)
                         GestureDetector(
+                          behavior: HitTestBehavior.opaque,
                           onTap: () => launchUrl(
                             Uri.parse('tel:$phone'),
                             mode: LaunchMode.externalApplication,
@@ -2469,6 +2485,7 @@ class _MerchantDeals extends ConsumerWidget {
                         TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   ),
                   GestureDetector(
+                    behavior: HitTestBehavior.opaque,
                     onTap: () => context.push('/merchant/$merchantId'),
                     child: Row(
                       children: [
@@ -2517,6 +2534,7 @@ class _MerchantDealCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: () => context.push('/deals/${deal.id}'),
       child: Container(
         width: 150,
@@ -2692,6 +2710,7 @@ class _ReviewsSection extends ConsumerWidget {
                       )),
                   if (reviews.length > 5)
                     GestureDetector(
+                      behavior: HitTestBehavior.opaque,
                       onTap: () {
                         // TODO: navigate to full reviews page
                       },
@@ -2727,6 +2746,7 @@ class _ReviewsSection extends ConsumerWidget {
           // Write a review button
           const SizedBox(height: 8),
           GestureDetector(
+            behavior: HitTestBehavior.opaque,
             onTap: () => context.push('/review/$dealId'),
             child: Container(
               width: double.infinity,
@@ -2944,15 +2964,13 @@ class _BottomBar extends ConsumerWidget {
 
     if (!context.mounted) return;
 
-    final isBrandDeal = deal.applicableMerchantIds != null &&
-        deal.applicableMerchantIds!.isNotEmpty;
+    // 直接用当前 deal 所属的门店，不弹门店选择
+    final merchantId = deal.merchant?.id ?? '';
+    context.push('/checkout/${deal.id}?merchantId=$merchantId');
+    return;
 
-    if (!isBrandDeal) {
-      context.push('/checkout/${deal.id}');
-      return;
-    }
-
-    // brand deal：弹出门店选择
+    // 以下门店选择代码保留但不再执行（品牌 deal 也直接用 deal 的 merchant）
+    // ignore: dead_code
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -3016,6 +3034,7 @@ class _BottomBar extends ConsumerWidget {
           children: [
             // Store 按钮
             GestureDetector(
+              behavior: HitTestBehavior.opaque,
               onTap: () => context.push('/merchant/${deal.merchantId}'),
               child: const SizedBox(
                 width: 48,
@@ -3038,6 +3057,7 @@ class _BottomBar extends ConsumerWidget {
             ),
             // 购物车图标（带 badge）
             GestureDetector(
+              behavior: HitTestBehavior.opaque,
               onTap: () => context.go('/cart'),
               child: SizedBox(
                 width: 48,
@@ -3070,6 +3090,7 @@ class _BottomBar extends ConsumerWidget {
             // Add to Cart 按钮（橙色，截图色号 #FF9500）
             Expanded(
               child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
                 onTap: () async {
                   // 校验选项组
                   if (deal.optionGroups.isNotEmpty) {
@@ -3114,7 +3135,10 @@ class _BottomBar extends ConsumerWidget {
                       }
                     }
                   }
-                  ref.read(cartProvider.notifier).addDeal(deal);
+                  ref.read(cartProvider.notifier).addDeal(
+                    deal,
+                    purchasedMerchantId: deal.merchant?.id,
+                  );
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
@@ -3148,6 +3172,7 @@ class _BottomBar extends ConsumerWidget {
             // Buy Now 按钮（渐变橙红）
             Expanded(
               child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
                 onTap: () => _handleBuyNow(context, ref, deal),
                 child: Container(
                   height: 48,
@@ -3278,6 +3303,7 @@ class _StorePickerSheet extends StatelessWidget {
                         }
 
                         return GestureDetector(
+                          behavior: HitTestBehavior.opaque,
                           onTap: () {
                             Navigator.pop(context);
                             context.push(

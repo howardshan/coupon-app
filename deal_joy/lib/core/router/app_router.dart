@@ -6,6 +6,7 @@ import '../../features/auth/presentation/screens/login_screen.dart';
 import '../../features/auth/presentation/screens/register_screen.dart';
 import '../../features/auth/presentation/screens/forgot_password_screen.dart';
 import '../../features/auth/presentation/screens/reset_password_screen.dart';
+import '../../features/auth/presentation/screens/phone_number_screen.dart';
 import '../../features/deals/presentation/screens/home_screen.dart';
 import '../../features/deals/presentation/screens/deal_detail_screen.dart';
 import '../../features/deals/presentation/screens/search_screen.dart';
@@ -26,7 +27,10 @@ import '../../features/profile/presentation/screens/profile_screen.dart';
 import '../../features/profile/presentation/screens/edit_profile_screen.dart';
 import '../../features/profile/presentation/screens/store_credit_screen.dart';
 import '../../features/profile/presentation/screens/payment_methods_screen.dart';
-import '../../features/profile/presentation/screens/email_preferences_screen.dart';
+import '../../features/profile/presentation/screens/change_email_screen.dart';
+import '../../features/profile/presentation/screens/change_password_screen.dart';
+import '../../features/profile/presentation/screens/change_phone_screen.dart';
+import '../../features/profile/presentation/screens/billing_address_screen.dart';
 import '../../features/reviews/presentation/screens/write_review_screen.dart';
 import '../../features/merchant/presentation/screens/merchant_dashboard_screen.dart';
 import '../../features/merchant/presentation/screens/merchant_detail_screen.dart';
@@ -43,14 +47,18 @@ import '../widgets/splash_screen.dart';
 /// GoRouter calls redirect() whenever this notifier fires.
 class _AuthChangeNotifier extends ChangeNotifier {
   late final ProviderSubscription _sub;
+  late final ProviderSubscription _userSub;
 
   _AuthChangeNotifier(Ref ref) {
     _sub = ref.listen(authStateProvider, (_, _) => notifyListeners());
+    // 监听用户 profile 变化（手机号填写后触发路由重检查）
+    _userSub = ref.listen(currentUserProvider, (_, _) => notifyListeners());
   }
 
   @override
   void dispose() {
     _sub.close();
+    _userSub.close();
     super.dispose();
   }
 }
@@ -88,6 +96,15 @@ final routerProvider = Provider<GoRouter>((ref) {
       // 已登录但在重置密码页面 — 允许留在该页面（recovery session）
       if (currentPath == '/auth/reset-password') return null;
 
+      // 已登录 — 检查是否需要填写手机号
+      if (currentPath == '/auth/phone') return null; // 已在手机号页面，不跳转
+      final userAsync = ref.read(currentUserProvider);
+      final userProfile = userAsync.valueOrNull;
+      if (userProfile != null &&
+          (userProfile.phone == null || userProfile.phone!.isEmpty)) {
+        return '/auth/phone';
+      }
+
       // Logged in — leave splash or auth routes
       if (isSplash || isAuthRoute) {
         // 登录后跳回之前的页面
@@ -119,6 +136,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/auth/reset-password',
         builder: (_, _) => const ResetPasswordScreen(),
+      ),
+      GoRoute(
+        path: '/auth/phone',
+        builder: (_, _) => const PhoneNumberScreen(),
       ),
 
       // Main shell with 4-tab bottom nav
@@ -175,10 +196,28 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (_, _) => const PaymentMethodsScreen(),
       ),
 
-      // 邮件通知偏好设置页
+      // Change Email 修改邮箱页
       GoRoute(
-        path: '/profile/email-notifications',
-        builder: (_, _) => const EmailPreferencesScreen(),
+        path: '/profile/change-email',
+        builder: (_, _) => const ChangeEmailScreen(),
+      ),
+
+      // Change Password 修改密码页
+      GoRoute(
+        path: '/profile/change-password',
+        builder: (_, _) => const ChangePasswordScreen(),
+      ),
+
+      // Change Phone 修改手机号页
+      GoRoute(
+        path: '/profile/change-phone',
+        builder: (_, _) => const ChangePhoneScreen(),
+      ),
+
+      // Billing Address 账单地址页
+      GoRoute(
+        path: '/profile/billing-address',
+        builder: (_, _) => const BillingAddressScreen(),
       ),
 
       // Merchant static routes must come before parameterized /merchant/:id

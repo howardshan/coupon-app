@@ -7,7 +7,7 @@ import '../models/order_model.dart';
 /// V3 订单查询 select — 含 order_items join deals/merchants/coupons
 const _orderSelect =
     'id, user_id, order_number, total_amount, items_amount, service_fee_total, '
-    'payment_intent_id, paid_at, created_at, '
+    'payment_intent_id, store_credit_used, paid_at, created_at, '
     'order_items('
     '  id, deal_id, unit_price, service_fee, customer_status, merchant_status, '
     '  coupon_id, redeemed_at, refunded_at, refund_method, '
