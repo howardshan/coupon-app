@@ -1,9 +1,13 @@
 import Stripe from 'https://esm.sh/stripe@14?target=deno';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2?target=deno';
-import { sendEmail } from '../_shared/email.ts';
+import { sendEmail, getAdminRecipients } from '../_shared/email.ts';
 import { buildC7Email } from '../_shared/email-templates/customer/refund-requested.ts';
 import { buildC6Email } from '../_shared/email-templates/customer/store-credit-added.ts';
 import { buildM8Email } from '../_shared/email-templates/merchant/pre-redemption-refund.ts';
+import { buildA4Email } from '../_shared/email-templates/admin/large-refund-alert.ts';
+
+// 大额退款告警阈值（美元）
+const LARGE_REFUND_THRESHOLD = 200;
 
 const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {
   apiVersion: '2024-04-10',
@@ -212,6 +216,22 @@ Deno.serve(async (req) => {
             }
           }
         }
+
+        // A4：大额退款告警
+        if (refundAmount >= LARGE_REFUND_THRESHOLD) {
+          const adminEmails = await getAdminRecipients(supabaseAdmin, 'A4');
+          if (adminEmails.length > 0) {
+            const { subject: a4Subject, html: a4Html } = buildA4Email({
+              orderId: (item as any).order_id ?? orderItemId,
+              refundAmount, refundMethod: 'store_credit',
+              dealTitle, threshold: LARGE_REFUND_THRESHOLD,
+            });
+            await sendEmail(supabaseAdmin, {
+              to: adminEmails, subject: a4Subject, htmlBody: a4Html,
+              emailCode: 'A4', referenceId: orderItemId, recipientType: 'admin',
+            });
+          }
+        }
       } catch (emailErr) {
         console.error('create-refund: email error (store_credit):', emailErr);
       }
@@ -307,6 +327,22 @@ Deno.serve(async (req) => {
               to: merchantUser.email, subject: m8Subject, htmlBody: m8Html,
               emailCode: 'M8', referenceId: orderItemId, recipientType: 'merchant',
               merchantId: (merchantRow as any)?.id,
+            });
+          }
+        }
+
+        // A4：大额退款告警
+        if (refundAmount >= LARGE_REFUND_THRESHOLD) {
+          const adminEmails = await getAdminRecipients(supabaseAdmin, 'A4');
+          if (adminEmails.length > 0) {
+            const { subject: a4Subject, html: a4Html } = buildA4Email({
+              orderId: (item as any).order_id ?? orderItemId,
+              refundAmount, refundMethod: 'original_payment',
+              dealTitle, threshold: LARGE_REFUND_THRESHOLD,
+            });
+            await sendEmail(supabaseAdmin, {
+              to: adminEmails, subject: a4Subject, htmlBody: a4Html,
+              emailCode: 'A4', referenceId: orderItemId, recipientType: 'admin',
             });
           }
         }
