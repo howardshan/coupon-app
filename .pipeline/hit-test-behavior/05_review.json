@@ -1,0 +1,79 @@
+{
+  "module": "hit-test-behavior",
+  "reviewed_at": "2026-03-23",
+  "summary": "为 deal_joy 用户端所有 GestureDetector 添加 behavior: HitTestBehavior.opaque，确保整个区域响应点击",
+  "files_modified": [
+    {
+      "file": "deal_joy/lib/features/deals/presentation/screens/deal_detail_screen.dart",
+      "changes": [
+        { "line": 291, "widget": "关闭按钮（底部 Sheet）" },
+        { "line": 422, "widget": "View All 按钮" },
+        { "line": 459, "widget": "_MenuDealCard（弹窗 deal 卡片）" },
+        { "line": 561, "widget": "_MenuIcon（菜单图标按钮）" },
+        { "line": 607, "widget": "_AppBarAction（AppBar 动作按钮）" },
+        { "line": 647, "widget": "_SaveButton（收藏按钮）" },
+        { "line": 787, "widget": "相册按钮（打开全屏图片查看器）" },
+        { "line": 860, "widget": "_FullscreenGallery（点击任意处关闭）" },
+        { "line": 977, "widget": "Reg Price 弹出说明" },
+        { "line": 1286, "widget": "deal 变体选择项" },
+        { "line": 1624, "widget": "选项组选项行" },
+        { "line": 2058, "widget": "_ActionCircle（全屏查看器动作圆钮）" },
+        { "line": 2154, "widget": "_buildStoreCard（商家卡片）" },
+        { "line": 2232, "widget": "商家电话拨号按钮（Store Card）" },
+        { "line": 2322, "widget": "Brand Deal 门店选择行" },
+        { "line": 2419, "widget": "门店列表拨号按钮" },
+        { "line": 2488, "widget": "More from this Store - See All 按钮" },
+        { "line": 2537, "widget": "_MerchantDealCard（商家 deal 卡片）" },
+        { "line": 2713, "widget": "View More Reviews 按钮" },
+        { "line": 2749, "widget": "Write a review 按钮" },
+        { "line": 3037, "widget": "底部栏 Store 按钮" },
+        { "line": 3060, "widget": "底部栏 Cart 按钮（含 badge）" },
+        { "line": 3093, "widget": "底部栏 Add to Cart 按钮" },
+        { "line": 3175, "widget": "底部栏 Buy Now 按钮" },
+        { "line": 3306, "widget": "_StorePickerSheet 门店选择行" }
+      ]
+    },
+    {
+      "file": "deal_joy/lib/features/cart/presentation/screens/cart_screen.dart",
+      "changes": [
+        { "line": 391, "widget": "_QtyBtn 数量 +/- 按钮" },
+        { "line": 511, "widget": "底部结算栏 Checkout 按钮" }
+      ]
+    },
+    {
+      "file": "deal_joy/lib/features/checkout/presentation/screens/checkout_screen.dart",
+      "changes": [
+        { "line": 468, "widget": "AppBar 返回按钮（购物车结账页）" },
+        { "line": 536, "widget": "Payment Method 卡片（购物车结账页）" },
+        { "line": 697, "widget": "AppBar 返回按钮（单 deal 结账页）" },
+        { "line": 911, "widget": "移除优惠码 close 按钮" },
+        { "line": 980, "widget": "Payment Method 卡片（单 deal 结账页）" },
+        { "line": 1404, "widget": "_QtyButton 数量 +/- 按钮" }
+      ]
+    }
+  ],
+  "skipped": [
+    {
+      "file": "deal_joy/lib/features/orders/presentation/screens/orders_screen.dart",
+      "reason": "_DealRow 使用 InkWell，无 GestureDetector，无需修改"
+    },
+    {
+      "file": "deal_joy/lib/features/orders/presentation/screens/coupons_screen.dart",
+      "reason": "_CouponRow 使用 InkWell，无 GestureDetector，无需修改"
+    }
+  ],
+  "issues": [
+    {
+      "severity": "P0",
+      "count": 0
+    },
+    {
+      "severity": "P1",
+      "count": 0
+    },
+    {
+      "severity": "P2",
+      "description": "deal_detail_screen.dart 第2702行存在 TODO 注释（View More Reviews 跳转未实现），与本次任务无关，保持原样"
+    }
+  ]
+}

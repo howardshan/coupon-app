@@ -25,6 +25,9 @@ class OrderModel {
   /// Stripe charge ID（退款时需要）
   final String? stripeChargeId;
 
+  /// 本单使用的 Store Credit 金额
+  final double storeCreditUsed;
+
   final DateTime? paidAt;
   final DateTime createdAt;
 
@@ -78,6 +81,7 @@ class OrderModel {
     required this.totalAmount,
     required this.paymentIntentId,
     this.stripeChargeId,
+    this.storeCreditUsed = 0.0,
     this.paidAt,
     required this.createdAt,
     this.items = const [],
@@ -133,6 +137,7 @@ class OrderModel {
       paymentIntentId:
           json['payment_intent_id'] as String? ?? '',
       stripeChargeId: json['stripe_charge_id'] as String?,
+      storeCreditUsed: (json['store_credit_used'] as num?)?.toDouble() ?? 0.0,
       paidAt: json['paid_at'] != null
           ? DateTime.tryParse(json['paid_at'] as String)
           : null,

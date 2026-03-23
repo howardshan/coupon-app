@@ -122,6 +122,9 @@ class OrderDetailModel {
   final String? paymentStatus;
   final double? refundAmount;
 
+  /// 本单使用的 Store Credit 金额（用于退款时判断混合支付）
+  final double storeCreditUsed;
+
   final String? refundReason;
 
   final String? couponId;
@@ -157,6 +160,7 @@ class OrderDetailModel {
     this.paymentIntentIdMasked,
     this.paymentStatus,
     this.refundAmount,
+    this.storeCreditUsed = 0.0,
     this.refundReason,
     this.couponId,
     this.couponCode,
@@ -207,6 +211,7 @@ class OrderDetailModel {
       paymentIntentIdMasked: pick<String>('payment_intent_id_masked', 'paymentIntentIdMasked'),
       paymentStatus: pick<String>('payment_status', 'paymentStatus'),
       refundAmount: (pick<num>('refund_amount', 'refundAmount'))?.toDouble(),
+      storeCreditUsed: (pick<num>('store_credit_used', 'storeCreditUsed'))?.toDouble() ?? 0.0,
       refundReason: pick<String>('refund_reason', 'refundReason'),
       couponId: pick<String>('coupon_id', 'couponId'),
       couponCode: pick<String>('coupon_code', 'couponCode'),

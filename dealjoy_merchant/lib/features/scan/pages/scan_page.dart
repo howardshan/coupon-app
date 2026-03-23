@@ -297,18 +297,18 @@ class _ScanPageState extends ConsumerState<ScanPage>
               TextFormField(
                 key: const ValueKey('scan_code_field'),
                 controller: _codeController,
-                keyboardType: TextInputType.number,
-                textCapitalization: TextCapitalization.none,
+                keyboardType: TextInputType.text,
+                textCapitalization: TextCapitalization.characters,
                 autocorrect: false,
-                maxLength: 19, // 16 digits + 3 dashes
-                inputFormatters: const [_QrCodeDashInputFormatter()],
+                maxLength: 19, // 16 字符 + 3 个横杠
+                inputFormatters: const [_CouponCodeDashInputFormatter()],
                 style: const TextStyle(
                   fontFamily: 'monospace',
                   fontSize: 15,
                   letterSpacing: 1,
                 ),
                 decoration: InputDecoration(
-                  hintText: 'e.g. 1234-5678-9012-3456',
+                  hintText: 'e.g. AB12-CD34-EF56-GH78',
                   hintStyle: TextStyle(
                     color: Colors.grey.shade400,
                     fontFamily: 'monospace',
@@ -344,8 +344,9 @@ class _ScanPageState extends ConsumerState<ScanPage>
                     return 'Please enter a voucher code.';
                   }
                   final normalized = value.replaceAll('-', '').trim();
-                  if (!RegExp(r'^\d{16}$').hasMatch(normalized)) {
-                    return 'Please enter a valid 16-digit voucher code.';
+                  // 支持 16 位数字（旧码）或 16 位字母数字混合（新码）
+                  if (!RegExp(r'^[A-Za-z0-9]{16}$').hasMatch(normalized)) {
+                    return 'Please enter a valid 16-character voucher code.';
                   }
                   return null;
                 },
@@ -397,18 +398,21 @@ class _ScanPageState extends ConsumerState<ScanPage>
 }
 
 // =============================================================
-// 手动输入：将 16 位数字格式化为 dddd-dddd-dddd-dddd
+// 手动输入：将 16 位字母数字格式化为 XXXX-XXXX-XXXX-XXXX
 // =============================================================
-class _QrCodeDashInputFormatter extends TextInputFormatter {
-  const _QrCodeDashInputFormatter();
+class _CouponCodeDashInputFormatter extends TextInputFormatter {
+  const _CouponCodeDashInputFormatter();
 
   @override
   TextEditingValue formatEditUpdate(
     TextEditingValue oldValue,
     TextEditingValue newValue,
   ) {
-    final digitsOnly = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
-    final limited = digitsOnly.length > 16 ? digitsOnly.substring(0, 16) : digitsOnly;
+    // 只保留字母和数字，统一转大写
+    final chars = newValue.text
+        .replaceAll(RegExp(r'[^A-Za-z0-9]'), '')
+        .toUpperCase();
+    final limited = chars.length > 16 ? chars.substring(0, 16) : chars;
 
     final buffer = StringBuffer();
     for (var i = 0; i < limited.length; i++) {

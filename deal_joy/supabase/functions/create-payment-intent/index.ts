@@ -116,8 +116,10 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { items, userId, paymentMethod } = body;
-    // paymentMethod: 'card' | 'google' | 'apple'（用于决定 PaymentIntent 的支付方式类型）
+    const { items, userId, paymentMethod, storeCreditUsed } = body;
+    // paymentMethod: 'card' | 'google' | 'apple'
+    // storeCreditUsed: Store Credit 抵扣金额（可选，默认 0）
+    const creditUsed = Number(storeCreditUsed ?? 0);
 
     // ---------- 基础参数校验 ----------
     if (!userId) {
@@ -180,7 +182,7 @@ Deno.serve(async (req) => {
 
     const { data: deals, error: dealsError } = await supabase
       .from('deals')
-      .select('id, discount_price, is_active, expires_at, max_per_account')
+      .select('id, discount_price, is_active, expires_at, max_per_account, merchant_id')
       .in('id', dealIds);
 
     if (dealsError) {
@@ -188,8 +190,8 @@ Deno.serve(async (req) => {
       return errorResponse('Failed to validate deals', 500);
     }
 
-    // 构建 dealId → deal 映射（含 max_per_account 字段）
-    const dealMap = new Map<string, { discount_price: number; is_active: boolean; expires_at: string; max_per_account: number | null }>();
+    // 构建 dealId → deal 映射（含 max_per_account、merchant_id 字段）
+    const dealMap = new Map<string, { discount_price: number; is_active: boolean; expires_at: string; max_per_account: number | null; merchant_id: string }>();
     for (const deal of (deals ?? [])) {
       dealMap.set(deal.id, deal);
     }
@@ -309,9 +311,72 @@ Deno.serve(async (req) => {
 
     totalDiscount = Math.round(totalDiscount * 100) / 100;
 
+    // ---------- 查询税率（基于 merchant 的 metro_area）----------
+    // 收集所有涉及的 merchant_id（去重）
+    const merchantIds = [...new Set(items.map((it: { dealId: string }) => {
+      const d = dealMap.get(it.dealId);
+      return d?.merchant_id;
+    }).filter(Boolean))] as string[];
+
+    // 查询 merchants 的 metro_area
+    const { data: merchantsData } = await supabase
+      .from('merchants')
+      .select('id, metro_area')
+      .in('id', merchantIds);
+
+    // 构建 merchantId → metro_area 映射
+    const merchantMetroMap = new Map<string, string>();
+    for (const m of (merchantsData ?? [])) {
+      if (m.metro_area) merchantMetroMap.set(m.id, m.metro_area);
+    }
+
+    // 查询 metro_tax_rates 获取税率
+    const metroAreas = [...new Set(Array.from(merchantMetroMap.values()))];
+    const taxRateMap = new Map<string, number>();
+    if (metroAreas.length > 0) {
+      const { data: taxRates } = await supabase
+        .from('metro_tax_rates')
+        .select('metro_area, tax_rate')
+        .in('metro_area', metroAreas)
+        .eq('is_active', true);
+      for (const tr of (taxRates ?? [])) {
+        taxRateMap.set(tr.metro_area, Number(tr.tax_rate));
+      }
+    }
+
+    // 计算每个 item 的税额，汇总 totalTax
+    let totalTax = 0;
+    for (const item of items) {
+      const deal = dealMap.get(item.dealId);
+      const merchantId = deal?.merchant_id;
+      const metro = merchantId ? merchantMetroMap.get(merchantId) : null;
+      const rate = metro ? (taxRateMap.get(metro) ?? 0) : 0;
+      const itemTax = Math.round(item.unitPrice * rate * 100) / 100;
+      totalTax += itemTax;
+    }
+    totalTax = Math.round(totalTax * 100) / 100;
+
     // ---------- 计算最终收款金额 ----------
-    let totalAmount = subtotal + serviceFee - totalDiscount;
+    let totalAmount = subtotal + serviceFee + totalTax - totalDiscount - creditUsed;
     totalAmount = Math.round(totalAmount * 100) / 100;
+
+    // Store Credit 全额覆盖：不需要 Stripe 支付
+    if (totalAmount <= 0) {
+      return new Response(
+        JSON.stringify({
+          fullyCoveredByCredit: true,
+          subtotal,
+          serviceFee,
+          totalDiscount,
+          totalTax,
+          storeCreditUsed: creditUsed,
+          totalAmount: 0,
+          items: resultItems,
+          customerId: stripeCustomerId,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
 
     // 防止金额异常（最低 $0.50，Stripe 限制）
     if (totalAmount < 0.5) {
@@ -336,6 +401,7 @@ Deno.serve(async (req) => {
         subtotal: subtotal.toFixed(2),
         service_fee: serviceFee.toFixed(2),
         total_discount: totalDiscount.toFixed(2),
+        tax_total: totalTax.toFixed(2),
         total_amount: totalAmount.toFixed(2),
       },
     };
@@ -387,6 +453,8 @@ Deno.serve(async (req) => {
         subtotal,
         serviceFee,
         totalDiscount,
+        totalTax,
+        storeCreditUsed: creditUsed,
         totalAmount,
         items: resultItems,
       }),

@@ -217,28 +217,34 @@ class _OrderCard extends StatelessWidget {
       child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── 订单号 ──────────────────────────────────────────
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
-              child: Row(
-                children: [
-                  const Icon(Icons.receipt_outlined, size: 16, color: AppColors.textHint),
-                  const SizedBox(width: 6),
-                  Text(
-                    '#${(order.orderNumber ?? order.id.substring(0, 8)).toUpperCase()}',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontFamily: 'monospace',
-                      color: AppColors.textSecondary,
-                      fontWeight: FontWeight.w500,
+            // ── 订单号（点击跳转订单详情）──────────────────────
+            InkWell(
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
+              onTap: () => context.push('/order/${order.id}'),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 14, 14, 8),
+                child: Row(
+                  children: [
+                    const Icon(Icons.receipt_outlined, size: 16, color: AppColors.textHint),
+                    const SizedBox(width: 6),
+                    Text(
+                      '#${(order.orderNumber ?? order.id.substring(0, 8)).toUpperCase()}',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontFamily: 'monospace',
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                  ),
-                  const Spacer(),
-                  Text(
-                    'Ordered ${dateFmt.format(order.createdAt.toLocal())}',
-                    style: const TextStyle(fontSize: 10, color: AppColors.textHint),
-                  ),
-                ],
+                    const Spacer(),
+                    Text(
+                      'Order Detail',
+                      style: TextStyle(fontSize: 11, color: AppColors.textHint),
+                    ),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.chevron_right, size: 16, color: AppColors.textHint),
+                  ],
+                ),
               ),
             ),
             const Divider(height: 16, indent: 14, endIndent: 14),

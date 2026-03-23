@@ -1,3 +1,4 @@
+import 'dart:math' show min;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
@@ -12,6 +13,8 @@ import '../../../cart/domain/providers/cart_provider.dart';
 import '../../../deals/domain/providers/deals_provider.dart';
 import '../../data/repositories/checkout_repository.dart';
 import '../../domain/providers/checkout_provider.dart';
+import '../../../profile/domain/providers/store_credit_provider.dart';
+import '../../domain/providers/tax_rate_provider.dart';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // CheckoutScreen
@@ -71,6 +74,14 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   PromoCodeResult? _promoResult;
   String? _couponError;
 
+  // Store Credit 余额与使用开关
+  double _storeCreditBalance = 0.0;
+  bool _useStoreCredit = false;
+
+  // 当前渲染的 items（Buy Now 模式下由 deal 转换生成）
+  List<CartItemModel>? _currentItems;
+  bool _storeCreditLoaded = false;
+
   // 支付处理中
   bool _isProcessing = false;
 
@@ -95,6 +106,21 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   }
 
   // ── 账单地址加载 ─────────────────────────────────────────────────
+
+  /// 从 store_credits 表加载当前用户余额（只执行一次）
+  Future<void> _loadStoreCredit() async {
+    final user = await ref.read(currentUserProvider.future);
+    if (user == null) return;
+    final res = await Supabase.instance.client
+        .from('store_credits')
+        .select('amount')
+        .eq('user_id', user.id)
+        .maybeSingle();
+    final balance = (res?['amount'] as num?)?.toDouble() ?? 0.0;
+    if (mounted) {
+      setState(() => _storeCreditBalance = balance);
+    }
+  }
 
   /// 从 DB 加载已保存的 billing address（只执行一次）
   Future<void> _loadSavedAddress() async {
@@ -190,8 +216,14 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     setState(() => _isProcessing = true);
     try {
       final repo = ref.read(checkoutRepositoryProvider);
-      final items = widget.cartItems!;
+      final items = _currentItems ?? widget.cartItems!;
       final cartItemIds = items.map((e) => e.id).where((id) => id.isNotEmpty).toList();
+
+      // 计算 Store Credit 实际抵扣金额
+      final serviceFee = items.length * 0.99;
+      final subtotal = items.fold<double>(0, (sum, e) => sum + e.unitPrice);
+      final totalAmount = subtotal + serviceFee;
+      final creditUsed = _useStoreCredit ? min(_storeCreditBalance, totalAmount) : 0.0;
 
       // 构建 billing details（信用卡支付时携带账单地址）
       BillingDetails? billingDetails;
@@ -214,6 +246,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         cartItemIds: cartItemIds,
         paymentMethod: _selectedPayment,
         billingDetails: billingDetails,
+        storeCreditUsed: creditUsed,
       );
 
       // 支付成功后异步保存 billing address（fire-and-forget）
@@ -231,8 +264,10 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       }
 
       if (mounted) {
-        // 清空内存购物车
+        // 清空购物车 + 刷新 Store Credit 余额
         ref.read(cartProvider.notifier).clear();
+        ref.invalidate(storeCreditBalanceProvider);
+        ref.invalidate(storeCreditTransactionsProvider);
         context.go('/order-success/${result.orderId}');
       }
     } on StripeException catch (e) {
@@ -241,7 +276,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     } on AppException catch (e) {
       if (mounted) _showPaymentFailedDialog(e.message);
     } catch (e) {
-      if (mounted) _showPaymentFailedDialog('An unexpected error occurred. Please try again.');
+      if (mounted) _showPaymentFailedDialog('Error: $e');
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -334,7 +369,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     } on AppException catch (e) {
       if (mounted) _showPaymentFailedDialog(e.message);
     } catch (e) {
-      if (mounted) _showPaymentFailedDialog('An unexpected error occurred. Please try again.');
+      if (mounted) _showPaymentFailedDialog('Error: $e');
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -370,23 +405,67 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       _addressLoaded = true;
       _loadSavedAddress();
     }
-    return widget.isCartMode ? _buildCartCheckout() : _buildSingleDealCheckout();
+    // 首次渲染时加载 Store Credit 余额
+    if (!_storeCreditLoaded) {
+      _storeCreditLoaded = true;
+      _loadStoreCredit();
+    }
+    // 统一入口：Buy Now 也走 cart checkout（把单 deal 转成 cart items）
+    if (widget.isCartMode) {
+      return _buildCartCheckout();
+    }
+    // Buy Now 模式：用 dealDetailProvider 加载后转为 cart items
+    final dealAsync = ref.watch(dealDetailProvider(widget.dealId!));
+    return dealAsync.when(
+      data: (deal) {
+        // 将 deal 转为 cart item 格式
+        final cartItems = List.generate(_quantity, (_) => CartItemModel(
+          id: '',
+          userId: '',
+          dealId: deal.id,
+          unitPrice: deal.discountPrice,
+          purchasedMerchantId: widget.purchasedMerchantId,
+          dealTitle: deal.title,
+          dealImageUrl: deal.imageUrls.isNotEmpty ? deal.imageUrls.first : '',
+          originalPrice: deal.originalPrice,
+          merchantName: deal.merchant?.name ?? '',
+          merchantId: deal.merchant?.id,
+          maxPerAccount: deal.maxPerAccount,
+          createdAt: DateTime.now(),
+        ));
+        return _buildCartCheckout(overrideItems: cartItems);
+      },
+      loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
+      error: (e, _) => Scaffold(
+        appBar: AppBar(title: const Text('Checkout')),
+        body: Center(child: Text('Failed to load deal: $e')),
+      ),
+    );
   }
 
   // ── 购物车多 deal 结账 UI ─────────────────────────────────────────
 
-  Widget _buildCartCheckout() {
-    final items = widget.cartItems!;
+  Widget _buildCartCheckout({List<CartItemModel>? overrideItems}) {
+    final items = overrideItems ?? widget.cartItems!;
+    // 保存当前 items 供 _payCart 使用（Buy Now 模式下 widget.cartItems 为 null）
+    _currentItems = items;
+
+    // 动态查询购物车第一个 item 对应 merchant 的税率
+    final cartMerchantId = items.first.purchasedMerchantId ?? items.first.merchantId ?? '';
+    final cartTaxRateAsync = ref.watch(taxRateByMerchantProvider(cartMerchantId));
+    final cartTaxRate = cartTaxRateAsync.valueOrNull ?? 0.0;
 
     // 每张券收 $0.99 service fee
     final serviceFee = items.length * 0.99;
     final subtotal = items.fold<double>(0, (sum, e) => sum + e.unitPrice);
-    final totalAmount = subtotal + serviceFee;
+    final cartTax = (subtotal * cartTaxRate * 100).roundToDouble() / 100;
+    final totalAmount = subtotal + serviceFee + cartTax;
 
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
         leading: GestureDetector(
+          behavior: HitTestBehavior.opaque,
           onTap: () => context.pop(),
           child: Container(
             margin: const EdgeInsets.all(8),
@@ -454,6 +533,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
             ...(_paymentMethods.map((method) {
               final isSelected = _selectedPayment == method['id'];
               return GestureDetector(
+                behavior: HitTestBehavior.opaque,
                 onTap: () => setState(
                     () => _selectedPayment = method['id'] as String),
                 child: _PaymentMethodCard(
@@ -511,6 +591,13 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                     'Service Fee (\$0.99 × ${items.length} voucher${items.length > 1 ? 's' : ''})',
                     '\$${serviceFee.toStringAsFixed(2)}',
                   ),
+                  if (cartTax > 0) ...[
+                    const SizedBox(height: 8),
+                    _PriceRow(
+                      'Tax (${(cartTaxRate * 100).toStringAsFixed(2)}%)',
+                      '\$${cartTax.toStringAsFixed(2)}',
+                    ),
+                  ],
                   const Divider(height: 20),
                   _PriceRow(
                     'Total',
@@ -521,6 +608,11 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                 ],
               ),
             ),
+            // ── Store Credit 抵扣 ──────────────────────────────────
+            if (_storeCreditBalance >= 0) ...[
+              const SizedBox(height: 12),
+              _buildStoreCreditRow(totalAmount),
+            ],
             const SizedBox(height: 12),
 
             // ── 服务费退款政策提示 ────────────────────────────────
@@ -576,6 +668,12 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   Widget _buildSingleDealCheckout() {
     final dealAsync = ref.watch(dealDetailProvider(widget.dealId!));
 
+    // 动态查询 merchant 所在 metro 的税率
+    final taxRateAsync = ref.watch(taxRateByMerchantProvider(
+      widget.purchasedMerchantId ?? dealAsync.valueOrNull?.merchantId ?? '',
+    ));
+    final taxRate = taxRateAsync.valueOrNull ?? 0.0;
+
     return dealAsync.when(
       data: (deal) {
         // 综合 stock_limit 和 max_per_account 取更严格的上限
@@ -586,8 +684,8 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         final subtotal = deal.discountPrice * _quantity;
         final discount = _promoResult?.calculatedDiscount ?? 0;
         final taxableAmount = subtotal - discount;
-        // Texas 8.25% 销售税
-        final tax = taxableAmount * 0.0825;
+        // 从数据库动态读取税率（metro_tax_rates 表）
+        final tax = (taxableAmount * taxRate * 100).roundToDouble() / 100;
         // 每张券收取 $0.99 服务费
         final serviceFee = 0.99 * _quantity;
         final total = taxableAmount + tax + serviceFee;
@@ -596,6 +694,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
           backgroundColor: AppColors.background,
           appBar: AppBar(
             leading: GestureDetector(
+              behavior: HitTestBehavior.opaque,
               onTap: () => context.pop(),
               child: Container(
                 margin: const EdgeInsets.all(8),
@@ -809,6 +908,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                           ),
                         ),
                         GestureDetector(
+                          behavior: HitTestBehavior.opaque,
                           onTap: _removeCoupon,
                           child: const Icon(Icons.close,
                               color: AppColors.textSecondary, size: 20),
@@ -837,8 +937,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                       ),
                       const SizedBox(width: 10),
                       SizedBox(
-                        height: 52,
-                        width: 80,
+                        height: 48,
                         child: ElevatedButton(
                           key: const ValueKey('checkout_apply_coupon_btn'),
                           onPressed: _isValidatingCoupon
@@ -849,6 +948,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                                 AppColors.primary.withValues(alpha: 0.1),
                             foregroundColor: AppColors.primary,
                             elevation: 0,
+                            padding: const EdgeInsets.symmetric(horizontal: 20),
                             shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12)),
                           ),
@@ -859,7 +959,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                                   child: CircularProgressIndicator(strokeWidth: 2),
                                 )
                               : const Text('Apply',
-                                  style: TextStyle(fontWeight: FontWeight.bold)),
+                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                         ),
                       ),
                     ],
@@ -877,6 +977,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                 ...(_paymentMethods.map((method) {
                   final isSelected = _selectedPayment == method['id'];
                   return GestureDetector(
+                    behavior: HitTestBehavior.opaque,
                     onTap: () => setState(
                         () => _selectedPayment = method['id'] as String),
                     child: _PaymentMethodCard(
@@ -936,7 +1037,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                         ),
                       ],
                       const SizedBox(height: 8),
-                      _PriceRow('Tax (8.25%)', '\$${tax.toStringAsFixed(2)}'),
+                      _PriceRow('Tax (${(taxRate * 100).toStringAsFixed(2)}%)', '\$${tax.toStringAsFixed(2)}'),
                       const SizedBox(height: 8),
                       _PriceRow('Service Fee', '\$0.99'),
                       const Divider(height: 20),
@@ -949,6 +1050,11 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                     ],
                   ),
                 ),
+                // ── Store Credit 抵扣 ──────────────────────────
+                if (_storeCreditBalance >= 0) ...[
+                  const SizedBox(height: 12),
+                  _buildStoreCreditRow(total),
+                ],
                 const SizedBox(height: 12),
 
                 // ── 服务费退款政策提示 ────────────────────────────
@@ -1016,6 +1122,80 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  // ── Store Credit 抵扣行 ──────────────────────────────────────────
+
+  Widget _buildStoreCreditRow(double totalAmount) {
+    final creditUsed = _useStoreCredit
+        ? (_storeCreditBalance > totalAmount ? totalAmount : _storeCreditBalance)
+        : 0.0;
+    final amountToPay = totalAmount - creditUsed;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: _useStoreCredit
+              ? AppColors.success.withValues(alpha: 0.4)
+              : AppColors.surfaceVariant,
+        ),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.account_balance_wallet,
+                size: 20,
+                color: _useStoreCredit ? AppColors.success : AppColors.textSecondary,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Store Credit',
+                        style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                    Text(
+                      'Balance: \$${_storeCreditBalance.toStringAsFixed(2)}',
+                      style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                    ),
+                  ],
+                ),
+              ),
+              Switch(
+                value: _useStoreCredit,
+                activeColor: AppColors.success,
+                onChanged: (v) => setState(() => _useStoreCredit = v),
+              ),
+            ],
+          ),
+          if (_useStoreCredit) ...[
+            const Divider(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Credit Applied', style: TextStyle(fontSize: 13, color: AppColors.success)),
+                Text('-\$${creditUsed.toStringAsFixed(2)}',
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.success)),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Amount to Pay', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                Text('\$${amountToPay.toStringAsFixed(2)}',
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.primary)),
+              ],
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -1221,6 +1401,7 @@ class _QtyButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Container(
         width: 32,

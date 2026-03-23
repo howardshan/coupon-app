@@ -73,8 +73,12 @@ Deno.serve(async (req) => {
       subtotal,
       totalDiscount,
       totalAmount,
+      totalTax,        // 新增：整单税费合计
       cartItemIds,
+      storeCreditUsed,
+      skipStripeVerification,
     } = body;
+    const creditUsed = Number(storeCreditUsed ?? 0);
 
     if (!paymentIntentId) {
       return jsonResponse({ error: 'paymentIntentId is required' }, 400);
@@ -85,8 +89,9 @@ Deno.serve(async (req) => {
     if (!Array.isArray(items) || items.length === 0) {
       return jsonResponse({ error: 'items must be a non-empty array' }, 400);
     }
-    if (typeof totalAmount !== 'number' || totalAmount <= 0) {
-      return jsonResponse({ error: 'totalAmount must be a positive number' }, 400);
+    // Store Credit 全额覆盖时 totalAmount 可以为 0
+    if (typeof totalAmount !== 'number' || totalAmount < 0) {
+      return jsonResponse({ error: 'totalAmount must not be negative' }, 400);
     }
 
     // 防止越权：JWT 用户必须与传入 userId 一致
@@ -95,26 +100,32 @@ Deno.serve(async (req) => {
     }
 
     // ----------------------------------------------------------------
-    // 3. 验证 PaymentIntent 状态（通过 Stripe API 查询）
+    // 3. 验证 PaymentIntent 状态（Store Credit 全额覆盖时跳过）
     // ----------------------------------------------------------------
     let paymentIntent;
-    try {
-      paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
-    } catch (stripeErr) {
-      console.error('Stripe retrieve error:', stripeErr);
-      return jsonResponse({ error: 'Failed to retrieve PaymentIntent from Stripe' }, 502);
+    if (skipStripeVerification) {
+      // Store Credit 全额覆盖，无 Stripe 支付
+      console.log(`[create-order-v3] Store Credit 全额覆盖, creditUsed=${creditUsed}, 跳过 Stripe 验证`);
+      paymentIntent = { amount: 0, status: 'store_credit' };
+    } else {
+      try {
+        paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+      } catch (stripeErr) {
+        console.error('Stripe retrieve error:', stripeErr);
+        return jsonResponse({ error: 'Failed to retrieve PaymentIntent from Stripe' }, 502);
+      }
+
+      if (!VALID_PI_STATUSES.has(paymentIntent.status)) {
+        return jsonResponse(
+          { error: `PaymentIntent status is "${paymentIntent.status}", expected succeeded or requires_capture` },
+          400,
+        );
+      }
     }
 
-    if (!VALID_PI_STATUSES.has(paymentIntent.status)) {
-      return jsonResponse(
-        { error: `PaymentIntent status is "${paymentIntent.status}", expected succeeded or requires_capture` },
-        400,
-      );
-    }
-
-    // 额外校验：PaymentIntent 金额需与请求体一致（单位：分）
+    // 额外校验：PaymentIntent 金额需与请求体一致（跳过 Store Credit 全额覆盖的情况）
     const expectedAmountCents = Math.round(totalAmount * 100);
-    if (paymentIntent.amount !== expectedAmountCents) {
+    if (!skipStripeVerification && paymentIntent.amount !== expectedAmountCents) {
       console.warn(
         `Amount mismatch: PI=${paymentIntent.amount} cents, request=${expectedAmountCents} cents`,
       );
@@ -163,7 +174,13 @@ Deno.serve(async (req) => {
         payment_intent_id: paymentIntentId,
         items_amount: subtotal ?? null,
         service_fee_total: serviceFeeTotal ?? 0,
-        total_amount: totalAmount,
+        // total_amount 存原始总金额（未扣 Store Credit），方便对账
+        total_amount: (subtotal ?? 0) + (serviceFeeTotal ?? 0) + (totalTax ?? 0) - (totalDiscount ?? 0),
+        tax_amount: totalTax ?? 0,     // 整单税费
+        // 全额 Store Credit 时：creditUsed 可能为 0（前端 bug），用 total_amount 补填
+        store_credit_used: creditUsed > 0
+          ? creditUsed
+          : (skipStripeVerification ? (subtotal ?? 0) + (serviceFeeTotal ?? 0) + (totalTax ?? 0) - (totalDiscount ?? 0) : 0),
         paid_at: new Date().toISOString(),
         // V3 orders 不再依赖旧字段，兼容性设置
         deal_id: items[0].dealId,      // 取第一个 deal 作为 legacy 兼容
@@ -198,12 +215,19 @@ Deno.serve(async (req) => {
       unitPrice: number;
       selectedOptions: unknown;
       purchasedMerchantId: string;
+      taxRate?: number;    // 新增：单项税率（可选，由前端从 create-payment-intent 返回值中传入）
+      taxAmount?: number;  // 新增：单项税额（可选，优先使用前端计算值）
     }) => {
+      // 优先使用前端传入的 taxRate/taxAmount，否则回退到 0
+      const itemTaxRate = item.taxRate ?? 0;
+      const itemTaxAmount = item.taxAmount ?? Math.round(item.unitPrice * itemTaxRate * 100) / 100;
       return {
         order_id: orderId,
         deal_id: item.dealId,
         unit_price: item.unitPrice,
         service_fee: SERVICE_FEE_PER_COUPON,
+        tax_amount: itemTaxAmount,   // 新增：单项税额
+        tax_rate: itemTaxRate,       // 新增：单项税率
         purchased_merchant_id: item.purchasedMerchantId ?? null,
         selected_options: item.selectedOptions ?? null,
         customer_status: 'unused',
@@ -238,115 +262,23 @@ Deno.serve(async (req) => {
     }
 
     // ----------------------------------------------------------------
-    // 8. 发送邮件（即发即忘，不阻断核心流程）
+    // 7.5. 扣减 Store Credit（如果使用了）
     // ----------------------------------------------------------------
-    try {
-      // 查询客户邮箱
-      const { data: userInfo } = await serviceClient
-        .from('users').select('email').eq('id', userId).single();
-
-      // 查询涉及的所有 deal 信息（title + merchant 的 user_id）
-      const uniqueDealIds = [...new Set(items.map((i: { dealId: string }) => i.dealId))];
-      const { data: dealRows } = await serviceClient
-        .from('deals')
-        .select('id, title, discount_price, merchant_id, merchants(id, name, user_id)')
-        .in('id', uniqueDealIds);
-
-      const dealMap: Record<string, { title: string; discountPrice: number; merchantId: string; merchantName: string; merchantUserId: string }> = {};
-      for (const d of (dealRows ?? [])) {
-        const m = (d as any).merchants;
-        dealMap[d.id] = {
-          title:          d.title,
-          discountPrice:  Number(d.discount_price ?? 0),
-          merchantId:     d.merchant_id,
-          merchantName:   m?.name ?? '',
-          merchantUserId: m?.user_id ?? '',
-        };
+    console.log(`[create-order-v3] creditUsed=${creditUsed}, storeCreditUsed=${storeCreditUsed}`);
+    if (creditUsed > 0) {
+      const { error: creditErr } = await serviceClient.rpc('add_store_credit', {
+        p_user_id: userId,
+        p_amount: -creditUsed,  // 负数 = 扣减
+        p_order_item_id: null,
+        p_description: `Purchase deduction for order ${orderNumber}`,
+      });
+      if (creditErr) {
+        console.error('扣减 Store Credit 失败（不阻断订单）:', creditErr.message);
       }
-
-      // C2：发给客户，汇总订单明细
-      if (userInfo?.email) {
-        // 按 dealId 合并数量
-        const itemSummaryMap: Record<string, { dealTitle: string; unitPrice: number; quantity: number }> = {};
-        for (const item of items) {
-          if (!itemSummaryMap[item.dealId]) {
-            itemSummaryMap[item.dealId] = {
-              dealTitle: dealMap[item.dealId]?.title ?? 'Unknown Deal',
-              unitPrice: Number(item.unitPrice),
-              quantity:  0,
-            };
-          }
-          itemSummaryMap[item.dealId].quantity += 1;
-        }
-
-        const { subject, html } = buildC2Email({
-          customerEmail: userInfo.email,
-          orderNumber,
-          items:         Object.values(itemSummaryMap),
-          subtotal:      Number(subtotal ?? 0),
-          serviceFee:    Number(serviceFeeTotal ?? 0),
-          totalAmount:   Number(totalAmount),
-        });
-        await sendEmail(serviceClient, {
-          to:            userInfo.email,
-          subject,
-          htmlBody:      html,
-          emailCode:     'C2',
-          referenceId:   orderId,
-          recipientType: 'customer',
-          userId,
-        });
-      }
-
-      // M5：按商家分组，每个商家发一封新订单通知
-      const merchantItemsMap: Record<string, { merchantUserId: string; merchantName: string; items: Array<{ dealTitle: string; quantity: number; unitPrice: number }> }> = {};
-      for (const item of items) {
-        const deal = dealMap[item.dealId];
-        if (!deal?.merchantUserId) continue;
-        if (!merchantItemsMap[deal.merchantId]) {
-          merchantItemsMap[deal.merchantId] = {
-            merchantUserId: deal.merchantUserId,
-            merchantName:   deal.merchantName,
-            items:          [],
-          };
-        }
-        const existing = merchantItemsMap[deal.merchantId].items.find(i => i.dealTitle === deal.title);
-        if (existing) {
-          existing.quantity += 1;
-        } else {
-          merchantItemsMap[deal.merchantId].items.push({ dealTitle: deal.title, quantity: 1, unitPrice: Number(item.unitPrice) });
-        }
-      }
-
-      for (const [merchantId, info] of Object.entries(merchantItemsMap)) {
-        const { data: merchantUser } = await serviceClient
-          .from('users').select('email').eq('id', info.merchantUserId).single();
-        if (!merchantUser?.email) continue;
-
-        const merchantTotal = info.items.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0);
-        const { subject, html } = buildM5Email({
-          merchantName:  info.merchantName,
-          orderNumber,
-          items:         info.items,
-          totalAmount:   merchantTotal,
-        });
-        await sendEmail(serviceClient, {
-          to:            merchantUser.email,
-          subject,
-          htmlBody:      html,
-          emailCode:     'M5',
-          referenceId:   orderId,
-          recipientType: 'merchant',
-          merchantId,
-        });
-      }
-    } catch (emailErr) {
-      // 邮件失败不阻断订单流程
-      console.error('create-order-v3: email sending error:', emailErr);
     }
 
     // ----------------------------------------------------------------
-    // 9. 返回结果
+    // 8. 返回结果
     // ----------------------------------------------------------------
     return jsonResponse({
       orderId,
