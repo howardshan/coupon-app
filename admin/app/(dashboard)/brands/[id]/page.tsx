@@ -223,7 +223,7 @@ export default async function BrandDetailPage({
                         {a.role}
                       </span>
                     </td>
-                    <td className="py-2 text-gray-500">{new Date(a.created_at).toLocaleDateString()}</td>
+                    <td className="py-2 text-gray-500">{new Date(a.created_at).toLocaleDateString('en-US')}</td>
                     <td className="py-2 text-right">
                       <RemoveBrandAdminButton brandAdminId={a.id} brandId={id} userName={a.users?.email || 'this admin'} />
                     </td>
@@ -265,7 +265,7 @@ export default async function BrandDetailPage({
                         {inv.status}
                       </span>
                     </td>
-                    <td className="py-2 text-gray-500">{new Date(inv.created_at).toLocaleDateString()}</td>
+                    <td className="py-2 text-gray-500">{new Date(inv.created_at).toLocaleDateString('en-US')}</td>
                   </tr>
                 ))}
               </tbody>
@@ -314,7 +314,7 @@ export default async function BrandDetailPage({
                           <span className="text-red-500 text-xs font-medium">Disabled</span>
                         )}
                       </td>
-                      <td className="py-2 text-gray-500 text-xs">{new Date(s.created_at).toLocaleDateString()}</td>
+                      <td className="py-2 text-gray-500 text-xs">{new Date(s.created_at).toLocaleDateString('en-US')}</td>
                     </tr>
                   )
                 })}

@@ -8,6 +8,10 @@ import {
   normalizeAttachmentKeys,
   recordAfterSalesEvent,
 } from "../_shared/after-sales.ts";
+import { sendEmail, getAdminRecipients } from "../_shared/email.ts";
+import { buildC9Email } from "../_shared/email-templates/customer/after-sales-submitted.ts";
+import { buildM9Email } from "../_shared/email-templates/merchant/after-sales-received.ts";
+import { buildA5Email } from "../_shared/email-templates/admin/after-sales-escalated.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -196,7 +200,7 @@ async function handleCreateRequest(
   let couponQuery = supabase
     .from("coupons")
     .select(
-      "id, order_id, user_id, status, used_at, merchant_id, redeemed_at_merchant_id, orders(id, total_amount, merchant_id)"
+      "id, order_id, user_id, status, used_at, merchant_id, redeemed_at_merchant_id, deal_id, deals(title), orders(id, total_amount, merchant_id)"
     )
     .eq("user_id", userId)
     .eq("status", "used")
@@ -291,6 +295,53 @@ async function handleCreateRequest(
     extra: { reason_code: reasonCode },
   });
   await notifyMerchantAfterSales(supabase, insertPayload.merchant_id, created.id, reasonCode);
+
+  // 发送邮件通知（fire-and-forget）
+  const requestIdShort = created.id.slice(0, 8).toUpperCase();
+  const dealTitle = (coupon as any).deals?.title as string | undefined;
+  (async () => {
+    try {
+      // C9：客户提交售后申请确认
+      const { data: userRow } = await supabase
+        .from("users").select("email").eq("id", userId).single();
+      if (userRow?.email) {
+        const { subject: c9Subject, html: c9Html } = buildC9Email({
+          requestId: requestIdShort,
+          reasonCode,
+          dealTitle,
+        });
+        await sendEmail(supabase, {
+          to: userRow.email, subject: c9Subject, htmlBody: c9Html,
+          emailCode: "C9", referenceId: created.id, recipientType: "customer", userId,
+        });
+      }
+
+      // M9：通知商家收到售后申请
+      const { data: merchantRow } = await supabase
+        .from("merchants").select("name, user_id").eq("id", insertPayload.merchant_id).single();
+      if (merchantRow) {
+        const { data: merchantUserRow } = await supabase
+          .from("users").select("email").eq("id", merchantRow.user_id).single();
+        if (merchantUserRow?.email) {
+          const { subject: m9Subject, html: m9Html } = buildM9Email({
+            merchantName: merchantRow.name,
+            requestId: requestIdShort,
+            reasonCode,
+            reasonDetail,
+            dealTitle,
+          });
+          await sendEmail(supabase, {
+            to: merchantUserRow.email, subject: m9Subject, htmlBody: m9Html,
+            emailCode: "M9", referenceId: created.id, recipientType: "merchant",
+            merchantId: insertPayload.merchant_id,
+          });
+        }
+      }
+    } catch (err) {
+      console.warn("[after-sales] email notification failed", err);
+    }
+  })();
+
   const decorated = await fetchUserRequest(supabase, userId, created.id);
   const hydrated = await decorateAfterSalesRequest(supabase, decorated);
   return jsonResponse({ request: hydrated });
@@ -396,6 +447,36 @@ async function handleEscalation(
     action: "user_escalated",
     note: "User requested platform review",
   });
+
+  // A5：通知管理员案件已升级（fire-and-forget）
+  (async () => {
+    try {
+      const adminEmails = await getAdminRecipients(supabase, "A5");
+      if (adminEmails.length > 0) {
+        // 查询案件详情（reason_code, reason_detail, merchant_feedback, deal title）
+        const { data: reqDetail } = await supabase
+          .from("after_sales_requests")
+          .select("reason_code, reason_detail, merchant_feedback, coupon_id, coupons(deal_id, deals(title))")
+          .eq("id", requestId)
+          .single();
+        const dealTitle = (reqDetail as any)?.coupons?.deals?.title as string | undefined;
+        const { subject: a5Subject, html: a5Html } = buildA5Email({
+          requestId: requestId.slice(0, 8).toUpperCase(),
+          reasonCode: reqDetail?.reason_code ?? "",
+          reasonDetail: reqDetail?.reason_detail ?? "",
+          merchantRejectionNote: reqDetail?.merchant_feedback ?? undefined,
+          dealTitle,
+        });
+        await sendEmail(supabase, {
+          to: adminEmails, subject: a5Subject, htmlBody: a5Html,
+          emailCode: "A5", referenceId: requestId, recipientType: "admin",
+        });
+      }
+    } catch (err) {
+      console.warn("[after-sales] A5 admin escalation email failed", err);
+    }
+  })();
+
   const decorated = await fetchUserRequest(supabase, userId, requestId);
   const hydrated = await decorateAfterSalesRequest(supabase, decorated);
   return jsonResponse({ request: hydrated });

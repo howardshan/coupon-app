@@ -1,5 +1,13 @@
 import Stripe from 'https://esm.sh/stripe@14?target=deno';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2?target=deno';
+import { sendEmail, getAdminRecipients } from '../_shared/email.ts';
+import { buildC7Email } from '../_shared/email-templates/customer/refund-requested.ts';
+import { buildC6Email } from '../_shared/email-templates/customer/store-credit-added.ts';
+import { buildM8Email } from '../_shared/email-templates/merchant/pre-redemption-refund.ts';
+import { buildA4Email } from '../_shared/email-templates/admin/large-refund-alert.ts';
+
+// 大额退款告警阈值（美元）
+const LARGE_REFUND_THRESHOLD = 200;
 
 const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {
   apiVersion: '2024-04-10',
@@ -79,6 +87,7 @@ Deno.serve(async (req) => {
       .from('order_items')
       .select(`
         id,
+        deal_id,
         unit_price,
         service_fee,
         tax_amount,
@@ -191,6 +200,70 @@ Deno.serve(async (req) => {
         .update({ status: 'refunded', updated_at: now })
         .eq('order_item_id', orderItemId);
 
+      // 发送邮件（即发即忘，不阻断核心流程）
+      try {
+        const { data: userInfo } = await supabaseAdmin
+          .from('users').select('email').eq('id', order.user_id).single();
+        const { data: dealInfo } = await supabaseAdmin
+          .from('deals').select('title, merchant_id, merchants(name, user_id)').eq('id', (item as any).deal_id).single();
+        const dealTitle = (dealInfo?.title as string | undefined);
+
+        if (userInfo?.email) {
+          // C6：Store credit 余额到账
+          const { subject: c6Subject, html: c6Html } = buildC6Email({ creditAmount: refundAmount, dealTitle });
+          await sendEmail(supabaseAdmin, {
+            to: userInfo.email, subject: c6Subject, htmlBody: c6Html,
+            emailCode: 'C6', referenceId: orderItemId, recipientType: 'customer', userId: order.user_id,
+          });
+
+          // C7：退款申请已受理
+          const { subject: c7Subject, html: c7Html } = buildC7Email({ refundAmount, refundMethod: 'store_credit', dealTitle });
+          await sendEmail(supabaseAdmin, {
+            to: userInfo.email, subject: c7Subject, htmlBody: c7Html,
+            emailCode: 'C7', referenceId: orderItemId, recipientType: 'customer', userId: order.user_id,
+          });
+        }
+
+        // M8：券未核销就退款时通知商家
+        if (customerStatus === 'unused') {
+          const merchantData = (dealInfo as any)?.merchants;
+          const merchantUserId = merchantData?.user_id as string | null;
+          const merchantName   = (merchantData?.name as string | undefined) ?? '';
+          if (merchantUserId) {
+            const { data: merchantUser } = await supabaseAdmin
+              .from('users').select('email').eq('id', merchantUserId).single();
+            const { data: merchantRow } = await supabaseAdmin
+              .from('merchants').select('id').eq('user_id', merchantUserId).single();
+            if (merchantUser?.email) {
+              const { subject: m8Subject, html: m8Html } = buildM8Email({ merchantName, dealTitle, refundAmount });
+              await sendEmail(supabaseAdmin, {
+                to: merchantUser.email, subject: m8Subject, htmlBody: m8Html,
+                emailCode: 'M8', referenceId: orderItemId, recipientType: 'merchant',
+                merchantId: (merchantRow as any)?.id,
+              });
+            }
+          }
+        }
+
+        // A4：大额退款告警
+        if (refundAmount >= LARGE_REFUND_THRESHOLD) {
+          const adminEmails = await getAdminRecipients(supabaseAdmin, 'A4');
+          if (adminEmails.length > 0) {
+            const { subject: a4Subject, html: a4Html } = buildA4Email({
+              orderId: (item as any).order_id ?? orderItemId,
+              refundAmount, refundMethod: 'store_credit',
+              dealTitle, threshold: LARGE_REFUND_THRESHOLD,
+            });
+            await sendEmail(supabaseAdmin, {
+              to: adminEmails, subject: a4Subject, htmlBody: a4Html,
+              emailCode: 'A4', referenceId: orderItemId, recipientType: 'admin',
+            });
+          }
+        }
+      } catch (emailErr) {
+        console.error('create-refund: email error (store_credit):', emailErr);
+      }
+
       return new Response(
         JSON.stringify({
           success: true,
@@ -286,6 +359,61 @@ Deno.serve(async (req) => {
         .from('coupons')
         .update({ status: 'refunded', updated_at: now })
         .eq('order_item_id', orderItemId);
+
+      // 发送邮件（即发即忘，不阻断核心流程）
+      try {
+        const { data: userInfo } = await supabaseAdmin
+          .from('users').select('email').eq('id', order.user_id).single();
+        const { data: dealInfo } = await supabaseAdmin
+          .from('deals').select('title, merchant_id, merchants(name, user_id)').eq('id', (item as any).deal_id).single();
+        const dealTitle = (dealInfo?.title as string | undefined);
+
+        if (userInfo?.email) {
+          // C7：退款申请已受理（原支付方式，3-5 个工作日）
+          const { subject: c7Subject, html: c7Html } = buildC7Email({ refundAmount, refundMethod: 'original_payment', dealTitle });
+          await sendEmail(supabaseAdmin, {
+            to: userInfo.email, subject: c7Subject, htmlBody: c7Html,
+            emailCode: 'C7', referenceId: orderItemId, recipientType: 'customer', userId: order.user_id,
+          });
+        }
+
+        // M8：券未核销就退款时通知商家（original_payment 路径只允许 unused 状态，无需额外判断）
+        const merchantData = (dealInfo as any)?.merchants;
+        const merchantUserId = merchantData?.user_id as string | null;
+        const merchantName   = (merchantData?.name as string | undefined) ?? '';
+        if (merchantUserId) {
+          const { data: merchantUser } = await supabaseAdmin
+            .from('users').select('email').eq('id', merchantUserId).single();
+          const { data: merchantRow } = await supabaseAdmin
+            .from('merchants').select('id').eq('user_id', merchantUserId).single();
+          if (merchantUser?.email) {
+            const { subject: m8Subject, html: m8Html } = buildM8Email({ merchantName, dealTitle, refundAmount });
+            await sendEmail(supabaseAdmin, {
+              to: merchantUser.email, subject: m8Subject, htmlBody: m8Html,
+              emailCode: 'M8', referenceId: orderItemId, recipientType: 'merchant',
+              merchantId: (merchantRow as any)?.id,
+            });
+          }
+        }
+
+        // A4：大额退款告警
+        if (refundAmount >= LARGE_REFUND_THRESHOLD) {
+          const adminEmails = await getAdminRecipients(supabaseAdmin, 'A4');
+          if (adminEmails.length > 0) {
+            const { subject: a4Subject, html: a4Html } = buildA4Email({
+              orderId: (item as any).order_id ?? orderItemId,
+              refundAmount, refundMethod: 'original_payment',
+              dealTitle, threshold: LARGE_REFUND_THRESHOLD,
+            });
+            await sendEmail(supabaseAdmin, {
+              to: adminEmails, subject: a4Subject, htmlBody: a4Html,
+              emailCode: 'A4', referenceId: orderItemId, recipientType: 'admin',
+            });
+          }
+        }
+      } catch (emailErr) {
+        console.error('create-refund: email error (original_payment):', emailErr);
+      }
 
       return new Response(
         JSON.stringify({

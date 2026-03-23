@@ -97,7 +97,7 @@ export default async function MerchantsPage({
                   />
                 </td>
                 <td className="px-4 py-3 text-gray-500">
-                  {new Date(m.created_at).toLocaleDateString()}
+                  {new Date(m.created_at).toLocaleDateString('en-US')}
                 </td>
                 <td className="px-4 py-3">
                   <Link

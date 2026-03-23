@@ -98,7 +98,7 @@ export default async function UserDetailPage({
             </span>
             {isBanned && (
               <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">
-                Banned until {new Date(bannedUntil).toLocaleDateString()}
+                Banned until {new Date(bannedUntil).toLocaleDateString('en-US')}
               </span>
             )}
           </div>
@@ -126,8 +126,8 @@ export default async function UserDetailPage({
 
         {/* 日期信息 */}
         <div className="flex gap-6 mt-4 pt-4 border-t border-gray-100 text-xs text-gray-400">
-          <span>Joined: {new Date(userInfo.created_at).toLocaleDateString()}</span>
-          {userInfo.updated_at && <span>Last updated: {new Date(userInfo.updated_at).toLocaleDateString()}</span>}
+          <span>Joined: {new Date(userInfo.created_at).toLocaleDateString('en-US')}</span>
+          {userInfo.updated_at && <span>Last updated: {new Date(userInfo.updated_at).toLocaleDateString('en-US')}</span>}
         </div>
       </div>
 
@@ -253,12 +253,12 @@ export default async function UserDetailPage({
                     <CouponStatusBadge status={c.status} />
                   </td>
                   <td className="px-4 py-2 text-gray-500">
-                    {c.used_at ? new Date(c.used_at).toLocaleDateString() : '—'}
+                    {c.used_at ? new Date(c.used_at).toLocaleDateString('en-US') : '—'}
                   </td>
                   <td className="px-4 py-2 text-gray-500">
-                    {c.expires_at ? new Date(c.expires_at).toLocaleDateString() : '—'}
+                    {c.expires_at ? new Date(c.expires_at).toLocaleDateString('en-US') : '—'}
                   </td>
-                  <td className="px-4 py-2 text-gray-500">{new Date(c.created_at).toLocaleDateString()}</td>
+                  <td className="px-4 py-2 text-gray-500">{new Date(c.created_at).toLocaleDateString('en-US')}</td>
                 </tr>
               ))}
             </tbody>

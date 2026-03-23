@@ -83,7 +83,7 @@ export default async function BrandsPage() {
                 </td>
                 <td className="px-4 py-3 text-gray-600">{storeCountMap[b.id] ?? 0}</td>
                 <td className="px-4 py-3 text-gray-600">{adminCountMap[b.id] ?? 0}</td>
-                <td className="px-4 py-3 text-gray-500">{new Date(b.created_at).toLocaleDateString()}</td>
+                <td className="px-4 py-3 text-gray-500">{new Date(b.created_at).toLocaleDateString('en-US')}</td>
                 <td className="px-4 py-3">
                   <Link
                     href={`/brands/${b.id}`}

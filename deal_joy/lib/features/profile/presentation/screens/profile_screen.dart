@@ -305,6 +305,40 @@ class _ProfileBody extends StatelessWidget {
             ),
           ),
 
+          const SizedBox(height: 12),
+
+          // ── Email Notifications 入口 ──────────────────────────
+          _SectionCard(
+            child: ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceVariant,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.mail_outline,
+                  color: AppColors.textSecondary,
+                  size: 20,
+                ),
+              ),
+              title: const Text(
+                'Email Notifications',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+              ),
+              subtitle: const Text(
+                'Manage email preferences',
+                style: TextStyle(fontSize: 12, color: AppColors.textHint),
+              ),
+              trailing: const Icon(
+                Icons.chevron_right,
+                color: AppColors.textHint,
+              ),
+              onTap: () => context.push('/profile/email-notifications'),
+            ),
+          ),
+
           if (showMerchantDashboard) ...[
             const SizedBox(height: 12),
             // ── Merchant dashboard link（仅 merchant 角色可见）──

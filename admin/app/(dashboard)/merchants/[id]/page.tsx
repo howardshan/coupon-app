@@ -191,7 +191,7 @@ export default async function MerchantReviewPage({
                         {s.is_active ? 'Active' : 'Disabled'}
                       </span>
                     </td>
-                    <td className="py-2 text-gray-500 text-xs">{new Date(s.created_at).toLocaleDateString()}</td>
+                    <td className="py-2 text-gray-500 text-xs">{new Date(s.created_at).toLocaleDateString('en-US')}</td>
                     <td className="py-2">
                       <StaffToggleButton staffId={s.id} isActive={s.is_active} />
                     </td>

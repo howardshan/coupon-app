@@ -5,6 +5,10 @@
 // ============================================================
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { sendEmail, getAdminRecipients } from "../_shared/email.ts";
+import { buildM1Email } from "../_shared/email-templates/merchant/welcome.ts";
+import { buildM2Email } from "../_shared/email-templates/merchant/verification-pending.ts";
+import { buildA2Email } from "../_shared/email-templates/admin/merchant-application.ts";
 
 // 请求体结构
 interface RegisterRequest {
@@ -264,6 +268,52 @@ Deno.serve(async (req: Request) => {
       .eq('id', merchantId)
       .single();
     brandId = merchantData?.brand_id ?? undefined;
+  }
+
+  // ----------------------------------------------------------------
+  // 发送邮件（即发即忘，不阻断注册流程）
+  // ----------------------------------------------------------------
+  try {
+    const merchantEmail = user.email ?? body.contact_email;
+    const merchantName  = body.company_name;
+    const isResubmission = !!existingMerchant;
+    const submittedAt = new Date().toISOString();
+
+    // M1：仅新商家首次注册时发送欢迎邮件
+    if (!isResubmission && merchantEmail) {
+      const { subject, html } = buildM1Email({ merchantName, applicationId: merchantId });
+      await sendEmail(adminSupabase, {
+        to: merchantEmail, subject, htmlBody: html,
+        emailCode: 'M1', referenceId: merchantId, recipientType: 'merchant', merchantId,
+      });
+    }
+
+    // M2：新注册和重新提交均发送受理通知
+    if (merchantEmail) {
+      const { subject, html } = buildM2Email({ merchantName, applicationId: merchantId, isResubmission });
+      await sendEmail(adminSupabase, {
+        to: merchantEmail, subject, htmlBody: html,
+        emailCode: 'M2', referenceId: merchantId, recipientType: 'merchant', merchantId,
+      });
+    }
+
+    // A2：通知管理员有新申请
+    const adminEmails = await getAdminRecipients(adminSupabase, 'A2');
+    if (adminEmails.length > 0) {
+      const { subject, html } = buildA2Email({
+        merchantName,
+        contactEmail: body.contact_email,
+        submittedAt,
+        merchantId,
+        isResubmission,
+      });
+      await sendEmail(adminSupabase, {
+        to: adminEmails, subject, htmlBody: html,
+        emailCode: 'A2', referenceId: merchantId, recipientType: 'admin',
+      });
+    }
+  } catch (emailErr) {
+    console.error('[merchant-register] email error:', emailErr);
   }
 
   // 成功返回

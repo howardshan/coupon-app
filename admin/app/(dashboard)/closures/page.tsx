@@ -114,7 +114,7 @@ export default async function ClosuresPage() {
                         {inv.status}
                       </span>
                     </td>
-                    <td className="py-2 text-gray-500 text-xs">{new Date(inv.created_at).toLocaleDateString()}</td>
+                    <td className="py-2 text-gray-500 text-xs">{new Date(inv.created_at).toLocaleDateString('en-US')}</td>
                   </tr>
                 ))}
               </tbody>

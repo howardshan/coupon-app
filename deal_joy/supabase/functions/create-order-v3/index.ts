@@ -1,5 +1,8 @@
 import Stripe from 'https://esm.sh/stripe@14?target=deno';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { sendEmail } from '../_shared/email.ts';
+import { buildC2Email } from '../_shared/email-templates/customer/order-confirmation.ts';
+import { buildM5Email } from '../_shared/email-templates/merchant/new-order.ts';
 
 // Stripe 客户端（验证 PaymentIntent 状态）
 const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {

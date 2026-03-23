@@ -12,6 +12,8 @@
 
 import Stripe from 'https://esm.sh/stripe@14?target=deno';
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { sendEmail } from '../_shared/email.ts';
+import { buildC5Email } from '../_shared/email-templates/customer/auto-refund.ts';
 
 const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {
   apiVersion: '2024-04-10',
