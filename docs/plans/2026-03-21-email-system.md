@@ -1,11 +1,11 @@
 # CrunchyPlum 邮件系统开发计划书
 
 > **创建日期：** 2026-03-21
-> **最后更新：** 2026-03-21（v3 — 品牌改名 DealJoy → CrunchyPlum）
+> **最后更新：** 2026-03-23（v4 — Phase 1–6 实现状态同步）
 > **发件域名：** crunchyplum.com
 > **邮件服务商：** SMTP2GO
 > **邮件内容语言：** 英文（面向北美 Dallas 市场）
-> **状态：** 开发中
+> **状态：** 34/37 已实现（3 种待处理，见 Phase 6）
 
 > ⚠️ **品牌变更说明（2026-03-21）：** 项目已因版权/法律原因从 **DealJoy** 正式更名为 **CrunchyPlum**。
 > 所有面向用户的邮件内容（subject、HTML body、FROM 名称、Logo 文字、页脚）均已更新为 CrunchyPlum。
@@ -768,79 +768,94 @@ deal_joy/lib/features/profile/
 
 ## 10. 分阶段开发计划
 
-### Phase 1 — 基础设施（优先完成）
+### Phase 1 — 基础设施 ✅ 已完成
 
 **目标：** 所有共享工具、数据库表、SMTP2GO 配置完成并可用。
 
-- [ ] SMTP2GO 账户注册及 crunchyplum.com 域名 DNS 验证
-- [ ] Migration `20260321000001_email_system.sql`（4 张新表）
-- [ ] `_shared/email.ts`（含双重权限检查的发送工具）
-- [ ] `_shared/email-templates/base-layout.ts`（公共模板布局）
-- [ ] `admin/lib/email.ts`（Next.js 发送工具）
-- [ ] Supabase Auth 自定义邮件模板（C1 欢迎邮件、C12 密码重置）
-- [ ] Admin `/settings/email-types` 页面（全局开关管理）
+- [x] SMTP2GO 账户注册及 crunchyplum.com 域名 DNS 验证
+- [x] Migration `20260321000001_email_system.sql`（4 张新表）
+- [x] `_shared/email.ts`（含双重权限检查的发送工具）
+- [x] `_shared/email-templates/base-layout.ts`（公共模板布局）
+- [x] `admin/lib/email.ts`（Next.js 发送工具）
+- [x] `send-auth-email` Edge Function + C1 欢迎邮件模板
+- [x] Admin `/settings/email-types` 页面（全局开关管理）
+- [x] C12 密码重置模板 — 已在 Supabase Dashboard → Auth → Email Templates 中配置完成
 
 **验收标准：** 发送测试邮件，确认 `email_logs` 中出现记录且 `html_body` 不为空；切换全局开关后验证发送被拦截。
 
 ---
 
-### Phase 2 — 客户端核心交易邮件
+### Phase 2 — 客户端核心交易邮件 ✅ 已完成
 
 **目标：** 覆盖购买与退款主流程。
 
-- [ ] C2 — 订单确认邮件（`create-order-v3`）
-- [ ] C3 — Coupon 核销成功通知（`merchant-scan`）
-- [ ] C7 — 退款申请受理确认（`create-refund`）
-- [ ] C8 — Stripe 退款到账通知（`stripe-webhook`）
-- [ ] C5 / C6 — 到期自动退款 + Store Credit 到账通知（`auto-refund-expired`）
+- [x] C2 — 订单确认邮件（`create-order-v3`）
+- [x] C3 — Coupon 核销成功通知（`merchant-scan`）
+- [x] C7 — 退款申请受理确认（`create-refund`）
+- [x] C8 — Stripe 退款到账通知（`stripe-webhook`）
+- [x] C5 / C6 — 到期自动退款 + Store Credit 到账通知（`auto-refund-expired`）
 
 ---
 
-### Phase 3 — 商家端核心邮件
+### Phase 3 — 商家端核心邮件 ✅ 已完成
 
 **目标：** 商家能收到所有关键业务事件通知。
 
-- [ ] M1 / M2 — 注册欢迎 + 认证申请受理（`merchant-register`）
-- [ ] M3 / M4 — 认证通过/拒绝（`admin/actions/admin.ts`）
-- [ ] M5 — 新订单通知（`create-order-v3`）
-- [ ] M7 — Coupon 核销成功通知（`merchant-scan`）
-- [ ] M8 — 核销前退款通知（`create-refund`）
-- [ ] M16 — Deal 被管理员驳回通知（`admin/actions/admin.ts`）
+- [x] M1 / M2 — 注册欢迎 + 认证申请受理（`merchant-register`）
+- [x] M3 / M4 — 认证通过/拒绝（`admin/actions/admin.ts`）
+- [x] M5 — 新订单通知（`create-order-v3`）
+- [x] M7 — Coupon 核销成功通知（`merchant-scan`）
+- [x] M8 — 核销前退款通知（`create-refund`）
+- [x] M16 — Deal 被管理员驳回通知（`admin/actions/admin.ts`）
+- [x] A2 — 新商户认证申请提醒（`merchant-register`）
 
 ---
 
-### Phase 4 — 售后邮件全流程
+### Phase 4 — 售后邮件全流程 ✅ 已完成
 
 **目标：** 售后申请全程三方均有邮件通知。
 
-- [ ] C9 + M9 + A5 — 售后申请提交（`after-sales-request`）
-- [ ] C13 + M10 / M11 — 商家处理结果（`merchant-after-sales`）
-- [ ] C10 / C11 + M12 + A6 — 平台最终裁决（`platform-after-sales`）
+- [x] C9 + M9 — 售后申请提交客户/商家通知（`after-sales-request`）
+- [x] A5 — 售后升级时管理员告警（`after-sales-request` handleEscalation）
+- [x] C13 + M10 / M11 — 商家处理结果（`merchant-after-sales`）
+- [x] C10 / C11 + M12 + A6 — 平台最终裁决（`platform-after-sales`）
 
 ---
 
-### Phase 5 — 定时提醒邮件（Cron Jobs）
+### Phase 5 — 定时提醒邮件（Cron Jobs）✅ 已完成
 
 **目标：** 主动提醒，降低 Coupon 过期流失率，保持商家活跃度。
 
-- [ ] C4 — Coupon 即将到期提醒（新建 `notify-expiring-coupons` Cron）
-- [ ] M6 — Deal 即将到期提醒（新建 `notify-expiring-deals` Cron）
-- [ ] A3 — 管理员每日汇总（新建 `admin-daily-digest` Cron）
-- [ ] M13 — 商家月度结算报告（新建 `monthly-settlement-report` Cron）
+- [x] C4 — Coupon 即将到期提醒（`notify-expiring-coupons` Cron，每日 UTC 14:00）
+- [x] M6 — Deal 即将到期提醒（`notify-expiring-deals` Cron，每日 UTC 14:00）
+- [x] A3 — 管理员每日汇总（`admin-daily-digest` Cron，每日 UTC 08:00）
+- [x] M13 — 商家月度结算报告（`monthly-settlement-report` Cron，每月 1 日 UTC 02:00）
+- [x] pg_cron 定时任务注册（Migration `20260322000001_phase5_cron_jobs.sql`，已通过 Dashboard SQL Editor 执行）
 
 ---
 
-### Phase 6 — 用户偏好设置 + 剩余功能
+### Phase 6 — 用户偏好设置 + 剩余功能（部分完成）
 
 **目标：** 完成用户/商家偏好设置 UI、Admin 邮件日志预览、剩余邮件类型。
 
-- [ ] 客户端邮件偏好设置 UI（C3、C4、C13）
-- [ ] 商家端邮件偏好设置 UI（M5、M6、M7、M13）
-- [ ] Admin `/settings/email-logs` 页面（含 HTML 内容预览弹窗）
-- [ ] A4 — 大额退款预警（`create-refund` 阈值检测 $500）
-- [ ] A7 + M14 — 提现申请通知（`merchant-withdrawal`）
-- [ ] M15 + 新建提现审批通过 Admin Action
-- [ ] A8 — 系统异常告警邮件（`_shared/error.ts` 统一错误处理器）
+- [ ] 客户端邮件偏好设置 UI（C3、C4、C13）— 未开始
+- [ ] 商家端邮件偏好设置 UI（M5、M6、M7、M13）— 未开始
+- [ ] Admin `/settings/email-logs` 页面（含 HTML 内容预览弹窗）— 未开始
+- [x] A4 — 大额退款预警（`create-refund`，阈值 $200，两条退款路径均已集成）
+- [x] A7 + M14 — 提现申请通知（`merchant-withdrawal`）
+- [x] M15 — 提现完成邮件模板已创建；集成点待「提现审批通过 Admin Action」实现
+- [ ] A1 — 管理员账户创建通知 — 超出当前范围，暂不实现
+- [ ] A8 — 系统异常告警邮件 — 超出当前范围，需全局错误捕获机制，暂不实现
+
+> ⚠️ **注意：** A4 告警阈值原计划为 $500，实际实现为 $200（`LARGE_REFUND_THRESHOLD = 200`）。
+
+#### 剩余 3 种未实现邮件类型汇总
+
+| 编号 | 名称 | 原因 | 建议处理方式 |
+|------|------|------|------------|
+| M15 | 提现完成通知 | 模板已创建，无触发点 | 实现「提现审批通过」Admin Action 时集成 |
+| A1 | 管理员账户创建通知 | 未在任何 Phase 中实现 | 有需要时在 Admin 创建管理员账户的 Server Action 中添加 |
+| A8 | 系统异常告警邮件 | 需全局错误捕获架构 | 视运维需求决定是否实现 |
 
 ---
 
@@ -862,42 +877,44 @@ deal_joy/lib/features/profile/
 
 ## 12. 邮件编号速查表
 
-| 编号 | 邮件名称 | 用户可关闭 | 开发阶段 |
-|------|---------|-----------|---------|
-| C1 | 客户注册欢迎邮件 | ✗ | Phase 1 |
-| C2 | 订单确认邮件 | ✗ | Phase 2 |
-| C3 | Coupon 核销成功（客户） | ✓ | Phase 2 |
-| C4 | Coupon 即将到期提醒 | ✓ | Phase 5 |
-| C5 | 到期自动退款通知 | ✗ | Phase 2 |
-| C6 | Store Credit 余额到账通知 | ✗ | Phase 2 |
-| C7 | 退款申请受理确认 | ✗ | Phase 2 |
-| C8 | Stripe 退款到账通知 | ✗ | Phase 2 |
-| C9 | 售后申请提交确认 | ✗ | Phase 4 |
-| C10 | 售后审核通过通知 | ✗ | Phase 4 |
-| C11 | 售后审核拒绝通知 | ✗ | Phase 4 |
-| C12 | 密码重置邮件 | ✗ | Phase 1 |
-| C13 | 商家已回复售后通知 | ✓ | Phase 4 |
-| M1 | 商家注册欢迎邮件 | ✗ | Phase 3 |
-| M2 | 认证申请受理通知 | ✗ | Phase 3 |
-| M3 | 商户认证通过通知 | ✗ | Phase 3 |
-| M4 | 商户认证拒绝通知 | ✗ | Phase 3 |
-| M5 | 新订单通知 | ✓ | Phase 3 |
-| M6 | Deal 即将到期提醒 | ✓ | Phase 5 |
-| M7 | Coupon 核销成功（商家） | ✓ | Phase 3 |
-| M8 | 核销前退款通知 | ✗ | Phase 3 |
-| M9 | 收到售后申请通知 | ✗ | Phase 4 |
-| M10 | 商家同意售后退款确认 | ✗ | Phase 4 |
-| M11 | 商家拒绝售后——升级平台 | ✗ | Phase 4 |
-| M12 | 平台最终裁决通知 | ✗ | Phase 4 |
-| M13 | 月度结算报告 | ✓ | Phase 5 |
-| M14 | 提现申请受理通知 | ✗ | Phase 6 |
-| M15 | 提现完成通知 | ✗ | Phase 6 |
-| M16 | Deal 被管理员驳回通知 | ✗ | Phase 3 |
-| A1 | 管理员账户创建通知 | — | Phase 1 |
-| A2 | 新商户认证申请提醒 | — | Phase 3 |
-| A3 | 每日待处理任务汇总 | — | Phase 5 |
-| A4 | 大额退款预警 | — | Phase 6 |
-| A5 | 售后案件升级审核通知 | — | Phase 4 |
-| A6 | 售后案件结案通知 | — | Phase 4 |
-| A7 | 新提现申请审核通知 | — | Phase 6 |
-| A8 | 系统异常告警邮件 | — | Phase 6 |
+> **图例：** ✅ 已实现 | ⚠️ 部分完成（模板已建，集成待完成）| ❌ 未实现
+
+| 编号 | 邮件名称 | 用户可关闭 | 开发阶段 | 实现状态 |
+|------|---------|-----------|---------|---------|
+| C1 | 客户注册欢迎邮件 | ✗ | Phase 1 | ✅ |
+| C2 | 订单确认邮件 | ✗ | Phase 2 | ✅ |
+| C3 | Coupon 核销成功（客户） | ✓ | Phase 2 | ✅ |
+| C4 | Coupon 即将到期提醒 | ✓ | Phase 5 | ✅ |
+| C5 | 到期自动退款通知 | ✗ | Phase 2 | ✅ |
+| C6 | Store Credit 余额到账通知 | ✗ | Phase 2 | ✅ |
+| C7 | 退款申请受理确认 | ✗ | Phase 2 | ✅ |
+| C8 | Stripe 退款到账通知 | ✗ | Phase 2 | ✅ |
+| C9 | 售后申请提交确认 | ✗ | Phase 4 | ✅ |
+| C10 | 售后审核通过通知 | ✗ | Phase 4 | ✅ |
+| C11 | 售后审核拒绝通知 | ✗ | Phase 4 | ✅ |
+| C12 | 密码重置邮件 | ✗ | Phase 1 | ✅ |
+| C13 | 商家已回复售后通知 | ✓ | Phase 4 | ✅ |
+| M1 | 商家注册欢迎邮件 | ✗ | Phase 3 | ✅ |
+| M2 | 认证申请受理通知 | ✗ | Phase 3 | ✅ |
+| M3 | 商户认证通过通知 | ✗ | Phase 3 | ✅ |
+| M4 | 商户认证拒绝通知 | ✗ | Phase 3 | ✅ |
+| M5 | 新订单通知 | ✓ | Phase 3 | ✅ |
+| M6 | Deal 即将到期提醒 | ✓ | Phase 5 | ✅ |
+| M7 | Coupon 核销成功（商家） | ✓ | Phase 3 | ✅ |
+| M8 | 核销前退款通知 | ✗ | Phase 3 | ✅ |
+| M9 | 收到售后申请通知 | ✗ | Phase 4 | ✅ |
+| M10 | 商家同意售后退款确认 | ✗ | Phase 4 | ✅ |
+| M11 | 商家拒绝售后——升级平台 | ✗ | Phase 4 | ✅ |
+| M12 | 平台最终裁决通知 | ✗ | Phase 4 | ✅ |
+| M13 | 月度结算报告 | ✓ | Phase 5 | ✅ |
+| M14 | 提现申请受理通知 | ✗ | Phase 6 | ✅ |
+| M15 | 提现完成通知 | ✗ | Phase 6 | ⚠️ 模板已建，等待「提现审批通过」Admin Action |
+| M16 | Deal 被管理员驳回通知 | ✗ | Phase 3 | ✅ |
+| A1 | 管理员账户创建通知 | — | Phase 1 | ❌ 未实现（超出当前范围） |
+| A2 | 新商户认证申请提醒 | — | Phase 3 | ✅ |
+| A3 | 每日待处理任务汇总 | — | Phase 5 | ✅ |
+| A4 | 大额退款预警（阈值 $200） | — | Phase 6 | ✅ |
+| A5 | 售后案件升级审核通知 | — | Phase 4 | ✅ |
+| A6 | 售后案件结案通知 | — | Phase 4 | ✅ |
+| A7 | 新提现申请审核通知 | — | Phase 6 | ✅ |
+| A8 | 系统异常告警邮件 | — | Phase 6 | ❌ 未实现（需全局错误捕获架构） |
