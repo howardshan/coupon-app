@@ -1,11 +1,11 @@
 # CrunchyPlum 邮件系统开发计划书
 
 > **创建日期：** 2026-03-21
-> **最后更新：** 2026-03-23（v5 — Phase 6 客户端/商家端邮件偏好 UI 完成）
+> **最后更新：** 2026-03-23（v6 — 新增 M17 Deal 审批通过通知需求）
 > **发件域名：** crunchyplum.com
 > **邮件服务商：** SMTP2GO
 > **邮件内容语言：** 英文（面向北美 Dallas 市场）
-> **状态：** 34/37 已实现；Phase 6 核心功能全部完成（剩余 A1/A8 超出范围，M15 等待触发点）
+> **状态：** 34/38 已实现；M17 待实现（新增需求）；A1/A8 超出范围；M15 等待触发点
 
 > ⚠️ **品牌变更说明（2026-03-21）：** 项目已因版权/法律原因从 **DealJoy** 正式更名为 **CrunchyPlum**。
 > 所有面向用户的邮件内容（subject、HTML body、FROM 名称、Logo 文字、页脚）均已更新为 CrunchyPlum。
@@ -350,6 +350,7 @@ CREATE POLICY "merchant_own" ON merchant_email_preferences
 | M14 | 提现申请受理通知 | 商家提交提现申请 | `merchant-withdrawal` | ✗ | 提现金额、银行账户末四位、预计处理时间 |
 | M15 | 提现完成通知 | 管理员标记提现完成 | Admin 操作触发 | ✗ | 到账金额、交易流水号 |
 | M16 | Deal 被管理员驳回通知 | 管理员驳回已提交 Deal | `rejectDeal` | ✗ | Deal 名称、驳回原因、需修改内容、重新提交链接 |
+| M17 | Deal 审批通过通知 | 管理员上架（激活）已提交 Deal | `setDealActive` | ✗ | Deal 名称、上线时间、查看链接 |
 
 ### 4.3 后台管理端邮件（A 系列）
 
@@ -844,15 +845,17 @@ deal_joy/lib/features/profile/
 - [x] A4 — 大额退款预警（`create-refund`，阈值 $200，两条退款路径均已集成）
 - [x] A7 + M14 — 提现申请通知（`merchant-withdrawal`）
 - [x] M15 — 提现完成邮件模板已创建；集成点待「提现审批通过 Admin Action」实现
+- [ ] M17 — Deal 审批通过通知 — **新增需求（2026-03-23）**，需新建模板 + 在 `setDealActive` 中集成
 - [ ] A1 — 管理员账户创建通知 — 超出当前范围，暂不实现
 - [ ] A8 — 系统异常告警邮件 — 超出当前范围，需全局错误捕获机制，暂不实现
 
 > ⚠️ **注意：** A4 告警阈值原计划为 $500，实际实现为 $200（`LARGE_REFUND_THRESHOLD = 200`）。
 
-#### 剩余 3 种未实现邮件类型汇总
+#### 剩余 4 种未实现邮件类型汇总
 
 | 编号 | 名称 | 原因 | 建议处理方式 |
 |------|------|------|------------|
+| M17 | Deal 审批通过通知 | 新增需求，`setDealActive` 目前无发邮件逻辑 | 新建模板 `admin/lib/email-templates/merchant/deal-approved.ts`，在 `setDealActive` 中调用 `sendAdminEmail()` |
 | M15 | 提现完成通知 | 模板已创建，无触发点 | 实现「提现审批通过」Admin Action 时集成 |
 | A1 | 管理员账户创建通知 | 未在任何 Phase 中实现 | 有需要时在 Admin 创建管理员账户的 Server Action 中添加 |
 | A8 | 系统异常告警邮件 | 需全局错误捕获架构 | 视运维需求决定是否实现 |
@@ -910,6 +913,7 @@ deal_joy/lib/features/profile/
 | M14 | 提现申请受理通知 | ✗ | Phase 6 | ✅ |
 | M15 | 提现完成通知 | ✗ | Phase 6 | ⚠️ 模板已建，等待「提现审批通过」Admin Action |
 | M16 | Deal 被管理员驳回通知 | ✗ | Phase 3 | ✅ |
+| M17 | Deal 审批通过通知 | ✗ | Phase 6 | ❌ 未实现（新增需求） |
 | A1 | 管理员账户创建通知 | — | Phase 1 | ❌ 未实现（超出当前范围） |
 | A2 | 新商户认证申请提醒 | — | Phase 3 | ✅ |
 | A3 | 每日待处理任务汇总 | — | Phase 5 | ✅ |
