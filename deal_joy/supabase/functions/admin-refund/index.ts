@@ -4,6 +4,8 @@
 // PATCH /admin-refund/:id                                     — 批准或拒绝
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2?target=deno';
+import { sendEmail } from '../_shared/email.ts';
+import { buildC14Email } from '../_shared/email-templates/customer/admin-refund-rejected.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -130,10 +132,10 @@ Deno.serve(async (req) => {
       return errorResponse('Rejection reason must be at least 10 characters', 'invalid_reason', 400);
     }
 
-    // 查询申请，确认状态为 pending_admin
+    // 查询申请，确认状态为 pending_admin（含退款金额、关联订单信息用于发邮件）
     const { data: refundReq, error: rrError } = await serviceClient
       .from('refund_requests')
-      .select('id, status, order_id')
+      .select('id, status, order_id, refund_amount, user_id, orders!inner(order_number)')
       .eq('id', refundRequestId)
       .single();
 
@@ -210,6 +212,35 @@ Deno.serve(async (req) => {
         .from('coupons')
         .update({ status: 'used' })
         .eq('order_id', refundReq.order_id);
+
+      // 发送 C14 管理员最终拒绝退款通知邮件
+      try {
+        const { data: userInfo } = await serviceClient
+          .from('users')
+          .select('email')
+          .eq('id', refundReq.user_id)
+          .single();
+
+        if (userInfo?.email) {
+          const orderNumber = (refundReq.orders as { order_number: string } | null)?.order_number ?? '';
+          const { subject, html } = buildC14Email({
+            orderNumber,
+            refundAmount: refundReq.refund_amount,
+            adminReason:  adminReason?.trim() ?? '',
+          });
+          await sendEmail(serviceClient, {
+            to:            userInfo.email,
+            subject,
+            htmlBody:      html,
+            emailCode:     'C14',
+            referenceId:   refundRequestId,
+            recipientType: 'customer',
+            userId:        refundReq.user_id,
+          });
+        }
+      } catch (emailErr) {
+        console.error('[admin-refund] C14 email error:', emailErr);
+      }
 
       return jsonResponse({ success: true, status: 'rejected_admin' });
     }
