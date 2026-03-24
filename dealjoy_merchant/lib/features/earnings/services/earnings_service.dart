@@ -324,6 +324,80 @@ class EarningsService {
     }
   }
 
+  // =============================================================
+  // Stripe Connect 账户绑定相关方法
+  // =============================================================
+
+  /// 创建 Stripe Connect Express 账户并返回 onboarding URL
+  /// 若商家已有 stripe_account_id，则续接 onboarding（生成新 Account Link）
+  Future<String> fetchStripeConnectUrl() async {
+    final response = await _supabase.functions.invoke(
+      '$_withdrawalFn/connect',
+      method: HttpMethod.post,
+    );
+    final data = _parseResponse(response);
+    if (data['error'] != null) {
+      throw EarningsException(
+        code: 'connect_error',
+        message: data['error'] as String? ?? 'Failed to create Stripe Connect link',
+      );
+    }
+    final url = data['url'] as String?;
+    if (url == null || url.isEmpty) {
+      throw const EarningsException(
+        code: 'connect_error',
+        message: 'Invalid Stripe Connect URL received',
+      );
+    }
+    return url;
+  }
+
+  /// onboarding 完成后同步 Stripe 账户状态到数据库，并返回最新账户信息
+  Future<StripeAccountInfo> refreshStripeAccountStatus() async {
+    final response = await _supabase.functions.invoke(
+      '$_withdrawalFn/connect/refresh',
+      method: HttpMethod.post,
+    );
+    final data = _parseResponse(response);
+    if (data['error'] != null) {
+      throw EarningsException(
+        code: 'refresh_error',
+        message: data['error'] as String? ?? 'Failed to refresh Stripe account status',
+      );
+    }
+    // 将 /connect/refresh 响应转换为 StripeAccountInfo
+    final accountStatus = data['account_status'] as String? ?? 'not_connected';
+    return StripeAccountInfo(
+      isConnected:   data['is_connected'] as bool? ?? (accountStatus == 'connected'),
+      accountId:     data['account_id'] as String?,
+      accountEmail:  data['account_email'] as String?,
+      accountStatus: accountStatus,
+    );
+  }
+
+  /// 生成 Stripe Express Dashboard 管理链接（已连接商家专用）
+  Future<String> fetchStripeManageUrl() async {
+    final response = await _supabase.functions.invoke(
+      '$_withdrawalFn/connect/dashboard',
+      method: HttpMethod.get,
+    );
+    final data = _parseResponse(response);
+    if (data['error'] != null) {
+      throw EarningsException(
+        code: 'dashboard_error',
+        message: data['error'] as String? ?? 'Failed to get Stripe Dashboard link',
+      );
+    }
+    final url = data['url'] as String?;
+    if (url == null || url.isEmpty) {
+      throw const EarningsException(
+        code: 'dashboard_error',
+        message: 'Invalid Stripe Dashboard URL received',
+      );
+    }
+    return url;
+  }
+
   /// 更新提现设置
   Future<void> updateWithdrawalSettings({
     bool? autoEnabled,

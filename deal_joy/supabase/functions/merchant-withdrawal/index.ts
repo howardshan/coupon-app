@@ -11,11 +11,18 @@
 //   GET  /merchant-withdrawal/settings     — 获取自动提现设置
 // =============================================================
 
+import Stripe from "https://esm.sh/stripe@14?target=deno";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { resolveAuth, requirePermission } from "../_shared/auth.ts";
 import { sendEmail, getAdminRecipients } from "../_shared/email.ts";
 import { buildM14Email } from "../_shared/email-templates/merchant/withdrawal-request.ts";
 import { buildA7Email } from "../_shared/email-templates/admin/withdrawal-pending.ts";
+
+// Stripe 客户端（与 stripe-webhook 保持相同初始化方式）
+const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") ?? "", {
+  apiVersion: "2024-04-10",
+  httpClient: Stripe.createFetchHttpClient(),
+});
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -89,6 +96,33 @@ Deno.serve(async (req: Request) => {
   const subRoute = pathParts[0] ?? "";
 
   try {
+    // -------------------------------------------------------
+    // POST /connect — 创建 Stripe Connect Express 账户 + 生成 onboarding URL
+    // -------------------------------------------------------
+    if (req.method === "POST" && subRoute === "connect" && pathParts[1] === undefined) {
+      if (auth.role !== "store_owner" && auth.role !== "brand_owner") {
+        return errorResponse("Only store owner can connect Stripe account", 403);
+      }
+      return await handleCreateConnectLink(supabaseAdmin, merchantId);
+    }
+
+    // -------------------------------------------------------
+    // POST /connect/refresh — onboarding 完成后同步账户状态
+    // -------------------------------------------------------
+    if (req.method === "POST" && subRoute === "connect" && pathParts[1] === "refresh") {
+      if (auth.role !== "store_owner" && auth.role !== "brand_owner") {
+        return errorResponse("Only store owner can refresh Stripe account", 403);
+      }
+      return await handleRefreshConnectStatus(supabaseAdmin, merchantId);
+    }
+
+    // -------------------------------------------------------
+    // GET /connect/dashboard — 生成 Stripe Express Dashboard 链接
+    // -------------------------------------------------------
+    if (req.method === "GET" && subRoute === "connect" && pathParts[1] === "dashboard") {
+      return await handleConnectDashboardLink(supabaseAdmin, merchantId);
+    }
+
     // -------------------------------------------------------
     // GET /balance — 可提现余额
     // -------------------------------------------------------
@@ -274,7 +308,7 @@ async function handleWithdraw(
     return errorResponse("You already have a pending withdrawal. Please wait for it to complete.");
   }
 
-  // 创建提现记录
+  // 创建提现记录（初始状态 pending，Transfer 成功后改为 processing）
   const { data: withdrawal, error } = await admin
     .from("withdrawals")
     .insert({
@@ -292,8 +326,44 @@ async function handleWithdraw(
     return errorResponse(`Failed to create withdrawal: ${error.message}`, 500);
   }
 
-  // TODO: 调用 Stripe Transfer/Payout API 执行实际转账（V2）
-  // 这里先创建记录，后续通过 webhook 或 cron 处理实际转账
+  // 调用 Stripe Transfer API（从平台账户转账到商家 Connected Account）
+  // 使用 withdrawal.id 作为幂等 Key，防止网络重试导致重复打款
+  try {
+    const transfer = await stripe.transfers.create(
+      {
+        amount:      Math.round(amount * 100), // 转为分（cents）
+        currency:    "usd",
+        destination: bankAccount.stripe_account_id,
+        metadata:    { withdrawal_id: withdrawal.id, merchant_id: merchantId },
+      },
+      { idempotencyKey: withdrawal.id }
+    );
+
+    // Transfer 成功：更新记录状态 + stripe_transfer_id
+    await admin
+      .from("withdrawals")
+      .update({
+        stripe_transfer_id: transfer.id,
+        status: "processing",
+      })
+      .eq("id", withdrawal.id);
+
+    // 更新 withdrawal 对象，供后续邮件通知使用
+    withdrawal.status = "processing";
+    withdrawal.stripe_transfer_id = transfer.id;
+  } catch (stripeError) {
+    // Stripe 调用失败：将记录标记为 failed，返回错误提示
+    const reason = stripeError instanceof Error ? stripeError.message : "Stripe transfer failed";
+    await admin
+      .from("withdrawals")
+      .update({
+        status: "failed",
+        failure_reason: reason,
+      })
+      .eq("id", withdrawal.id);
+
+    return errorResponse(`Withdrawal failed: ${reason}`, 502);
+  }
 
   // M14 + A7：通知商家申请已受理，同时告知管理员（fire-and-forget）
   (async () => {
@@ -492,6 +562,156 @@ async function handleUpdateSettings(
   }
 
   return jsonResponse({ settings: data });
+}
+
+// =============================================================
+// POST /connect — 创建 Stripe Connect Express 账户 + 生成 onboarding URL
+// 若商家已有 stripe_account_id，则直接续接（生成新 Account Link）
+// =============================================================
+async function handleCreateConnectLink(
+  admin: ReturnType<typeof createClient>,
+  merchantId: string
+): Promise<Response> {
+  // 查询商家现有的 stripe_account_id
+  const { data: merchant, error: merchantError } = await admin
+    .from("merchants")
+    .select("id, name, stripe_account_id, stripe_account_status")
+    .eq("id", merchantId)
+    .single();
+
+  if (merchantError || !merchant) {
+    return errorResponse("Merchant not found", 404);
+  }
+
+  let stripeAccountId = merchant.stripe_account_id as string | null;
+
+  // 若没有，则先在 Stripe 创建 Express 账户
+  if (!stripeAccountId) {
+    const account = await stripe.accounts.create({
+      type: "express",
+      metadata: { merchant_id: merchantId, merchant_name: merchant.name },
+    });
+    stripeAccountId = account.id;
+
+    // 写入 merchants 表
+    await admin
+      .from("merchants")
+      .update({
+        stripe_account_id: stripeAccountId,
+        stripe_account_status: "pending",
+      })
+      .eq("id", merchantId);
+  }
+
+  // 生成 Account Link（onboarding URL）
+  // return_url / refresh_url 均指向 payment_account_page 的刷新入口
+  const accountLink = await stripe.accountLinks.create({
+    account: stripeAccountId,
+    refresh_url: "dealjoymerchant://stripe-callback?result=refresh",
+    return_url:  "dealjoymerchant://stripe-callback?result=success",
+    type: "account_onboarding",
+  });
+
+  return jsonResponse({ url: accountLink.url });
+}
+
+// =============================================================
+// POST /connect/refresh — onboarding 完成后同步账户状态到数据库
+// =============================================================
+async function handleRefreshConnectStatus(
+  admin: ReturnType<typeof createClient>,
+  merchantId: string
+): Promise<Response> {
+  // 查询商家 stripe_account_id
+  const { data: merchant } = await admin
+    .from("merchants")
+    .select("stripe_account_id")
+    .eq("id", merchantId)
+    .single();
+
+  const stripeAccountId = merchant?.stripe_account_id as string | null;
+  if (!stripeAccountId) {
+    return errorResponse("No Stripe account linked. Please connect first.", 400);
+  }
+
+  // 从 Stripe 获取最新账户信息
+  const account = await stripe.accounts.retrieve(stripeAccountId);
+
+  // 判断账户状态
+  const isConnected = account.charges_enabled && account.payouts_enabled;
+  const accountStatus = isConnected ? "connected" : "restricted";
+
+  // 提取银行账户信息（external_accounts 中第一个 bank_account）
+  let bankName: string | null = null;
+  let last4: string | null = null;
+  const externalAccounts = account.external_accounts?.data ?? [];
+  const bankAccount = externalAccounts.find((ea) => ea.object === "bank_account");
+  if (bankAccount && bankAccount.object === "bank_account") {
+    bankName = (bankAccount as Stripe.BankAccount).bank_name ?? null;
+    last4    = (bankAccount as Stripe.BankAccount).last4 ?? null;
+  }
+
+  // 更新 merchants 表
+  await admin
+    .from("merchants")
+    .update({
+      stripe_account_status: accountStatus,
+      stripe_account_email:  account.email ?? null,
+    })
+    .eq("id", merchantId);
+
+  // upsert merchant_bank_accounts 记录
+  const bankStatus = isConnected ? "verified" : "pending";
+  await admin
+    .from("merchant_bank_accounts")
+    .upsert(
+      {
+        merchant_id:       merchantId,
+        stripe_account_id: stripeAccountId,
+        status:            bankStatus,
+        bank_name:         bankName,
+        last4:             last4,
+        is_default:        true,
+      },
+      { onConflict: "merchant_id,stripe_account_id" }
+    );
+
+  return jsonResponse({
+    account_status:  accountStatus,
+    account_email:   account.email ?? null,
+    account_id:      stripeAccountId,
+    is_connected:    isConnected,
+    bank_name:       bankName,
+    last4:           last4,
+  });
+}
+
+// =============================================================
+// GET /connect/dashboard — 生成 Stripe Express Dashboard 管理链接
+// （用于已连接商家点击 "Manage on Stripe"）
+// =============================================================
+async function handleConnectDashboardLink(
+  admin: ReturnType<typeof createClient>,
+  merchantId: string
+): Promise<Response> {
+  const { data: merchant } = await admin
+    .from("merchants")
+    .select("stripe_account_id, stripe_account_status")
+    .eq("id", merchantId)
+    .single();
+
+  const stripeAccountId = merchant?.stripe_account_id as string | null;
+  if (!stripeAccountId) {
+    return errorResponse("No Stripe account linked.", 400);
+  }
+
+  if (merchant?.stripe_account_status !== "connected") {
+    return errorResponse("Stripe account is not fully connected.", 400);
+  }
+
+  const loginLink = await stripe.accounts.createLoginLink(stripeAccountId);
+
+  return jsonResponse({ url: loginLink.url });
 }
 
 // =============================================================
