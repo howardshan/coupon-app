@@ -249,6 +249,52 @@ SELECT cron.schedule(
 
 ---
 
+---
+
+## 关键业务逻辑约束
+
+### 一、T+7 结算锁定规则
+
+**规则：** 核销后满 7 天的净收入才计入可提现余额，7 天内的核销收入属于 `pending_settlement`（待结算），不可提现。
+
+**原因：** 平台承诺"随时退款"政策，用户在核销后仍可申请退款。7 天窗口期用于覆盖退款风险：
+- `pending_settlement` 期间发生退款 → 该笔收入从未进入可提现池，无需扣回
+- 满 7 天后才纳入可提现余额 → 商家资金安全有保障
+
+**代码位置：** `merchant-withdrawal/index.ts` → `handleGetBalance()` → `settledCutoff = now - 7 days`
+
+---
+
+### 二、商家侧 Coupon 支付状态跟踪（merchant_status）
+
+**背景：** 数据库中 `order_items.merchant_status` 字段使用 `merchant_item_status` 枚举，专门为商家视角设计，包含完整的支付生命周期：
+
+| merchant_status 值 | 含义 | 显示给商家 |
+|--------------------|------|-----------|
+| `unused` | 未核销（所有适用门店可见） | Unredeemed |
+| `unpaid` | 已核销，T+7 内待结算 | Pending Settlement |
+| `pending` | T+7 已过，结算处理中 | Processing |
+| `paid` | 已结算，已纳入提现 | Paid Out |
+| `refund_request` | 用户申请退款 | Refund Requested |
+| `refund_review` | 管理员审核中 | Under Review |
+| `refund_reject` | 退款被拒 | Refund Rejected |
+| `refund_success` | 退款成功 | Refunded |
+
+**当前缺口：** 提现系统目前使用"总已结算 - 总已提现"减法计算可用余额，**但当提现完成时，对应券的 `merchant_status` 并未被更新为 `paid`**。这导致：
+1. 商家在订单页看到的券状态始终是 `unpaid`，无法判断该笔收入是否已被提现
+2. 缺乏逐条券级别的 payout 追溯能力
+
+**需要实现的逻辑：**
+- 当 Stripe Transfer 完成（`transfer.paid` Webhook 触发）时，需要根据该次提现金额，将对应的已结算券（`merchant_status = 'unpaid'`，`used_at < T-7`）按时间顺序批量更新为 `paid`
+- **注意：** 提现金额可能覆盖多张不同订单的券（FIFO 原则：优先标记最早核销的券为 paid）
+- 这个逻辑应在阶段三（Stripe Webhook 处理）的 `handleTransferPaid()` 函数中实现
+
+**涉及文件：**
+- `deal_joy/supabase/functions/stripe-webhook/index.ts` — `handleTransferPaid()` 中追加 `order_items.merchant_status` 批量更新逻辑
+- 商家端 `merchant-orders` Edge Function 已返回 `merchant_status` 字段，前端 `OrderItem` 模型已有对应字段，**显示层无需额外修改**
+
+---
+
 ## 安全规范（必须遵守）
 
 1. **Stripe 密钥只从环境变量读取**：`Deno.env.get('STRIPE_SECRET_KEY')`，不得硬编码
