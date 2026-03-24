@@ -23,6 +23,9 @@ class StatsCard extends StatelessWidget {
   /// 是否正在加载（显示占位 shimmer）
   final bool isLoading;
 
+  /// 点击回调（可选）
+  final VoidCallback? onTap;
+
   const StatsCard({
     super.key,
     required this.title,
@@ -30,11 +33,15 @@ class StatsCard extends StatelessWidget {
     required this.icon,
     required this.color,
     this.isLoading = false,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Card(
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Card(
       elevation: 0,
       color: Colors.white,
       shape: RoundedRectangleBorder(
@@ -45,6 +52,7 @@ class StatsCard extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         child: isLoading ? _buildSkeleton() : _buildContent(),
       ),
+    ),
     );
   }
 

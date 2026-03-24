@@ -13,6 +13,25 @@ import '../widgets/shortcut_grid.dart';
 import '../../store/widgets/store_selector.dart';
 import '../../store/providers/store_provider.dart';
 import '../../deals/providers/deals_provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+/// 直接查 brand_admins 表判断是否品牌管理员（不依赖 storeProvider）
+final _isBrandAdminDirectProvider = FutureProvider<bool>((ref) async {
+  final client = Supabase.instance.client;
+  final userId = client.auth.currentUser?.id;
+  if (userId == null) return false;
+  try {
+    final res = await client
+        .from('brand_admins')
+        .select('id')
+        .eq('user_id', userId)
+        .limit(1);
+    return (res as List).isNotEmpty;
+  } catch (e) {
+    debugPrint('[_isBrandAdminDirectProvider] 查询失败: $e');
+    return false;
+  }
+});
 
 // ============================================================
 // DashboardPage — 工作台主页（ConsumerWidget）
@@ -200,7 +219,10 @@ class DashboardPage extends ConsumerWidget {
             const SizedBox(height: 12),
             ShortcutGrid(
               onTap: (action) => _onShortcutTap(context, action),
-              isBrandAdmin: ref.watch(storeProvider).valueOrNull?.isBrandAdmin ?? false,
+              // 同时检查 storeProvider 和直接查 brand_admins 表
+              isBrandAdmin: ref.watch(storeProvider).valueOrNull?.isBrandAdmin ??
+                  ref.watch(_isBrandAdminDirectProvider).valueOrNull ??
+                  false,
             ),
 
             // ------------------------------------------------
@@ -424,25 +446,29 @@ class _StatsSection extends StatelessWidget {
           title: 'Today Orders',
           value: '${stats.todayOrders}',
           icon: Icons.shopping_bag_outlined,
-          color: const Color(0xFF2196F3), // 蓝色
+          color: const Color(0xFF2196F3),
+          onTap: () => context.push('/orders'),
         ),
         StatsCard(
           title: 'Redeemed',
           value: '${stats.todayRedemptions}',
           icon: Icons.check_circle_outline,
-          color: const Color(0xFF4CAF50), // 绿色
+          color: const Color(0xFF4CAF50),
+          onTap: () => context.push('/orders'),
         ),
         StatsCard(
           title: 'Revenue',
           value: _formatRevenue(stats.todayRevenue),
           icon: Icons.attach_money,
-          color: const Color(0xFFFF6B35), // 品牌橙
+          color: const Color(0xFFFF6B35),
+          onTap: () => context.push('/earnings'),
         ),
         StatsCard(
           title: 'Pending',
           value: '${stats.pendingCoupons}',
           icon: Icons.access_time_outlined,
-          color: const Color(0xFF9C27B0), // 紫色
+          color: const Color(0xFF9C27B0),
+          onTap: () => context.push('/orders'),
         ),
       ],
     );

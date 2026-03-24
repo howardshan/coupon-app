@@ -1,5 +1,6 @@
 import 'dart:math' show min;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:go_router/go_router.dart';
@@ -17,6 +18,9 @@ import '../../domain/providers/checkout_provider.dart';
 import '../../domain/providers/billing_address_provider.dart';
 import '../../../profile/domain/providers/store_credit_provider.dart';
 import '../../domain/providers/tax_rate_provider.dart';
+import '../../../profile/data/repositories/payment_methods_repository.dart';
+import '../../../profile/data/models/saved_card_model.dart';
+import '../../../profile/domain/providers/payment_methods_provider.dart';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // CheckoutScreen
@@ -101,6 +105,12 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   String _country = 'US';
   bool _addressLoaded = false;
 
+  // 已保存 Stripe 卡片列表
+  List<SavedCard> _savedCards = [];
+  SavedCard? _selectedSavedCard;   // 当前选中的已保存卡片
+  bool _usingSavedCard = false;    // 是否使用已保存卡片支付
+  bool _savedCardsLoaded = false;  // 是否已加载过卡片列表
+
   @override
   void dispose() {
     _couponCtrl.dispose();
@@ -110,6 +120,46 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     _stateCtrl.dispose();
     _postalCodeCtrl.dispose();
     super.dispose();
+  }
+
+  // ── 已保存卡片加载 ───────────────────────────────────────────────
+
+  /// 加载当前用户在 Stripe 上已保存的卡片（只执行一次）
+  Future<void> _loadSavedCards() async {
+    if (_savedCardsLoaded) return;
+    _savedCardsLoaded = true;
+    try {
+      final cards = await ref.read(paymentMethodsRepositoryProvider).fetchSavedCards();
+      if (mounted) {
+        setState(() {
+          _savedCards = cards;
+          // 自动选中默认卡
+          final defaultCard = cards.where((c) => c.isDefault).firstOrNull;
+          if (defaultCard != null) {
+            _selectedSavedCard = defaultCard;
+            _usingSavedCard = true;
+            _fillAddressFromCard(defaultCard);
+          }
+        });
+      }
+    } catch (_) {
+      // 加载失败不阻断，用户仍可用新卡支付
+    }
+  }
+
+  /// 用已保存 Stripe 卡片的账单地址填充地址表单
+  void _fillAddressFromCard(SavedCard card) {
+    final addr = card.billingAddress;
+    if (addr == null) return;
+    _addressLine1Ctrl.text = addr.line1;
+    _addressLine2Ctrl.text = addr.line2;
+    _cityCtrl.text = addr.city;
+    _stateCtrl.text = addr.state;
+    _postalCodeCtrl.text = addr.postalCode;
+    if (addr.country.isNotEmpty) _country = addr.country;
+    // 选已保存 Stripe 卡时不走 billing_addresses 表，标记为非新增模式
+    _selectedAddressId = null;
+    _isAddingNewAddress = false;
   }
 
   // ── 账单地址加载 ─────────────────────────────────────────────────
@@ -179,10 +229,20 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     _country = 'US';
   }
 
-  /// 信用卡模式下按钮可用条件：卡片完整 + 有选中地址或新增表单已填
+  /// 信用卡模式下按钮可用条件
+  /// - 使用已保存卡时：不需要 CardField 完整，但需要有地址信息
+  /// - 使用新卡时：需要 CardField 完整 + 必填地址已填
   bool get _canPayByCard {
+    if (_usingSavedCard && _selectedSavedCard != null) {
+      // 使用已保存卡：地址已从卡片自动填充，只需确认 line1 非空
+      return _addressLine1Ctrl.text.trim().isNotEmpty &&
+          _cityCtrl.text.trim().isNotEmpty &&
+          _stateCtrl.text.trim().isNotEmpty &&
+          _postalCodeCtrl.text.trim().isNotEmpty;
+    }
+    // 使用新卡：CardField 必须完整
     if (!_cardComplete) return false;
-    // 选中了已有地址
+    // 选中了已有 billing_addresses 表地址
     if (_selectedAddressId != null && !_isAddingNewAddress) return true;
     // 新增模式需要必填字段
     return _addressLine1Ctrl.text.trim().isNotEmpty &&
@@ -287,6 +347,10 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         paymentMethod: _selectedPayment,
         billingDetails: billingDetails,
         storeCreditUsed: creditUsed,
+        // 使用已保存 Stripe 卡片时传入 paymentMethodId，跳过 CardField 确认
+        savedPaymentMethodId: (_usingSavedCard && _selectedSavedCard != null)
+            ? _selectedSavedCard!.id
+            : null,
       );
 
       // 支付成功后异步保存 billing address（fire-and-forget）
@@ -372,6 +436,10 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         selectedOptions: selectedOptions,
         paymentMethod: _selectedPayment,
         billingDetails: billingDetails,
+        // 使用已保存 Stripe 卡片时传入 paymentMethodId，跳过 CardField 确认
+        savedPaymentMethodId: (_usingSavedCard && _selectedSavedCard != null)
+            ? _selectedSavedCard!.id
+            : null,
       );
 
       // 支付成功后异步保存 billing address（fire-and-forget）
@@ -466,6 +534,10 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     if (!_storeCreditLoaded) {
       _storeCreditLoaded = true;
       _loadStoreCredit();
+    }
+    // 首次渲染时加载已保存 Stripe 卡片
+    if (!_savedCardsLoaded) {
+      Future.microtask(_loadSavedCards);
     }
     // 统一入口：Buy Now 也走 cart checkout（把单 deal 转成 cart items）
     if (widget.isCartMode) {
@@ -603,27 +675,32 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
             // ── 信用卡输入框（仅选择 Credit Card 时显示） ──────────
             if (_selectedPayment == 'card') ...[
               const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: AppColors.surfaceVariant),
+              // 已保存卡片选择区域
+              if (_savedCards.isNotEmpty) _buildSavedCardSelector(),
+              const SizedBox(height: 16),
+              // 使用已保存卡时隐藏 CardField
+              if (!_usingSavedCard)
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: AppColors.surfaceVariant),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Card Information',
+                          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                      const SizedBox(height: 12),
+                      CardField(
+                        onCardChanged: (card) {
+                          setState(() => _cardComplete = card?.complete ?? false);
+                        },
+                      ),
+                    ],
+                  ),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Card Information',
-                        style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                    const SizedBox(height: 12),
-                    CardField(
-                      onCardChanged: (card) {
-                        setState(() => _cardComplete = card?.complete ?? false);
-                      },
-                    ),
-                  ],
-                ),
-              ),
               const SizedBox(height: 16),
               _buildBillingAddressForm(),
             ],
@@ -1047,27 +1124,32 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                 // ── 信用卡输入框（仅选择 Credit Card 时显示） ──────
                 if (_selectedPayment == 'card') ...[
                   const SizedBox(height: 16),
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: AppColors.surfaceVariant),
+                  // 已保存卡片选择区域
+                  if (_savedCards.isNotEmpty) _buildSavedCardSelector(),
+                  const SizedBox(height: 16),
+                  // 使用已保存卡时隐藏 CardField
+                  if (!_usingSavedCard)
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: AppColors.surfaceVariant),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Card Information',
+                              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                          const SizedBox(height: 12),
+                          CardField(
+                            onCardChanged: (card) {
+                              setState(() => _cardComplete = card?.complete ?? false);
+                            },
+                          ),
+                        ],
+                      ),
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('Card Information',
-                            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                        const SizedBox(height: 12),
-                        CardField(
-                          onCardChanged: (card) {
-                            setState(() => _cardComplete = card?.complete ?? false);
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
                   const SizedBox(height: 16),
                   _buildBillingAddressForm(),
                 ],
@@ -1252,6 +1334,182 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
               ],
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  // ── 已保存 Stripe 卡片选择器 ──────────────────────────────────────
+
+  Widget _buildSavedCardSelector() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.surfaceVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Saved Cards',
+            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+          ),
+          const SizedBox(height: 10),
+          // 已保存卡片列表
+          ..._savedCards.map((card) {
+            final isSelected = _usingSavedCard && _selectedSavedCard?.id == card.id;
+            return GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () {
+                setState(() {
+                  _selectedSavedCard = card;
+                  _usingSavedCard = true;
+                  _cardComplete = false; // 不再需要 CardField 完整
+                  _fillAddressFromCard(card);
+                });
+              },
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? AppColors.primary.withValues(alpha: 0.05)
+                      : Colors.white,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: isSelected ? AppColors.primary : AppColors.surfaceVariant,
+                    width: isSelected ? 2 : 1,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    // 选中圆圈
+                    Container(
+                      width: 20,
+                      height: 20,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: isSelected ? AppColors.primary : AppColors.textHint,
+                          width: 2,
+                        ),
+                      ),
+                      child: isSelected
+                          ? Center(
+                              child: Container(
+                                width: 10,
+                                height: 10,
+                                decoration: const BoxDecoration(
+                                  color: AppColors.primary,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                            )
+                          : null,
+                    ),
+                    const SizedBox(width: 10),
+                    Icon(card.brandIcon, size: 22, color: AppColors.textSecondary),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        '${card.brandDisplayName} •••• ${card.last4}  (Expires ${card.expiryText})',
+                        style: const TextStyle(fontSize: 13, color: AppColors.textPrimary),
+                      ),
+                    ),
+                    if (card.isDefault)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: const Text(
+                          'Default',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            );
+          }),
+          // "Use a new card" 选项
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () {
+              setState(() {
+                _usingSavedCard = false;
+                _selectedSavedCard = null;
+                _cardComplete = false;
+                // 清空地址，改为显示 billing_addresses 表地址或新增表单
+                if (_savedAddresses.isNotEmpty) {
+                  final defaultAddr = _savedAddresses.firstWhere(
+                    (a) => a.isDefault,
+                    orElse: () => _savedAddresses.first,
+                  );
+                  _selectedAddressId = defaultAddr.id;
+                  _isAddingNewAddress = false;
+                  _fillFormFromAddress(defaultAddr);
+                } else {
+                  _isAddingNewAddress = true;
+                  _clearAddressForm();
+                }
+              });
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: !_usingSavedCard
+                    ? AppColors.primary.withValues(alpha: 0.05)
+                    : Colors.white,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: !_usingSavedCard ? AppColors.primary : AppColors.surfaceVariant,
+                  width: !_usingSavedCard ? 2 : 1,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 20,
+                    height: 20,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: !_usingSavedCard ? AppColors.primary : AppColors.textHint,
+                        width: 2,
+                      ),
+                    ),
+                    child: !_usingSavedCard
+                        ? Center(
+                            child: Container(
+                              width: 10,
+                              height: 10,
+                              decoration: const BoxDecoration(
+                                color: AppColors.primary,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                          )
+                        : null,
+                  ),
+                  const SizedBox(width: 10),
+                  const Icon(Icons.add_card_outlined, size: 22, color: AppColors.textSecondary),
+                  const SizedBox(width: 10),
+                  const Text(
+                    'Use a new card',
+                    style: TextStyle(fontSize: 13, color: AppColors.textPrimary),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -1504,10 +1762,15 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                     controller: _postalCodeCtrl,
                     onChanged: (_) => setState(() {}),
                     keyboardType: TextInputType.number,
+                    maxLength: 5,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                    ],
                     decoration: const InputDecoration(
                       labelText: 'ZIP Code',
                       border: OutlineInputBorder(),
                       isDense: true,
+                      counterText: '', // 隐藏字数计数器
                     ),
                   ),
                 ),
