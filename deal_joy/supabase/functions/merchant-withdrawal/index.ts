@@ -16,6 +16,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { resolveAuth, requirePermission } from "../_shared/auth.ts";
 import { sendEmail, getAdminRecipients } from "../_shared/email.ts";
 import { buildM14Email } from "../_shared/email-templates/merchant/withdrawal-request.ts";
+import { buildM15Email } from "../_shared/email-templates/merchant/withdrawal-completed.ts";
+import { buildM18Email } from "../_shared/email-templates/merchant/withdrawal-failed.ts";
 import { buildA7Email } from "../_shared/email-templates/admin/withdrawal-pending.ts";
 
 // Stripe 客户端（与 stripe-webhook 保持相同初始化方式）
@@ -327,7 +329,9 @@ async function handleWithdraw(
   }
 
   // 调用 Stripe Transfer API（从平台账户转账到商家 Connected Account）
+  // stripe.transfers.create() 是同步操作：成功即代表转账完成，失败会抛出异常
   // 使用 withdrawal.id 作为幂等 Key，防止网络重试导致重复打款
+  const completedAt = new Date().toISOString();
   try {
     const transfer = await stripe.transfers.create(
       {
@@ -339,77 +343,119 @@ async function handleWithdraw(
       { idempotencyKey: withdrawal.id }
     );
 
-    // Transfer 成功：更新记录状态 + stripe_transfer_id
+    // Transfer 成功：立即标记为 completed（同步操作，无需等待 Webhook）
     await admin
       .from("withdrawals")
       .update({
         stripe_transfer_id: transfer.id,
-        status: "processing",
+        status: "completed",
+        completed_at: completedAt,
       })
       .eq("id", withdrawal.id);
 
-    // 更新 withdrawal 对象，供后续邮件通知使用
-    withdrawal.status = "processing";
+    // FIFO 批量更新 order_items.merchant_status → 'paid'
+    // 将本次提现对应的已结算核销记录标记为已打款
+    (async () => {
+      try {
+        const settledCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+        const { data: eligibleItems } = await admin
+          .from("order_items")
+          .select("id, unit_price, service_fee, redeemed_at")
+          .eq("merchant_status", "unpaid")
+          .lt("redeemed_at", settledCutoff)
+          .or(`redeemed_merchant_id.eq.${merchantId},and(redeemed_merchant_id.is.null,purchased_merchant_id.eq.${merchantId})`)
+          .order("redeemed_at", { ascending: true });
+
+        if (eligibleItems && eligibleItems.length > 0) {
+          const itemsToMark: string[] = [];
+          let accumulated = 0;
+          for (const item of eligibleItems) {
+            if (accumulated >= amount - 0.01) break;
+            const net = (item.unit_price ?? 0) - (item.service_fee ?? 0);
+            accumulated += net;
+            itemsToMark.push(item.id);
+          }
+          if (itemsToMark.length > 0) {
+            await admin
+              .from("order_items")
+              .update({ merchant_status: "paid" })
+              .in("id", itemsToMark);
+          }
+        }
+      } catch (err) {
+        console.warn("[merchant-withdrawal] order_items FIFO update failed", err);
+      }
+    })();
+
+    // 发送邮件通知（fire-and-forget）
+    (async () => {
+      try {
+        const { data: merchantInfo } = await admin
+          .from("merchants").select("name, user_id").eq("id", merchantId).single();
+        if (merchantInfo) {
+          const { data: userInfo } = await admin
+            .from("users").select("email").eq("id", merchantInfo.user_id).single();
+
+          // M15：通知商家提现已完成
+          if (userInfo?.email) {
+            const { subject: m15Subject, html: m15Html } = buildM15Email({
+              merchantName: merchantInfo.name,
+              withdrawalId: withdrawal.id,
+              amount,
+              completedAt,
+            });
+            await sendEmail(admin, {
+              to: userInfo.email, subject: m15Subject, htmlBody: m15Html,
+              emailCode: "M15", referenceId: withdrawal.id, recipientType: "merchant",
+              merchantId,
+            });
+          }
+        }
+      } catch (err) {
+        console.warn("[merchant-withdrawal] M15 email failed", err);
+      }
+    })();
+
+    withdrawal.status = "completed";
     withdrawal.stripe_transfer_id = transfer.id;
   } catch (stripeError) {
-    // Stripe 调用失败：将记录标记为 failed，返回错误提示
+    // Stripe 调用失败：将记录标记为 failed，发送 M18 失败通知
     const reason = stripeError instanceof Error ? stripeError.message : "Stripe transfer failed";
     await admin
       .from("withdrawals")
-      .update({
-        status: "failed",
-        failure_reason: reason,
-      })
+      .update({ status: "failed", failure_reason: reason })
       .eq("id", withdrawal.id);
+
+    // M18：通知商家提现失败（fire-and-forget）
+    (async () => {
+      try {
+        const { data: merchantInfo } = await admin
+          .from("merchants").select("name, user_id").eq("id", merchantId).single();
+        if (merchantInfo) {
+          const { data: userInfo } = await admin
+            .from("users").select("email").eq("id", merchantInfo.user_id).single();
+          if (userInfo?.email) {
+            const { subject: m18Subject, html: m18Html } = buildM18Email({
+              merchantName: merchantInfo.name,
+              withdrawalId: withdrawal.id,
+              amount,
+              failedAt: new Date().toISOString(),
+              failureReason: reason,
+            });
+            await sendEmail(admin, {
+              to: userInfo.email, subject: m18Subject, htmlBody: m18Html,
+              emailCode: "M18", referenceId: withdrawal.id, recipientType: "merchant",
+              merchantId,
+            });
+          }
+        }
+      } catch (err) {
+        console.warn("[merchant-withdrawal] M18 email failed", err);
+      }
+    })();
 
     return errorResponse(`Withdrawal failed: ${reason}`, 502);
   }
-
-  // M14 + A7：通知商家申请已受理，同时告知管理员（fire-and-forget）
-  (async () => {
-    try {
-      // 查询商家名称和用户邮箱
-      const { data: merchantInfo } = await admin
-        .from("merchants").select("name, user_id").eq("id", merchantId).single();
-      if (merchantInfo) {
-        const { data: userInfo } = await admin
-          .from("users").select("email").eq("id", merchantInfo.user_id).single();
-
-        // M14：通知商家
-        if (userInfo?.email) {
-          const { subject: m14Subject, html: m14Html } = buildM14Email({
-            merchantName: merchantInfo.name,
-            withdrawalId: withdrawal.id,
-            amount,
-            requestedAt: withdrawal.requested_at,
-          });
-          await sendEmail(admin, {
-            to: userInfo.email, subject: m14Subject, htmlBody: m14Html,
-            emailCode: "M14", referenceId: withdrawal.id, recipientType: "merchant",
-            merchantId,
-          });
-        }
-
-        // A7：通知管理员
-        const adminEmails = await getAdminRecipients(admin, "A7");
-        if (adminEmails.length > 0) {
-          const { subject: a7Subject, html: a7Html } = buildA7Email({
-            merchantName: merchantInfo.name,
-            merchantId,
-            withdrawalId: withdrawal.id,
-            amount,
-            requestedAt: withdrawal.requested_at,
-          });
-          await sendEmail(admin, {
-            to: adminEmails, subject: a7Subject, htmlBody: a7Html,
-            emailCode: "A7", referenceId: withdrawal.id, recipientType: "admin",
-          });
-        }
-      }
-    } catch (err) {
-      console.warn("[merchant-withdrawal] email notification failed", err);
-    }
-  })();
 
   return jsonResponse({ withdrawal }, 201);
 }
