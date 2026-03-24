@@ -1,7 +1,7 @@
 # CrunchyPlum 邮件系统开发计划书
 
 > **创建日期：** 2026-03-21
-> **最后更新：** 2026-03-23（v8 — C14/M17 实现完成，邮件系统全部 Phase 1-6 核心功能完工）
+> **最后更新：** 2026-03-23（v9 — Email Log 页面升级：多维度筛选栏 + 页码分页）
 > **发件域名：** crunchyplum.com
 > **邮件服务商：** SMTP2GO
 > **邮件内容语言：** 英文（面向北美 Dallas 市场）
@@ -693,17 +693,40 @@ admin/app/actions/
 
 管理员可以：
 - 查看**全部三端**（客户端 / 商家端 / 后台管理端）的邮件发送记录
-- 按 `email_code`、`recipient_type`、`status`、`recipient_email`、日期范围筛选
+- 通过**筛选栏**按多个维度快速定位邮件（见下方筛选器说明）
 - 点击任意一条记录，**弹出预览面板**展示该邮件的实际 HTML 渲染效果（iframe 渲染 `html_body`）
 - 查看 `smtp2go_message_id`、`error_message`、`retry_count` 等技术细节
+
+#### 筛选器（v9 新增，服务端过滤、URL 驱动）
+
+| 筛选项 | 类型 | 对应 DB 字段 | 匹配方式 |
+|--------|------|------------|---------|
+| Status | 下拉（All / Sent / Failed / Pending / Bounced） | `status` | 精确匹配 |
+| Recipient Type | 下拉（All / Customer / Merchant / Admin） | `recipient_type` | 精确匹配 |
+| Email Code | 下拉（C1–C14, M1–M17, A2–A7 完整列表） | `email_code` | 精确匹配 |
+| Recipient Email | 文本输入 | `recipient_email` | `ILIKE %...%` 模糊搜索 |
+| From / To | 日期选择器 | `created_at` | `>=` / `<=` 范围筛选 |
+
+- 筛选后，当前活跃条件以**蓝色标签**形式展示在筛选栏内
+- "Clear" 按钮一键清空所有筛选条件，回到全量视图
+- 分页翻页时**自动保留**所有筛选参数（URL 传参，不丢失状态）
+- 结果区显示 "Showing X–Y of Z filtered records"；无结果时提示 "No records match the current filters."
+
+#### 分页（v9 升级）
+
+- 展示**页码列表**（当前页高亮蓝色），超出 7 页时自动显示省略号（1 2 3 … 10）
+- ← / → 按钮，边界时变灰禁用
+- 每页 25 条
+
+#### 文件结构
 
 ```
 admin/app/(dashboard)/settings/
 └── email-logs/
-    └── page.tsx                      ← Server Component（列表 + 筛选）
+    └── page.tsx                      ← Server Component（接收 6 个筛选参数，服务端过滤查询）
 admin/components/
-├── email-logs-table.tsx              ← Client Component（表格）
-└── email-preview-modal.tsx           ← Client Component（内容预览弹窗）
+├── email-logs-filters.tsx            ← Client Component（筛选栏，useRouter + useSearchParams）
+└── email-logs-table.tsx              ← Client Component（表格 + 分页 + HTML 预览弹窗）
 ```
 
 ---
