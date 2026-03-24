@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show AuthChangeEvent;
 import '../../features/auth/domain/providers/auth_provider.dart';
 import '../../features/auth/presentation/screens/login_screen.dart';
 import '../../features/auth/presentation/screens/register_screen.dart';
@@ -78,7 +79,8 @@ final routerProvider = Provider<GoRouter>((ref) {
     redirect: (context, state) {
       final authState = ref.read(authStateProvider);
       final isLoading = authState.isLoading;
-      final isLoggedIn = authState.valueOrNull?.session != null;
+      final authValue = authState.valueOrNull;
+      final isLoggedIn = authValue?.session != null;
       final currentPath = state.matchedLocation;
       final isAuthRoute = currentPath.startsWith('/auth');
       final isSplash = currentPath == '/splash';
@@ -93,7 +95,12 @@ final routerProvider = Provider<GoRouter>((ref) {
         return '/auth/login?redirect=${Uri.encodeComponent(currentPath)}';
       }
 
-      // 已登录但在重置密码页面 — 允许留在该页面（recovery session）
+      // 密码重置 recovery session — 强制跳转重置密码页，忽略其他跳转逻辑
+      if (authValue?.event == AuthChangeEvent.passwordRecovery) {
+        return currentPath == '/auth/reset-password' ? null : '/auth/reset-password';
+      }
+
+      // 已登录但在重置密码页面 — 允许留在该页面（用户手动导航过来的场景）
       if (currentPath == '/auth/reset-password') return null;
 
       // 已登录 — 检查是否需要填写手机号
