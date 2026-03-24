@@ -1,11 +1,11 @@
 # CrunchyPlum 邮件系统开发计划书
 
 > **创建日期：** 2026-03-21
-> **最后更新：** 2026-03-23（v5 — Phase 6 客户端/商家端邮件偏好 UI 完成）
+> **最后更新：** 2026-03-23（v9 — Email Log 页面升级：多维度筛选栏 + 页码分页）
 > **发件域名：** crunchyplum.com
 > **邮件服务商：** SMTP2GO
 > **邮件内容语言：** 英文（面向北美 Dallas 市场）
-> **状态：** 34/37 已实现；Phase 6 核心功能全部完成（剩余 A1/A8 超出范围，M15 等待触发点）
+> **状态：** 36/39 已实现；M15 等待「提现审批通过」Admin Action；A1/A8 超出当前范围
 
 > ⚠️ **品牌变更说明（2026-03-21）：** 项目已因版权/法律原因从 **DealJoy** 正式更名为 **CrunchyPlum**。
 > 所有面向用户的邮件内容（subject、HTML body、FROM 名称、Logo 文字、页脚）均已更新为 CrunchyPlum。
@@ -166,7 +166,7 @@ CREATE TABLE email_type_settings (
   updated_by       UUID REFERENCES users(id)
 );
 
--- 预置全部 37 种邮件类型
+-- 预置全部 39 种邮件类型
 -- C 系列（客户端）
 INSERT INTO email_type_settings (email_code, email_name, recipient_type, user_configurable) VALUES
   ('C1',  '注册欢迎邮件',           'customer', FALSE),  -- 关键，不可关闭
@@ -181,7 +181,8 @@ INSERT INTO email_type_settings (email_code, email_name, recipient_type, user_co
   ('C10', '售后审核通过通知',        'customer', FALSE),
   ('C11', '售后审核拒绝通知',        'customer', FALSE),
   ('C12', '密码重置邮件',           'customer', FALSE),  -- 安全关键，不可关闭
-  ('C13', '商家已回复售后通知',      'customer', TRUE);
+  ('C13', '商家已回复售后通知',      'customer', TRUE),
+  ('C14', '管理员拒绝退款通知',      'customer', FALSE);  -- 退款关键通知，不可关闭
 
 -- M 系列（商家端）
 INSERT INTO email_type_settings (email_code, email_name, recipient_type, user_configurable) VALUES
@@ -329,6 +330,7 @@ CREATE POLICY "merchant_own" ON merchant_email_preferences
 | C11 | 售后审核拒绝通知 | 平台拒绝申请 | `platform-after-sales` | ✗ | 拒绝原因、申诉渠道、客服联系方式 |
 | C12 | 密码重置邮件 | 用户申请重置密码 | Supabase Auth 自定义模板 | ✗ | 重置链接（1 小时内有效） |
 | C13 | 商家已回复售后通知 | 商家提交售后处理意见 | `merchant-after-sales` | ✓ | 商家回复内容、案件当前状态、后续步骤 |
+| C14 | 管理员拒绝退款通知 | 管理员最终拒绝用户的退款申请 | `admin-refund`（reject 分支） | ✗ | 申请编号、拒绝原因、订单信息、客服联系方式 |
 
 ### 4.2 商家端邮件（M 系列）
 
@@ -350,6 +352,7 @@ CREATE POLICY "merchant_own" ON merchant_email_preferences
 | M14 | 提现申请受理通知 | 商家提交提现申请 | `merchant-withdrawal` | ✗ | 提现金额、银行账户末四位、预计处理时间 |
 | M15 | 提现完成通知 | 管理员标记提现完成 | Admin 操作触发 | ✗ | 到账金额、交易流水号 |
 | M16 | Deal 被管理员驳回通知 | 管理员驳回已提交 Deal | `rejectDeal` | ✗ | Deal 名称、驳回原因、需修改内容、重新提交链接 |
+| M17 | Deal 审批通过通知 | 管理员上架（激活）已提交 Deal | `setDealActive` | ✗ | Deal 名称、上线时间、查看链接 |
 
 ### 4.3 后台管理端邮件（A 系列）
 
@@ -658,8 +661,10 @@ GROUP BY d.id, m.id, m.name, u.email;
 |---------------|---------|---------|
 | `approveMerchant` | DB 更新后调用 `sendAdminEmail()` | M3 |
 | `rejectMerchant` | DB 更新后调用 `sendAdminEmail()` | M4 |
-| `rejectDeal` | DB 更新后调用 `sendAdminEmail()` | M16 |
+| `rejectDeal` | DB 更新后调用 `sendAdminEmail()`；`referenceId` 使用 `deal_rejections.id`（避免 24h 幂等锁） | M16 |
+| `setDealActive` | active=true 时调用 `sendAdminEmail()`；`referenceId` 使用 `dealId` | M17 |
 | 新建：提现审批通过 action | 状态更新时调用 `sendAdminEmail()` | M15 |
+| `admin-refund`（Edge Function） | reject 分支中调用 `sendEmail()` 通知客户 | C14 |
 
 ---
 
@@ -688,17 +693,40 @@ admin/app/actions/
 
 管理员可以：
 - 查看**全部三端**（客户端 / 商家端 / 后台管理端）的邮件发送记录
-- 按 `email_code`、`recipient_type`、`status`、`recipient_email`、日期范围筛选
+- 通过**筛选栏**按多个维度快速定位邮件（见下方筛选器说明）
 - 点击任意一条记录，**弹出预览面板**展示该邮件的实际 HTML 渲染效果（iframe 渲染 `html_body`）
 - 查看 `smtp2go_message_id`、`error_message`、`retry_count` 等技术细节
+
+#### 筛选器（v9 新增，服务端过滤、URL 驱动）
+
+| 筛选项 | 类型 | 对应 DB 字段 | 匹配方式 |
+|--------|------|------------|---------|
+| Status | 下拉（All / Sent / Failed / Pending / Bounced） | `status` | 精确匹配 |
+| Recipient Type | 下拉（All / Customer / Merchant / Admin） | `recipient_type` | 精确匹配 |
+| Email Code | 下拉（C1–C14, M1–M17, A2–A7 完整列表） | `email_code` | 精确匹配 |
+| Recipient Email | 文本输入 | `recipient_email` | `ILIKE %...%` 模糊搜索 |
+| From / To | 日期选择器 | `created_at` | `>=` / `<=` 范围筛选 |
+
+- 筛选后，当前活跃条件以**蓝色标签**形式展示在筛选栏内
+- "Clear" 按钮一键清空所有筛选条件，回到全量视图
+- 分页翻页时**自动保留**所有筛选参数（URL 传参，不丢失状态）
+- 结果区显示 "Showing X–Y of Z filtered records"；无结果时提示 "No records match the current filters."
+
+#### 分页（v9 升级）
+
+- 展示**页码列表**（当前页高亮蓝色），超出 7 页时自动显示省略号（1 2 3 … 10）
+- ← / → 按钮，边界时变灰禁用
+- 每页 25 条
+
+#### 文件结构
 
 ```
 admin/app/(dashboard)/settings/
 └── email-logs/
-    └── page.tsx                      ← Server Component（列表 + 筛选）
+    └── page.tsx                      ← Server Component（接收 6 个筛选参数，服务端过滤查询）
 admin/components/
-├── email-logs-table.tsx              ← Client Component（表格）
-└── email-preview-modal.tsx           ← Client Component（内容预览弹窗）
+├── email-logs-filters.tsx            ← Client Component（筛选栏，useRouter + useSearchParams）
+└── email-logs-table.tsx              ← Client Component（表格 + 分页 + HTML 预览弹窗）
 ```
 
 ---
@@ -834,7 +862,7 @@ deal_joy/lib/features/profile/
 
 ---
 
-### Phase 6 — 用户偏好设置 + 剩余功能 ✅ 核心功能已完成
+### Phase 6 — 用户偏好设置 + 剩余功能 ✅ 已完成
 
 **目标：** 完成用户/商家偏好设置 UI、Admin 邮件日志预览、剩余邮件类型。
 
@@ -844,6 +872,8 @@ deal_joy/lib/features/profile/
 - [x] A4 — 大额退款预警（`create-refund`，阈值 $200，两条退款路径均已集成）
 - [x] A7 + M14 — 提现申请通知（`merchant-withdrawal`）
 - [x] M15 — 提现完成邮件模板已创建；集成点待「提现审批通过 Admin Action」实现
+- [x] M17 — Deal 审批通过通知（`setDealActive`，模板：`admin/lib/email-templates/merchant/deal-approved.ts`）
+- [x] C14 — 管理员拒绝退款通知（`admin-refund` reject 分支，模板：`_shared/email-templates/customer/admin-refund-rejected.ts`）
 - [ ] A1 — 管理员账户创建通知 — 超出当前范围，暂不实现
 - [ ] A8 — 系统异常告警邮件 — 超出当前范围，需全局错误捕获机制，暂不实现
 
@@ -877,7 +907,7 @@ deal_joy/lib/features/profile/
 
 ## 12. 邮件编号速查表
 
-> **图例：** ✅ 已实现 | ⚠️ 部分完成（模板已建，集成待完成）| ❌ 未实现
+> **图例：** ✅ 已实现 | ⚠️ 部分完成（模板已建，集成待完成）| ❌ 未实现（超出当前范围）
 
 | 编号 | 邮件名称 | 用户可关闭 | 开发阶段 | 实现状态 |
 |------|---------|-----------|---------|---------|
@@ -894,6 +924,7 @@ deal_joy/lib/features/profile/
 | C11 | 售后审核拒绝通知 | ✗ | Phase 4 | ✅ |
 | C12 | 密码重置邮件 | ✗ | Phase 1 | ✅ |
 | C13 | 商家已回复售后通知 | ✓ | Phase 4 | ✅ |
+| C14 | 管理员拒绝退款通知 | ✗ | Phase 6 | ✅ |
 | M1 | 商家注册欢迎邮件 | ✗ | Phase 3 | ✅ |
 | M2 | 认证申请受理通知 | ✗ | Phase 3 | ✅ |
 | M3 | 商户认证通过通知 | ✗ | Phase 3 | ✅ |
@@ -910,6 +941,7 @@ deal_joy/lib/features/profile/
 | M14 | 提现申请受理通知 | ✗ | Phase 6 | ✅ |
 | M15 | 提现完成通知 | ✗ | Phase 6 | ⚠️ 模板已建，等待「提现审批通过」Admin Action |
 | M16 | Deal 被管理员驳回通知 | ✗ | Phase 3 | ✅ |
+| M17 | Deal 审批通过通知 | ✗ | Phase 6 | ✅ |
 | A1 | 管理员账户创建通知 | — | Phase 1 | ❌ 未实现（超出当前范围） |
 | A2 | 新商户认证申请提醒 | — | Phase 3 | ✅ |
 | A3 | 每日待处理任务汇总 | — | Phase 5 | ✅ |

@@ -7,6 +7,7 @@ import { sendAdminEmail } from '@/lib/email'
 import { buildM3Email } from '@/lib/email-templates/merchant/verification-approved'
 import { buildM4Email } from '@/lib/email-templates/merchant/verification-rejected'
 import { buildM16Email } from '@/lib/email-templates/merchant/deal-rejected'
+import { buildM17Email } from '@/lib/email-templates/merchant/deal-approved'
 
 async function requireAdmin() {
   const supabase = await createClient()
@@ -293,16 +294,57 @@ export async function setDealActive(dealId: string, active: boolean) {
   await requireAdmin()
 
   const supabase = getServiceRoleClient()
+  const publishedAt = active ? new Date().toISOString() : undefined
+
   const { error } = await supabase
     .from('deals')
     .update({
       is_active: active,
       deal_status: active ? 'active' : 'inactive',
-      ...(active ? { published_at: new Date().toISOString() } : {}),
+      ...(active ? { published_at: publishedAt } : {}),
     })
     .eq('id', dealId)
 
   if (error) throw new Error(error.message)
+
+  // 上架时发送 M17 Deal 审批通过通知（即发即忘，不阻断主流程）
+  if (active) {
+    try {
+      const { data: dealInfo } = await supabase
+        .from('deals')
+        .select('title, merchants(name, user_id)')
+        .eq('id', dealId)
+        .single()
+
+      const merchant = (dealInfo?.merchants as { name: string; user_id: string } | null)
+      if (merchant?.user_id) {
+        const { data: userInfo } = await supabase
+          .from('users')
+          .select('email')
+          .eq('id', merchant.user_id)
+          .single()
+
+        if (userInfo?.email) {
+          const { subject, html } = buildM17Email({
+            merchantName: merchant.name,
+            dealTitle:    dealInfo?.title ?? '',
+            publishedAt,
+          })
+          await sendAdminEmail({
+            to:            userInfo.email,
+            subject,
+            htmlBody:      html,
+            emailCode:     'M17',
+            referenceId:   dealId,
+            recipientType: 'merchant',
+          })
+        }
+      }
+    } catch (emailErr) {
+      console.error('[setDealActive] M17 email error:', emailErr)
+    }
+  }
+
   revalidatePath('/deals')
   revalidatePath(`/deals/${dealId}`)
 }
@@ -346,9 +388,10 @@ export async function rejectDeal(dealId: string, rejectionReason?: string | null
 
   if (updateError) throw new Error(updateError.message)
 
-  // 插入驳回历史记录（含 deal 快照）
+  // 插入驳回历史记录（含 deal 快照），取回新记录 ID 用于邮件幂等 key
+  let rejectionId: string | null = null
   if (reason) {
-    const { error: insertError } = await supabase
+    const { data: rejectionRow, error: insertError } = await supabase
       .from('deal_rejections')
       .insert({
         deal_id: dealId,
@@ -356,11 +399,15 @@ export async function rejectDeal(dealId: string, rejectionReason?: string | null
         rejected_by: user?.id ?? null,
         deal_snapshot: dealSnapshot ?? null,
       })
+      .select('id')
+      .single()
 
     if (insertError) throw new Error(insertError.message)
+    rejectionId = rejectionRow?.id ?? null
   }
 
   // 发送 M16 Deal 被驳回通知（即发即忘，不阻断主流程）
+  // referenceId 使用驳回记录 ID（而非 dealId），确保同一 Deal 多次驳回都能发送邮件
   if (dealSnapshot?.merchant_id) {
     const { data: merchantInfo } = await supabase
       .from('merchants')
@@ -387,7 +434,7 @@ export async function rejectDeal(dealId: string, rejectionReason?: string | null
           subject,
           htmlBody:      html,
           emailCode:     'M16',
-          referenceId:   dealId,
+          referenceId:   rejectionId ?? dealId,
           recipientType: 'merchant',
         })
       }

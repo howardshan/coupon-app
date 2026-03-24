@@ -225,6 +225,29 @@ Deno.serve(async (req) => {
           summary.succeeded += 1;
         }
 
+        // 发送 C5 到期自动退款通知（即发即忘，不阻断批次）
+        try {
+          const { data: userInfo } = await supabaseAdmin
+            .from('users')
+            .select('email')
+            .eq('id', item.user_id)
+            .single();
+          if (userInfo?.email) {
+            const { subject, html } = buildC5Email({ refundAmount });
+            await sendEmail(supabaseAdmin, {
+              to:            userInfo.email,
+              subject,
+              htmlBody:      html,
+              emailCode:     'C5',
+              referenceId:   itemId,
+              recipientType: 'customer',
+              userId:        item.user_id,
+            });
+          }
+        } catch (emailErr) {
+          console.error(`auto-refund-expired: C5 email error item=${itemId}:`, emailErr);
+        }
+
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);
         console.error(`auto-refund-expired: item=${itemId} 处理失败 —`, errMsg);
