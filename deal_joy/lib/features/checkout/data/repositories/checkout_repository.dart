@@ -59,6 +59,7 @@ class CheckoutRepository {
     String paymentMethod = 'card', // 'card' | 'google' | 'apple'
     BillingDetails? billingDetails,
     double storeCreditUsed = 0.0, // Store Credit 抵扣金额
+    String? savedPaymentMethodId, // 已保存卡的 PM ID
   }) async {
     if (userId.isEmpty) {
       throw const PaymentException('User not authenticated', code: 'unauthenticated');
@@ -127,6 +128,7 @@ class CheckoutRepository {
       customerId: customerId,
       ephemeralKey: ephemeralKey,
       billingDetails: billingDetails,
+      savedPaymentMethodId: savedPaymentMethodId,
     );
 
     // 4. 调用 create-order-v3 Edge Function 创建订单
@@ -164,6 +166,7 @@ class CheckoutRepository {
     String paymentMethod = 'card',
     BillingDetails? billingDetails,
     double storeCreditUsed = 0.0, // Store Credit 抵扣金额
+    String? savedPaymentMethodId, // 已保存卡的 PM ID
   }) async {
     if (userId.isEmpty) {
       throw const PaymentException('User not authenticated', code: 'unauthenticated');
@@ -230,6 +233,7 @@ class CheckoutRepository {
       customerId: customerId,
       ephemeralKey: ephemeralKey,
       billingDetails: billingDetails,
+      savedPaymentMethodId: savedPaymentMethodId,
     );
 
     // 3. 调用 create-order-v3 创建订单（触发器自动创建 coupons）
@@ -406,6 +410,7 @@ class CheckoutRepository {
   /// paymentMethod: 'card' | 'google' | 'apple'
   /// customerId / ephemeralKey 用于 PaymentSheet 显示已保存的卡片
   /// billingDetails 用于信用卡支付时携带账单地址
+  /// savedPaymentMethodId: 已保存卡的 Stripe PM ID（有值时直接用该卡支付，不走 CardField）
   Future<void> _processPayment({
     required String clientSecret,
     required String paymentMethod,
@@ -414,6 +419,7 @@ class CheckoutRepository {
     String? ephemeralKey,
     String label = 'DealJoy',
     BillingDetails? billingDetails,
+    String? savedPaymentMethodId,
   }) async {
     if (paymentMethod == 'google') {
       // Google Pay — Platform Pay API
@@ -445,9 +451,18 @@ class CheckoutRepository {
           ),
         ),
       );
+    } else if (savedPaymentMethodId != null && savedPaymentMethodId.isNotEmpty) {
+      // 已保存卡 — 直接用 PM ID 确认支付，不走 CardField
+      await Stripe.instance.confirmPayment(
+        paymentIntentClientSecret: clientSecret,
+        data: PaymentMethodParams.cardFromMethodId(
+          paymentMethodData: PaymentMethodDataCardFromMethod(
+            paymentMethodId: savedPaymentMethodId,
+          ),
+        ),
+      );
     } else {
-      // Credit Card — 直接用 confirmPayment（不走 PaymentSheet，避免 Link）
-      // 前端需要先通过 CardField widget 收集卡片信息，再调用此方法
+      // 新信用卡 — 通过 CardField 收集卡片信息后 confirmPayment
       await Stripe.instance.confirmPayment(
         paymentIntentClientSecret: clientSecret,
         data: PaymentMethodParams.card(

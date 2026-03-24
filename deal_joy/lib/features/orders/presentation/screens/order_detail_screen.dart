@@ -769,11 +769,17 @@ class _CouponDetailRow extends ConsumerWidget {
         paymentIntentId: paymentIntentId,
         storeCreditUsed: storeCreditUsed,
         orderTotalAmount: orderTotalAmount,
-        onConfirm: (refundMethod, {int cancelCount = 1}) async {
+        onConfirm: (refundMethod, {int cancelCount = 1, List<String>? selectedItemIds}) async {
           final navigator = Navigator.of(context);
           final messenger = ScaffoldMessenger.of(context);
-          // 退指定数量的券
-          final itemsToCancel = sameDealUnused.take(cancelCount).toList();
+          // 优先用用户选中的券 id，否则降级为取前 N 张
+          final List<OrderItemModel> itemsToCancel;
+          if (selectedItemIds != null && selectedItemIds.isNotEmpty) {
+            final idSet = selectedItemIds.toSet();
+            itemsToCancel = sameDealUnused.where((i) => idSet.contains(i.id)).toList();
+          } else {
+            itemsToCancel = sameDealUnused.take(cancelCount).toList();
+          }
           int successCount = 0;
           for (final cancelItem in itemsToCancel) {
             final ok = await ref
@@ -1365,10 +1371,17 @@ class _BottomActionBar extends ConsumerWidget {
           paymentIntentId: detail.paymentIntentIdMasked,
           storeCreditUsed: detail.storeCreditUsed,
           orderTotalAmount: detail.totalAmount,
-          onConfirm: (refundMethod, {int cancelCount = 1}) async {
+          onConfirm: (refundMethod, {int cancelCount = 1, List<String>? selectedItemIds}) async {
             final navigator = Navigator.of(context);
             final messenger = ScaffoldMessenger.of(context);
-            final itemsToCancel = allUnused.take(cancelCount).toList();
+            // 优先用用户选中的券 id，否则降级为取前 N 张
+            final List<OrderItemModel> itemsToCancel;
+            if (selectedItemIds != null && selectedItemIds.isNotEmpty) {
+              final idSet = selectedItemIds.toSet();
+              itemsToCancel = allUnused.where((i) => idSet.contains(i.id)).toList();
+            } else {
+              itemsToCancel = allUnused.take(cancelCount).toList();
+            }
             int successCount = 0;
             for (final cancelItem in itemsToCancel) {
               final ok = await ref
@@ -1583,7 +1596,8 @@ class _CancelSheet extends ConsumerStatefulWidget {
   final String? paymentIntentId; // 用于判断是否全额 Store Credit 支付
   final double storeCreditUsed;  // 本单使用的 Store Credit 金额
   final double orderTotalAmount; // 订单原始总金额（未扣 Store Credit）
-  final Future<void> Function(String refundMethod, {int cancelCount}) onConfirm;
+  /// selectedItemIds: 用户选中的具体券 id 列表（多券选择模式）
+  final Future<void> Function(String refundMethod, {int cancelCount, List<String>? selectedItemIds}) onConfirm;
 
   const _CancelSheet({
     required this.item,
@@ -1603,6 +1617,8 @@ class _CancelSheetState extends ConsumerState<_CancelSheet> {
   String _selectedMethod = 'store_credit';
   bool _isSubmitting = false;
   late int _cancelCount;
+  // 券选择：记录被选中的 item id
+  late Set<String> _selectedIds;
 
   // 是否全额 Store Credit 支付
   bool get _isPaidByStoreCredit {
@@ -1623,6 +1639,8 @@ class _CancelSheetState extends ConsumerState<_CancelSheet> {
   void initState() {
     super.initState();
     _cancelCount = 1;
+    // 初始化：默认全选所有 unused 券
+    _selectedIds = widget.allUnusedItems.map((i) => i.id).toSet();
     // 全额 Store Credit 支付时锁定退款方式
     if (_isPaidByStoreCredit) {
       _selectedMethod = 'store_credit';
@@ -1728,52 +1746,134 @@ class _CancelSheetState extends ConsumerState<_CancelSheet> {
               color: AppColors.textSecondary,
             ),
           ),
-          // 多张券时显示数量选择器
+          // 多张券时显示券选择列表（复选框）
           if (totalUnused > 1) ...[
             const SizedBox(height: 16),
+            // 全选/取消全选
+            GestureDetector(
+              onTap: () {
+                setState(() {
+                  if (_selectedIds.length == widget.allUnusedItems.length) {
+                    // 至少保留一张
+                    _selectedIds = {widget.allUnusedItems.first.id};
+                  } else {
+                    _selectedIds = widget.allUnusedItems.map((i) => i.id).toSet();
+                  }
+                  _cancelCount = _selectedIds.length;
+                });
+              },
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    Text(
+                      'Select vouchers to cancel',
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                    ),
+                    const Spacer(),
+                    Text(
+                      _selectedIds.length == widget.allUnusedItems.length
+                          ? 'Deselect All'
+                          : 'Select All',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            // 券列表
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
                 color: AppColors.surfaceVariant.withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Cancel how many?',
-                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-                  ),
-                  Row(
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.remove_circle_outline, size: 24),
-                        onPressed: _cancelCount > 1
-                            ? () => setState(() => _cancelCount--)
-                            : null,
-                        color: AppColors.primary,
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
+              constraints: const BoxConstraints(maxHeight: 200),
+              child: ListView.separated(
+                shrinkWrap: true,
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                itemCount: widget.allUnusedItems.length,
+                separatorBuilder: (_, __) => const Divider(height: 1, indent: 48),
+                itemBuilder: (_, index) {
+                  final coupon = widget.allUnusedItems[index];
+                  final isSelected = _selectedIds.contains(coupon.id);
+                  final code = coupon.formattedCouponCode ?? 'Voucher ${index + 1}';
+                  final dealTitle = coupon.dealTitle;
+                  return InkWell(
+                    onTap: () {
+                      setState(() {
+                        if (isSelected && _selectedIds.length > 1) {
+                          _selectedIds.remove(coupon.id);
+                        } else if (!isSelected) {
+                          _selectedIds.add(coupon.id);
+                        }
+                        _cancelCount = _selectedIds.length;
+                      });
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      child: Row(
+                        children: [
+                          Icon(
+                            isSelected
+                                ? Icons.check_circle_rounded
+                                : Icons.radio_button_unchecked_rounded,
+                            color: isSelected ? AppColors.primary : AppColors.textHint,
+                            size: 22,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  code,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontFamily: 'monospace',
+                                    fontWeight: FontWeight.w600,
+                                    letterSpacing: 1.2,
+                                  ),
+                                ),
+                                if (dealTitle.isNotEmpty) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    dealTitle,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: AppColors.textSecondary,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                          Text(
+                            '\$${coupon.unitPrice.toStringAsFixed(2)}',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                        ],
                       ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Text(
-                          '$_cancelCount',
-                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.add_circle_outline, size: 24),
-                        onPressed: _cancelCount < totalUnused
-                            ? () => setState(() => _cancelCount++)
-                            : null,
-                        color: AppColors.primary,
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                      ),
-                    ],
-                  ),
-                ],
+                    ),
+                  );
+                },
+              ),
+            ),
+            // 已选数量提示
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                '${_selectedIds.length} of $totalUnused selected',
+                style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
               ),
             ),
           ],
@@ -1789,7 +1889,11 @@ class _CancelSheetState extends ConsumerState<_CancelSheet> {
                 ? null
                 : () async {
                     setState(() => _isSubmitting = true);
-                    await widget.onConfirm(_selectedMethod, cancelCount: _cancelCount);
+                    await widget.onConfirm(
+                      _selectedMethod,
+                      cancelCount: _cancelCount,
+                      selectedItemIds: _selectedIds.toList(),
+                    );
                     if (mounted) {
                       setState(() => _isSubmitting = false);
                     }

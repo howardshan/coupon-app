@@ -9,7 +9,9 @@ import 'package:flutter/material.dart';
 
 /// 订单状态（与数据库 order_status enum 映射 + 展示用 expired / pendingRefund）
 enum OrderStatus {
-  /// 已支付，未核销
+  /// 未使用
+  unused,
+  /// 已支付/已结算
   paid,
   /// 已核销（used）
   redeemed,
@@ -34,16 +36,25 @@ enum OrderStatus {
   factory OrderStatus.fromString(String value) {
     switch (value.toLowerCase()) {
       case 'unused':
-      case 'paid':
-        return OrderStatus.paid;
+        return OrderStatus.unused;
       case 'used':
       case 'redeemed':
-        return OrderStatus.redeemed;
+      case 'unpaid':
+        return OrderStatus.redeemed; // 已核销（待结算）
+      case 'pending':
+        return OrderStatus.pendingRefund; // 结算处理中（复用 pendingRefund 枚举）
+      case 'paid':
+        return OrderStatus.paid; // 已结算
       case 'refund_requested':
+      case 'refund_request':
+      case 'refund_pending':
+      case 'refund_review':
         return OrderStatus.refundRequested;
       case 'refunded':
+      case 'refund_success':
         return OrderStatus.refunded;
       case 'refund_failed':
+      case 'refund_reject':
         return OrderStatus.refundFailed;
       case 'expired':
       case 'cancelled':
@@ -56,6 +67,8 @@ enum OrderStatus {
   /// UI 展示文本
   String get displayLabel {
     switch (this) {
+      case OrderStatus.unused:
+        return 'Unused';
       case OrderStatus.paid:
         return 'Paid';
       case OrderStatus.redeemed:
@@ -79,10 +92,12 @@ enum OrderStatus {
 
   /// 根据原始状态 + 券过期时间计算展示用状态（未使用且已过期 → Expired / Pending Refund）
   static OrderStatus displayStatus(OrderStatus raw, DateTime? couponExpiresAt) {
-    if (raw != OrderStatus.paid) return raw;
-    if (couponExpiresAt == null) return OrderStatus.paid;
+    if (raw != OrderStatus.unused && raw != OrderStatus.paid) return raw;
+    if (raw == OrderStatus.paid) return OrderStatus.paid;
+    // unused 券检查是否过期
+    if (couponExpiresAt == null) return OrderStatus.unused;
     final now = DateTime.now();
-    if (now.isBefore(couponExpiresAt)) return OrderStatus.paid;
+    if (now.isBefore(couponExpiresAt)) return OrderStatus.unused;
     final elapsed = now.difference(couponExpiresAt);
     if (elapsed >= const Duration(hours: 24)) return OrderStatus.pendingRefund;
     return OrderStatus.expired;
@@ -97,6 +112,8 @@ enum OrderStatus {
   /// 状态对应颜色（Badge 颜色）
   Color get badgeColor {
     switch (this) {
+      case OrderStatus.unused:
+        return const Color(0xFF6366F1); // 靛蓝色
       case OrderStatus.paid:
         return const Color(0xFF3B82F6); // 蓝色
       case OrderStatus.redeemed:
@@ -121,6 +138,8 @@ enum OrderStatus {
   /// 状态对应背景颜色（浅色）
   Color get badgeBackground {
     switch (this) {
+      case OrderStatus.unused:
+        return const Color(0xFFEEF2FF); // 靛蓝浅色
       case OrderStatus.paid:
         return const Color(0xFFEFF6FF);
       case OrderStatus.redeemed:
@@ -732,8 +751,10 @@ class OrderFilter {
   String? get statusParam {
     if (status == null) return null;
     switch (status!) {
+      case OrderStatus.unused:
+        return 'unused';
       case OrderStatus.paid:
-        return 'unused'; // 数据库中 paid 对应 unused
+        return 'paid';
       case OrderStatus.redeemed:
         return 'used';
       case OrderStatus.refundRequested:

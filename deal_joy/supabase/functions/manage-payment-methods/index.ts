@@ -93,18 +93,17 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const url = new URL(req.url);
-    // pathname 示例: /manage-payment-methods/list
-    //                /manage-payment-methods/default
-    //                /manage-payment-methods/pm_xxx
-    const pathParts = url.pathname.split('/').filter(Boolean);
-    // pathParts[0] = 'manage-payment-methods'，pathParts[1] = action/id
-    const action = pathParts[1] ?? '';
+    // 路由匹配：
+    //   GET  → 获取卡片列表
+    //   POST body.action='create_setup_intent' → 创建 SetupIntent
+    //   POST body.action='set_default' → 设置默认卡
+    //   DELETE → 删除卡（paymentMethodId 从 body 取）
+    // 注：Dart 端 functions.invoke 不传 URL 路径后缀，用 body.action 区分 POST 路由
 
     // -------------------------------------------------------
-    // GET /list — 获取已保存卡片列表
+    // GET — 获取已保存卡片列表
     // -------------------------------------------------------
-    if (req.method === 'GET' && action === 'list') {
+    if (req.method === 'GET') {
       const result = await getStripeCustomerId(req);
       if (result.error) {
         // 未找到 customer 时返回空列表，不报错
@@ -124,7 +123,7 @@ Deno.serve(async (req) => {
       const customerData = await stripe.customers.retrieve(customerId) as Stripe.Customer;
       const defaultPmId = customerData.invoice_settings?.default_payment_method as string | null;
 
-      // 格式化返回数据，只暴露必要字段
+      // 格式化返回数据，只暴露必要字段（含账单地址）
       const paymentMethods = pmList.data.map((pm) => ({
         id: pm.id,
         brand: pm.card?.brand ?? 'unknown',          // visa / mastercard / amex 等
@@ -132,45 +131,140 @@ Deno.serve(async (req) => {
         expMonth: pm.card?.exp_month ?? 0,
         expYear: pm.card?.exp_year ?? 0,
         isDefault: pm.id === defaultPmId,
+        // 从 Stripe PM 的 billing_details.address 提取账单地址（可能为 null）
+        billingAddress: pm.billing_details?.address ? {
+          line1: pm.billing_details.address.line1 || '',
+          line2: pm.billing_details.address.line2 || '',
+          city: pm.billing_details.address.city || '',
+          state: pm.billing_details.address.state || '',
+          postalCode: pm.billing_details.address.postal_code || '',
+          country: pm.billing_details.address.country || 'US',
+        } : null,
       }));
 
       return successResponse({ paymentMethods });
     }
 
     // -------------------------------------------------------
-    // POST /default — 设置默认卡
-    // body: { paymentMethodId: string }
+    // POST create_setup_intent — 创建 SetupIntent（用于前端保存新卡）
+    // body: { action: 'create_setup_intent' }
+    // 返回: { clientSecret, customerId, ephemeralKey }
     // -------------------------------------------------------
-    if (req.method === 'POST' && action === 'default') {
-      const result = await getStripeCustomerId(req);
-      if (result.error) return result.error;
-      const { customerId } = result;
-
+    if (req.method === 'POST') {
       const body = await req.json();
-      const { paymentMethodId } = body;
-      if (!paymentMethodId) {
-        return errorResponse('paymentMethodId is required');
+
+      if (body.action === 'create_setup_intent') {
+
+      // 提取并校验 JWT token
+      const authHeader = req.headers.get('Authorization');
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return errorResponse('Missing or invalid Authorization header', 401);
+      }
+      const token = authHeader.replace('Bearer ', '');
+
+      // 通过 JWT 获取当前用户
+      const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+      if (authError || !user) {
+        return errorResponse('Unauthorized', 401);
       }
 
-      // 校验该支付方式确实属于此 Customer（防越权）
-      const pm = await stripe.paymentMethods.retrieve(paymentMethodId);
-      if (pm.customer !== customerId) {
-        return errorResponse('Payment method does not belong to this customer', 403);
+      // 查询用户记录，获取 stripe_customer_id、email、full_name
+      const { data: userData, error: dbError } = await supabase
+        .from('users')
+        .select('stripe_customer_id, email, full_name')
+        .eq('id', user.id)
+        .single();
+
+      if (dbError) {
+        console.error('查询用户信息失败:', dbError);
+        return errorResponse('Failed to fetch user data', 500);
       }
 
-      // 设置默认支付方式
-      await stripe.customers.update(customerId, {
-        invoice_settings: { default_payment_method: paymentMethodId },
+      let customerId = userData?.stripe_customer_id as string | null;
+
+      // 若用户尚无 Stripe Customer，自动创建一个
+      if (!customerId) {
+        console.log('用户无 stripe_customer_id，自动创建 Stripe Customer:', user.id);
+
+        const customer = await stripe.customers.create({
+          email: userData?.email ?? user.email ?? '',
+          name: userData?.full_name ?? '',
+          metadata: { user_id: user.id },
+        });
+        customerId = customer.id;
+
+        // 将新 customer_id 写回 users 表
+        const { error: updateError } = await supabase
+          .from('users')
+          .update({ stripe_customer_id: customerId })
+          .eq('id', user.id);
+
+        if (updateError) {
+          console.error('写回 stripe_customer_id 失败:', updateError);
+          // 不阻断流程，继续使用刚创建的 customerId
+        }
+      }
+
+      // 创建 SetupIntent，允许 off_session 场景（如自动续费）
+      const setupIntent = await stripe.setupIntents.create({
+        customer: customerId,
+        usage: 'off_session',
       });
 
-      return successResponse({ success: true });
+      // 创建 Ephemeral Key，供 Stripe SDK 在前端安全操作 Customer 对象
+      const ephemeralKey = await stripe.ephemeralKeys.create(
+        { customer: customerId },
+        { apiVersion: '2024-04-10' },
+      );
+
+      return successResponse({
+        clientSecret: setupIntent.client_secret,
+        customerId,
+        ephemeralKey: ephemeralKey.secret,
+      });
+    }
+
+      // -------------------------------------------------------
+      // POST set_default — 设置默认卡
+      // body: { action: 'set_default', paymentMethodId: string }
+      // -------------------------------------------------------
+      if (body.action === 'set_default') {
+        const result = await getStripeCustomerId(req);
+        if (result.error) return result.error;
+        const { customerId } = result;
+
+        const { paymentMethodId } = body;
+        if (!paymentMethodId) {
+          return errorResponse('paymentMethodId is required');
+        }
+
+        // 校验该支付方式确实属于此 Customer（防越权）
+        const pm = await stripe.paymentMethods.retrieve(paymentMethodId);
+        if (pm.customer !== customerId) {
+          return errorResponse('Payment method does not belong to this customer', 403);
+        }
+
+        // 设置默认支付方式
+        await stripe.customers.update(customerId, {
+          invoice_settings: { default_payment_method: paymentMethodId },
+        });
+
+        return successResponse({ success: true });
+      }
+
+      return errorResponse('Unknown POST action');
     }
 
     // -------------------------------------------------------
-    // DELETE /:id — 删除已保存的卡
+    // DELETE — 删除已保存的卡
+    // body: { paymentMethodId: string }
     // -------------------------------------------------------
-    if (req.method === 'DELETE' && action) {
-      const paymentMethodId = action; // URL 最后一段即为 pm_xxx
+    if (req.method === 'DELETE') {
+      const body = await req.json();
+      const paymentMethodId = body?.paymentMethodId as string;
+      if (!paymentMethodId) {
+        return errorResponse('paymentMethodId is required');
+      }
 
       const result = await getStripeCustomerId(req);
       if (result.error) return result.error;
