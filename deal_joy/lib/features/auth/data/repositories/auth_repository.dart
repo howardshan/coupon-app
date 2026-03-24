@@ -147,7 +147,10 @@ class AuthRepository {
   Future<void> resetPassword(String email) async {
     // 不管邮箱是否存在都不抛异常（隐私安全）
     try {
-      await _client.auth.resetPasswordForEmail(email);
+      await _client.auth.resetPasswordForEmail(
+        email,
+        redirectTo: 'io.supabase.dealjoy://login-callback/',
+      );
     } catch (_) {
       // 静默处理，不泄露邮箱存在性
     }
