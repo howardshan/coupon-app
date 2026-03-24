@@ -23,8 +23,10 @@ final orderDetailProvider = FutureProvider.family<OrderModel, String>((
 });
 
 /// 订单详情（来自 user-order-detail Edge Function，含时间线 / 支付状态 / 券码等）
+/// 使用 autoDispose：每次离开详情页后清除缓存，再次进入时重新请求最新数据
+/// 避免券状态变更后（如商家扫码）详情页仍显示旧缓存的问题
 final userOrderDetailProvider =
-    FutureProvider.family<OrderDetailModel, String>((ref, orderId) {
+    FutureProvider.autoDispose.family<OrderDetailModel, String>((ref, orderId) {
   return ref.watch(ordersRepositoryProvider).fetchOrderDetailFromApi(orderId);
 });
 

@@ -250,6 +250,19 @@ class _CardTile extends ConsumerWidget {
                         color: AppColors.textSecondary,
                       ),
                     ),
+                    // 如果有 billing address，显示摘要（单行截断）
+                    if (card.billingAddress != null && card.billingAddress!.summary.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        card.billingAddress!.summary,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AppColors.textHint,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -337,6 +350,11 @@ class _AddCardButton extends ConsumerWidget {
           customerId: customerId,
           customerEphemeralKeySecret: ephemeralKey,
           style: ThemeMode.light,
+          // 强制收集 billing address，确保卡片和地址绑定
+          billingDetailsCollectionConfiguration:
+              const BillingDetailsCollectionConfiguration(
+            address: AddressCollectionMode.full,
+          ),
         ),
       );
 
