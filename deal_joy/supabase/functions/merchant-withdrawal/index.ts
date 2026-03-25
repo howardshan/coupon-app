@@ -44,6 +44,38 @@ function errorResponse(message: string, status = 400): Response {
   return jsonResponse({ error: message }, status);
 }
 
+/**
+ * Stripe Account Links 要求 return_url / refresh_url 为 Stripe 可接受的 URL。
+ * 自定义 scheme（如 dealjoymerchant://）会触发 Stripe 报错 "Not a valid URL"。
+ * 必须在 Supabase Secrets 中配置两个 **https** 地址（可由静态页再 302/JS 跳回 App 深链）。
+ */
+function resolveStripeConnectRedirectUrls():
+  | { returnUrl: string; refreshUrl: string }
+  | { error: string } {
+  const returnUrl = (Deno.env.get("STRIPE_CONNECT_RETURN_URL") ?? "").trim();
+  const refreshUrl = (Deno.env.get("STRIPE_CONNECT_REFRESH_URL") ?? "").trim();
+  if (!returnUrl || !refreshUrl) {
+    return {
+      error:
+        "Missing STRIPE_CONNECT_RETURN_URL or STRIPE_CONNECT_REFRESH_URL. " +
+        "Set both to full https URLs in Supabase Edge Function secrets (see docs/plans/2026-03-24-merchant-withdrawal-testing.md).",
+    };
+  }
+  try {
+    const r = new URL(returnUrl);
+    const f = new URL(refreshUrl);
+    if (r.protocol !== "https:" || f.protocol !== "https:") {
+      return {
+        error:
+          "STRIPE_CONNECT_RETURN_URL and STRIPE_CONNECT_REFRESH_URL must use https:// (Stripe rejects custom URL schemes).",
+      };
+    }
+  } catch {
+    return { error: "STRIPE_CONNECT_RETURN_URL or STRIPE_CONNECT_REFRESH_URL is not a valid URL." };
+  }
+  return { returnUrl, refreshUrl };
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -649,12 +681,17 @@ async function handleCreateConnectLink(
       .eq("id", merchantId);
   }
 
+  const redirect = resolveStripeConnectRedirectUrls();
+  if ("error" in redirect) {
+    return errorResponse(redirect.error, 503);
+  }
+
   // 生成 Account Link（onboarding URL）
-  // return_url / refresh_url 均指向 payment_account_page 的刷新入口
+  // return_url / refresh_url 由环境变量提供（须为 https，见 resolveStripeConnectRedirectUrls）
   const accountLink = await stripe.accountLinks.create({
     account: stripeAccountId,
-    refresh_url: "dealjoymerchant://stripe-callback?result=refresh",
-    return_url:  "dealjoymerchant://stripe-callback?result=success",
+    refresh_url: redirect.refreshUrl,
+    return_url: redirect.returnUrl,
     type: "account_onboarding",
   });
 

@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Return to DealJoy Merchant</title>
+  <!--
+    托管到任意 HTTPS 静态站点后，将 Edge Function 环境变量设为：
+      STRIPE_CONNECT_RETURN_URL  = https://你的域名/.../redirect.html?result=success
+      STRIPE_CONNECT_REFRESH_URL = https://你的域名/.../redirect.html?result=refresh
+    Stripe 完成 onboarding 后会打开上述 https 页，再由本页跳回 App 深链。
+  -->
+  <script>
+    (function () {
+      var q = new URLSearchParams(window.location.search);
+      var r = q.get("result");
+      if (r !== "success" && r !== "refresh") r = "success";
+      window.location.replace(
+        "dealjoymerchant://stripe-callback?result=" + encodeURIComponent(r)
+      );
+    })();
+  </script>
+</head>
+<body>
+  <p>Redirecting to DealJoy Merchant…</p>
+</body>
+</html>
