@@ -810,7 +810,7 @@ class _StripeAccountBanner extends StatelessWidget {
             ),
           ),
           TextButton(
-            onPressed: () => _showConnectTip(context),
+            onPressed: () => context.push('/earnings/payment-account'),
             child: const Text(
               'Setup',
               style: TextStyle(
@@ -835,17 +835,6 @@ class _StripeAccountBanner extends StatelessWidget {
     );
   }
 
-  void _showConnectTip(BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('Stripe Connect integration coming soon!'),
-        backgroundColor: const Color(0xFFFF6B35),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        duration: const Duration(seconds: 3),
-      ),
-    );
-  }
 }
 
 // =============================================================
