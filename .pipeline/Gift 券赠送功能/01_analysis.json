@@ -1,0 +1,67 @@
+{
+  "module": "Gift 券赠送功能",
+  "analysis_date": "2026-03-25",
+  "existing_code": {
+    "database": {
+      "old_gift_coupon_rpc": "20260301000001_coupon_gifting.sql - gift_coupon() RPC，旧版复制券模式",
+      "coupons_gifted_from": "已有 gifted_from 字段",
+      "customer_item_status_enum": "7个值，缺 gifted"
+    },
+    "dart_models": {
+      "CouponModel": "已有 giftedFrom 字段",
+      "OrderItemModel": "showCancel/showRefundRequest/showWriteReview，缺 showGift",
+      "CustomerItemStatus": "7个值，缺 gifted"
+    },
+    "providers": {
+      "GiftNotifier": "已有，调旧版 RPC，仅支持邮箱查找已注册用户",
+      "giftNotifierProvider": "已有"
+    },
+    "repository": {
+      "CouponsRepository.giftCoupon": "已有，旧版逻辑（邮箱查user→调RPC）"
+    },
+    "ui": {
+      "coupon_screen.dart": "已有 Gift to Friend 按钮 + AlertDialog（仅邮箱输入）",
+      "voucher_detail_screen.dart": "已有 Gift 快捷按钮（仅导航到 coupon 页面）",
+      "order_detail_screen.dart": "_CouponDetailRow 有 Cancel/Refund/Review 按钮，缺 Gift"
+    },
+    "email": {
+      "smtp2go": "完整集成，email_type_settings 管理",
+      "templates": "12个客户端模板，缺 gift 相关"
+    },
+    "sms": "无现有方案"
+  },
+  "needs_modification": [
+    "Migration: 新建 gift_status enum + coupon_gifts 表 + customer_item_status 加 gifted",
+    "Migration: coupons 表加 current_holder_user_id / is_gifted",
+    "Edge Function: send-gift（替代旧 gift_coupon RPC）",
+    "Edge Function: recall-gift",
+    "Edge Function: claim-gift（公开API）",
+    "CouponGiftModel: 新建",
+    "OrderItemModel: 新增 activeGift / showGift / showRecallGift / showEditRecipient",
+    "CustomerItemStatus: 新增 gifted",
+    "CouponsRepository: 重写 giftCoupon → 调 send-gift Edge Function",
+    "CouponsRepository: 新增 recallGift / getActiveGift",
+    "GiftNotifier: 重写，支持 email+phone / recall / edit",
+    "Gift UI: 从简单 AlertDialog 升级为 Bottom Sheet（支持邮箱+电话+留言）",
+    "order_detail_screen: _CouponDetailRow 加 Gift / Recall / Edit Recipient 按钮",
+    "voucher_detail_screen: Gift 按钮改为直接调 Gift Bottom Sheet",
+    "券状态展示: gifted 状态显示 badge + 受赠方信息",
+    "Email 模板: gift-sent / gift-received"
+  ],
+  "new_features": [
+    "coupon_gifts 表 + RLS",
+    "claim_token 机制",
+    "撤回 (recall) 功能",
+    "修改受赠方 (edit recipient) 功能",
+    "Gift Bottom Sheet（邮箱/电话自动检测+留言）",
+    "Gifted 状态展示矩阵（pending/claimed/recalled/expired）",
+    "Gift 邮件模板（SMTP2GO）",
+    "auto-expire-gifts（集成到现有 auto-refund-expired）"
+  ],
+  "deferred": [
+    "SMS 通知（需 Twilio 配置，Phase 2+）",
+    "Web Claim 页面（需前端部署，Phase 3）",
+    "Deep Link 集成（需 App Store/Play Store 配置）",
+    "受赠方 App 内绑定流程"
+  ]
+}

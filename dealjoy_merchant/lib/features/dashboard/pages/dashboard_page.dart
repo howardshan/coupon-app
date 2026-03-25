@@ -454,7 +454,7 @@ class _StatsSection extends StatelessWidget {
           value: '${stats.todayRedemptions}',
           icon: Icons.check_circle_outline,
           color: const Color(0xFF4CAF50),
-          onTap: () => context.push('/orders'),
+          onTap: () => context.push('/orders?tab=3'),
         ),
         StatsCard(
           title: 'Revenue',
@@ -468,7 +468,7 @@ class _StatsSection extends StatelessWidget {
           value: '${stats.pendingCoupons}',
           icon: Icons.access_time_outlined,
           color: const Color(0xFF9C27B0),
-          onTap: () => context.push('/orders'),
+          onTap: () => context.push('/orders?tab=1'),
         ),
       ],
     );

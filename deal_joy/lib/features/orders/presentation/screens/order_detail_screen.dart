@@ -16,6 +16,7 @@ import '../../data/models/order_detail_model.dart';
 import '../../data/models/order_item_model.dart';
 import '../../domain/providers/orders_provider.dart';
 import '../../domain/providers/coupons_provider.dart';
+import '../widgets/gift_bottom_sheet.dart';
 
 // ── 未使用券 QR 码弹窗 ────────────────────────────
 
@@ -404,6 +405,8 @@ class _DealSummaryCard extends ConsumerWidget {
         dealItems.where((i) => i.customerStatus == CustomerItemStatus.unused).toList();
     final usedItems =
         dealItems.where((i) => i.customerStatus == CustomerItemStatus.used).toList();
+    final giftedItems =
+        dealItems.where((i) => i.customerStatus == CustomerItemStatus.gifted).toList();
     final refundedItems = dealItems
         .where((i) =>
             i.customerStatus == CustomerItemStatus.refundSuccess ||
@@ -414,6 +417,7 @@ class _DealSummaryCard extends ConsumerWidget {
         .where((i) =>
             i.customerStatus != CustomerItemStatus.unused &&
             i.customerStatus != CustomerItemStatus.used &&
+            i.customerStatus != CustomerItemStatus.gifted &&
             i.customerStatus != CustomerItemStatus.refundSuccess &&
             i.customerStatus != CustomerItemStatus.refundPending &&
             i.customerStatus != CustomerItemStatus.refundReview)
@@ -535,6 +539,20 @@ class _DealSummaryCard extends ConsumerWidget {
               items: usedItems,
               isExpanded: isExpanded && unusedItems.isEmpty,
               onToggle: unusedItems.isEmpty ? onToggleExpand : null,
+              onRefreshOrder: onRefreshOrder,
+              orderId: orderId,
+              paymentIntentId: paymentIntentId,
+              storeCreditUsed: storeCreditUsed,
+              orderTotalAmount: orderTotalAmount,
+            ),
+          if (giftedItems.isNotEmpty)
+            _CouponStatusRow(
+              label: 'Gifted',
+              count: giftedItems.length,
+              color: AppColors.secondary,
+              items: giftedItems,
+              isExpanded: isExpanded && unusedItems.isEmpty && usedItems.isEmpty,
+              onToggle: unusedItems.isEmpty && usedItems.isEmpty ? onToggleExpand : null,
               onRefreshOrder: onRefreshOrder,
               orderId: orderId,
               paymentIntentId: paymentIntentId,
@@ -753,6 +771,19 @@ class _CouponDetailRow extends ConsumerWidget {
                           fontSize: 11, color: AppColors.textHint),
                     ),
                   ],
+                  // 赠送信息（gifted 状态时显示受赠方）
+                  if (item.customerStatus == CustomerItemStatus.gifted &&
+                      item.activeGift != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      'Gifted to ${item.activeGift!.recipientDisplay}',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: AppColors.secondary,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -778,10 +809,99 @@ class _CouponDetailRow extends ConsumerWidget {
                     color: AppColors.accent,
                     onTap: () => context.push('/review/${item.dealId}'),
                   ),
+                // 赠送按钮（未使用且未赠出）
+                if (item.showGift)
+                  _SmallButton(
+                    label: 'Gift',
+                    color: AppColors.secondary,
+                    onTap: () => GiftBottomSheet.show(
+                      context,
+                      dealTitle: item.dealTitle,
+                      merchantName: item.merchantName,
+                      expiresAt: item.couponExpiresAt,
+                      orderItemId: item.id,
+                      onGiftSent: onRefreshOrder,
+                    ),
+                  ),
+                // 撤回赠送按钮（已赠出 + pending）
+                if (item.showRecallGift)
+                  _SmallButton(
+                    label: 'Recall',
+                    color: AppColors.warning,
+                    onTap: () => _showRecallConfirm(context, ref, item),
+                  ),
+                // 修改受赠方按钮（已赠出 + pending）
+                if (item.showEditRecipient)
+                  _SmallButton(
+                    label: 'Edit',
+                    color: AppColors.info,
+                    onTap: () => GiftBottomSheet.show(
+                      context,
+                      dealTitle: item.dealTitle,
+                      merchantName: item.merchantName,
+                      expiresAt: item.couponExpiresAt,
+                      orderItemId: item.id,
+                      prefillEmail: item.activeGift?.recipientEmail,
+                      prefillPhone: item.activeGift?.recipientPhone,
+                      onGiftSent: onRefreshOrder,
+                    ),
+                  ),
               ],
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  // 撤回赠送确认弹窗
+  void _showRecallConfirm(
+      BuildContext context, WidgetRef ref, OrderItemModel item) {
+    final gift = item.activeGift;
+    if (gift == null) return;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Recall this gift?'),
+        content: Text(
+          'The coupon will be returned to your account.\n'
+          '${gift.recipientDisplay} will no longer be able to use it.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.warning,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () async {
+              Navigator.of(ctx).pop();
+              final success = await ref
+                  .read(giftNotifierProvider.notifier)
+                  .recallGift(gift.id);
+              if (context.mounted) {
+                if (success) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Gift recalled successfully')),
+                  );
+                  onRefreshOrder();
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Failed to recall gift'),
+                      backgroundColor: AppColors.error,
+                    ),
+                  );
+                }
+              }
+            },
+            child: const Text('Confirm Recall'),
+          ),
+        ],
       ),
     );
   }

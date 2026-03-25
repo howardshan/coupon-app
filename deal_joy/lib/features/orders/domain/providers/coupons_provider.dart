@@ -144,11 +144,48 @@ class RefundNotifier extends AsyncNotifier<void> {
 final refundNotifierProvider =
     AsyncNotifierProvider<RefundNotifier, void>(RefundNotifier.new);
 
-/// 转赠操作 Notifier
+/// 转赠操作 Notifier（V2: 支持 email/phone/message + recall + edit）
 class GiftNotifier extends AsyncNotifier<void> {
   @override
   Future<void> build() async {}
 
+  /// 发起赠送 — 通过 send-gift Edge Function
+  Future<bool> sendGift({
+    required String orderItemId,
+    String? recipientEmail,
+    String? recipientPhone,
+    String? giftMessage,
+  }) async {
+    state = const AsyncValue.loading();
+    state = await AsyncValue.guard(
+      () => ref.read(couponsRepositoryProvider).sendGift(
+            orderItemId: orderItemId,
+            recipientEmail: recipientEmail,
+            recipientPhone: recipientPhone,
+            giftMessage: giftMessage,
+          ),
+    );
+    if (!state.hasError) {
+      ref.invalidate(userCouponsProvider);
+      ref.invalidate(userOrdersProvider);
+    }
+    return !state.hasError;
+  }
+
+  /// 撤回赠送
+  Future<bool> recallGift(String giftId) async {
+    state = const AsyncValue.loading();
+    state = await AsyncValue.guard(
+      () => ref.read(couponsRepositoryProvider).recallGift(giftId),
+    );
+    if (!state.hasError) {
+      ref.invalidate(userCouponsProvider);
+      ref.invalidate(userOrdersProvider);
+    }
+    return !state.hasError;
+  }
+
+  /// 旧版兼容：通过 couponId + email 赠送
   Future<bool> giftCoupon(String couponId, String recipientEmail) async {
     state = const AsyncValue.loading();
     state = await AsyncValue.guard(
