@@ -1,29 +1,40 @@
 // 收款账户页面
-// 展示 Stripe Connect 账户状态
-// V1: 仅显示状态，OAuth 流程 V2 实现
+// 实现 Stripe Connect Express 账户绑定、状态刷新、Dashboard 管理
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/earnings_data.dart';
 import '../providers/earnings_provider.dart';
 
 // =============================================================
-// PaymentAccountPage — 收款账户状态页（ConsumerWidget）
+// PaymentAccountPage — 收款账户页（ConsumerStatefulWidget）
+// 支持 Stripe Connect Express onboarding、状态刷新、Dashboard 管理
 // =============================================================
-class PaymentAccountPage extends ConsumerWidget {
+class PaymentAccountPage extends ConsumerStatefulWidget {
   const PaymentAccountPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<PaymentAccountPage> createState() => _PaymentAccountPageState();
+}
+
+class _PaymentAccountPageState extends ConsumerState<PaymentAccountPage> {
+  // 按钮操作中的加载状态
+  bool _isConnecting = false;
+  bool _isRefreshing = false;
+  bool _isOpeningDashboard = false;
+
+  @override
+  Widget build(BuildContext context) {
     final stripeAsync = ref.watch(stripeAccountProvider);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
-      appBar: _buildAppBar(context),
+      appBar: _buildAppBar(),
       body: stripeAsync.when(
         loading: () => _buildLoading(),
-        error:   (err, st) => _buildError(context, ref, err),
-        data:    (info) => _buildContent(context, ref, info),
+        error:   (err, st) => _buildError(err),
+        data:    (info) => _buildContent(info),
       ),
     );
   }
@@ -31,7 +42,7 @@ class PaymentAccountPage extends ConsumerWidget {
   // ----------------------------------------------------------
   // AppBar
   // ----------------------------------------------------------
-  PreferredSizeWidget _buildAppBar(BuildContext context) {
+  PreferredSizeWidget _buildAppBar() {
     return AppBar(
       backgroundColor: Colors.white,
       elevation: 0,
@@ -55,39 +66,107 @@ class PaymentAccountPage extends ConsumerWidget {
   // ----------------------------------------------------------
   // 主内容
   // ----------------------------------------------------------
-  Widget _buildContent(
-    BuildContext context,
-    WidgetRef ref,
-    StripeAccountInfo info,
-  ) {
+  Widget _buildContent(StripeAccountInfo info) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 顶部说明区
           _InfoBanner(isConnected: info.isConnected),
           const SizedBox(height: 20),
 
-          // 账户状态卡片
           _AccountStatusCard(info: info),
           const SizedBox(height: 20),
 
           // 操作按钮区
           _ActionButtons(
-            isConnected: info.isConnected,
-            onConnectTap: () => _showComingSoonTip(context, 'Connect Stripe Account'),
-            onManageTap:  () => _showComingSoonTip(context, 'Manage on Stripe'),
-            onDisconnectTap: () => _showDisconnectConfirm(context),
+            isConnected:     info.isConnected,
+            isConnecting:    _isConnecting,
+            isOpeningDashboard: _isOpeningDashboard,
+            onConnectTap:    _handleConnect,
+            onManageTap:     _handleManage,
+            onDisconnectTap: () => _showDisconnectConfirm(),
+          ),
+          const SizedBox(height: 16),
+
+          // Refresh Status 按钮（onboarding 完成后点击同步）
+          _RefreshStatusButton(
+            isRefreshing: _isRefreshing,
+            onTap: _handleRefreshStatus,
           ),
           const SizedBox(height: 24),
 
-          // 结算说明
-          _SettlementExplainer(),
+          const _SettlementExplainer(),
           const SizedBox(height: 32),
         ],
       ),
     );
+  }
+
+  // ----------------------------------------------------------
+  // 点击 "Connect Stripe Account" — 跳转到 Stripe onboarding
+  // ----------------------------------------------------------
+  Future<void> _handleConnect() async {
+    setState(() => _isConnecting = true);
+    try {
+      final service = ref.read(earningsServiceProvider);
+      final url = await service.fetchStripeConnectUrl();
+      final uri = Uri.parse(url);
+      if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+        if (mounted) _showError('Could not open Stripe. Please try again.');
+      }
+    } on Exception catch (e) {
+      if (mounted) _showError(e.toString());
+    } finally {
+      if (mounted) setState(() => _isConnecting = false);
+    }
+  }
+
+  // ----------------------------------------------------------
+  // 点击 "Refresh Status" — 同步 Stripe 账户状态后刷新页面
+  // ----------------------------------------------------------
+  Future<void> _handleRefreshStatus() async {
+    setState(() => _isRefreshing = true);
+    try {
+      final service = ref.read(earningsServiceProvider);
+      await service.refreshStripeAccountStatus();
+      // 刷新 stripeAccountProvider，重新加载页面
+      ref.invalidate(stripeAccountProvider);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Account status updated'),
+            backgroundColor: const Color(0xFF4CAF50),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } on Exception catch (e) {
+      if (mounted) _showError(e.toString());
+    } finally {
+      if (mounted) setState(() => _isRefreshing = false);
+    }
+  }
+
+  // ----------------------------------------------------------
+  // 点击 "Manage on Stripe" — 打开 Stripe Express Dashboard
+  // ----------------------------------------------------------
+  Future<void> _handleManage() async {
+    setState(() => _isOpeningDashboard = true);
+    try {
+      final service = ref.read(earningsServiceProvider);
+      final url = await service.fetchStripeManageUrl();
+      final uri = Uri.parse(url);
+      if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+        if (mounted) _showError('Could not open Stripe Dashboard. Please try again.');
+      }
+    } on Exception catch (e) {
+      if (mounted) _showError(e.toString());
+    } finally {
+      if (mounted) setState(() => _isOpeningDashboard = false);
+    }
   }
 
   // ----------------------------------------------------------
@@ -115,7 +194,7 @@ class PaymentAccountPage extends ConsumerWidget {
   // ----------------------------------------------------------
   // 错误状态
   // ----------------------------------------------------------
-  Widget _buildError(BuildContext context, WidgetRef ref, Object err) {
+  Widget _buildError(Object err) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -152,31 +231,31 @@ class PaymentAccountPage extends ConsumerWidget {
   }
 
   // ----------------------------------------------------------
-  // V1 提示：功能即将上线
+  // 错误提示 SnackBar
   // ----------------------------------------------------------
-  void _showComingSoonTip(BuildContext context, String action) {
+  void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('$action — coming soon!'),
-        backgroundColor: const Color(0xFFFF6B35),
+        content: Text(message),
+        backgroundColor: Colors.red.shade600,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        duration: const Duration(seconds: 3),
+        duration: const Duration(seconds: 4),
       ),
     );
   }
 
   // ----------------------------------------------------------
-  // 断开连接确认对话框（V1 仅提示）
+  // 断开连接确认对话框（功能保留，Stripe 不支持直接断开）
   // ----------------------------------------------------------
-  Future<void> _showDisconnectConfirm(BuildContext context) async {
+  Future<void> _showDisconnectConfirm() async {
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Disconnect Stripe'),
         content: const Text(
-          'Disconnecting your Stripe account will pause all payouts. '
-          'This feature will be available in the next update.',
+          'To disconnect your Stripe account, please contact our support team. '
+          'Payouts will be paused until a new account is connected.',
         ),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         actions: [
@@ -448,16 +527,20 @@ class _InfoRow extends StatelessWidget {
 }
 
 // =============================================================
-// _ActionButtons — 操作按钮区
+// _ActionButtons — 操作按钮区（支持 loading 状态）
 // =============================================================
 class _ActionButtons extends StatelessWidget {
   final bool isConnected;
+  final bool isConnecting;
+  final bool isOpeningDashboard;
   final VoidCallback onConnectTap;
   final VoidCallback onManageTap;
   final VoidCallback onDisconnectTap;
 
   const _ActionButtons({
     required this.isConnected,
+    required this.isConnecting,
+    required this.isOpeningDashboard,
     required this.onConnectTap,
     required this.onManageTap,
     required this.onDisconnectTap,
@@ -472,8 +555,17 @@ class _ActionButtons extends StatelessWidget {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
-              onPressed: onManageTap,
-              icon: const Icon(Icons.open_in_new, size: 16),
+              onPressed: isOpeningDashboard ? null : onManageTap,
+              icon: isOpeningDashboard
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.open_in_new, size: 16),
               label: const Text('Manage on Stripe'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF635BFF),
@@ -509,13 +601,65 @@ class _ActionButtons extends StatelessWidget {
     return SizedBox(
       width: double.infinity,
       child: ElevatedButton.icon(
-        onPressed: onConnectTap,
-        icon: const Icon(Icons.link, size: 18),
-        label: const Text('Connect Stripe Account'),
+        onPressed: isConnecting ? null : onConnectTap,
+        icon: isConnecting
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
+            : const Icon(Icons.link, size: 18),
+        label: Text(isConnecting ? 'Opening Stripe...' : 'Connect Stripe Account'),
         style: ElevatedButton.styleFrom(
           backgroundColor: const Color(0xFFFF6B35),
           foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(vertical: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// =============================================================
+// _RefreshStatusButton — 刷新账户状态按钮
+// 商家完成 Stripe onboarding 后点击，同步最新状态
+// =============================================================
+class _RefreshStatusButton extends StatelessWidget {
+  final bool isRefreshing;
+  final VoidCallback onTap;
+
+  const _RefreshStatusButton({
+    required this.isRefreshing,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: isRefreshing ? null : onTap,
+        icon: isRefreshing
+            ? SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.grey.shade500,
+                ),
+              )
+            : const Icon(Icons.sync, size: 16),
+        label: Text(isRefreshing ? 'Refreshing...' : 'Refresh Status'),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: Colors.grey.shade600,
+          side: BorderSide(color: Colors.grey.shade300),
+          padding: const EdgeInsets.symmetric(vertical: 12),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(8),
           ),
