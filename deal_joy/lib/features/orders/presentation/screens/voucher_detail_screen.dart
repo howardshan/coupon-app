@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../cart/domain/providers/cart_provider.dart';
+import '../../../deals/domain/providers/deals_provider.dart';
 import '../../data/models/order_detail_model.dart';
 import '../../data/models/order_item_model.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -983,9 +985,6 @@ class _VoucherBottomActionBar extends ConsumerWidget {
         .toList();
     final hasUnused = cancelableItems.isNotEmpty;
 
-    // 获取 dealId 对应的 deal 信息（用于 Buy Again 跳转）
-    final targetDealId = dealId;
-
     return Container(
       decoration: const BoxDecoration(
         color: Colors.white,
@@ -1029,7 +1028,7 @@ class _VoucherBottomActionBar extends ConsumerWidget {
           Expanded(
             flex: hasUnused ? 1 : 2,
             child: ElevatedButton(
-              onPressed: () => context.push('/deals/$targetDealId'),
+              onPressed: () => _handleBuyAgain(context, ref),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
                 foregroundColor: Colors.white,
@@ -1051,6 +1050,127 @@ class _VoucherBottomActionBar extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  // ── Buy Again：将该 deal 的券重新加入购物车并跳转结账 ─────────
+  Future<void> _handleBuyAgain(BuildContext context, WidgetRef ref) async {
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final router = GoRouter.of(context);
+
+    // 显示加载指示器
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(
+        child: CircularProgressIndicator(color: Colors.white),
+      ),
+    );
+
+    try {
+      final dealsRepo = ref.read(dealsRepositoryProvider);
+      final cartNotifier = ref.read(cartProvider.notifier);
+
+      // 仅取当前 deal 对应的订单项
+      final orderItems =
+          detail.items.where((i) => i.dealId == dealId).toList();
+      if (orderItems.isEmpty) {
+        navigator.pop();
+        return;
+      }
+
+      try {
+        final deal = await dealsRepo.fetchDealById(dealId);
+
+        // 检查是否已过期
+        if (deal.isExpired) {
+          navigator.pop();
+          messenger.showSnackBar(SnackBar(
+            content: Text('${deal.title} is no longer available.'),
+          ));
+          return;
+        }
+
+        // 检查限购
+        int allowCount = orderItems.length;
+        if (deal.maxPerAccount > 0) {
+          final userId = Supabase.instance.client.auth.currentUser?.id;
+          if (userId != null) {
+            final res = await Supabase.instance.client
+                .from('order_items')
+                .select('id, orders!inner(user_id)')
+                .eq('deal_id', dealId)
+                .eq('orders.user_id', userId)
+                .neq('customer_status', 'refund_success');
+            final purchasedCount = (res as List).length;
+
+            final cartItems = ref.read(cartProvider).valueOrNull ?? [];
+            final cartCount =
+                cartItems.where((c) => c.dealId == dealId).length;
+
+            final remaining =
+                deal.maxPerAccount - purchasedCount - cartCount;
+            if (remaining <= 0) {
+              navigator.pop();
+              messenger.showSnackBar(SnackBar(
+                content: Text(
+                    '${deal.title} has reached the purchase limit.'),
+              ));
+              return;
+            }
+            allowCount = remaining < orderItems.length
+                ? remaining
+                : orderItems.length;
+          }
+        }
+
+        // 收集要加入购物车的数据
+        final itemsToAdd = <OrderItemBuyAgainData>[];
+        for (var i = 0; i < allowCount; i++) {
+          final oi = orderItems[i];
+          itemsToAdd.add(OrderItemBuyAgainData(
+            dealId: oi.dealId,
+            unitPrice: oi.unitPrice,
+            purchasedMerchantId: oi.purchasedMerchantId,
+            applicableStoreIds: oi.applicableStoreIds,
+            selectedOptions: oi.selectedOptions,
+          ));
+        }
+
+        // 关闭 loading
+        navigator.pop();
+
+        // 批量加入购物车
+        final addedItems =
+            await cartNotifier.addBulkFromOrderItems(itemsToAdd);
+
+        // 如果因限购只能加入部分，提示用户
+        if (allowCount < orderItems.length) {
+          final skipped = orderItems.length - allowCount;
+          messenger.showSnackBar(SnackBar(
+            content: Text(
+                '$skipped coupon(s) skipped due to purchase limit.'),
+            duration: const Duration(seconds: 3),
+          ));
+        }
+
+        // 跳转到结账页
+        if (addedItems.isNotEmpty) {
+          router.push('/checkout-cart', extra: addedItems);
+        }
+      } catch (_) {
+        navigator.pop();
+        messenger.showSnackBar(SnackBar(
+          content: Text(
+              '${orderItems.first.dealTitle} is no longer available.'),
+        ));
+      }
+    } catch (e) {
+      navigator.pop();
+      messenger.showSnackBar(SnackBar(
+        content: Text('Failed to re-order: $e'),
+      ));
+    }
   }
 
   // 批量取消 Bottom Sheet

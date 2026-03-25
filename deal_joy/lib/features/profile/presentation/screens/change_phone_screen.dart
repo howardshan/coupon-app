@@ -20,12 +20,26 @@ class _ChangePhoneScreenState extends ConsumerState<ChangePhoneScreen> {
   final _formKey = GlobalKey<FormState>();
   final _phoneCtrl = TextEditingController();
   bool _isLoading = false;
+  String? _errorMessage;
 
   // 北美手机号正则：10 位数字（去掉格式符号后）
   static final _phoneDigitsRegex = RegExp(r'^\d{10}$');
 
+  void _clearError() {
+    if (_errorMessage != null) {
+      setState(() => _errorMessage = null);
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _phoneCtrl.addListener(_clearError);
+  }
+
   @override
   void dispose() {
+    _phoneCtrl.removeListener(_clearError);
     _phoneCtrl.dispose();
     super.dispose();
   }
@@ -45,6 +59,21 @@ class _ChangePhoneScreenState extends ConsumerState<ChangePhoneScreen> {
       return 'Please enter a valid 10-digit phone number';
     }
     return null;
+  }
+
+  /// 将错误转为用户友好提示
+  String _friendlyPhoneError(String raw) {
+    final lower = raw.toLowerCase();
+    if (lower.contains('duplicate') || lower.contains('already')) {
+      return 'This phone number is already in use.';
+    }
+    if (lower.contains('rate limit') || lower.contains('too many requests')) {
+      return 'Too many attempts. Please try again later.';
+    }
+    if (lower.contains('network') || lower.contains('connection')) {
+      return 'Network error. Please check your connection.';
+    }
+    return 'Failed to update phone number. Please try again.';
   }
 
   /// 提交保存新手机号
@@ -85,12 +114,9 @@ class _ChangePhoneScreenState extends ConsumerState<ChangePhoneScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to update phone number: $e'),
-            backgroundColor: AppColors.error,
-          ),
-        );
+        setState(() {
+          _errorMessage = _friendlyPhoneError(e.toString());
+        });
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -193,6 +219,27 @@ class _ChangePhoneScreenState extends ConsumerState<ChangePhoneScreen> {
                   color: AppColors.textHint,
                 ),
               ),
+
+              // 内联错误提示
+              if (_errorMessage != null) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    const Icon(Icons.error_outline, size: 16, color: AppColors.error),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        _errorMessage!,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: AppColors.error,
+                          height: 1.3,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
               const SizedBox(height: 32),
 
               // 保存按钮

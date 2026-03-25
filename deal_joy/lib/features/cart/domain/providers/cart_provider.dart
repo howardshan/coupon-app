@@ -7,6 +7,23 @@ import '../../../deals/data/models/deal_model.dart';
 import '../../data/models/cart_item_model.dart';
 import '../../data/repositories/cart_repository.dart';
 
+// ── Buy Again 批量添加数据结构 ──────────────────────────────
+class OrderItemBuyAgainData {
+  final String dealId;
+  final double unitPrice;
+  final String? purchasedMerchantId;
+  final List<String> applicableStoreIds;
+  final Map<String, dynamic>? selectedOptions;
+
+  const OrderItemBuyAgainData({
+    required this.dealId,
+    required this.unitPrice,
+    this.purchasedMerchantId,
+    this.applicableStoreIds = const [],
+    this.selectedOptions,
+  });
+}
+
 // ── Repository Provider ─────────────────────────────────────
 final cartRepositoryProvider = Provider<CartRepository>((ref) {
   return CartRepository(ref.watch(supabaseClientProvider));
@@ -79,6 +96,34 @@ class CartNotifier extends AsyncNotifier<List<CartItemModel>> {
       await _repo.removeFromCart(cartItemId);
       return _repo.fetchCartItems(user.id);
     });
+  }
+
+  /// 批量加入购物车（Buy Again 专用）
+  /// 直接用 repository 逐条插入，最后统一刷新状态
+  /// 返回成功添加的 CartItemModel 列表
+  Future<List<CartItemModel>> addBulkFromOrderItems(
+    List<OrderItemBuyAgainData> items,
+  ) async {
+    final user = await ref.read(currentUserProvider.future);
+    if (user == null) return [];
+
+    final added = <CartItemModel>[];
+    for (final item in items) {
+      final cartItem = await _repo.addToCart(
+        userId: user.id,
+        dealId: item.dealId,
+        unitPrice: item.unitPrice,
+        purchasedMerchantId: item.purchasedMerchantId,
+        applicableStoreIds: item.applicableStoreIds,
+        selectedOptions: item.selectedOptions,
+      );
+      added.add(cartItem);
+    }
+
+    // 统一刷新购物车状态
+    state = await AsyncValue.guard(() => _repo.fetchCartItems(user.id));
+
+    return added;
   }
 
   /// 清空购物车

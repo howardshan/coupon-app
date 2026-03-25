@@ -8,7 +8,10 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../cart/domain/providers/cart_provider.dart';
+import '../../../deals/domain/providers/deals_provider.dart';
 import '../../data/models/order_detail_model.dart';
 import '../../data/models/order_item_model.dart';
 import '../../domain/providers/orders_provider.dart';
@@ -319,6 +322,7 @@ class _MeituanOrderBodyState extends ConsumerState<_MeituanOrderBody> {
                 child: _DealSummaryCard(
                   dealItems: items,
                   isExpanded: isExpanded,
+                  orderId: widget.orderId,
                   paymentIntentId: detail.paymentIntentIdMasked,
                   storeCreditUsed: detail.storeCreditUsed,
                   orderTotalAmount: detail.totalAmount,
@@ -368,6 +372,7 @@ class _DealSummaryCard extends ConsumerWidget {
   final VoidCallback onToggleExpand;
   final VoidCallback onRefreshOrder;
   final String? paymentIntentId;
+  final String orderId;
   /// 本单使用的 Store Credit 金额
   final double storeCreditUsed;
   /// 订单原始总金额（未扣 Store Credit）
@@ -378,6 +383,7 @@ class _DealSummaryCard extends ConsumerWidget {
     required this.isExpanded,
     required this.onToggleExpand,
     required this.onRefreshOrder,
+    required this.orderId,
     this.paymentIntentId,
     this.storeCreditUsed = 0.0,
     this.orderTotalAmount = 0.0,
@@ -516,6 +522,7 @@ class _DealSummaryCard extends ConsumerWidget {
               isExpanded: false,
               onToggle: () => showUnusedQrSheet(context, unusedItems),
               onRefreshOrder: onRefreshOrder,
+              orderId: orderId,
               paymentIntentId: paymentIntentId,
               storeCreditUsed: storeCreditUsed,
               orderTotalAmount: orderTotalAmount,
@@ -529,6 +536,7 @@ class _DealSummaryCard extends ConsumerWidget {
               isExpanded: isExpanded && unusedItems.isEmpty,
               onToggle: unusedItems.isEmpty ? onToggleExpand : null,
               onRefreshOrder: onRefreshOrder,
+              orderId: orderId,
               paymentIntentId: paymentIntentId,
               storeCreditUsed: storeCreditUsed,
               orderTotalAmount: orderTotalAmount,
@@ -544,6 +552,7 @@ class _DealSummaryCard extends ConsumerWidget {
               isExpanded: false,
               onToggle: null,
               onRefreshOrder: onRefreshOrder,
+              orderId: orderId,
               paymentIntentId: paymentIntentId,
               storeCreditUsed: storeCreditUsed,
               orderTotalAmount: orderTotalAmount,
@@ -557,6 +566,7 @@ class _DealSummaryCard extends ConsumerWidget {
               isExpanded: false,
               onToggle: null,
               onRefreshOrder: onRefreshOrder,
+              orderId: orderId,
               paymentIntentId: paymentIntentId,
               storeCreditUsed: storeCreditUsed,
               orderTotalAmount: orderTotalAmount,
@@ -577,6 +587,7 @@ class _CouponStatusRow extends ConsumerWidget {
   final bool isExpanded;
   final VoidCallback? onToggle;
   final VoidCallback onRefreshOrder;
+  final String orderId;
   final String? paymentIntentId;
   /// 本单使用的 Store Credit 金额
   final double storeCreditUsed;
@@ -591,6 +602,7 @@ class _CouponStatusRow extends ConsumerWidget {
     required this.isExpanded,
     required this.onToggle,
     required this.onRefreshOrder,
+    required this.orderId,
     this.paymentIntentId,
     this.storeCreditUsed = 0.0,
     this.orderTotalAmount = 0.0,
@@ -653,6 +665,7 @@ class _CouponStatusRow extends ConsumerWidget {
           ...items.map((item) => _CouponDetailRow(
                 item: item,
                 allItems: items,
+                orderId: orderId,
                 paymentIntentId: paymentIntentId,
                 onRefreshOrder: onRefreshOrder,
                 storeCreditUsed: storeCreditUsed,
@@ -671,6 +684,7 @@ class _CouponStatusRow extends ConsumerWidget {
 class _CouponDetailRow extends ConsumerWidget {
   final OrderItemModel item;
   final List<OrderItemModel> allItems;
+  final String orderId;
   final String? paymentIntentId;
   final VoidCallback onRefreshOrder;
   /// 本单使用的 Store Credit 金额
@@ -681,6 +695,7 @@ class _CouponDetailRow extends ConsumerWidget {
   const _CouponDetailRow({
     required this.item,
     required this.allItems,
+    required this.orderId,
     this.paymentIntentId,
     required this.onRefreshOrder,
     this.storeCreditUsed = 0.0,
@@ -694,10 +709,7 @@ class _CouponDetailRow extends ConsumerWidget {
     return GestureDetector(
       onTap: () {
         // 点击券码行，跳转到 voucher detail 页面
-        final cId = item.couponId;
-        if (cId != null && cId.isNotEmpty) {
-          context.push('/coupon/$cId');
-        }
+        context.push('/voucher/$orderId?dealId=${item.dealId}');
       },
       child: Container(
         color: const Color(0xFFFAFAFA),
@@ -1237,7 +1249,7 @@ class _BottomActionBar extends ConsumerWidget {
           Expanded(
             flex: hasUnused ? 1 : 2,
             child: ElevatedButton(
-              onPressed: () => context.push('/deals/${detail.dealId}'),
+              onPressed: () => _handleBuyAgain(context, ref),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
                 foregroundColor: Colors.white,
@@ -1259,6 +1271,139 @@ class _BottomActionBar extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  // ── Buy Again：将订单券重新加入购物车并跳转结账 ─────────────
+  Future<void> _handleBuyAgain(BuildContext context, WidgetRef ref) async {
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final router = GoRouter.of(context);
+
+    // 显示加载指示器
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(
+        child: CircularProgressIndicator(color: Colors.white),
+      ),
+    );
+
+    try {
+      final dealsRepo = ref.read(dealsRepositoryProvider);
+      final cartNotifier = ref.read(cartProvider.notifier);
+
+      // 按 dealId 分组订单项
+      final itemsByDeal = <String, List<OrderItemModel>>{};
+      for (final item in detail.items) {
+        itemsByDeal.putIfAbsent(item.dealId, () => []).add(item);
+      }
+
+      final unavailableDeals = <String>[]; // 不可购买的 deal 标题
+      final itemsToAdd = <OrderItemBuyAgainData>[]; // 要加入购物车的数据
+
+      for (final entry in itemsByDeal.entries) {
+        final dealId = entry.key;
+        final orderItems = entry.value;
+
+        try {
+          final deal = await dealsRepo.fetchDealById(dealId);
+
+          // 检查是否已过期
+          if (deal.isExpired) {
+            unavailableDeals.add(deal.title);
+            continue;
+          }
+
+          // 检查限购：查询用户已购买该 deal 的数量（未退款的）
+          int allowCount = orderItems.length;
+          if (deal.maxPerAccount > 0) {
+            final userId = Supabase.instance.client.auth.currentUser?.id;
+            if (userId != null) {
+              final res = await Supabase.instance.client
+                  .from('order_items')
+                  .select('id, orders!inner(user_id)')
+                  .eq('deal_id', dealId)
+                  .eq('orders.user_id', userId)
+                  .neq('customer_status', 'refund_success');
+              final purchasedCount = (res as List).length;
+
+              // 也算上购物车中已有的
+              final cartItems = ref.read(cartProvider).valueOrNull ?? [];
+              final cartCount =
+                  cartItems.where((c) => c.dealId == dealId).length;
+
+              final remaining =
+                  deal.maxPerAccount - purchasedCount - cartCount;
+              if (remaining <= 0) {
+                unavailableDeals.add(
+                    '${deal.title} (purchase limit reached)');
+                continue;
+              }
+              allowCount = remaining < orderItems.length
+                  ? remaining
+                  : orderItems.length;
+            }
+          }
+
+          // 收集要加入购物车的数据
+          for (var i = 0; i < allowCount; i++) {
+            final oi = orderItems[i];
+            itemsToAdd.add(OrderItemBuyAgainData(
+              dealId: oi.dealId,
+              unitPrice: oi.unitPrice,
+              purchasedMerchantId: oi.purchasedMerchantId,
+              applicableStoreIds: oi.applicableStoreIds,
+              selectedOptions: oi.selectedOptions,
+            ));
+          }
+
+          // 如果因限购只能加入部分
+          if (allowCount < orderItems.length) {
+            final skipped = orderItems.length - allowCount;
+            unavailableDeals.add(
+                '${deal.title} ($skipped coupon(s) skipped due to purchase limit)');
+          }
+        } catch (_) {
+          // deal 不存在或查询失败
+          unavailableDeals.add(orderItems.first.dealTitle);
+        }
+      }
+
+      // 关闭 loading
+      navigator.pop();
+
+      // 没有可加入的券
+      if (itemsToAdd.isEmpty) {
+        messenger.showSnackBar(const SnackBar(
+          content: Text(
+              'None of the deals in this order are available for purchase.'),
+        ));
+        return;
+      }
+
+      // 批量加入购物车
+      final addedItems = await cartNotifier.addBulkFromOrderItems(itemsToAdd);
+
+      // 显示不可购买的提示
+      if (unavailableDeals.isNotEmpty) {
+        messenger.showSnackBar(SnackBar(
+          content: Text(
+            'Some items are unavailable: ${unavailableDeals.join("; ")}',
+          ),
+          duration: const Duration(seconds: 4),
+        ));
+      }
+
+      // 跳转到结账页，传入刚添加的购物车项
+      if (addedItems.isNotEmpty) {
+        router.push('/checkout-cart', extra: addedItems);
+      }
+    } catch (e) {
+      navigator.pop();
+      messenger.showSnackBar(SnackBar(
+        content: Text('Failed to re-order: $e'),
+      ));
+    }
   }
 
   // 显示取消 Bottom Sheet（第一张 unused 券）
