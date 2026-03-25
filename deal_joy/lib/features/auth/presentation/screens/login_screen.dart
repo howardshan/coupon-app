@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatf
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../../core/errors/app_exception.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../../shared/widgets/app_text_field.dart';
@@ -22,6 +23,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   // "Remember me" 复选框状态，默认不勾选
   bool _rememberMe = false;
 
+  // 登录错误信息（显示在密码框下方）
+  String? _loginError;
+
   @override
   void dispose() {
     _emailCtrl.dispose();
@@ -34,9 +38,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     r'^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$',
   );
 
-  // 表单提交：验证后调用 signIn
+  // 表单提交：验证后调用 signIn，清除旧错误
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    setState(() => _loginError = null);
     await ref.read(authNotifierProvider.notifier).signIn(
           _emailCtrl.text.trim(),
           _passwordCtrl.text,
@@ -58,15 +63,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final authState = ref.watch(authNotifierProvider);
     final isLoading = authState is AsyncLoading;
 
-    // 监听 auth 状态，出错时显示 SnackBar
+    // 监听 auth 状态，出错时在密码框下方显示错误信息
     ref.listen(authNotifierProvider, (_, next) {
       if (next is AsyncError) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(next.error.toString()),
-            backgroundColor: AppColors.error,
-          ),
-        );
+        final err = next.error!;
+        // 直接取 AppException.message，避免显示 "AppException:" 前缀
+        final msg = err is AppException ? err.message : err.toString();
+        setState(() => _loginError = msg);
       }
     });
 
@@ -169,6 +172,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     return null;
                   },
                 ),
+
+                // ---- 登录错误提示（密码框下方）----
+                if (_loginError != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      _loginError!,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: AppColors.error,
+                          ),
+                    ),
+                  ),
 
                 const SizedBox(height: 4),
 

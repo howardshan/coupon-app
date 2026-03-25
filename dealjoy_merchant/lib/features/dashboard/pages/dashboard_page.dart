@@ -464,7 +464,7 @@ class _StatsSection extends StatelessWidget {
           onTap: () => context.push('/earnings'),
         ),
         StatsCard(
-          title: 'Pending',
+          title: 'Unused',
           value: '${stats.pendingCoupons}',
           icon: Icons.access_time_outlined,
           color: const Color(0xFF9C27B0),

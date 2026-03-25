@@ -20,6 +20,7 @@ import '../../features/orders/presentation/screens/to_review_screen.dart';
 import '../../features/orders/presentation/screens/coupon_screen.dart';
 import '../../features/orders/presentation/screens/coupons_screen.dart';
 import '../../features/orders/presentation/screens/order_detail_screen.dart';
+import '../../features/orders/presentation/screens/voucher_detail_screen.dart';
 import '../../features/orders/presentation/screens/refund_request_screen.dart';
 import '../../features/after_sales/presentation/pages/after_sales_request_form_page.dart';
 import '../../features/after_sales/presentation/pages/after_sales_timeline_page.dart';
@@ -311,12 +312,20 @@ final routerProvider = Provider<GoRouter>((ref) {
       // 待评价页面
       GoRoute(path: '/to-review', builder: (_, _) => const ToReviewScreen()),
 
-      // Order detail (single order, optional dealId filter)
+      // Order detail
       GoRoute(
         path: '/order/:orderId',
         builder: (_, state) => OrderDetailScreen(
           orderId: state.pathParameters['orderId']!,
-          filterDealId: state.uri.queryParameters['dealId'],
+        ),
+      ),
+
+      // Voucher detail（从 Coupons/Orders 列表点击单个 deal 进入）
+      GoRoute(
+        path: '/voucher/:orderId',
+        builder: (_, state) => VoucherDetailScreen(
+          orderId: state.pathParameters['orderId']!,
+          dealId: state.uri.queryParameters['dealId'] ?? '',
         ),
       ),
 
