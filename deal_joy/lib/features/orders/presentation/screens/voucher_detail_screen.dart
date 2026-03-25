@@ -15,6 +15,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../domain/providers/orders_provider.dart';
 import '../../domain/providers/coupons_provider.dart';
 import 'order_detail_screen.dart' show showUnusedQrSheet;
+import '../widgets/gift_bottom_sheet.dart';
 
 // ── 主屏幕 ────────────────────────────────────────
 
@@ -187,6 +188,10 @@ class _VoucherDetailBodyState extends ConsumerState<_VoucherDetailBody> {
               child: _VoucherQuickActions(
                 merchantId: dealItems.first.purchasedMerchantId,
                 couponId: dealItems.first.couponId,
+                dealTitle: dealItems.first.dealTitle,
+                orderItemId: dealItems.first.id,
+                merchantName: dealItems.first.merchantName,
+                expiresAt: dealItems.first.couponExpiresAt,
               ),
             ),
 
@@ -825,8 +830,20 @@ class _UsageNotesSection extends StatelessWidget {
 class _VoucherQuickActions extends StatefulWidget {
   final String? merchantId;
   final String? couponId;
+  // Gift Bottom Sheet 所需参数
+  final String? dealTitle;
+  final String? orderItemId;
+  final String? merchantName;
+  final DateTime? expiresAt;
 
-  const _VoucherQuickActions({this.merchantId, this.couponId});
+  const _VoucherQuickActions({
+    this.merchantId,
+    this.couponId,
+    this.dealTitle,
+    this.orderItemId,
+    this.merchantName,
+    this.expiresAt,
+  });
 
   @override
   State<_VoucherQuickActions> createState() => _VoucherQuickActionsState();
@@ -885,9 +902,16 @@ class _VoucherQuickActionsState extends State<_VoucherQuickActions> {
   }
 
   void _giftToFriend() {
-    final couponId = widget.couponId;
-    if (couponId == null) return;
-    context.push('/coupon/$couponId');
+    final orderItemId = widget.orderItemId;
+    if (orderItemId == null) return;
+    // 调用 Gift Bottom Sheet 而非导航到 coupon 页面
+    GiftBottomSheet.show(
+      context,
+      dealTitle: widget.dealTitle ?? '',
+      orderItemId: orderItemId,
+      merchantName: widget.merchantName,
+      expiresAt: widget.expiresAt,
+    );
   }
 
   @override

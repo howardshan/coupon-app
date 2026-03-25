@@ -18,7 +18,10 @@ import '../../after_sales/pages/after_sales_list_page.dart';
 
 /// 订单列表主页
 class OrdersListPage extends ConsumerStatefulWidget {
-  const OrdersListPage({super.key});
+  /// 初始选中的 tab 索引（通过路由 query 参数 ?tab= 传入）
+  final int initialTab;
+
+  const OrdersListPage({super.key, this.initialTab = 0});
 
   @override
   ConsumerState<OrdersListPage> createState() => _OrdersListPageState();
@@ -31,6 +34,7 @@ class _OrdersListPageState extends ConsumerState<OrdersListPage>
   // Tab 配置（null = All）
   static const List<OrderStatus?> _tabs = [
     null,
+    OrderStatus.unused,
     OrderStatus.paid,
     OrderStatus.redeemed,
     OrderStatus.refunded,
@@ -42,7 +46,20 @@ class _OrdersListPageState extends ConsumerState<OrdersListPage>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: _tabs.length, vsync: this);
+    final initial = widget.initialTab.clamp(0, _tabs.length - 1);
+    _tabController = TabController(
+      length: _tabs.length,
+      vsync: this,
+      initialIndex: initial,
+    );
+    // 如果有初始 tab，立即设置 filter
+    if (initial > 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ref.read(orderFilterProvider.notifier).update(
+              (f) => f.copyWith(status: _tabs[initial]),
+            );
+      });
+    }
 
     // Tab 切换时更新 filter 的 status
     _tabController.addListener(() {

@@ -3,6 +3,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/errors/app_exception.dart';
 import '../models/coupon_model.dart';
+import '../models/coupon_gift_model.dart';
 
 /// V3 coupon select — 通过 order_items join 获取 applicable_store_ids
 /// order_items 关联使用外键 coupons!order_items_coupon_id_fkey
@@ -161,6 +162,78 @@ class CouponsRepository {
       throw AppException(_extractFunctionError(e));
     } catch (e) {
       throw AppException('Refund failed: $e');
+    }
+  }
+
+  /// 发起赠送 — 调用 send-gift Edge Function
+  /// 返回 { gift_id, claim_token }
+  Future<Map<String, dynamic>> sendGift({
+    required String orderItemId,
+    String? recipientEmail,
+    String? recipientPhone,
+    String? giftMessage,
+  }) async {
+    try {
+      final response = await _client.functions.invoke(
+        'send-gift',
+        body: {
+          'order_item_id': orderItemId,
+          if (recipientEmail != null) 'recipient_email': recipientEmail,
+          if (recipientPhone != null) 'recipient_phone': recipientPhone,
+          if (giftMessage != null && giftMessage.isNotEmpty)
+            'gift_message': giftMessage,
+        },
+      );
+      final data = response.data;
+      if (data is Map && data.containsKey('error')) {
+        throw AppException(data['error'] as String);
+      }
+      return Map<String, dynamic>.from(data as Map);
+    } on FunctionException catch (e) {
+      throw AppException(_extractFunctionError(e));
+    } on AppException {
+      rethrow;
+    } catch (e) {
+      throw AppException('Failed to send gift: $e');
+    }
+  }
+
+  /// 撤回赠送 — 调用 recall-gift Edge Function
+  Future<void> recallGift(String giftId) async {
+    try {
+      final response = await _client.functions.invoke(
+        'recall-gift',
+        body: {'gift_id': giftId},
+      );
+      final data = response.data;
+      if (data is Map && data.containsKey('error')) {
+        throw AppException(data['error'] as String);
+      }
+    } on FunctionException catch (e) {
+      throw AppException(_extractFunctionError(e));
+    } on AppException {
+      rethrow;
+    } catch (e) {
+      throw AppException('Failed to recall gift: $e');
+    }
+  }
+
+  /// 查询某个 order_item 的当前有效 gift（pending 或 claimed）
+  Future<CouponGiftModel?> fetchActiveGift(String orderItemId) async {
+    try {
+      final data = await _client
+          .from('coupon_gifts')
+          .select()
+          .eq('order_item_id', orderItemId)
+          .inFilter('status', ['pending', 'claimed'])
+          .order('created_at', ascending: false)
+          .limit(1)
+          .maybeSingle();
+      if (data == null) return null;
+      return CouponGiftModel.fromJson(data);
+    } on PostgrestException catch (e) {
+      throw AppException('Failed to fetch gift info: ${e.message}',
+          code: e.code);
     }
   }
 

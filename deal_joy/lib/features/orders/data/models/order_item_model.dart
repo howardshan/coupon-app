@@ -1,6 +1,8 @@
 // Order V3 — 订单 item 维度数据模型
 // 每个 order_item 对应一张券，status 双视角（客户/商家）独立枚举
 
+import 'coupon_gift_model.dart';
+
 // =============================================================
 // 客户端 item 状态枚举
 // =============================================================
@@ -12,7 +14,8 @@ enum CustomerItemStatus {
   refundPending,
   refundReview,
   refundReject,
-  refundSuccess;
+  refundSuccess,
+  gifted;
 
   static CustomerItemStatus fromString(String s) => switch (s) {
         'unused' => unused,
@@ -22,6 +25,7 @@ enum CustomerItemStatus {
         'refund_review' => refundReview,
         'refund_reject' => refundReject,
         'refund_success' => refundSuccess,
+        'gifted' => gifted,
         _ => unused,
       };
 
@@ -34,6 +38,7 @@ enum CustomerItemStatus {
         refundReview => 'Under Review',
         refundReject => 'Refund Rejected',
         refundSuccess => 'Refunded',
+        gifted => 'Gifted',
       };
 }
 
@@ -160,6 +165,9 @@ class OrderItemModel {
   /// Deal 原价
   final double? dealOriginalPrice;
 
+  /// 当前有效的赠送记录（pending 或 claimed）
+  final CouponGiftModel? activeGift;
+
   const OrderItemModel({
     required this.id,
     required this.orderId,
@@ -192,6 +200,7 @@ class OrderItemModel {
     required this.dealTitle,
     this.dealImageUrl,
     this.merchantName,
+    this.activeGift,
   });
 
   // =============================================================
@@ -209,6 +218,20 @@ class OrderItemModel {
 
   /// 已使用后可写评价
   bool get showWriteReview => customerStatus == CustomerItemStatus.used;
+
+  /// 可赠送（未使用且未赠出）
+  bool get showGift =>
+      customerStatus == CustomerItemStatus.unused && activeGift == null;
+
+  /// 可撤回赠送（已赠出 + pending 状态）
+  bool get showRecallGift =>
+      customerStatus == CustomerItemStatus.gifted &&
+      activeGift?.status == GiftStatus.pending;
+
+  /// 可修改受赠方（已赠出 + pending 状态）
+  bool get showEditRecipient =>
+      customerStatus == CustomerItemStatus.gifted &&
+      activeGift?.status == GiftStatus.pending;
 
   // =============================================================
   // 券码格式化：1A2B3C4D5E6F7G8H → 1A2B-3C4D-5E6F-7G8H
@@ -309,6 +332,25 @@ class OrderItemModel {
           (dealsObj?['expires_at'] != null ? DateTime.tryParse(dealsObj!['expires_at'] as String) : null),
       dealOriginalPrice: (pick<num>('deal_original_price', 'dealOriginalPrice') ??
           (dealsObj?['original_price'] as num?))?.toDouble(),
+      // 解析 active gift（从 coupon_gifts join）
+      activeGift: _parseActiveGift(json['coupon_gifts']),
     );
+  }
+
+  /// 从 coupon_gifts join 数据中解析当前有效的 gift（pending 或 claimed）
+  static CouponGiftModel? _parseActiveGift(dynamic giftData) {
+    if (giftData == null) return null;
+    if (giftData is List) {
+      final activeList = giftData
+          .cast<Map<String, dynamic>>()
+          .where((g) => g['status'] == 'pending' || g['status'] == 'claimed')
+          .toList();
+      if (activeList.isNotEmpty) {
+        return CouponGiftModel.fromJson(activeList.first);
+      }
+    } else if (giftData is Map<String, dynamic>) {
+      return CouponGiftModel.fromJson(giftData);
+    }
+    return null;
   }
 }

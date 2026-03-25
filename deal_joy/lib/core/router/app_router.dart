@@ -19,6 +19,7 @@ import '../../features/orders/presentation/screens/orders_screen.dart';
 import '../../features/orders/presentation/screens/to_review_screen.dart';
 import '../../features/orders/presentation/screens/coupon_screen.dart';
 import '../../features/orders/presentation/screens/coupons_screen.dart';
+import '../../features/orders/presentation/screens/gift_claim_screen.dart';
 import '../../features/orders/presentation/screens/order_detail_screen.dart';
 import '../../features/orders/presentation/screens/voucher_detail_screen.dart';
 import '../../features/orders/presentation/screens/refund_request_screen.dart';
@@ -342,6 +343,14 @@ final routerProvider = Provider<GoRouter>((ref) {
 
       // My Coupons list (tabbed by status)
       GoRoute(path: '/coupons', builder: (_, _) => const CouponsScreen()),
+
+      // Gift claim — 受赠方通过 deep link 领取礼品券
+      GoRoute(
+        path: '/gift/claim',
+        builder: (_, state) => GiftClaimScreen(
+          claimToken: state.uri.queryParameters['token'] ?? '',
+        ),
+      ),
 
       // Reviews
       GoRoute(

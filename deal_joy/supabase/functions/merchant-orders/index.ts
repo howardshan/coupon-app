@@ -238,7 +238,7 @@ async function handleList(
         original_price,
         discount_price
       ),
-      coupons (
+      coupons!order_items_coupon_id_fkey (
         id,
         qr_code,
         coupon_code,
@@ -429,7 +429,7 @@ async function handleDetail(
         original_price,
         discount_price
       ),
-      coupons (
+      coupons!order_items_coupon_id_fkey (
         id,
         qr_code,
         coupon_code,
@@ -555,7 +555,7 @@ async function handleExport(
       deals!inner (
         title
       ),
-      coupons (
+      coupons!order_items_coupon_id_fkey (
         coupon_code,
         qr_code,
         status,
