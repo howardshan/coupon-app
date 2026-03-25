@@ -124,6 +124,10 @@ final dealReviewsProvider = FutureProvider.family<List<ReviewModel>, String>((
   return ref.watch(dealsRepositoryProvider).fetchReviewsByDeal(dealId);
 });
 
+// ---- GPS 权限状态 Provider ----
+// 追踪位置权限是否被拒绝，用于在 Near Me 模式下显示提示条
+final locationPermissionDeniedProvider = StateProvider<bool>((ref) => false);
+
 // ---- GPS 位置 Provider ----
 // 获取当前 GPS 坐标，权限被拒则返回 Dallas 默认坐标
 final userLocationProvider = FutureProvider<({double lat, double lng})>((
@@ -138,10 +142,13 @@ final userLocationProvider = FutureProvider<({double lat, double lng})>((
     }
     if (permission == LocationPermission.deniedForever ||
         permission == LocationPermission.denied) {
-      // 权限被拒，使用 Dallas 默认坐标
+      // 权限被拒，标记状态并使用 Dallas 默认坐标
       debugPrint('[DEBUG] userLocationProvider → 权限被拒，使用 Dallas 默认坐标');
+      ref.read(locationPermissionDeniedProvider.notifier).state = true;
       return (lat: AppConstants.dallasLat, lng: AppConstants.dallasLng);
     }
+    // 权限已授予，清除拒绝标记
+    ref.read(locationPermissionDeniedProvider.notifier).state = false;
     final position = await Geolocator.getCurrentPosition(
       locationSettings: const LocationSettings(
         accuracy: LocationAccuracy.medium,

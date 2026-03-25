@@ -1,5 +1,5 @@
 // 订单详情页 — 美团风格重写
-// 布局从上到下：状态横幅 → Deal摘要卡片 → 券状态展开行 → Purchase Notes → Order Info → 底部操作栏
+// 布局从上到下：状态横幅 → Deal摘要卡片 → 券状态展开行 → Order Info → 底部操作栏
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,20 +7,200 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../cart/domain/providers/cart_provider.dart';
+import '../../../deals/domain/providers/deals_provider.dart';
 import '../../data/models/order_detail_model.dart';
 import '../../data/models/order_item_model.dart';
 import '../../domain/providers/orders_provider.dart';
 import '../../domain/providers/coupons_provider.dart';
 
+// ── 未使用券 QR 码弹窗 ────────────────────────────
+
+void showUnusedQrSheet(BuildContext context, List<OrderItemModel> items) {
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.white,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (_) => _UnusedQrSheet(items: items),
+  );
+}
+
+class _UnusedQrSheet extends StatefulWidget {
+  final List<OrderItemModel> items;
+  const _UnusedQrSheet({required this.items});
+  @override
+  State<_UnusedQrSheet> createState() => _UnusedQrSheetState();
+}
+
+class _UnusedQrSheetState extends State<_UnusedQrSheet> {
+  late final PageController _pageController;
+  int _currentPage = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController();
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final items = widget.items;
+    final hasMultiple = items.length > 1;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 40),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // 拖拽指示条
+          Container(
+            width: 40, height: 4,
+            decoration: BoxDecoration(
+              color: AppColors.textHint,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            hasMultiple
+                ? 'Voucher ${_currentPage + 1} of ${items.length}'
+                : 'Scan to Redeem',
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 16),
+
+          // QR 码区域（支持左右滑动多张券）
+          SizedBox(
+            height: 340,
+            child: PageView.builder(
+              controller: _pageController,
+              itemCount: items.length,
+              onPageChanged: (i) => setState(() => _currentPage = i),
+              itemBuilder: (_, i) {
+                final item = items[i];
+                final qrData = item.couponQrCode ?? item.couponCode ?? '';
+                final formattedCode = item.formattedCouponCode;
+
+                return Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    // QR 码
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.08),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: qrData.isNotEmpty
+                          ? QrImageView(
+                              data: qrData,
+                              version: QrVersions.auto,
+                              size: 200,
+                              backgroundColor: Colors.white,
+                            )
+                          : const SizedBox(
+                              width: 200, height: 200,
+                              child: Center(child: Text('QR code unavailable')),
+                            ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // 券码（可复制）
+                    if (formattedCode != null)
+                      GestureDetector(
+                        onTap: () {
+                          Clipboard.setData(ClipboardData(text: formattedCode));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Coupon code copied'),
+                              duration: Duration(seconds: 2),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: AppColors.surfaceVariant,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                formattedCode,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontFamily: 'monospace',
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 2,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              const Icon(Icons.copy_rounded,
+                                  size: 16, color: AppColors.textSecondary),
+                            ],
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
+          ),
+
+          // 多张券时显示分页指示器
+          if (hasMultiple) ...[
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(items.length, (i) => Container(
+                width: i == _currentPage ? 20 : 8,
+                height: 8,
+                margin: const EdgeInsets.symmetric(horizontal: 3),
+                decoration: BoxDecoration(
+                  color: i == _currentPage
+                      ? AppColors.primary
+                      : AppColors.textHint.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              )),
+            ),
+          ],
+
+        ],
+      ),
+    );
+  }
+}
+
+
+
 // ── 主屏幕 ────────────────────────────────────────
 
 class OrderDetailScreen extends ConsumerWidget {
   final String orderId;
-  /// 可选：只显示某个 deal 的信息（从 orders 列表点击某个 deal 进入时传入）
-  final String? filterDealId;
 
-  const OrderDetailScreen({super.key, required this.orderId, this.filterDealId});
+  const OrderDetailScreen({super.key, required this.orderId});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -32,7 +212,6 @@ class OrderDetailScreen extends ConsumerWidget {
         data: (detail) => _MeituanOrderBody(
           detail: detail,
           orderId: orderId,
-          filterDealId: filterDealId,
         ),
         loading: () => const Scaffold(
           body: Center(child: CircularProgressIndicator()),
@@ -95,9 +274,8 @@ class _ErrorBody extends StatelessWidget {
 class _MeituanOrderBody extends ConsumerStatefulWidget {
   final OrderDetailModel detail;
   final String orderId;
-  final String? filterDealId;
 
-  const _MeituanOrderBody({required this.detail, required this.orderId, this.filterDealId});
+  const _MeituanOrderBody({required this.detail, required this.orderId});
 
   @override
   ConsumerState<_MeituanOrderBody> createState() => _MeituanOrderBodyState();
@@ -111,31 +289,23 @@ class _MeituanOrderBodyState extends ConsumerState<_MeituanOrderBody> {
 
   @override
   Widget build(BuildContext context) {
-    // 如果有 filterDealId，只显示该 deal 的 items
-    final filteredItems = widget.filterDealId != null
-        ? detail.items.where((i) => i.dealId == widget.filterDealId).toList()
-        : detail.items;
-
-    // 按 deal_id 分组 items
+    // 按 deal_id 分组所有 items
     final groupMap = <String, List<OrderItemModel>>{};
-    for (final item in filteredItems) {
+    for (final item in detail.items) {
       groupMap.putIfAbsent(item.dealId, () => []).add(item);
     }
-
-    // 计算综合状态（用于顶部横幅）
-    final overallStatus = _computeOverallStatus(filteredItems);
 
     return Stack(
       children: [
         // 主滚动区域
         CustomScrollView(
           slivers: [
-            // 顶部普通 AppBar（不显示大号状态横幅）
-            SliverAppBar(
+            // 顶部 AppBar
+            const SliverAppBar(
               pinned: true,
               title: Text(
-                widget.filterDealId != null ? 'Voucher Detail' : 'Order Detail',
-                style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+                'Order Detail',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
               ),
               backgroundColor: Colors.white,
               foregroundColor: AppColors.textPrimary,
@@ -152,6 +322,7 @@ class _MeituanOrderBodyState extends ConsumerState<_MeituanOrderBody> {
                 child: _DealSummaryCard(
                   dealItems: items,
                   isExpanded: isExpanded,
+                  orderId: widget.orderId,
                   paymentIntentId: detail.paymentIntentIdMasked,
                   storeCreditUsed: detail.storeCreditUsed,
                   orderTotalAmount: detail.totalAmount,
@@ -165,11 +336,6 @@ class _MeituanOrderBodyState extends ConsumerState<_MeituanOrderBody> {
                 ),
               );
             }),
-
-            // Purchase Notes 区块
-            SliverToBoxAdapter(
-              child: _PurchaseNotesSection(detail: detail),
-            ),
 
             // Order Info 区块
             SliverToBoxAdapter(
@@ -196,136 +362,6 @@ class _MeituanOrderBodyState extends ConsumerState<_MeituanOrderBody> {
       ],
     );
   }
-
-  /// 根据 items 计算综合状态
-  _OverallStatus _computeOverallStatus(List<OrderItemModel> items) {
-    if (items.isEmpty) {
-      // 降级到 detail.status
-      return switch (detail.status) {
-        'refunded' => _OverallStatus.refunded,
-        'used' => _OverallStatus.used,
-        'expired' => _OverallStatus.expired,
-        _ => _OverallStatus.unused,
-      };
-    }
-
-    final statuses = items.map((i) => i.customerStatus).toSet();
-
-    // 优先级：退款中 > 已退款 > 已使用 > 未使用
-    if (statuses.contains(CustomerItemStatus.refundPending) ||
-        statuses.contains(CustomerItemStatus.refundReview)) {
-      return _OverallStatus.refundPending;
-    }
-    if (statuses.every((s) =>
-        s == CustomerItemStatus.refundSuccess ||
-        s == CustomerItemStatus.used)) {
-      if (statuses.contains(CustomerItemStatus.refundSuccess)) {
-        return _OverallStatus.refunded;
-      }
-    }
-    if (statuses.every((s) => s == CustomerItemStatus.refundSuccess)) {
-      return _OverallStatus.refunded;
-    }
-    if (statuses.every((s) => s == CustomerItemStatus.used)) {
-      return _OverallStatus.used;
-    }
-    if (statuses.every((s) => s == CustomerItemStatus.expired)) {
-      return _OverallStatus.expired;
-    }
-    if (statuses.contains(CustomerItemStatus.unused)) {
-      return _OverallStatus.unused;
-    }
-    return _OverallStatus.unused;
-  }
-}
-
-// ── 综合状态枚举 ──────────────────────────────────
-
-enum _OverallStatus { unused, used, refunded, refundPending, expired }
-
-// ── 状态横幅 ──────────────────────────────────────
-
-class _StatusBanner extends StatelessWidget {
-  final _OverallStatus status;
-  final String orderId;
-
-  const _StatusBanner({required this.status, required this.orderId});
-
-  @override
-  Widget build(BuildContext context) {
-    final (Color bgColor, Color textColor, String label, IconData icon) =
-        switch (status) {
-      _OverallStatus.unused => (
-          const Color(0xFF00C853),
-          Colors.white,
-          'To Use',
-          Icons.check_circle_outline_rounded,
-        ),
-      _OverallStatus.used => (
-          const Color(0xFF2979FF),
-          Colors.white,
-          'Used',
-          Icons.done_all_rounded,
-        ),
-      _OverallStatus.refunded => (
-          const Color(0xFF9E9E9E),
-          Colors.white,
-          'Refunded',
-          Icons.currency_exchange_rounded,
-        ),
-      _OverallStatus.refundPending => (
-          const Color(0xFFFF9800),
-          Colors.white,
-          'Refund Processing',
-          Icons.hourglass_empty_rounded,
-        ),
-      _OverallStatus.expired => (
-          const Color(0xFF9E9E9E),
-          Colors.white,
-          'Expired',
-          Icons.timer_off_outlined,
-        ),
-    };
-
-    return Container(
-      width: double.infinity,
-      color: bgColor,
-      padding: EdgeInsets.fromLTRB(
-        16,
-        MediaQuery.of(context).padding.top + 12,
-        16,
-        24,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 返回按钮
-          GestureDetector(
-            onTap: () => context.pop(),
-            child: Icon(Icons.arrow_back_ios_new_rounded,
-                color: textColor.withValues(alpha: 0.8), size: 20),
-          ),
-          const SizedBox(height: 20),
-          // 状态图标 + 文字
-          Row(
-            children: [
-              Icon(icon, color: textColor, size: 36),
-              const SizedBox(width: 14),
-              Text(
-                label,
-                style: TextStyle(
-                  color: textColor,
-                  fontSize: 26,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.5,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 // ── Deal 摘要卡片（含券状态展开行） ───────────────
@@ -336,6 +372,7 @@ class _DealSummaryCard extends ConsumerWidget {
   final VoidCallback onToggleExpand;
   final VoidCallback onRefreshOrder;
   final String? paymentIntentId;
+  final String orderId;
   /// 本单使用的 Store Credit 金额
   final double storeCreditUsed;
   /// 订单原始总金额（未扣 Store Credit）
@@ -346,6 +383,7 @@ class _DealSummaryCard extends ConsumerWidget {
     required this.isExpanded,
     required this.onToggleExpand,
     required this.onRefreshOrder,
+    required this.orderId,
     this.paymentIntentId,
     this.storeCreditUsed = 0.0,
     this.orderTotalAmount = 0.0,
@@ -481,9 +519,10 @@ class _DealSummaryCard extends ConsumerWidget {
               count: unusedItems.length,
               color: const Color(0xFF00C853),
               items: unusedItems,
-              isExpanded: isExpanded,
-              onToggle: onToggleExpand,
+              isExpanded: false,
+              onToggle: () => showUnusedQrSheet(context, unusedItems),
               onRefreshOrder: onRefreshOrder,
+              orderId: orderId,
               paymentIntentId: paymentIntentId,
               storeCreditUsed: storeCreditUsed,
               orderTotalAmount: orderTotalAmount,
@@ -497,6 +536,7 @@ class _DealSummaryCard extends ConsumerWidget {
               isExpanded: isExpanded && unusedItems.isEmpty,
               onToggle: unusedItems.isEmpty ? onToggleExpand : null,
               onRefreshOrder: onRefreshOrder,
+              orderId: orderId,
               paymentIntentId: paymentIntentId,
               storeCreditUsed: storeCreditUsed,
               orderTotalAmount: orderTotalAmount,
@@ -512,6 +552,7 @@ class _DealSummaryCard extends ConsumerWidget {
               isExpanded: false,
               onToggle: null,
               onRefreshOrder: onRefreshOrder,
+              orderId: orderId,
               paymentIntentId: paymentIntentId,
               storeCreditUsed: storeCreditUsed,
               orderTotalAmount: orderTotalAmount,
@@ -525,6 +566,7 @@ class _DealSummaryCard extends ConsumerWidget {
               isExpanded: false,
               onToggle: null,
               onRefreshOrder: onRefreshOrder,
+              orderId: orderId,
               paymentIntentId: paymentIntentId,
               storeCreditUsed: storeCreditUsed,
               orderTotalAmount: orderTotalAmount,
@@ -545,6 +587,7 @@ class _CouponStatusRow extends ConsumerWidget {
   final bool isExpanded;
   final VoidCallback? onToggle;
   final VoidCallback onRefreshOrder;
+  final String orderId;
   final String? paymentIntentId;
   /// 本单使用的 Store Credit 金额
   final double storeCreditUsed;
@@ -559,6 +602,7 @@ class _CouponStatusRow extends ConsumerWidget {
     required this.isExpanded,
     required this.onToggle,
     required this.onRefreshOrder,
+    required this.orderId,
     this.paymentIntentId,
     this.storeCreditUsed = 0.0,
     this.orderTotalAmount = 0.0,
@@ -621,6 +665,7 @@ class _CouponStatusRow extends ConsumerWidget {
           ...items.map((item) => _CouponDetailRow(
                 item: item,
                 allItems: items,
+                orderId: orderId,
                 paymentIntentId: paymentIntentId,
                 onRefreshOrder: onRefreshOrder,
                 storeCreditUsed: storeCreditUsed,
@@ -639,6 +684,7 @@ class _CouponStatusRow extends ConsumerWidget {
 class _CouponDetailRow extends ConsumerWidget {
   final OrderItemModel item;
   final List<OrderItemModel> allItems;
+  final String orderId;
   final String? paymentIntentId;
   final VoidCallback onRefreshOrder;
   /// 本单使用的 Store Credit 金额
@@ -649,6 +695,7 @@ class _CouponDetailRow extends ConsumerWidget {
   const _CouponDetailRow({
     required this.item,
     required this.allItems,
+    required this.orderId,
     this.paymentIntentId,
     required this.onRefreshOrder,
     this.storeCreditUsed = 0.0,
@@ -659,98 +706,90 @@ class _CouponDetailRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final formattedCode = item.formattedCouponCode;
 
-    return Container(
-      color: const Color(0xFFFAFAFA),
-      padding: const EdgeInsets.fromLTRB(24, 12, 16, 12),
-      child: Row(
-        children: [
-          // 券码
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (formattedCode != null)
-                  Text(
-                    formattedCode,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontFamily: 'monospace',
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1.5,
-                      color: AppColors.textPrimary,
+    return GestureDetector(
+      onTap: () {
+        // 点击券码行，跳转到 voucher detail 页面
+        context.push('/voucher/$orderId?dealId=${item.dealId}');
+      },
+      child: Container(
+        color: const Color(0xFFFAFAFA),
+        padding: const EdgeInsets.fromLTRB(24, 12, 16, 12),
+        child: Row(
+          children: [
+            // 券码（可点击跳转 voucher detail）
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      if (formattedCode != null)
+                        Text(
+                          formattedCode,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontFamily: 'monospace',
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1.5,
+                            color: AppColors.primary,
+                          ),
+                        )
+                      else
+                        const Text(
+                          'No code',
+                          style: TextStyle(
+                              fontSize: 13, color: AppColors.textHint),
+                        ),
+                      const SizedBox(width: 4),
+                      const Icon(Icons.arrow_forward_ios,
+                          size: 12, color: AppColors.primary),
+                    ],
+                  ),
+                  if (item.redeemedAt != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      'Used ${DateFormat('MMM d, yyyy').format(item.redeemedAt!.toLocal())}',
+                      style: const TextStyle(
+                          fontSize: 11, color: AppColors.textHint),
                     ),
-                  )
-                else
-                  const Text(
-                    'No code',
-                    style: TextStyle(
-                        fontSize: 13, color: AppColors.textHint),
-                  ),
-                if (item.redeemedAt != null) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    'Used ${DateFormat('MMM d, yyyy').format(item.redeemedAt!.toLocal())}',
-                    style: const TextStyle(
-                        fontSize: 11, color: AppColors.textHint),
-                  ),
+                  ],
                 ],
+              ),
+            ),
+            // 操作按钮
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (item.showCancel)
+                  _SmallButton(
+                    label: 'Cancel',
+                    color: AppColors.error,
+                    onTap: () => _showCancelSheet(context, ref, item),
+                  ),
+                if (item.showRefundRequest)
+                  _SmallButton(
+                    label: 'Refund',
+                    color: AppColors.warning,
+                    onTap: () => _showCancelSheet(context, ref, item),
+                  ),
+                if (item.showWriteReview)
+                  _SmallButton(
+                    label: 'Review',
+                    color: AppColors.accent,
+                    onTap: () => context.push('/review/${item.dealId}'),
+                  ),
               ],
             ),
-          ),
-          // 操作按钮
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (item.showQrCode) ...[
-                _SmallButton(
-                  label: 'QR Code',
-                  color: const Color(0xFF00C853),
-                  onTap: () => _showQrCodeSheet(context, item),
-                ),
-                const SizedBox(width: 8),
-              ],
-              if (item.showCancel)
-                _SmallButton(
-                  label: 'Cancel',
-                  color: AppColors.error,
-                  onTap: () => _showCancelSheet(context, ref, item),
-                ),
-              if (item.showRefundRequest)
-                _SmallButton(
-                  label: 'Refund',
-                  color: AppColors.warning,
-                  onTap: () => _showCancelSheet(context, ref, item),
-                ),
-              if (item.showWriteReview)
-                _SmallButton(
-                  label: 'Review',
-                  color: AppColors.accent,
-                  onTap: () => context.push('/review/${item.dealId}'),
-                ),
-            ],
-          ),
-        ],
+          ],
+        ),
       ),
-    );
-  }
-
-  // 展示 QR Code Bottom Sheet
-  void _showQrCodeSheet(BuildContext context, OrderItemModel item) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (_) => _QrCodeSheet(item: item),
     );
   }
 
   // 展示取消/退款 Bottom Sheet
   void _showCancelSheet(
       BuildContext context, WidgetRef ref, OrderItemModel item) {
-    // 找同 deal 的所有 unused items（用于多张券选数量）
+    // 找同 deal 的所有 unused items（同 order 同 deal 可选数量退）
     final sameDealUnused = allItems
         .where((i) => i.dealId == item.dealId && i.customerStatus == CustomerItemStatus.unused)
         .toList();
@@ -772,7 +811,6 @@ class _CouponDetailRow extends ConsumerWidget {
         onConfirm: (refundMethod, {int cancelCount = 1, List<String>? selectedItemIds}) async {
           final navigator = Navigator.of(context);
           final messenger = ScaffoldMessenger.of(context);
-          // 优先用用户选中的券 id，否则降级为取前 N 张
           final List<OrderItemModel> itemsToCancel;
           if (selectedItemIds != null && selectedItemIds.isNotEmpty) {
             final idSet = selectedItemIds.toSet();
@@ -850,120 +888,6 @@ class _SmallButton extends StatelessWidget {
   }
 }
 
-// ── Purchase Notes 区块 ───────────────────────────
-
-class _PurchaseNotesSection extends StatelessWidget {
-  final OrderDetailModel detail;
-
-  const _PurchaseNotesSection({required this.detail});
-
-  @override
-  Widget build(BuildContext context) {
-    // 取第一个 item 的过期时间作为有效期
-    final expiresAt = detail.items.isNotEmpty
-        ? detail.items.first.couponExpiresAt
-        : detail.couponExpiresAt;
-
-    return Container(
-      margin: const EdgeInsets.only(top: 8),
-      color: Colors.white,
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Purchase Notes',
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w700,
-              color: AppColors.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          // 有效期
-          if (expiresAt != null)
-            _NoteRow(
-              icon: Icons.calendar_today_outlined,
-              label: 'Validity',
-              value:
-                  'Valid until ${DateFormat('MMM d, yyyy').format(expiresAt.toLocal())}',
-            ),
-
-          // 退款政策（从 deal 读取，降级到默认文案）
-          _NoteRow(
-            icon: Icons.refresh_rounded,
-            label: 'Refund Policy',
-            value: (detail.items.isNotEmpty && detail.items.first.refundPolicy != null)
-                ? detail.items.first.refundPolicy!
-                : 'Unused vouchers can be refunded anytime, instantly.',
-          ),
-
-          // 使用规则（从 deal.usage_rules 读取）
-          if (detail.items.isNotEmpty && detail.items.first.usageRules.isNotEmpty)
-            ...detail.items.first.usageRules.map((rule) => _NoteRow(
-                  icon: Icons.info_outline_rounded,
-                  label: 'Rules',
-                  value: rule,
-                ))
-          else
-            const _NoteRow(
-              icon: Icons.info_outline_rounded,
-              label: 'Usage Rules',
-              value: 'Present QR code to merchant. Each voucher can only be used once.',
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-// ── 注意事项行 ────────────────────────────────────
-
-class _NoteRow extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-
-  const _NoteRow({
-    required this.icon,
-    required this.label,
-    required this.value,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 16, color: AppColors.textHint),
-          const SizedBox(width: 8),
-          SizedBox(
-            width: 90,
-            child: Text(
-              label,
-              style: const TextStyle(
-                fontSize: 13,
-                color: AppColors.textSecondary,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(
-                fontSize: 13,
-                color: AppColors.textPrimary,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 // ── Order Info 区块 ───────────────────────────────
 
@@ -1325,7 +1249,7 @@ class _BottomActionBar extends ConsumerWidget {
           Expanded(
             flex: hasUnused ? 1 : 2,
             child: ElevatedButton(
-              onPressed: () => context.push('/deals/${detail.dealId}'),
+              onPressed: () => _handleBuyAgain(context, ref),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
                 foregroundColor: Colors.white,
@@ -1347,6 +1271,139 @@ class _BottomActionBar extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  // ── Buy Again：将订单券重新加入购物车并跳转结账 ─────────────
+  Future<void> _handleBuyAgain(BuildContext context, WidgetRef ref) async {
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final router = GoRouter.of(context);
+
+    // 显示加载指示器
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(
+        child: CircularProgressIndicator(color: Colors.white),
+      ),
+    );
+
+    try {
+      final dealsRepo = ref.read(dealsRepositoryProvider);
+      final cartNotifier = ref.read(cartProvider.notifier);
+
+      // 按 dealId 分组订单项
+      final itemsByDeal = <String, List<OrderItemModel>>{};
+      for (final item in detail.items) {
+        itemsByDeal.putIfAbsent(item.dealId, () => []).add(item);
+      }
+
+      final unavailableDeals = <String>[]; // 不可购买的 deal 标题
+      final itemsToAdd = <OrderItemBuyAgainData>[]; // 要加入购物车的数据
+
+      for (final entry in itemsByDeal.entries) {
+        final dealId = entry.key;
+        final orderItems = entry.value;
+
+        try {
+          final deal = await dealsRepo.fetchDealById(dealId);
+
+          // 检查是否已过期
+          if (deal.isExpired) {
+            unavailableDeals.add(deal.title);
+            continue;
+          }
+
+          // 检查限购：查询用户已购买该 deal 的数量（未退款的）
+          int allowCount = orderItems.length;
+          if (deal.maxPerAccount > 0) {
+            final userId = Supabase.instance.client.auth.currentUser?.id;
+            if (userId != null) {
+              final res = await Supabase.instance.client
+                  .from('order_items')
+                  .select('id, orders!inner(user_id)')
+                  .eq('deal_id', dealId)
+                  .eq('orders.user_id', userId)
+                  .neq('customer_status', 'refund_success');
+              final purchasedCount = (res as List).length;
+
+              // 也算上购物车中已有的
+              final cartItems = ref.read(cartProvider).valueOrNull ?? [];
+              final cartCount =
+                  cartItems.where((c) => c.dealId == dealId).length;
+
+              final remaining =
+                  deal.maxPerAccount - purchasedCount - cartCount;
+              if (remaining <= 0) {
+                unavailableDeals.add(
+                    '${deal.title} (purchase limit reached)');
+                continue;
+              }
+              allowCount = remaining < orderItems.length
+                  ? remaining
+                  : orderItems.length;
+            }
+          }
+
+          // 收集要加入购物车的数据
+          for (var i = 0; i < allowCount; i++) {
+            final oi = orderItems[i];
+            itemsToAdd.add(OrderItemBuyAgainData(
+              dealId: oi.dealId,
+              unitPrice: oi.unitPrice,
+              purchasedMerchantId: oi.purchasedMerchantId,
+              applicableStoreIds: oi.applicableStoreIds,
+              selectedOptions: oi.selectedOptions,
+            ));
+          }
+
+          // 如果因限购只能加入部分
+          if (allowCount < orderItems.length) {
+            final skipped = orderItems.length - allowCount;
+            unavailableDeals.add(
+                '${deal.title} ($skipped coupon(s) skipped due to purchase limit)');
+          }
+        } catch (_) {
+          // deal 不存在或查询失败
+          unavailableDeals.add(orderItems.first.dealTitle);
+        }
+      }
+
+      // 关闭 loading
+      navigator.pop();
+
+      // 没有可加入的券
+      if (itemsToAdd.isEmpty) {
+        messenger.showSnackBar(const SnackBar(
+          content: Text(
+              'None of the deals in this order are available for purchase.'),
+        ));
+        return;
+      }
+
+      // 批量加入购物车
+      final addedItems = await cartNotifier.addBulkFromOrderItems(itemsToAdd);
+
+      // 显示不可购买的提示
+      if (unavailableDeals.isNotEmpty) {
+        messenger.showSnackBar(SnackBar(
+          content: Text(
+            'Some items are unavailable: ${unavailableDeals.join("; ")}',
+          ),
+          duration: const Duration(seconds: 4),
+        ));
+      }
+
+      // 跳转到结账页，传入刚添加的购物车项
+      if (addedItems.isNotEmpty) {
+        router.push('/checkout-cart', extra: addedItems);
+      }
+    } catch (e) {
+      navigator.pop();
+      messenger.showSnackBar(SnackBar(
+        content: Text('Failed to re-order: $e'),
+      ));
+    }
   }
 
   // 显示取消 Bottom Sheet（第一张 unused 券）
@@ -1427,161 +1484,6 @@ class _PlaceholderImage extends StatelessWidget {
         Icons.local_offer_outlined,
         color: AppColors.textHint,
         size: 32,
-      ),
-    );
-  }
-}
-
-// ── QR Code Bottom Sheet ──────────────────────────
-
-class _QrCodeSheet extends StatelessWidget {
-  final OrderItemModel item;
-
-  const _QrCodeSheet({required this.item});
-
-  @override
-  Widget build(BuildContext context) {
-    final qrData = item.couponQrCode ?? item.couponCode ?? '';
-    final formattedCode = item.formattedCouponCode;
-    final expiresAt = item.couponExpiresAt;
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 24, 24, 40),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // 拖拽指示条
-          Container(
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: AppColors.textHint,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          const SizedBox(height: 20),
-          const Text(
-            'Scan to Redeem',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              color: AppColors.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 20),
-
-          // QR Code 图片
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.08),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: qrData.isNotEmpty
-                ? QrImageView(
-                    data: qrData,
-                    version: QrVersions.auto,
-                    size: 200,
-                    backgroundColor: Colors.white,
-                  )
-                : const SizedBox(
-                    width: 200,
-                    height: 200,
-                    child: Center(
-                      child: Text(
-                        'QR code unavailable',
-                        style: TextStyle(color: AppColors.textHint),
-                      ),
-                    ),
-                  ),
-          ),
-          const SizedBox(height: 20),
-
-          // 券码（带复制）
-          if (formattedCode != null) ...[
-            GestureDetector(
-              onTap: () {
-                Clipboard.setData(ClipboardData(text: formattedCode));
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Coupon code copied'),
-                    duration: Duration(seconds: 2),
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
-              },
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceVariant,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      formattedCode,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontFamily: 'monospace',
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 2,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    const Icon(
-                      Icons.copy_rounded,
-                      size: 16,
-                      color: AppColors.textSecondary,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-          ],
-
-          // Deal 标题 + 商家 + 过期日期
-          Text(
-            item.dealTitle,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: AppColors.textPrimary,
-            ),
-          ),
-          if (item.merchantName != null || item.purchasedMerchantName != null) ...[
-            const SizedBox(height: 4),
-            Text(
-              item.merchantName ?? item.purchasedMerchantName!,
-              style: const TextStyle(
-                fontSize: 13,
-                color: AppColors.textSecondary,
-              ),
-            ),
-          ],
-          if (expiresAt != null) ...[
-            const SizedBox(height: 4),
-            Text(
-              'Expires ${DateFormat('MMM d, yyyy').format(expiresAt.toLocal())}',
-              style: const TextStyle(
-                fontSize: 12,
-                color: AppColors.textHint,
-              ),
-            ),
-          ],
-          const SizedBox(height: 8),
-        ],
       ),
     );
   }
@@ -1800,8 +1702,6 @@ class _CancelSheetState extends ConsumerState<_CancelSheet> {
                 itemBuilder: (_, index) {
                   final coupon = widget.allUnusedItems[index];
                   final isSelected = _selectedIds.contains(coupon.id);
-                  final code = coupon.formattedCouponCode ?? 'Voucher ${index + 1}';
-                  final dealTitle = coupon.dealTitle;
                   return InkWell(
                     onTap: () {
                       setState(() {
@@ -1825,31 +1725,64 @@ class _CancelSheetState extends ConsumerState<_CancelSheet> {
                             size: 22,
                           ),
                           const SizedBox(width: 10),
+                          // Deal 图片
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(6),
+                            child: coupon.dealImageUrl != null && coupon.dealImageUrl!.isNotEmpty
+                                ? CachedNetworkImage(
+                                    imageUrl: coupon.dealImageUrl!,
+                                    width: 40,
+                                    height: 40,
+                                    fit: BoxFit.cover,
+                                    placeholder: (_, __) => Container(
+                                      width: 40,
+                                      height: 40,
+                                      color: Colors.grey.shade200,
+                                      child: Icon(Icons.local_offer_outlined,
+                                          size: 18, color: Colors.grey.shade400),
+                                    ),
+                                    errorWidget: (_, __, ___) => Container(
+                                      width: 40,
+                                      height: 40,
+                                      color: Colors.grey.shade200,
+                                      child: Icon(Icons.local_offer_outlined,
+                                          size: 18, color: Colors.grey.shade400),
+                                    ),
+                                  )
+                                : Container(
+                                    width: 40,
+                                    height: 40,
+                                    color: Colors.grey.shade200,
+                                    child: Icon(Icons.local_offer_outlined,
+                                        size: 18, color: Colors.grey.shade400),
+                                  ),
+                          ),
+                          const SizedBox(width: 10),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  code,
+                                  coupon.dealTitle.isNotEmpty
+                                      ? coupon.dealTitle
+                                      : 'Voucher ${index + 1}',
                                   style: const TextStyle(
                                     fontSize: 14,
-                                    fontFamily: 'monospace',
                                     fontWeight: FontWeight.w600,
-                                    letterSpacing: 1.2,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  coupon.formattedCouponCode ?? '',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontFamily: 'monospace',
+                                    color: AppColors.textSecondary,
+                                    letterSpacing: 0.5,
                                   ),
                                 ),
-                                if (dealTitle.isNotEmpty) ...[
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    dealTitle,
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      color: AppColors.textSecondary,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ],
                               ],
                             ),
                           ),

@@ -26,10 +26,14 @@ final couponsByStatusProvider =
     Provider.family<AsyncValue<List<CouponModel>>, String>((ref, status) {
   return ref.watch(userCouponsProvider).whenData((coupons) {
     if (status == 'expired') {
-      return coupons.where((c) => c.isExpired && c.status != 'refunded').toList();
+      return coupons.where((c) => c.isExpired && c.status != 'refunded' && c.status != 'voided').toList();
     }
     if (status == 'unused') {
       return coupons.where((c) => c.status == 'unused' && !c.isExpired).toList();
+    }
+    // cancelled tab 对应数据库 voided 状态
+    if (status == 'cancelled') {
+      return coupons.where((c) => c.status == 'voided').toList();
     }
     return coupons.where((c) => c.status == status).toList();
   });

@@ -368,7 +368,7 @@ class _DealRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      onTap: () => context.push('/order/$orderId?dealId=${group.dealId}'),
+      onTap: () => context.push('/voucher/$orderId?dealId=${group.dealId}'),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
         child: Row(

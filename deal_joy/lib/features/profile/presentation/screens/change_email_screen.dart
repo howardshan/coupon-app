@@ -23,6 +23,7 @@ class _ChangeEmailScreenState extends ConsumerState<ChangeEmailScreen> {
   late final TextEditingController _currentEmailCtrl;
 
   bool _isLoading = false;
+  String? _errorMessage;
 
   // 邮箱正则校验规则
   static final _emailRegex = RegExp(
@@ -36,10 +37,19 @@ class _ChangeEmailScreenState extends ConsumerState<ChangeEmailScreen> {
     _currentEmail =
         Supabase.instance.client.auth.currentUser?.email ?? '';
     _currentEmailCtrl = TextEditingController(text: _currentEmail);
+    // 用户输入时清除错误提示
+    _newEmailCtrl.addListener(_clearError);
+  }
+
+  void _clearError() {
+    if (_errorMessage != null) {
+      setState(() => _errorMessage = null);
+    }
   }
 
   @override
   void dispose() {
+    _newEmailCtrl.removeListener(_clearError);
     _newEmailCtrl.dispose();
     _currentEmailCtrl.dispose();
     super.dispose();
@@ -118,6 +128,27 @@ class _ChangeEmailScreenState extends ConsumerState<ChangeEmailScreen> {
                   return null;
                 },
               ),
+
+              // 内联错误提示
+              if (_errorMessage != null) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    const Icon(Icons.error_outline, size: 16, color: AppColors.error),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        _errorMessage!,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: AppColors.error,
+                          height: 1.3,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
               const SizedBox(height: 32),
 
               // 提交按钮
@@ -144,6 +175,24 @@ class _ChangeEmailScreenState extends ConsumerState<ChangeEmailScreen> {
         ),
       ),
     );
+  }
+
+  /// 将 Supabase AuthException 转为用户友好提示
+  String _friendlyEmailError(String raw) {
+    final lower = raw.toLowerCase();
+    if (lower.contains('already registered') || lower.contains('already been registered')) {
+      return 'This email address is already registered.';
+    }
+    if (lower.contains('rate limit') || lower.contains('too many requests')) {
+      return 'Too many attempts. Please try again later.';
+    }
+    if (lower.contains('invalid') && lower.contains('email')) {
+      return 'Please enter a valid email address.';
+    }
+    if (lower.contains('network') || lower.contains('connection')) {
+      return 'Network error. Please check your connection.';
+    }
+    return 'Failed to update email. Please try again.';
   }
 
   Future<void> _submit() async {
@@ -183,16 +232,16 @@ class _ChangeEmailScreenState extends ConsumerState<ChangeEmailScreen> {
         ),
       );
       context.pop();
+    } on AuthException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = _friendlyEmailError(e.message);
+      });
     } catch (e) {
       if (!mounted) return;
-
-      // 失败提示
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to update email: ${e.toString()}'),
-          backgroundColor: AppColors.error,
-        ),
-      );
+      setState(() {
+        _errorMessage = 'Something went wrong. Please try again.';
+      });
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);

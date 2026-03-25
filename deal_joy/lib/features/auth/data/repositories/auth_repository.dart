@@ -145,7 +145,6 @@ class AuthRepository {
 
   // ---- 发送密码重置邮件 ----
   Future<void> resetPassword(String email) async {
-    // 不管邮箱是否存在都不抛异常（隐私安全）
     try {
       await _client.auth.resetPasswordForEmail(
         email,
