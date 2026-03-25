@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -321,6 +322,60 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
                 // ── 正常模式：分类 + Featured + Deals ──
                 if (!isSearching) ...[
+                  // GPS 权限被拒提示条（仅 Near Me 模式下显示）
+                  if (ref.watch(isNearMeProvider) &&
+                      ref.watch(locationPermissionDeniedProvider))
+                    SliverToBoxAdapter(
+                      child: GestureDetector(
+                        onTap: () async {
+                          // 检查是否被永久拒绝
+                          final permission = await Geolocator.checkPermission();
+                          if (permission == LocationPermission.deniedForever) {
+                            // 永久拒绝，引导用户去系统设置
+                            await Geolocator.openAppSettings();
+                          } else {
+                            // 重新请求权限
+                            await Geolocator.requestPermission();
+                          }
+                          // 刷新位置 provider 以更新状态
+                          ref.invalidate(userLocationProvider);
+                          ref.invalidate(featuredDealsProvider);
+                          ref.invalidate(dealsListProvider);
+                          ref.invalidate(merchantListProvider);
+                        },
+                        child: Container(
+                          margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: AppColors.primary.withValues(alpha: 0.3),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.location_off,
+                                  color: AppColors.primary, size: 20),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  'Location permission is required for Near Me. Tap to enable.',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: AppColors.textPrimary,
+                                  ),
+                                ),
+                              ),
+                              Icon(Icons.chevron_right,
+                                  color: AppColors.textHint, size: 20),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+
                   // Category icons
                   SliverToBoxAdapter(
                     child: SizedBox(

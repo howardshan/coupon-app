@@ -15,6 +15,7 @@ const _tabs = [
   (label: 'Used', status: 'used'),
   (label: 'Expired', status: 'expired'),
   (label: 'Refunded', status: 'refunded'),
+  (label: 'Cancelled', status: 'cancelled'),
 ];
 
 class CouponsScreen extends ConsumerWidget {
@@ -28,7 +29,8 @@ class CouponsScreen extends ConsumerWidget {
         appBar: AppBar(
           title: const Text('My Coupons'),
           bottom: TabBar(
-            isScrollable: false,
+            isScrollable: true,
+            tabAlignment: TabAlignment.start,
             indicatorColor: AppColors.primary,
             labelColor: AppColors.primary,
             unselectedLabelColor: AppColors.textSecondary,
@@ -425,6 +427,7 @@ class _EmptyState extends StatelessWidget {
         'used' => Icons.check_circle_outline,
         'expired' => Icons.timer_off_outlined,
         'refunded' => Icons.currency_exchange,
+        'cancelled' => Icons.cancel_outlined,
         _ => Icons.confirmation_number_outlined,
       };
 }

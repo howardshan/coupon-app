@@ -24,13 +24,52 @@ class _ChangePasswordScreenState extends ConsumerState<ChangePasswordScreen> {
 
   /// 是否正在提交
   bool _isLoading = false;
+  String? _errorMessage;
+
+  void _clearError() {
+    if (_errorMessage != null) {
+      setState(() => _errorMessage = null);
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _oldPasswordCtrl.addListener(_clearError);
+    _newPasswordCtrl.addListener(_clearError);
+    _confirmPasswordCtrl.addListener(_clearError);
+  }
 
   @override
   void dispose() {
+    _oldPasswordCtrl.removeListener(_clearError);
+    _newPasswordCtrl.removeListener(_clearError);
+    _confirmPasswordCtrl.removeListener(_clearError);
     _oldPasswordCtrl.dispose();
     _newPasswordCtrl.dispose();
     _confirmPasswordCtrl.dispose();
     super.dispose();
+  }
+
+  /// 将 Supabase AuthException 转为用户友好提示
+  String _friendlyPasswordError(String raw) {
+    final lower = raw.toLowerCase();
+    if (lower.contains('invalid login') || lower.contains('invalid credentials')) {
+      return 'Current password is incorrect.';
+    }
+    if (lower.contains('same password') || lower.contains('different password')) {
+      return 'New password must be different from your current password.';
+    }
+    if (lower.contains('rate limit') || lower.contains('too many requests')) {
+      return 'Too many attempts. Please try again later.';
+    }
+    if (lower.contains('weak') || lower.contains('too short')) {
+      return 'Password is too weak. Please choose a stronger one.';
+    }
+    if (lower.contains('network') || lower.contains('connection')) {
+      return 'Network error. Please check your connection.';
+    }
+    return 'Failed to update password. Please try again.';
   }
 
   /// 验证旧密码并更新为新密码
@@ -44,7 +83,7 @@ class _ChangePasswordScreenState extends ConsumerState<ChangePasswordScreen> {
       final email = client.auth.currentUser?.email;
 
       if (email == null) {
-        _showError('Unable to identify current user. Please log in again.');
+        setState(() => _errorMessage = 'Unable to identify current user. Please log in again.');
         return;
       }
 
@@ -72,23 +111,13 @@ class _ChangePasswordScreenState extends ConsumerState<ChangePasswordScreen> {
     } on AuthException catch (e) {
       // Supabase 认证错误（旧密码错误等）
       if (!mounted) return;
-      _showError(e.message);
+      setState(() => _errorMessage = _friendlyPasswordError(e.message));
     } catch (e) {
       if (!mounted) return;
-      _showError('Something went wrong. Please try again.');
+      setState(() => _errorMessage = 'Something went wrong. Please try again.');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
-  }
-
-  /// 显示错误 SnackBar
-  void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: AppColors.error,
-      ),
-    );
   }
 
   /// 验证密码策略：最少 8 字符、含大写、小写、数字
@@ -208,6 +237,27 @@ class _ChangePasswordScreenState extends ConsumerState<ChangePasswordScreen> {
                   return null;
                 },
               ),
+
+              // 内联错误提示
+              if (_errorMessage != null) ...[
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    const Icon(Icons.error_outline, size: 16, color: AppColors.error),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        _errorMessage!,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: AppColors.error,
+                          height: 1.3,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
               const SizedBox(height: 36),
 
               // 提交按钮
