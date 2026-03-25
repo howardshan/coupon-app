@@ -1,5 +1,5 @@
 // 购物车页面 — V3 DB 持久化版本
-// 每张券独立一行，同一 deal 的多张券视觉分组展示，底部显示 service fee
+// 每张券独立一行，同一 deal 的多张券视觉分组展示，支持勾选结账
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -11,15 +11,48 @@ import '../../data/models/cart_item_model.dart';
 import '../../domain/providers/cart_provider.dart';
 import '../../../auth/domain/providers/auth_provider.dart';
 
-class CartScreen extends ConsumerWidget {
+class CartScreen extends ConsumerStatefulWidget {
   const CartScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<CartScreen> createState() => _CartScreenState();
+}
+
+class _CartScreenState extends ConsumerState<CartScreen> {
+  // 已选中的 dealId 集合
+  final Set<String> _selectedDealIds = {};
+  // 是否已经做过初始化（全选）
+  bool _initialized = false;
+
+  @override
+  Widget build(BuildContext context) {
     final cartAsync = ref.watch(cartProvider);
-    final totalPrice = ref.watch(cartTotalPriceProvider);
-    final serviceFee = ref.watch(cartServiceFeeProvider);
-    final itemCount = ref.watch(cartTotalCountProvider);
+    final allItems = cartAsync.valueOrNull ?? [];
+    final itemCount = allItems.length;
+
+    // 按 dealId 分组
+    final groups = _groupByDeal(allItems);
+    final allDealIds = groups.map((g) => g.first.dealId).toSet();
+
+    // 首次加载完成后默认全选
+    if (!_initialized && allItems.isNotEmpty) {
+      _selectedDealIds.addAll(allDealIds);
+      _initialized = true;
+    }
+
+    // 清理已不存在的 dealId（删除后残留）
+    _selectedDealIds.retainAll(allDealIds);
+
+    // 计算选中项
+    final selectedItems = allItems
+        .where((item) => _selectedDealIds.contains(item.dealId))
+        .toList();
+    final selectedCount = selectedItems.length;
+    final selectedPrice =
+        selectedItems.fold(0.0, (sum, item) => sum + item.unitPrice);
+    final selectedServiceFee = 0.99 * selectedCount;
+    final isAllSelected =
+        allDealIds.isNotEmpty && _selectedDealIds.length == allDealIds.length;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -44,8 +77,13 @@ class CartScreen extends ConsumerWidget {
                   // 有商品时显示 Clear All 按钮
                   if (itemCount > 0)
                     TextButton(
-                      onPressed: () =>
-                          ref.read(cartProvider.notifier).clear(),
+                      onPressed: () {
+                        ref.read(cartProvider.notifier).clear();
+                        setState(() {
+                          _selectedDealIds.clear();
+                          _initialized = false;
+                        });
+                      },
                       child: const Text(
                         'Clear All',
                         style: TextStyle(
@@ -61,7 +99,8 @@ class CartScreen extends ConsumerWidget {
             // ── 列表 / Loading / 空状态 ────────────────────
             Expanded(
               child: cartAsync.when(
-                loading: () => const Center(child: CircularProgressIndicator()),
+                loading: () =>
+                    const Center(child: CircularProgressIndicator()),
                 error: (err, _) => Center(
                   child: Padding(
                     padding: const EdgeInsets.all(24),
@@ -75,16 +114,30 @@ class CartScreen extends ConsumerWidget {
                 data: (items) {
                   if (items.isEmpty) return const _EmptyCart();
 
-                  // 按 dealId 分组，保留原始顺序
-                  final groups = _groupByDeal(items);
+                  final dataGroups = _groupByDeal(items);
 
                   return ListView.separated(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
-                    itemCount: groups.length,
+                    itemCount: dataGroups.length,
                     separatorBuilder: (_, _) => const SizedBox(height: 16),
                     itemBuilder: (context, index) {
-                      final group = groups[index];
-                      return _DealGroup(items: group);
+                      final group = dataGroups[index];
+                      final dealId = group.first.dealId;
+                      final isSelected = _selectedDealIds.contains(dealId);
+
+                      return _DealGroup(
+                        items: group,
+                        isSelected: isSelected,
+                        onSelectionChanged: (selected) {
+                          setState(() {
+                            if (selected) {
+                              _selectedDealIds.add(dealId);
+                            } else {
+                              _selectedDealIds.remove(dealId);
+                            }
+                          });
+                        },
+                      );
                     },
                   );
                 },
@@ -94,9 +147,23 @@ class CartScreen extends ConsumerWidget {
             // ── 底部结算栏（有商品时显示）──────────────────
             if (itemCount > 0)
               _CheckoutBar(
-                totalPrice: totalPrice,
-                serviceFee: serviceFee,
-                itemCount: itemCount,
+                totalPrice: selectedPrice,
+                serviceFee: selectedServiceFee,
+                itemCount: selectedCount,
+                isAllSelected: isAllSelected,
+                onSelectAll: (selectAll) {
+                  setState(() {
+                    if (selectAll) {
+                      _selectedDealIds.addAll(allDealIds);
+                    } else {
+                      _selectedDealIds.clear();
+                    }
+                  });
+                },
+                onCheckout: () {
+                  if (selectedItems.isEmpty) return;
+                  context.push('/checkout-cart', extra: selectedItems);
+                },
               ),
           ],
         ),
@@ -182,12 +249,18 @@ class _EmptyCart extends StatelessWidget {
   }
 }
 
-// ── 同一 deal 分组卡片 ─────────────────────────────────────────
+// ── 同一 deal 分组卡片（含勾选框）─────────────────────────────
 // 一行 Deal 信息 + 数量选择器（+/-），底层每张券是独立 cart_item 行
 class _DealGroup extends ConsumerWidget {
   final List<CartItemModel> items;
+  final bool isSelected;
+  final ValueChanged<bool> onSelectionChanged;
 
-  const _DealGroup({required this.items});
+  const _DealGroup({
+    required this.items,
+    required this.isSelected,
+    required this.onSelectionChanged,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -229,19 +302,33 @@ class _DealGroup extends ConsumerWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // 勾选框
+            GestureDetector(
+              onTap: () => onSelectionChanged(!isSelected),
+              child: Padding(
+                padding: const EdgeInsets.only(right: 6, top: 20),
+                child: Icon(
+                  isSelected
+                      ? Icons.check_circle
+                      : Icons.radio_button_unchecked,
+                  color: isSelected ? AppColors.primary : AppColors.textHint,
+                  size: 20,
+                ),
+              ),
+            ),
             // 缩略图
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
               child: first.dealImageUrl.isNotEmpty
                   ? CachedNetworkImage(
                       imageUrl: first.dealImageUrl,
-                      width: 72,
-                      height: 72,
+                      width: 64,
+                      height: 64,
                       fit: BoxFit.cover,
-                      placeholder: (_, _) => _ImagePlaceholder(),
-                      errorWidget: (_, _, _) => _ImagePlaceholder(),
+                      placeholder: (_, _) => _ImagePlaceholder(size: 64),
+                      errorWidget: (_, _, _) => _ImagePlaceholder(size: 64),
                     )
-                  : _ImagePlaceholder(),
+                  : _ImagePlaceholder(size: 64),
             ),
             const SizedBox(width: 12),
             // 中间：标题 + 商家 + 单价
@@ -268,28 +355,14 @@ class _DealGroup extends ConsumerWidget {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  // 单价 + 小计
-                  Row(
-                    children: [
-                      Text(
-                        '\$${first.unitPrice.toStringAsFixed(2)}',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.primary,
-                        ),
-                      ),
-                      if (quantity > 1) ...[
-                        const SizedBox(width: 8),
-                        Text(
-                          '= \$${subtotal.toStringAsFixed(2)}',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                      ],
-                    ],
+                  // 单价
+                  Text(
+                    '\$${first.unitPrice.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.primary,
+                    ),
                   ),
                 ],
               ),
@@ -309,16 +382,22 @@ class _DealGroup extends ConsumerWidget {
                     children: [
                       // 减少按钮
                       _QtyBtn(
-                        icon: quantity > 1 ? Icons.remove : Icons.delete_outline,
-                        color: quantity > 1 ? AppColors.textPrimary : Colors.red,
+                        icon: quantity > 1
+                            ? Icons.remove
+                            : Icons.delete_outline,
+                        color:
+                            quantity > 1 ? AppColors.textPrimary : Colors.red,
                         onTap: () {
                           // 移除该 deal 组的最后一个 cart_item
-                          ref.read(cartProvider.notifier).removeItem(items.last.id);
+                          ref
+                              .read(cartProvider.notifier)
+                              .removeItem(items.last.id);
                         },
                       ),
                       // 数量
                       Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: 12),
                         child: Text(
                           '$quantity',
                           style: const TextStyle(
@@ -335,7 +414,8 @@ class _DealGroup extends ConsumerWidget {
                           // 从 cart_item 元数据中读取 max_per_account
                           final maxPerAccount = first.maxPerAccount;
                           if (maxPerAccount > 0) {
-                            final userId = ref.read(currentUserProvider).value?.id;
+                            final userId =
+                                ref.read(currentUserProvider).value?.id;
                             if (userId != null) {
                               // 查询该用户已购买且未退款的该 deal 数量
                               final res = await Supabase.instance.client
@@ -346,13 +426,16 @@ class _DealGroup extends ConsumerWidget {
                                   .neq('customer_status', 'refund_success');
                               final purchasedCount = (res as List).length;
                               // 购物车中当前 deal 已有数量（含本组）
-                              final cartCount = quantity; // quantity = items.length
-                              if (purchasedCount + cartCount >= maxPerAccount) {
+                              final cartCount =
+                                  quantity; // quantity = items.length
+                              if (purchasedCount + cartCount >=
+                                  maxPerAccount) {
                                 final ctx = context;
                                 if (ctx.mounted) {
                                   ScaffoldMessenger.of(ctx).showSnackBar(
                                     const SnackBar(
-                                      content: Text("You've reached the purchase limit for this deal"),
+                                      content: Text(
+                                          "You've reached the purchase limit for this deal"),
                                       behavior: SnackBarBehavior.floating,
                                     ),
                                   );
@@ -362,12 +445,25 @@ class _DealGroup extends ConsumerWidget {
                             }
                           }
                           // 复制第一个 item 的信息，新增一行 cart_item
-                          ref.read(cartProvider.notifier).addDealFromCartItem(first);
+                          ref
+                              .read(cartProvider.notifier)
+                              .addDealFromCartItem(first);
                         },
                       ),
                     ],
                   ),
                 ),
+                // 小计（数量 > 1 时显示）
+                if (quantity > 1) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    '= \$${subtotal.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
               ],
             ),
           ],
@@ -383,7 +479,8 @@ class _QtyBtn extends StatelessWidget {
   final Color color;
   final VoidCallback onTap;
 
-  const _QtyBtn({required this.icon, required this.color, required this.onTap});
+  const _QtyBtn(
+      {required this.icon, required this.color, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -401,19 +498,25 @@ class _QtyBtn extends StatelessWidget {
 }
 
 // ── 底部结算栏 ────────────────────────────────────────────────
-class _CheckoutBar extends ConsumerWidget {
+class _CheckoutBar extends StatelessWidget {
   final double totalPrice;
   final double serviceFee;
   final int itemCount;
+  final bool isAllSelected;
+  final ValueChanged<bool> onSelectAll;
+  final VoidCallback onCheckout;
 
   const _CheckoutBar({
     required this.totalPrice,
     required this.serviceFee,
     required this.itemCount,
+    required this.isAllSelected,
+    required this.onSelectAll,
+    required this.onCheckout,
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final grandTotal = totalPrice + serviceFee;
 
     return Container(
@@ -480,9 +583,37 @@ class _CheckoutBar extends ConsumerWidget {
               padding: EdgeInsets.symmetric(vertical: 8),
               child: Divider(height: 1, color: AppColors.surfaceVariant),
             ),
-            // ── 合计 + 结算按钮 ───────────────────────────
+            // ── 全选 + 合计 + 结算按钮 ───────────────────
             Row(
               children: [
+                // 全选勾选框
+                GestureDetector(
+                  onTap: () => onSelectAll(!isAllSelected),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        isAllSelected
+                            ? Icons.check_circle
+                            : Icons.radio_button_unchecked,
+                        color: isAllSelected
+                            ? AppColors.primary
+                            : AppColors.textHint,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 4),
+                      const Text(
+                        'All',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 10),
+                // 合计金额
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -491,14 +622,14 @@ class _CheckoutBar extends ConsumerWidget {
                       const Text(
                         'Total',
                         style: TextStyle(
-                          fontSize: 12,
+                          fontSize: 11,
                           color: AppColors.textSecondary,
                         ),
                       ),
                       Text(
                         '\$${grandTotal.toStringAsFixed(2)}',
                         style: const TextStyle(
-                          fontSize: 22,
+                          fontSize: 18,
                           fontWeight: FontWeight.bold,
                           color: AppColors.primary,
                         ),
@@ -506,26 +637,27 @@ class _CheckoutBar extends ConsumerWidget {
                     ],
                   ),
                 ),
-                // 结算按钮：跳转到购物车多 deal 结账页，传入当前购物车列表
+                // 结算按钮
                 GestureDetector(
                   behavior: HitTestBehavior.opaque,
-                  onTap: () {
-                    final items = ref.read(cartProvider).valueOrNull;
-                    if (items == null || items.isEmpty) return;
-                    context.push('/checkout-cart', extra: items);
-                  },
+                  onTap: itemCount > 0 ? onCheckout : null,
                   child: Container(
                     height: 48,
-                    padding: const EdgeInsets.symmetric(horizontal: 32),
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
                     decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: AppColors.primaryGradient,
-                      ),
+                      gradient: itemCount > 0
+                          ? const LinearGradient(
+                              colors: AppColors.primaryGradient,
+                            )
+                          : null,
+                      color: itemCount > 0 ? null : AppColors.textHint,
                       borderRadius: BorderRadius.circular(24),
                     ),
                     child: Center(
                       child: Text(
-                        'Checkout ($itemCount)',
+                        itemCount > 0
+                            ? 'Checkout ($itemCount)'
+                            : 'Checkout',
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 16,
@@ -546,11 +678,14 @@ class _CheckoutBar extends ConsumerWidget {
 
 // ── 图片占位符 ────────────────────────────────────────────────
 class _ImagePlaceholder extends StatelessWidget {
+  final double size;
+  const _ImagePlaceholder({this.size = 64});
+
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 72,
-      height: 72,
+      width: size,
+      height: size,
       color: AppColors.surfaceVariant,
       child: const Icon(Icons.local_offer, color: AppColors.textHint),
     );

@@ -310,7 +310,11 @@ final appRouter = GoRouter(
         // Tab 2: Orders（订单列表）+ 订单详情
         GoRoute(
           path: '/orders',
-          builder: (context, state) => const OrdersListPage(),
+          builder: (context, state) {
+            final tab = int.tryParse(
+                state.uri.queryParameters['tab'] ?? '') ?? 0;
+            return OrdersListPage(initialTab: tab);
+          },
           routes: [
             GoRoute(
               path: ':orderId',

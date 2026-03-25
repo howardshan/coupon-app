@@ -161,6 +161,21 @@ serve(async (req: Request) => {
         status,
         expires_at,
         purchased_merchant_id
+      ),
+      coupon_gifts (
+        id,
+        gifter_user_id,
+        recipient_email,
+        recipient_phone,
+        recipient_user_id,
+        gift_message,
+        status,
+        claim_token,
+        token_expires_at,
+        claimed_at,
+        recalled_at,
+        created_at,
+        updated_at
       )
     `)
     .eq('order_id', orderId)
@@ -313,6 +328,8 @@ serve(async (req: Request) => {
         refundAmount: item.refund_amount != null ? Number(item.refund_amount) : null,
         refundReason: item.refund_reason ?? null,
         selectedOptions: item.selected_options ?? null,
+        // Gift 赠送信息
+        coupon_gifts: (item as any).coupon_gifts ?? [],
         // Deal 额外信息（用于详情页展示）
         usageRules: deal?.usage_rules ?? [],
         refundPolicy: deal?.refund_policy ?? null,
