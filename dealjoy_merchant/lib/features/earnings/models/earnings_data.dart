@@ -659,20 +659,6 @@ class CommissionConfig {
   final double effectiveStripeRate;
   final double effectiveStripeFlatFee;
 
-  // [deprecated] 旧三档费率字段，保留向后兼容，新代码请使用 commissionRate / effectiveCommissionRate
-  @Deprecated('Use commissionRate instead')
-  final double fixedDateRate;
-  @Deprecated('Use commissionRate instead')
-  final double shortAfterPurchaseRate;
-  @Deprecated('Use commissionRate instead')
-  final double longAfterPurchaseRate;
-  @Deprecated('Use effectiveCommissionRate instead')
-  final double effectiveFixedDateRate;
-  @Deprecated('Use effectiveCommissionRate instead')
-  final double effectiveShortRate;
-  @Deprecated('Use effectiveCommissionRate instead')
-  final double effectiveLongRate;
-
   const CommissionConfig({
     required this.freeMonths,
     required this.commissionRate,
@@ -684,26 +670,14 @@ class CommissionConfig {
     required this.merchantRatesActive,
     required this.effectiveStripeRate,
     required this.effectiveStripeFlatFee,
-    // [deprecated] 旧三档字段，默认值兜底
-    this.fixedDateRate = 0.15,
-    this.shortAfterPurchaseRate = 0.10,
-    this.longAfterPurchaseRate = 0.15,
-    this.effectiveFixedDateRate = 0.15,
-    this.effectiveShortRate = 0.10,
-    this.effectiveLongRate = 0.15,
   });
 
   factory CommissionConfig.fromJson(Map<String, dynamic> json) {
     final effectiveRates = json['effective_rates'] as Map<String, dynamic>? ?? {};
 
-    // 优先读新字段 commission_rate，降级到旧 fixed_date_rate
-    final globalRate = (json['commission_rate'] as num?)?.toDouble()
-        ?? (json['fixed_date_rate'] as num?)?.toDouble()
-        ?? 0.15;
-    // 优先读新字段 effective_commission_rate，降级到 effective_rates.commission_rate，再降级到旧三档第一档
+    final globalRate = (json['commission_rate'] as num?)?.toDouble() ?? 0.15;
     final effectiveRate = (json['effective_commission_rate'] as num?)?.toDouble()
         ?? (effectiveRates['commission_rate'] as num?)?.toDouble()
-        ?? (effectiveRates['fixed_date_rate'] as num?)?.toDouble()
         ?? globalRate;
 
     final effectiveStripeRate = (effectiveRates['stripe_processing_rate'] as num?)?.toDouble()
@@ -726,13 +700,6 @@ class CommissionConfig {
       merchantRatesActive:    json['merchant_rates_active'] as bool? ?? false,
       effectiveStripeRate:    effectiveStripeRate,
       effectiveStripeFlatFee: effectiveStripeFlatFee,
-      // [deprecated] 旧三档字段，解析保留以便旧代码不崩溃
-      fixedDateRate:          (json['fixed_date_rate'] as num?)?.toDouble() ?? 0.15,
-      shortAfterPurchaseRate: (json['short_after_purchase_rate'] as num?)?.toDouble() ?? 0.10,
-      longAfterPurchaseRate:  (json['long_after_purchase_rate'] as num?)?.toDouble() ?? 0.15,
-      effectiveFixedDateRate: (effectiveRates['fixed_date_rate'] as num?)?.toDouble() ?? effectiveRate,
-      effectiveShortRate:     (effectiveRates['short_after_purchase_rate'] as num?)?.toDouble() ?? effectiveRate,
-      effectiveLongRate:      (effectiveRates['long_after_purchase_rate'] as num?)?.toDouble() ?? effectiveRate,
     );
   }
 

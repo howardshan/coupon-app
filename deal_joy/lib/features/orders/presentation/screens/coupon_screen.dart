@@ -374,6 +374,31 @@ class _DealInfoSection extends StatelessWidget {
 
   const _DealInfoSection({required this.coupon});
 
+  // 点击 deal 标题，跳转到 deal 详情页；如果 deal 已下架则提示
+  Future<void> _onDealTitleTap(BuildContext context) async {
+    try {
+      final deal = await Supabase.instance.client
+          .from('deals')
+          .select('id')
+          .eq('id', coupon.dealId)
+          .eq('is_active', true)
+          .maybeSingle();
+      if (!context.mounted) return;
+      if (deal != null) {
+        context.push('/deals/${coupon.dealId}');
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Deal is not available')),
+        );
+      }
+    } catch (_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Deal is not available')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -390,23 +415,26 @@ class _DealInfoSection extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           if (coupon.dealTitle != null)
-            Text(
-              coupon.dealTitle!,
-              style: const TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 18,
+            GestureDetector(
+              onTap: () => _onDealTitleTap(context),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      coupon.dealTitle!,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 18,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.arrow_forward_ios,
+                      size: 14, color: AppColors.primary),
+                ],
               ),
             ),
-          ...[
-            const SizedBox(height: 4),
-            Text(
-              'Order #${coupon.orderId.substring(0, 8).toUpperCase()}',
-              style: const TextStyle(
-                color: AppColors.textSecondary,
-                fontSize: 13,
-              ),
-            ),
-          ],
           if (coupon.dealDescription != null) ...[
             const SizedBox(height: 6),
             Text(
@@ -692,11 +720,61 @@ class _ActionButtonsState extends ConsumerState<_ActionButtons> {
 
   // 请求退款
   Future<void> _requestRefund() async {
-    // 先查询订单的支付信息（payment_intent_id, store_credit_used, total_amount）
-    final orderId = widget.coupon.orderId;
+    final coupon = widget.coupon;
+    final orderId = coupon.orderId;
+    final dealId = coupon.dealId;
+
+    // 查询同一订单里同一 deal 的所有 unused 券（用于数量选择）
+    List<Map<String, dynamic>> siblingCoupons = [];
+    try {
+      final data = await Supabase.instance.client
+          .from('coupons')
+          .select('id, order_item_id')
+          .eq('order_id', orderId)
+          .eq('deal_id', dealId)
+          .eq('status', 'unused')
+          .order('created_at');
+      siblingCoupons = List<Map<String, dynamic>>.from(data);
+    } catch (_) {
+      // 查询失败则只退当前这一张
+      siblingCoupons = [{'id': coupon.id, 'order_item_id': coupon.orderItemId}];
+    }
+
+    // 确保当前券在列表中且排在第一位
+    final currentIdx = siblingCoupons.indexWhere((c) => c['id'] == coupon.id);
+    if (currentIdx < 0) {
+      siblingCoupons.insert(0, {'id': coupon.id, 'order_item_id': coupon.orderItemId});
+    } else if (currentIdx > 0) {
+      final current = siblingCoupons.removeAt(currentIdx);
+      siblingCoupons.insert(0, current);
+    }
+
+    final totalAvailable = siblingCoupons.length;
+    int cancelCount = 1;
+
+    if (!mounted) return;
+
+    // 如果有多张可退，先弹出数量选择
+    if (totalAvailable > 1) {
+      final selectedCount = await showModalBottomSheet<int>(
+        context: context,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        builder: (ctx) => _CancelQuantitySheet(
+          totalAvailable: totalAvailable,
+          dealTitle: coupon.dealTitle ?? 'this deal',
+        ),
+      );
+      if (selectedCount == null) return;
+      cancelCount = selectedCount;
+    }
+
+    if (!mounted) return;
+
+    // 查询订单的支付信息
     String paymentIntentId = '';
     double storeCreditUsed = 0;
-
     try {
       final orderData = await Supabase.instance.client
           .from('orders')
@@ -705,9 +783,7 @@ class _ActionButtonsState extends ConsumerState<_ActionButtons> {
           .single();
       paymentIntentId = orderData['payment_intent_id'] as String? ?? '';
       storeCreditUsed = (orderData['store_credit_used'] as num?)?.toDouble() ?? 0;
-    } catch (_) {
-      // 查询失败不阻断，按普通支付处理
-    }
+    } catch (_) {}
 
     final isFullStoreCredit = paymentIntentId.contains('store_credit');
     final isPartialStoreCredit = !isFullStoreCredit && storeCreditUsed > 0;
@@ -721,7 +797,6 @@ class _ActionButtonsState extends ConsumerState<_ActionButtons> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) {
-        // 混合支付时展示优先退 store credit 的说明
         String originalPaymentSubtitle = 'Service fee non-refundable · 5-10 business days';
         if (isPartialStoreCredit && storeCreditUsed > 0) {
           final creditFmt = storeCreditUsed.toStringAsFixed(2);
@@ -737,13 +812,14 @@ class _ActionButtonsState extends ConsumerState<_ActionButtons> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Cancel Voucher',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              Text(
+                cancelCount > 1
+                    ? 'Cancel $cancelCount Vouchers'
+                    : 'Cancel Voucher',
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 16),
 
-              // 全额 Store Credit 支付：只显示 Store Credit 选项
               if (isFullStoreCredit) ...[
                 ListTile(
                   leading: const Icon(Icons.account_balance_wallet, color: AppColors.success),
@@ -766,7 +842,6 @@ class _ActionButtonsState extends ConsumerState<_ActionButtons> {
                   onTap: () => Navigator.pop(ctx, 'store_credit'),
                 ),
               ] else ...[
-                // 非全额 Store Credit：显示两个选项
                 ListTile(
                   leading: const Icon(Icons.account_balance_wallet, color: AppColors.success),
                   title: const Text('Store Credit', style: TextStyle(fontWeight: FontWeight.w600)),
@@ -791,7 +866,6 @@ class _ActionButtonsState extends ConsumerState<_ActionButtons> {
                 ),
               ],
               const SizedBox(height: 16),
-              // 取消按钮
               SizedBox(
                 width: double.infinity,
                 child: TextButton(
@@ -809,29 +883,33 @@ class _ActionButtonsState extends ConsumerState<_ActionButtons> {
 
     setState(() => _isRefunding = true);
 
-    // 优先用 orderItemId 走 V3 退款流程
-    final orderItemId = widget.coupon.orderItemId;
-    bool success;
-    if (orderItemId != null && orderItemId.isNotEmpty) {
-      success = await ref
-          .read(refundNotifierProvider.notifier)
-          .requestItemRefund(orderItemId, refundMethod: refundMethod);
-    } else {
-      // 旧版兼容：用 couponId 退款
-      success = await ref
-          .read(refundNotifierProvider.notifier)
-          .requestRefund(widget.coupon.id, refundMethod: refundMethod);
+    // 依次退款选中数量的券（当前券优先）
+    int successCount = 0;
+    for (int i = 0; i < cancelCount && i < siblingCoupons.length; i++) {
+      final c = siblingCoupons[i];
+      final itemId = c['order_item_id'] as String?;
+      final cId = c['id'] as String;
+      bool ok;
+      if (itemId != null && itemId.isNotEmpty) {
+        ok = await ref
+            .read(refundNotifierProvider.notifier)
+            .requestItemRefund(itemId, refundMethod: refundMethod);
+      } else {
+        ok = await ref
+            .read(refundNotifierProvider.notifier)
+            .requestRefund(cId, refundMethod: refundMethod);
+      }
+      if (ok) successCount++;
     }
 
     if (mounted) {
       setState(() => _isRefunding = false);
-      if (success) {
+      if (successCount > 0) {
+        final msg = refundMethod == 'store_credit'
+            ? '$successCount voucher${successCount > 1 ? 's' : ''} refunded to Store Credit'
+            : '$successCount voucher${successCount > 1 ? 's' : ''} refund processing';
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(refundMethod == 'store_credit'
-                ? 'Refunded to Store Credit instantly'
-                : 'Refund processing, 5-10 business days'),
-          ),
+          SnackBar(content: Text(msg)),
         );
         context.pop();
       } else {
@@ -992,6 +1070,103 @@ class _ActionButtonsState extends ConsumerState<_ActionButtons> {
               ),
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+// ──────────────────────────────────────────────
+// 退款数量选择 Bottom Sheet
+// ──────────────────────────────────────────────
+class _CancelQuantitySheet extends StatefulWidget {
+  final int totalAvailable;
+  final String dealTitle;
+
+  const _CancelQuantitySheet({
+    required this.totalAvailable,
+    required this.dealTitle,
+  });
+
+  @override
+  State<_CancelQuantitySheet> createState() => _CancelQuantitySheetState();
+}
+
+class _CancelQuantitySheetState extends State<_CancelQuantitySheet> {
+  int _count = 1;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Cancel Vouchers',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'You have ${widget.totalAvailable} unused voucher${widget.totalAvailable > 1 ? 's' : ''} for this deal.',
+            style: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
+          ),
+          const SizedBox(height: 20),
+          // 数量选择器
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              IconButton(
+                onPressed: _count > 1
+                    ? () => setState(() => _count--)
+                    : null,
+                icon: const Icon(Icons.remove_circle_outline),
+                iconSize: 32,
+                color: AppColors.primary,
+              ),
+              const SizedBox(width: 16),
+              Text(
+                '$_count',
+                style: const TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(width: 16),
+              IconButton(
+                onPressed: _count < widget.totalAvailable
+                    ? () => setState(() => _count++)
+                    : null,
+                icon: const Icon(Icons.add_circle_outline),
+                iconSize: 32,
+                color: AppColors.primary,
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () => Navigator.pop(context, _count),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.error,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(double.infinity, 48),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+              child: Text('Cancel $_count Voucher${_count > 1 ? 's' : ''}'),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Go Back'),
+            ),
+          ),
         ],
       ),
     );

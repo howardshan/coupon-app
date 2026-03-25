@@ -267,7 +267,7 @@ class _MerchantCouponGroup extends StatelessWidget {
               imageUrl: first.dealImageUrl,
               quantity: dealCoupons.length,
               expiresAt: first.expiresAt,
-              onTap: () => context.push('/order/${first.orderId}?dealId=${first.dealId}'),
+              onTap: () => context.push('/voucher/${first.orderId}?dealId=${first.dealId}'),
             );
           }),
           const SizedBox(height: 8),
@@ -505,7 +505,7 @@ class _ExpiringSoonSection extends StatelessWidget {
               quantity: dealCoupons.length,
               expiresAt: first.expiresAt,
               showUrgent: true,
-              onTap: () => context.push('/order/${first.orderId}?dealId=${first.dealId}'),
+              onTap: () => context.push('/voucher/${first.orderId}?dealId=${first.dealId}'),
             );
           }),
           const SizedBox(height: 4),

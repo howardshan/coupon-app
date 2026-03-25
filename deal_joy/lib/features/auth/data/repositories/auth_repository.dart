@@ -145,11 +145,15 @@ class AuthRepository {
 
   // ---- 发送密码重置邮件 ----
   Future<void> resetPassword(String email) async {
-    // 不管邮箱是否存在都不抛异常（隐私安全）
     try {
       await _client.auth.resetPasswordForEmail(email);
-    } catch (_) {
-      // 静默处理，不泄露邮箱存在性
+    } on sb.AuthException catch (e) {
+      // AuthException 静默处理（隐私安全，不泄露邮箱存在性）
+      debugPrint('resetPassword AuthException: ${e.message}');
+    } catch (e) {
+      // 网络错误等非预期异常，需要让用户知道
+      debugPrint('resetPassword error: $e');
+      rethrow;
     }
   }
 
