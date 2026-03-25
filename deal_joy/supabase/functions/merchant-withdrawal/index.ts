@@ -11,7 +11,9 @@
 //   GET  /merchant-withdrawal/settings     — 获取自动提现设置
 // =============================================================
 
-import Stripe from "https://esm.sh/stripe@14?target=deno";
+// 使用 npm: 而非 esm.sh：后者在 Edge Runtime 下会拉入 std/node，触发
+// Deno.core.runMicrotasks() is not supported（见 Supabase 文档中 Stripe + esm.sh 排错说明）
+import Stripe from "npm:stripe@14.25.0";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { resolveAuth, requirePermission } from "../_shared/auth.ts";
 import { sendEmail, getAdminRecipients } from "../_shared/email.ts";
