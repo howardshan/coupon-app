@@ -146,14 +146,12 @@ class AuthRepository {
   // ---- 发送密码重置邮件 ----
   Future<void> resetPassword(String email) async {
     try {
-      await _client.auth.resetPasswordForEmail(email);
-    } on sb.AuthException catch (e) {
-      // AuthException 静默处理（隐私安全，不泄露邮箱存在性）
-      debugPrint('resetPassword AuthException: ${e.message}');
-    } catch (e) {
-      // 网络错误等非预期异常，需要让用户知道
-      debugPrint('resetPassword error: $e');
-      rethrow;
+      await _client.auth.resetPasswordForEmail(
+        email,
+        redirectTo: 'io.supabase.dealjoy://login-callback/',
+      );
+    } catch (_) {
+      // 静默处理，不泄露邮箱存在性
     }
   }
 

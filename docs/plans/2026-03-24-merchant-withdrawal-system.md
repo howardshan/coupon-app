@@ -1,7 +1,7 @@
 # 商家提现完整流程开发计划
 
 > **日期：** 2026-03-24
-> **状态：** 待开发
+> **状态：** ✅ 已完成
 > **分支：** tianzuo-coupon1
 
 ---
@@ -10,14 +10,14 @@
 
 商家核销订单后，收益（订单金额 × 85%）进入结算池，T+7 天后变为可提现余额。商家需要在商家端 App 中通过提现功能将余额打款到银行账户。
 
-**当前状态：**
+**开发前状态：**
 - 前端 UI（earnings/withdrawal/payment_account 等页面）已全部完成
 - 数据库表（withdrawals、merchant_bank_accounts、merchant_withdrawal_settings）已存在
 - 邮件模板 M14（申请通知）、M15（完成通知）已存在
 - `merchant-withdrawal` Edge Function 路由框架存在，但 `handleWithdraw` 中有 TODO（实际 Stripe 转账未实现）
-- `payment_account_page.dart` 的 Connect 按钮目前只弹 "coming soon"
+- `payment_account_page.dart` 的 Connect 按钮只弹 "coming soon"
 
-**目标：** 实现完整的端到端提现流程：Stripe Connect 账户绑定 → 商家申请提现 → 系统自动调用 Stripe Transfer → Webhook 更新状态 → 邮件通知结果
+**目标：** 实现完整的端到端提现流程：Stripe Connect 账户绑定 → 商家申请提现 → 系统自动调用 Stripe Transfer → 同步更新状态 → 邮件通知结果
 
 **核心决策：**
 - 触发方式：商家申请后**自动**调用 Stripe Transfer，无需管理员审批
@@ -25,23 +25,36 @@
 
 ---
 
-## 阶段划分（按依赖顺序）
+## ⚠️ 重要架构说明：Transfer 是同步操作
+
+> **原计划** 设想通过监听 Stripe Webhook 的 `transfer.paid` / `transfer.failed` 事件来更新提现状态。
+> **实际情况：** 这两个事件在 Stripe 中并不存在。
+
+`stripe.transfers.create()` 是**同步**操作：
+- 调用成功 → 转账立即完成，直接将状态更新为 `completed`
+- 调用抛出异常 → 转账失败，在 catch 块中更新为 `failed`
+
+因此，状态同步、FIFO 标记 `order_items.merchant_status`、M15/M18 邮件发送，**全部在 `handleWithdraw` 函数内同步或 fire-and-forget 处理**，不依赖任何 Webhook。Stripe Dashboard 无需额外配置 Webhook 事件。
+
+---
+
+## 阶段划分
 
 ```
-阶段一：Stripe Connect 账户绑定（必须第一步，无 verified 账户无法提现）
+阶段一：Stripe Connect 账户绑定（必须第一步，无 verified 账户无法提现）  ✅
     ↓
-阶段二：Stripe Transfer 实际执行（替换 handleWithdraw 中的 TODO）
+阶段二：Stripe Transfer 实际执行（替换 handleWithdraw 中的 TODO）        ✅
     ↓
-阶段三：Stripe Webhook 状态同步（transfer.paid / transfer.failed）
+阶段三：Transfer 结果同步 + 邮件通知（同步处理，非 Webhook）             ✅
     ↓
-阶段四：M18 提现失败邮件（Webhook 触发失败通知所需）
+阶段四：M18 提现失败邮件模板                                             ✅
     ↓
-阶段五（可选）：自动提现 Cron
+阶段五（可选）：自动提现 Cron                                            ⬜ 待开发
 ```
 
 ---
 
-## 阶段一：Stripe Connect Express 账户绑定
+## 阶段一：Stripe Connect Express 账户绑定 ✅
 
 ### 目标
 商家通过 App 完成 Stripe Express 账户注册，绑定银行账户后才能提现。
@@ -54,19 +67,19 @@
 1. **`POST /merchant-withdrawal/connect`** — 创建 Connect 账户 + 生成 onboarding URL
    - 若商家已有 `stripe_account_id`，直接生成新的 Account Link（续接 onboarding）
    - 若没有，调用 `stripe.accounts.create({ type: 'express', ... })` 先创建，存入 `merchants.stripe_account_id`
-   - 调用 `stripe.accountLinks.create()` 生成 `return_url` 和 `refresh_url`（均指向商家 App 深链 `dealjoymerchant://stripe-callback`）
+   - 调用 `stripe.accountLinks.create()` 生成链接（`return_url` / `refresh_url` 均指向深链 `dealjoymerchant://stripe-callback`）
    - 返回 `{ url: "https://connect.stripe.com/..." }`
 
 2. **`POST /merchant-withdrawal/connect/refresh`** — onboarding 完成后同步账户状态
    - 调用 `stripe.accounts.retrieve(stripe_account_id)` 检查 `charges_enabled` / `payouts_enabled`
-   - 更新 `merchants.stripe_account_status`（'connected' 或 'restricted'）
-   - 更新 `merchant_bank_accounts` 记录的 `status`（'verified' 或 'pending'）
-   - 若账户有银行账户信息（`external_accounts`），提取 `last4` 和 `bank_name` 写入 `merchant_bank_accounts`
-   - 返回最新的账户状态
+   - 更新 `merchants.stripe_account_status`（`'connected'` 或 `'restricted'`）
+   - 更新 `merchant_bank_accounts.status`（`'verified'` 或 `'pending'`）
+   - 若账户有 `external_accounts`，提取 `last4` 和 `bank_name` 写入 `merchant_bank_accounts`
+   - 返回最新账户状态
 
 3. **`GET /merchant-withdrawal/connect/dashboard`** — 生成 Stripe Express Dashboard 链接
    - 调用 `stripe.accounts.createLoginLink(stripe_account_id)`
-   - 返回 `{ url: "..." }`（用于已连接商家点 "Manage on Stripe"）
+   - 返回 `{ url: "..." }`（已连接商家点 "Manage on Stripe" 时使用）
 
 ### 前端修改
 **文件：** `dealjoy_merchant/lib/features/earnings/services/earnings_service.dart`
@@ -79,25 +92,14 @@
 **文件：** `dealjoy_merchant/lib/features/earnings/pages/payment_account_page.dart`
 
 修改：
-- `_ActionButtons` 的 `onConnectTap` 从 `_showComingSoonTip` 改为：
-  1. 调用 `earningsService.fetchStripeConnectUrl()`
-  2. 使用 `launchUrl(Uri.parse(url))` 跳转到 Stripe onboarding 页面
-- `_ActionButtons` 的 `onManageTap` 改为：
-  1. 调用 `earningsService.fetchStripeManageUrl()`
-  2. 使用 `launchUrl()` 打开 Stripe Express Dashboard
-- 在按钮区域增加 "Refresh Status" 按钮（商家完成 onboarding 后点击同步状态），调用 `refreshStripeAccountStatus()` 后 `ref.invalidate(stripeAccountProvider)`
-
-**pubspec.yaml 确认：** 检查 `dealjoy_merchant/pubspec.yaml` 是否已有 `url_launcher`，如无则添加。
-
-### 验证方法
-1. 点击 "Connect Stripe Account" → 跳转到 Stripe Test Mode 的 onboarding 页面
-2. 完成测试 onboarding 后回到 App，点 "Refresh Status"
-3. 检查 `merchants.stripe_account_status = 'connected'`，`merchant_bank_accounts.status = 'verified'`
-4. 页面显示绿色 "Connected" badge 和账户邮箱
+- `_ActionButtons` 的 `onConnectTap` 从 `_showComingSoonTip` 改为调用 `fetchStripeConnectUrl()` + `launchUrl()`
+- `_ActionButtons` 的 `onManageTap` 改为调用 `fetchStripeManageUrl()` + `launchUrl()`
+- 新增 `_RefreshStatusButton`（商家完成 onboarding 后点击同步），调用 `refreshStripeAccountStatus()` 后 `ref.invalidate(stripeAccountProvider)`
+- 页面从 `ConsumerWidget` 改为 `ConsumerStatefulWidget`，增加 `_isConnecting`、`_isRefreshing`、`_isOpeningDashboard` 加载状态
 
 ---
 
-## 阶段二：Stripe Transfer 实际执行
+## 阶段二：Stripe Transfer 实际执行 ✅
 
 ### 目标
 替换 `handleWithdraw` 中的 TODO，商家申请后立即调用 Stripe Transfer。
@@ -105,130 +107,91 @@
 ### 后端修改
 **文件：** `deal_joy/supabase/functions/merchant-withdrawal/index.ts`
 
-在文件顶部添加 Stripe 初始化（与 `stripe-webhook/index.ts` 相同的导入方式）：
 ```typescript
-import Stripe from 'https://esm.sh/stripe@14?target=deno';
-const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {
-  apiVersion: '2024-04-10',
-  httpClient: Stripe.createFetchHttpClient(),
-});
+const transfer = await stripe.transfers.create(
+  {
+    amount:      Math.round(amount * 100), // 转为分（cents）
+    currency:    'usd',
+    destination: bankAccount.stripe_account_id,
+    metadata:    { withdrawal_id: withdrawal.id, merchant_id: merchantId },
+  },
+  { idempotencyKey: withdrawal.id }  // 防止网络重试导致重复打款
+);
 ```
-
-替换 `handleWithdraw` 中的 TODO 部分（第 295-296 行）：
-```typescript
-// 调用 Stripe Transfer API（从平台账户转账到商家 Connected Account）
-const transfer = await stripe.transfers.create({
-  amount: Math.round(amount * 100),  // 转为分
-  currency: 'usd',
-  destination: bankAccount.stripe_account_id,
-  metadata: { withdrawal_id: withdrawal.id, merchant_id: merchantId },
-}, { idempotencyKey: withdrawal.id });  // 幂等 Key 防重复
-
-// 更新提现记录：写入 stripe_transfer_id，状态变为 processing
-await admin.from('withdrawals').update({
-  stripe_transfer_id: transfer.id,
-  status: 'processing',
-}).eq('id', withdrawal.id);
-```
-
-同时添加错误处理：若 Stripe 调用抛出异常，将 `withdrawals.status` 更新为 `'failed'`，并记录 `failure_reason`。
-
-### 验证方法
-1. 确保商家有 verified 的 Stripe 账户，且有 Available Balance
-2. 在 App 中发起提现
-3. 在 Stripe Test Dashboard → Balance → Transfers 看到一条 Transfer 记录
-4. `withdrawals` 表：`stripe_transfer_id` 有值，`status = 'processing'`
 
 ---
 
-## 阶段三：Stripe Webhook 状态同步
+## 阶段三：Transfer 结果同步 + 邮件通知 ✅
 
-### 目标
-通过 Stripe Webhook 事件自动更新提现状态，并触发邮件通知。
+### 重要说明
+由于 `stripe.transfers.create()` 是同步操作，所有结果处理均在同一函数内完成，**不需要 Webhook，不需要配置 Stripe Dashboard**。
 
-### 后端修改
-**文件：** `deal_joy/supabase/functions/stripe-webhook/index.ts`
+### 成功路径（try 块）
 
-新增 import（阶段四完成后）：
-```typescript
-import { buildM15Email } from '../_shared/email-templates/merchant/withdrawal-completed.ts';
-import { buildM18Email } from '../_shared/email-templates/merchant/withdrawal-failed.ts';
+```
+stripe.transfers.create() 成功
+  → withdrawals.status = 'completed', completed_at = now()
+  → FIFO 批量更新 order_items.merchant_status → 'paid'（fire-and-forget）
+  → 发送 M15 提现完成邮件（fire-and-forget）
 ```
 
-新增两个处理函数：
+### 失败路径（catch 块）
 
-**`handleTransferPaid(transfer)`**
-- 通过 `transfer.metadata.withdrawal_id` 找到 `withdrawals` 记录
-- 更新 `status = 'completed'`，`completed_at = now()`
-- 查询商家信息 → 发送 M15 邮件（提现完成通知）
-
-**`handleTransferFailed(transfer)`**
-- 通过 `transfer.metadata.withdrawal_id` 找到 `withdrawals` 记录
-- 更新 `status = 'failed'`，`failure_reason = transfer.failure_message`
-- 查询商家信息 → 发送 M18 邮件（提现失败通知）
-
-在主 `switch (event.type)` 中注册：
-```typescript
-case 'transfer.paid': await handleTransferPaid(event.data.object); break;
-case 'transfer.failed': await handleTransferFailed(event.data.object); break;
+```
+stripe.transfers.create() 抛出异常
+  → withdrawals.status = 'failed', failure_reason = error.message
+  → 发送 M18 提现失败邮件（fire-and-forget）
+  → 返回 502 错误给客户端
 ```
 
-### Stripe Dashboard 配置
-在 Stripe Dashboard → Webhooks → 当前 endpoint，添加监听事件：
-- `transfer.paid`
-- `transfer.failed`
+### FIFO 标记逻辑
 
-### 验证方法
-使用 Stripe CLI 触发测试事件：
-```bash
-stripe trigger transfer.paid
-stripe trigger transfer.failed
-```
-检查 `withdrawals.status` 更新正确，商家收到对应邮件。
+当提现成功后，需将本次提现对应的已结算券批量标记为 `paid`：
+
+1. 查询该商家所有 `merchant_status = 'unpaid'` 且 `redeemed_at < T-7` 的 `order_items`，按 `redeemed_at` 升序排列
+2. 从最早的券开始累加商家净收入（`unit_price - service_fee`），直到累计金额 ≥ 提现金额（容差 $0.01）
+3. 批量 `.update({ merchant_status: 'paid' })` 标记这批券
+4. 非致命：此步骤失败不影响提现本身，仅记录 warn 日志
 
 ---
 
-## 阶段四：M18 提现失败邮件
+## 阶段四：M18 提现失败邮件 ✅
 
-### 目标
-创建提现失败通知邮件模板，注册新邮件类型代码 M18。
+### 新增文件
 
-### 文件修改
+**`deal_joy/supabase/functions/_shared/email-templates/merchant/withdrawal-failed.ts`**
+- 接口：`M18WithdrawalFailedData`（merchantName, withdrawalId, amount, failedAt, failureReason?）
+- 函数：`buildM18Email()`
+- 邮件主题：`"Action required: Your withdrawal of $X could not be processed"`
 
-**新建：** `deal_joy/supabase/functions/_shared/email-templates/merchant/withdrawal-failed.ts`
-
-参照 `withdrawal-completed.ts`（M15）的结构，实现：
-- 接口：`M18WithdrawalFailedData`（含 merchantName, withdrawalId, amount, failureReason?）
-- 函数：`buildM18Email()` — 主题 `"We couldn't process your withdrawal of $X"`
-- 内容：说明失败原因（若有），提示联系支持
-
-**新建 migration：** `deal_joy/supabase/migrations/20260324000002_email_type_m18.sql`
+**`deal_joy/supabase/migrations/20260324000002_email_type_m18.sql`**
 ```sql
 INSERT INTO email_type_settings (email_code, email_name, recipient_type, user_configurable)
 VALUES ('M18', 'Withdrawal Failed', 'merchant', FALSE)
 ON CONFLICT (email_code) DO NOTHING;
 ```
+> 注：因本地 migration 版本号冲突，此 migration 已通过 Supabase Dashboard → SQL Editor 手动执行。
 
 ---
 
-## 阶段五（可选）：自动提现 Cron
+## 阶段五（可选）：自动提现 Cron ⬜
 
 ### 目标
-对启用了自动提现的商家，按设定周期自动触发提现（复用阶段二的 Stripe Transfer 逻辑）。
+对启用了自动提现的商家，按设定周期自动触发提现。
 
 ### 文件修改
 
 **新建：** `deal_joy/supabase/functions/auto-withdrawal/index.ts`
 - 查询 `merchant_withdrawal_settings` 中 `auto_withdrawal_enabled = true` 的商家
 - 判断今天是否为触发日期（按 frequency 和 auto_withdrawal_day）
-- 幂等检查：当天已有 pending/processing 记录则跳过
-- 对满足条件的商家触发提现（余额 >= min_withdrawal_amount）
+- 幂等检查：当天已有 pending/processing/completed 记录则跳过
+- 对满足条件的商家调用提现逻辑（余额 >= min_withdrawal_amount）
 
 **新建 migration：** `deal_joy/supabase/migrations/YYYYMMDD_auto_withdrawal_cron.sql`
 ```sql
 SELECT cron.schedule(
   'auto-withdrawal-daily',
-  '0 10 * * *',  -- 每天 UTC 10:00（对应 Dallas CST 05:00）
+  '0 10 * * *',  -- 每天 UTC 10:00（Dallas CST 05:00）
   $$ SELECT net.http_post(url := 'https://kqyolvmgrdekybjrwizx.supabase.co/functions/v1/auto-withdrawal', ...) $$
 );
 ```
@@ -237,15 +200,59 @@ SELECT cron.schedule(
 
 ## 关键文件清单
 
-| 文件 | 变更类型 | 阶段 |
-|------|---------|------|
-| `deal_joy/supabase/functions/merchant-withdrawal/index.ts` | 修改（新增 3 条 Connect 路由 + 替换 TODO Transfer 调用） | 一、二 |
-| `deal_joy/supabase/functions/stripe-webhook/index.ts` | 修改（新增 transfer.paid/failed 事件处理） | 三 |
-| `deal_joy/supabase/functions/_shared/email-templates/merchant/withdrawal-failed.ts` | 新建 M18 邮件模板 | 四 |
-| `deal_joy/supabase/migrations/20260324000002_email_type_m18.sql` | 新建 migration | 四 |
-| `dealjoy_merchant/lib/features/earnings/services/earnings_service.dart` | 修改（新增 fetchStripeConnectUrl / refreshStripeAccountStatus / fetchStripeManageUrl） | 一 |
-| `dealjoy_merchant/lib/features/earnings/pages/payment_account_page.dart` | 修改（Connect / Manage 按钮接真实逻辑，新增 Refresh Status 按钮） | 一 |
-| `deal_joy/supabase/functions/auto-withdrawal/index.ts` | 新建 Edge Function | 五（可选） |
+| 文件 | 变更类型 | 阶段 | 状态 |
+|------|---------|------|------|
+| `deal_joy/supabase/functions/merchant-withdrawal/index.ts` | 修改（新增 3 条 Connect 路由 + Transfer 调用 + 同步结果处理） | 一、二、三 | ✅ |
+| `deal_joy/supabase/functions/_shared/email-templates/merchant/withdrawal-failed.ts` | 新建 M18 邮件模板 | 四 | ✅ |
+| `deal_joy/supabase/migrations/20260324000002_email_type_m18.sql` | 新建 migration（手动执行） | 四 | ✅ |
+| `dealjoy_merchant/lib/features/earnings/services/earnings_service.dart` | 修改（新增 3 个 Connect 方法） | 一 | ✅ |
+| `dealjoy_merchant/lib/features/earnings/pages/payment_account_page.dart` | 修改（Connect/Manage/Refresh 按钮接真实逻辑） | 一 | ✅ |
+| `deal_joy/supabase/functions/stripe-webhook/index.ts` | 清理（移除错误添加的 transfer 处理函数） | — | ✅ |
+| `deal_joy/supabase/functions/auto-withdrawal/index.ts` | 新建 Edge Function | 五（可选） | ⬜ |
+
+---
+
+## 关键业务逻辑约束
+
+### 一、T+7 结算锁定规则
+
+**规则：** 核销后满 7 天的净收入才计入可提现余额，7 天内的核销收入属于 `pending_settlement`（待结算），不可提现。
+
+**原因：** 平台承诺"随时退款"政策，用户在核销后仍可申请退款。7 天窗口期用于覆盖退款风险：
+- `pending_settlement` 期间发生退款 → 该笔收入从未进入可提现池，无需扣回
+- 满 7 天后才纳入可提现余额 → 商家资金安全有保障
+
+**代码位置：** `merchant-withdrawal/index.ts` → `handleGetBalance()` → `settledCutoff = now - 7 days`
+
+---
+
+### 二、商家侧 Coupon 支付状态跟踪（merchant_status）
+
+**背景：** `order_items.merchant_status` 字段使用 `merchant_item_status` 枚举，专门为商家视角设计，包含完整的支付生命周期：
+
+| merchant_status 值 | 含义 | 显示给商家 |
+|--------------------|------|-----------|
+| `unused` | 未核销 | Unredeemed |
+| `unpaid` | 已核销，待结算 | Pending Settlement |
+| `pending` | T+7 已过，结算中 | Processing |
+| `paid` | 已结算，已纳入提现 | Paid Out |
+| `refund_request` | 用户申请退款 | Refund Requested |
+| `refund_review` | 管理员审核中 | Under Review |
+| `refund_reject` | 退款被拒 | Refund Rejected |
+| `refund_success` | 退款成功 | Refunded |
+
+**实现方式：** 提现成功后，在 `handleWithdraw` 的 try 块内通过 FIFO 逻辑批量将对应券的 `merchant_status` 更新为 `paid`（详见阶段三）。
+
+---
+
+## 邮件通知一览
+
+| 邮件码 | 触发时机 | 收件方 | 触发位置 |
+|--------|---------|--------|---------|
+| M14 | 提现申请受理（已移除，改为直接发 M15） | 商家 | — |
+| M15 | Transfer 成功，提现完成 | 商家 | `handleWithdraw` try 块 |
+| M18 | Transfer 失败 | 商家 | `handleWithdraw` catch 块 |
+| A7 | 商家发起提现（通知管理员） | 管理员 | `handleWithdraw` try 块 |
 
 ---
 
@@ -253,20 +260,16 @@ SELECT cron.schedule(
 
 1. **Stripe 密钥只从环境变量读取**：`Deno.env.get('STRIPE_SECRET_KEY')`，不得硬编码
 2. **Transfer 幂等 Key**：使用 `withdrawal.id` 作为 `idempotencyKey`，防止网络重试导致重复打款
-3. **Transfer metadata 必须含 withdrawal_id**：Webhook 处理函数通过此字段关联提现记录
+3. **stripe_account_id 由后端创建**：不能接受客户端传入的 `stripe_account_id` 声称绑定完成
 4. **Webhook 签名验证不可移除**：`stripe-webhook` 的 `stripe.webhooks.constructEventAsync()` 验证必须保留
-5. **stripe_account_id 由后端创建**：不能接受客户端传入的 `stripe_account_id` 声称绑定完成
 
 ---
 
-## 部署命令
+## 部署记录
 
-```bash
-# 部署 Edge Functions
-supabase functions deploy merchant-withdrawal --no-verify-jwt --project-ref kqyolvmgrdekybjrwizx
-supabase functions deploy stripe-webhook --no-verify-jwt --project-ref kqyolvmgrdekybjrwizx
-supabase functions deploy auto-withdrawal --no-verify-jwt --project-ref kqyolvmgrdekybjrwizx  # 阶段五
-
-# 推送数据库 migration
-supabase db push --project-ref kqyolvmgrdekybjrwizx
-```
+| 操作 | 命令 / 方式 | 状态 |
+|------|------------|------|
+| 部署 `merchant-withdrawal` | `supabase functions deploy merchant-withdrawal --no-verify-jwt` | ✅ 已完成 |
+| 部署 `stripe-webhook` | `supabase functions deploy stripe-webhook --no-verify-jwt` | ✅ 已完成 |
+| 推送 M18 migration | Supabase Dashboard → SQL Editor 手动执行 | ✅ 已完成 |
+| Stripe Dashboard Webhook 配置 | 无需额外配置（Transfer 为同步操作） | ✅ 无需操作 |
