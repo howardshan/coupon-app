@@ -11,7 +11,6 @@ import '../../domain/providers/friend_provider.dart';
 import '../../domain/providers/notification_provider.dart';
 import '../../data/models/conversation_model.dart';
 import '../widgets/conversation_tile.dart';
-import '../widgets/search_user_dialog.dart';
 
 class ChatListScreen extends ConsumerWidget {
   const ChatListScreen({super.key});
@@ -60,6 +59,35 @@ class ChatListScreen extends ConsumerWidget {
               ),
             ),
 
+            // 搜索栏
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: GestureDetector(
+                onTap: () => context.push('/chat/search'),
+                child: Container(
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF5F5F5),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.search, size: 18, color: AppColors.textHint),
+                      SizedBox(width: 8),
+                      Text(
+                        'Search users, chats...',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: AppColors.textHint,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
             // 会话列表
             Expanded(
               child: conversationsAsync.when(
@@ -96,16 +124,6 @@ class ChatListScreen extends ConsumerWidget {
           ],
         ),
       ),
-      // 搜索用户 / 新建聊天 FAB
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => showDialog(
-          context: context,
-          builder: (_) => const SearchUserDialog(),
-        ),
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
-        child: const Icon(Icons.edit_outlined),
-      ),
     );
   }
 }
@@ -128,7 +146,7 @@ class _ConversationList extends StatelessWidget {
       ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
 
     if (conversations.isEmpty) {
-      return _EmptyState(onAdd: () => context.push('/chat/friends'));
+      return const _EmptyState();
     }
 
     return RefreshIndicator(
@@ -252,9 +270,7 @@ class _AppBarIconButton extends StatelessWidget {
 
 // 空状态提示
 class _EmptyState extends StatelessWidget {
-  final VoidCallback onAdd;
-
-  const _EmptyState({required this.onAdd});
+  const _EmptyState();
 
   @override
   Widget build(BuildContext context) {
@@ -274,27 +290,6 @@ class _EmptyState extends StatelessWidget {
               fontSize: 16,
               fontWeight: FontWeight.w600,
               color: AppColors.textSecondary,
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Add friends to start chatting',
-            style: TextStyle(
-              fontSize: 13,
-              color: AppColors.textHint,
-            ),
-          ),
-          const SizedBox(height: 20),
-          ElevatedButton.icon(
-            onPressed: onAdd,
-            icon: const Icon(Icons.person_add_outlined, size: 18),
-            label: const Text('Add Friends'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
             ),
           ),
         ],

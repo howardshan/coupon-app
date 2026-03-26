@@ -45,6 +45,7 @@ import '../../features/chat/presentation/screens/chat_detail_screen.dart';
 import '../../features/chat/presentation/screens/friend_list_screen.dart';
 import '../../features/chat/presentation/screens/friend_requests_screen.dart';
 import '../../features/chat/presentation/screens/notification_screen.dart';
+import '../../features/chat/presentation/screens/chat_search_screen.dart';
 import '../../features/cart/data/models/cart_item_model.dart';
 import '../../features/cart/presentation/screens/cart_screen.dart';
 import '../widgets/main_scaffold.dart';
@@ -356,6 +357,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         ),
       ),
 
+      // 搜索用户页
+      GoRoute(
+        path: '/chat/search',
+        builder: (_, _) => const ChatSearchScreen(),
+      ),
       // 好友管理页（必须在 /chat/:conversationId 之前，避免被参数路由拦截）
       GoRoute(
         path: '/chat/friends',
