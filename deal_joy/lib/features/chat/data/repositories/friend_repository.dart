@@ -91,23 +91,38 @@ class FriendRepository {
   }
 
   /// 获取当前用户发出的待处理好友申请列表
-  /// join 发送者和接收者用户信息
   Future<List<FriendRequestModel>> fetchSentRequests(String userId) async {
     try {
       final data = await _client
           .from('friend_requests')
-          .select(
-            'id, sender_id, receiver_id, status, created_at, '
-            'sender:users!friend_requests_sender_id_fkey(full_name, username, avatar_url), '
-            'receiver:users!friend_requests_receiver_id_fkey(full_name, username, avatar_url)',
-          )
+          .select('id, sender_id, receiver_id, status, created_at')
           .eq('sender_id', userId)
           .eq('status', 'pending')
           .order('created_at', ascending: false);
 
-      return (data as List)
-          .map((e) => FriendRequestModel.fromJson(e as Map<String, dynamic>))
-          .toList();
+      final rows = data as List;
+      if (rows.isEmpty) return [];
+
+      // 批量查接收者信息
+      final receiverIds = rows.map((r) => r['receiver_id'] as String).toSet().toList();
+      final userMap = await _fetchUserInfoMap(receiverIds);
+
+      return rows.map((r) {
+        final rid = r['receiver_id'] as String;
+        final receiverInfo = userMap[rid];
+        return FriendRequestModel(
+          id: r['id'] as String? ?? '',
+          senderId: r['sender_id'] as String? ?? '',
+          receiverId: rid,
+          status: r['status'] as String? ?? 'pending',
+          createdAt: r['created_at'] != null
+              ? DateTime.parse(r['created_at'] as String)
+              : DateTime.now(),
+          receiverName: receiverInfo?['full_name'] as String?,
+          receiverUsername: receiverInfo?['username'] as String?,
+          receiverAvatarUrl: receiverInfo?['avatar_url'] as String?,
+        );
+      }).toList();
     } on PostgrestException catch (e) {
       throw AppException(
         'Failed to fetch sent requests: ${e.message}',
@@ -132,23 +147,38 @@ class FriendRepository {
   }
 
   /// 获取发送给当前用户的待处理好友申请列表
-  /// join 发送者和接收者用户信息
   Future<List<FriendRequestModel>> fetchPendingRequests(String userId) async {
     try {
       final data = await _client
           .from('friend_requests')
-          .select(
-            'id, sender_id, receiver_id, status, created_at, '
-            'sender:users!friend_requests_sender_id_fkey(full_name, username, avatar_url), '
-            'receiver:users!friend_requests_receiver_id_fkey(full_name, username, avatar_url)',
-          )
+          .select('id, sender_id, receiver_id, status, created_at')
           .eq('receiver_id', userId)
           .eq('status', 'pending')
           .order('created_at', ascending: false);
 
-      return (data as List)
-          .map((e) => FriendRequestModel.fromJson(e as Map<String, dynamic>))
-          .toList();
+      final rows = data as List;
+      if (rows.isEmpty) return [];
+
+      // 批量查发送者信息
+      final senderIds = rows.map((r) => r['sender_id'] as String).toSet().toList();
+      final userMap = await _fetchUserInfoMap(senderIds);
+
+      return rows.map((r) {
+        final sid = r['sender_id'] as String;
+        final senderInfo = userMap[sid];
+        return FriendRequestModel(
+          id: r['id'] as String? ?? '',
+          senderId: sid,
+          receiverId: r['receiver_id'] as String? ?? '',
+          status: r['status'] as String? ?? 'pending',
+          createdAt: r['created_at'] != null
+              ? DateTime.parse(r['created_at'] as String)
+              : DateTime.now(),
+          senderName: senderInfo?['full_name'] as String?,
+          senderUsername: senderInfo?['username'] as String?,
+          senderAvatarUrl: senderInfo?['avatar_url'] as String?,
+        );
+      }).toList();
     } on PostgrestException catch (e) {
       throw AppException(
         'Failed to fetch friend requests: ${e.message}',
@@ -158,26 +188,68 @@ class FriendRepository {
   }
 
   // ================================================================
+  // 辅助：批量查询用户信息
+  // ================================================================
+
+  Future<Map<String, Map<String, dynamic>>> _fetchUserInfoMap(
+      List<String> userIds) async {
+    if (userIds.isEmpty) return {};
+    final rows = await _client
+        .from('users')
+        .select('id, full_name, username, avatar_url')
+        .inFilter('id', userIds);
+    final map = <String, Map<String, dynamic>>{};
+    for (final u in rows as List) {
+      map[u['id'] as String] = u as Map<String, dynamic>;
+    }
+    return map;
+  }
+
+  // ================================================================
   // 好友列表
   // ================================================================
 
-  /// 获取当前用户的好友列表（friendships 表，status = 'accepted'）
-  /// join 好友用户信息
+  /// 获取当前用户的好友列表
+  /// friendships 表无 status 字段，存在即代表已是好友
   Future<List<FriendModel>> fetchFriends(String userId) async {
     try {
+      // 先查 friendships 获取好友 ID
       final data = await _client
           .from('friendships')
-          .select(
-            'id, friend_id, created_at, '
-            'friend_user:users!friendships_friend_id_fkey(id, full_name, username, avatar_url)',
-          )
+          .select('id, friend_id, created_at')
           .eq('user_id', userId)
-          .eq('status', 'accepted')
           .order('created_at', ascending: false);
 
-      return (data as List)
-          .map((e) => FriendModel.fromJson(e as Map<String, dynamic>))
-          .toList();
+      final rows = data as List;
+      if (rows.isEmpty) return [];
+
+      // 批量查询好友用户信息
+      final friendIds = rows.map((r) => r['friend_id'] as String).toList();
+      final userRows = await _client
+          .from('users')
+          .select('id, full_name, username, avatar_url')
+          .inFilter('id', friendIds);
+
+      final userMap = <String, Map<String, dynamic>>{};
+      for (final u in userRows as List) {
+        userMap[u['id'] as String] = u as Map<String, dynamic>;
+      }
+
+      // 组装 FriendModel
+      return rows.map((r) {
+        final fid = r['friend_id'] as String;
+        final userInfo = userMap[fid];
+        return FriendModel(
+          id: r['id'] as String? ?? '',
+          friendId: fid,
+          fullName: userInfo?['full_name'] as String?,
+          username: userInfo?['username'] as String?,
+          avatarUrl: userInfo?['avatar_url'] as String?,
+          createdAt: r['created_at'] != null
+              ? DateTime.parse(r['created_at'] as String)
+              : DateTime.now(),
+        );
+      }).toList();
     } on PostgrestException catch (e) {
       throw AppException(
         'Failed to fetch friends: ${e.message}',
