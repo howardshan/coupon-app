@@ -4,6 +4,7 @@
 import 'dart:convert';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/coupon_info.dart';
+import '../../store/services/store_service.dart';
 
 /// 核销相关所有 API 调用的服务类
 /// 通过 Supabase Edge Function 间接操作数据库，确保 RLS 安全策略正确执行
@@ -25,6 +26,7 @@ class ScanService {
       final response = await _supabase.functions.invoke(
         '$_functionName/verify',
         method: HttpMethod.post,
+        headers: StoreService.merchantIdHeaders,
         body: {'code': code},
       );
 
@@ -71,6 +73,7 @@ class ScanService {
       final response = await _supabase.functions.invoke(
         '$_functionName/redeem',
         method: HttpMethod.post,
+        headers: StoreService.merchantIdHeaders,
         body: {'coupon_id': couponId},
       );
 
@@ -114,6 +117,7 @@ class ScanService {
       final response = await _supabase.functions.invoke(
         '$_functionName/revert',
         method: HttpMethod.post,
+        headers: StoreService.merchantIdHeaders,
         body: {'coupon_id': couponId},
       );
 
@@ -182,6 +186,7 @@ class ScanService {
       final response = await _supabase.functions.invoke(
         '$_functionName/history?$queryString',
         method: HttpMethod.get,
+        headers: StoreService.merchantIdHeaders,
       );
 
       final data = _parseResponse(response);

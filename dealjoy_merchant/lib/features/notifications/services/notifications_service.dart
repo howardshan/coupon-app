@@ -4,6 +4,7 @@
 
 import 'dart:convert';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../store/services/store_service.dart';
 import '../models/merchant_notification.dart';
 
 // =============================================================
@@ -75,6 +76,7 @@ class NotificationsService {
       final response = await _supabase.functions.invoke(
         path,
         method: HttpMethod.get,
+        headers: StoreService.merchantIdHeaders,
       );
 
       final data = _parseResponse(response);
@@ -125,6 +127,7 @@ class NotificationsService {
       final response = await _supabase.functions.invoke(
         '$_functionName/$notificationId/read',
         method: HttpMethod.patch,
+        headers: StoreService.merchantIdHeaders,
       );
 
       final data = _parseResponse(response);
@@ -162,6 +165,7 @@ class NotificationsService {
       final response = await _supabase.functions.invoke(
         '$_functionName/read-all',
         method: HttpMethod.patch,
+        headers: StoreService.merchantIdHeaders,
       );
 
       final data = _parseResponse(response);
@@ -200,6 +204,7 @@ class NotificationsService {
       final response = await _supabase.functions.invoke(
         '$_functionName/fcm-token',
         method: HttpMethod.post,
+        headers: StoreService.merchantIdHeaders,
         body: {
           'fcm_token':   token,
           'device_type': deviceType,
@@ -240,6 +245,7 @@ class NotificationsService {
       final response = await _supabase.functions.invoke(
         '$_functionName/unread-count',
         method: HttpMethod.get,
+        headers: StoreService.merchantIdHeaders,
       );
 
       final data = _parseResponse(response);

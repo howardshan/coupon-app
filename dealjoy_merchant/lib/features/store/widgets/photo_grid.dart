@@ -25,8 +25,8 @@ class PhotoGrid extends ConsumerWidget {
 
   // 各类型照片上限
   int get _maxPhotos => switch (photoType) {
-        StorePhotoType.cover => 5,
-        StorePhotoType.storefront => 3,
+        StorePhotoType.cover => 8,
+        StorePhotoType.storefront => 3, // 保留兼容，不再在页面中使用
         StorePhotoType.environment => 10,
         StorePhotoType.product => 10,
       };
@@ -34,7 +34,7 @@ class PhotoGrid extends ConsumerWidget {
   // 缩略图尺寸（匹配客户端裁剪比例）
   ({double w, double h}) get _thumbSize => switch (photoType) {
         StorePhotoType.cover => (w: 140.0, h: 79.0),       // 16:9
-        StorePhotoType.storefront => (w: 120.0, h: 68.0),  // 16:9
+        StorePhotoType.storefront => (w: 120.0, h: 68.0),  // 16:9（兼容）
         StorePhotoType.environment => (w: 104.0, h: 78.0), // 4:3
         StorePhotoType.product => (w: 98.0, h: 70.0),      // 7:5
       };

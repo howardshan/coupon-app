@@ -636,7 +636,10 @@ class _CouponDetailRow extends ConsumerWidget {
                   _SmallButton(
                     label: 'Review',
                     color: AppColors.accent,
-                    onTap: () => context.push('/review/${item.dealId}'),
+                    onTap: () {
+                      final merchantId = item.purchasedMerchantId ?? item.redeemedMerchantId ?? '';
+                      context.push('/review/${item.dealId}?merchantId=$merchantId&orderItemId=${item.id}');
+                    },
                   ),
               ],
             ),

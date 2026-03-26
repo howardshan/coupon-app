@@ -21,12 +21,17 @@ class StoreService {
   static const String _staffFunctionName = 'merchant-staff-mgmt';
   static const String _brandFunctionName = 'merchant-brand';
 
+  // 全局活跃门店 ID（品牌管理员切换门店时设置，所有 service 共享读取）
+  static String? globalActiveMerchantId;
+
   // 品牌管理员当前操作的门店 ID（非品牌管理员为 null）
   String? _activeMerchantId;
 
   /// 设置当前操作的门店 ID（品牌管理员切换门店时调用）
   void setActiveMerchantId(String? merchantId) {
     _activeMerchantId = merchantId;
+    // 同步到全局静态变量，供其他 service 读取
+    globalActiveMerchantId = merchantId;
   }
 
   /// 获取当前操作的门店 ID
@@ -36,6 +41,14 @@ class StoreService {
   Map<String, String> get _merchantHeaders {
     if (_activeMerchantId != null) {
       return {'x-merchant-id': _activeMerchantId!};
+    }
+    return {};
+  }
+
+  /// 静态方法：获取 x-merchant-id headers（供其他 service 使用）
+  static Map<String, String> get merchantIdHeaders {
+    if (globalActiveMerchantId != null) {
+      return {'x-merchant-id': globalActiveMerchantId!};
     }
     return {};
   }
@@ -249,6 +262,22 @@ class StoreService {
       headers: _merchantHeaders,
     );
 
+    if (response.status != 200) {
+      throw _handleError(response);
+    }
+  }
+
+  // ----------------------------------------------------------
+  // 2d. 直接更新 homepage_cover_url（用已有的照片 URL，不重新上传）
+  // ----------------------------------------------------------
+  Future<void> updateHomepageCover(String merchantId, String url) async {
+    await _ensureFreshSession();
+    final response = await _supabase.functions.invoke(
+      _functionName,
+      method: HttpMethod.patch,
+      body: {'homepage_cover_url': url},
+      headers: _merchantHeaders,
+    );
     if (response.status != 200) {
       throw _handleError(response);
     }

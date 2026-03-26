@@ -263,10 +263,22 @@ class _OverviewSection extends ConsumerWidget {
           color: const Color(0xFF4CAF50),
         ),
         MetricCard(
-          icon:  Icons.attach_money,
-          value: _formatRevenue(stats.revenue),
-          label: 'Revenue',
+          icon:  Icons.receipt_long_outlined,
+          value: _formatRevenue(stats.redeemRevenue),
+          label: 'Redeem Revenue',
           color: const Color(0xFFFF6B35),
+        ),
+        MetricCard(
+          icon:  Icons.hourglass_empty_outlined,
+          value: _formatRevenue(stats.pendingRevenue),
+          label: 'Pending',
+          color: const Color(0xFFF59E0B),
+        ),
+        MetricCard(
+          icon:  Icons.check_circle_outline,
+          value: _formatRevenue(stats.paidRevenue),
+          label: 'Paid',
+          color: const Color(0xFF10B981),
         ),
       ],
     );
@@ -281,7 +293,7 @@ class _OverviewSection extends ConsumerWidget {
       mainAxisSpacing: 12,
       crossAxisSpacing: 12,
       childAspectRatio: 1.5,
-      children: List.generate(4, (_) => _SkeletonCard()),
+      children: List.generate(6, (_) => _SkeletonCard()),
     );
   }
 

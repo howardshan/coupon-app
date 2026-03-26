@@ -4,6 +4,7 @@
 
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../store/services/store_service.dart';
 import '../models/deal_template.dart';
 import '../models/merchant_deal.dart';
 
@@ -38,6 +39,7 @@ class DealsService {
       _functionName,
       method: HttpMethod.get,
       queryParameters: queryParams,
+      headers: StoreService.merchantIdHeaders,
     );
 
     if (response.status != 200) {
@@ -60,6 +62,7 @@ class DealsService {
       _functionName,
       method: HttpMethod.post,
       body: deal.toJson(),
+      headers: StoreService.merchantIdHeaders,
     );
 
     if (response.status != 200 && response.status != 201) {
@@ -78,6 +81,7 @@ class DealsService {
       '$_functionName/${deal.id}',
       method: HttpMethod.patch,
       body: deal.toJson(),
+      headers: StoreService.merchantIdHeaders,
     );
 
     if (response.status != 200) {
@@ -99,6 +103,7 @@ class DealsService {
         'stock_only': true,
         'stock_limit': stockLimit,
       },
+      headers: StoreService.merchantIdHeaders,
     );
 
     if (response.status != 200) {
@@ -119,6 +124,7 @@ class DealsService {
       '$_functionName/$dealId/status',
       method: HttpMethod.patch,
       body: {'is_active': isActive},
+      headers: StoreService.merchantIdHeaders,
     );
 
     if (response.status != 200) {
@@ -133,6 +139,7 @@ class DealsService {
     final response = await _supabase.functions.invoke(
       '$_functionName/$dealId',
       method: HttpMethod.delete,
+      headers: StoreService.merchantIdHeaders,
     );
 
     if (response.status != 200) {
@@ -186,6 +193,7 @@ class DealsService {
         'sort_order': sortOrder,
         'is_primary': isPrimary,
       },
+      headers: StoreService.merchantIdHeaders,
     );
 
     if (response.status != 200 && response.status != 201) {
@@ -359,6 +367,7 @@ class DealsService {
     final response = await _supabase.functions.invoke(
       '$_functionName/templates',
       method: HttpMethod.get,
+      headers: StoreService.merchantIdHeaders,
     );
 
     if (response.status != 200) {
@@ -378,6 +387,7 @@ class DealsService {
       '$_functionName/templates',
       method: HttpMethod.post,
       body: template.toJson(),
+      headers: StoreService.merchantIdHeaders,
     );
 
     if (response.status != 200 && response.status != 201) {
@@ -394,6 +404,7 @@ class DealsService {
       '$_functionName/templates/$templateId',
       method: HttpMethod.patch,
       body: updates,
+      headers: StoreService.merchantIdHeaders,
     );
 
     if (response.status != 200) {
@@ -413,6 +424,7 @@ class DealsService {
       '$_functionName/templates/$templateId/publish',
       method: HttpMethod.post,
       body: {'merchant_ids': merchantIds},
+      headers: StoreService.merchantIdHeaders,
     );
 
     if (response.status != 200) {
@@ -429,6 +441,7 @@ class DealsService {
       '$_functionName/templates/$templateId/sync',
       method: HttpMethod.post,
       body: {},
+      headers: StoreService.merchantIdHeaders,
     );
 
     if (response.status != 200) {
@@ -444,6 +457,7 @@ class DealsService {
     final response = await _supabase.functions.invoke(
       '$_functionName/templates/$templateId',
       method: HttpMethod.delete,
+      headers: StoreService.merchantIdHeaders,
     );
 
     if (response.status != 200) {
@@ -466,6 +480,7 @@ class DealsService {
       '$_functionName/reorder',
       method: HttpMethod.patch,
       body: {'items': items},
+      headers: StoreService.merchantIdHeaders,
     );
 
     if (response.status != 200) {
@@ -488,6 +503,7 @@ class DealsService {
         'action': action,
         'menu_item_id': menuItemId,
       },
+      headers: StoreService.merchantIdHeaders,
     );
 
     if (response.status != 200) {

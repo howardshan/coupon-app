@@ -150,6 +150,9 @@ async function handleGetOverview(
         orders_count:      0,
         redemptions_count: 0,
         revenue:           0,
+        redeem_revenue:    0,
+        pending_revenue:   0,
+        paid_revenue:      0,
       });
     }
 
@@ -159,6 +162,9 @@ async function handleGetOverview(
       orders_count:      Number(row.orders_count)      ?? 0,
       redemptions_count: Number(row.redemptions_count) ?? 0,
       revenue:           Number(row.revenue)           ?? 0,
+      redeem_revenue:    Number(row.redeem_revenue)    ?? 0,
+      pending_revenue:   Number(row.pending_revenue)   ?? 0,
+      paid_revenue:      Number(row.paid_revenue)      ?? 0,
     });
   } catch (err) {
     console.error('[handleGetOverview] Unexpected error:', err);

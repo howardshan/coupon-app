@@ -8,6 +8,7 @@
 import 'dart:convert';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/merchant_review.dart';
+import '../../store/services/store_service.dart';
 
 // =============================================================
 // ReviewsException — 评价模块自定义异常
@@ -66,6 +67,7 @@ class ReviewsService {
       final response = await _supabase.functions.invoke(
         path,
         method: HttpMethod.get,
+        headers: StoreService.merchantIdHeaders,
       );
 
       final data = _parseResponse(response);
@@ -120,6 +122,7 @@ class ReviewsService {
       final response = await _supabase.functions.invoke(
         path,
         method:  HttpMethod.post,
+        headers: StoreService.merchantIdHeaders,
         body:    {'reply': reply.trim()},
       );
 
@@ -166,6 +169,7 @@ class ReviewsService {
       final response = await _supabase.functions.invoke(
         path,
         method: HttpMethod.get,
+        headers: StoreService.merchantIdHeaders,
       );
 
       final data = _parseResponse(response);
