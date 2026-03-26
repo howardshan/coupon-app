@@ -10,15 +10,12 @@
 // 更新 order_items: customer_status = 'refund_pending'（等 webhook 确认）
 // 更新 coupons: status = 'expired'
 
-import Stripe from 'https://esm.sh/stripe@14?target=deno';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { sendEmail } from '../_shared/email.ts';
 import { buildC5Email } from '../_shared/email-templates/customer/auto-refund.ts';
 
-const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {
-  apiVersion: '2024-04-10',
-  httpClient: Stripe.createFetchHttpClient(),
-});
+const STRIPE_SECRET_KEY = Deno.env.get('STRIPE_SECRET_KEY') ?? '';
+const STRIPE_API_BASE = 'https://api.stripe.com/v1';
 
 // CORS 响应头
 const corsHeaders = {
@@ -31,6 +28,49 @@ const BATCH_SIZE = 50;
 
 // Cron 调用方共享密钥（在 Supabase Dashboard > Secrets 中配置 CRON_SECRET）
 const CRON_SECRET = Deno.env.get('CRON_SECRET');
+
+function isAlreadyRefundedError(message: string): boolean {
+  return /already been refunded|charge_already_refunded/i.test(message);
+}
+
+async function stripeCreateRefund(params: {
+  amount: number;
+  charge?: string;
+  payment_intent?: string;
+  metadata: Record<string, string>;
+}): Promise<{ id?: string }> {
+  if (!STRIPE_SECRET_KEY) {
+    throw new Error('STRIPE_SECRET_KEY is not configured');
+  }
+
+  const form = new URLSearchParams();
+  form.set('amount', String(params.amount));
+  if (params.charge) form.set('charge', params.charge);
+  if (params.payment_intent) form.set('payment_intent', params.payment_intent);
+  for (const [key, value] of Object.entries(params.metadata)) {
+    form.set(`metadata[${key}]`, value);
+  }
+
+  const res = await fetch(`${STRIPE_API_BASE}/refunds`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${STRIPE_SECRET_KEY}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: form.toString(),
+  });
+
+  const json = await res.json() as {
+    id?: string;
+    error?: { message?: string };
+  };
+
+  if (!res.ok) {
+    throw new Error(json.error?.message ?? `Stripe refund failed with status ${res.status}`);
+  }
+
+  return { id: json.id };
+}
 
 Deno.serve(async (req) => {
   // 处理 CORS 预检请求
@@ -177,7 +217,12 @@ Deno.serve(async (req) => {
         if (chargeId || piId) {
           // 有 Stripe 支付信息 → 原路退回
           try {
-            const refundParams: Record<string, unknown> = {
+            const refundParams: {
+              amount: number;
+              metadata: Record<string, string>;
+              charge?: string;
+              payment_intent?: string;
+            } = {
               amount: Math.round(refundAmount * 100), // Stripe 用分
               metadata: { order_item_id: itemId, reason: 'auto_expired' },
             };
@@ -187,7 +232,7 @@ Deno.serve(async (req) => {
               refundParams.payment_intent = piId;
             }
 
-            const stripeRefund = await stripe.refunds.create(refundParams as any);
+            const stripeRefund = await stripeCreateRefund(refundParams);
             console.log(`auto-refund-expired: Stripe refund 成功 refund_id=${stripeRefund.id} item=${itemId}`);
 
             // Stripe 退款发起成功 → 标记 refund_pending，等 webhook 确认
@@ -210,12 +255,33 @@ Deno.serve(async (req) => {
             console.log(`auto-refund-expired: item=${itemId} Stripe 原路退款 ${refundAmount}`);
 
           } catch (stripeErr: unknown) {
-            // Stripe 退款失败 → 回退到 store credit
             const stripeMsg = stripeErr instanceof Error ? stripeErr.message : String(stripeErr);
-            console.warn(`auto-refund-expired: item=${itemId} Stripe 退款失败，回退 store credit: ${stripeMsg}`);
+            if (isAlreadyRefundedError(stripeMsg)) {
+              // Stripe 已退款：避免重复退款，直接落库为成功状态
+              console.log(`auto-refund-expired: item=${itemId} Stripe 显示已退款，直接同步本地状态`);
+              const { error: itemUpdateErr } = await supabaseAdmin
+                .from('order_items')
+                .update({
+                  customer_status: 'refund_success',
+                  refunded_at: now,
+                  refund_amount: refundAmount,
+                  refund_method: 'original_payment',
+                  refund_reason: 'auto_expired',
+                  updated_at: now,
+                })
+                .eq('id', itemId);
 
-            await fallbackToStoreCredit(supabaseAdmin, item, itemId, refundAmount, now);
-            summary.succeeded += 1;
+              if (itemUpdateErr) {
+                throw new Error(`更新 order_items 状态失败: ${itemUpdateErr.message}`);
+              }
+
+              summary.succeeded += 1;
+            } else {
+              // Stripe 退款失败 → 回退到 store credit
+              console.warn(`auto-refund-expired: item=${itemId} Stripe 退款失败，回退 store credit: ${stripeMsg}`);
+              await fallbackToStoreCredit(supabaseAdmin, item, itemId, refundAmount, now);
+              summary.succeeded += 1;
+            }
           }
 
         } else {
