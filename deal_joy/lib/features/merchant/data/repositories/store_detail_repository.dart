@@ -172,7 +172,7 @@ class StoreDetailRepository {
 
       final data = await _client
           .from('reviews')
-          .select('*, users(full_name, avatar_url), review_photos(image_url, sort_order)')
+          .select('*, users!reviews_user_id_fkey(full_name, avatar_url), review_photos(image_url, sort_order)')
           .inFilter('deal_id', dealIds)
           .order('created_at', ascending: false)
           .range(page * pageSize, (page + 1) * pageSize - 1);

@@ -32,10 +32,12 @@ class ChatRepository {
           .select('conversation_id, last_read_at')
           .eq('user_id', userId);
 
-      if ((memberRows as List).isEmpty) return [];
+      final memberList = memberRows as List;
+      if (memberList.isEmpty) return [];
 
       final conversationIds =
-          memberRows.map((r) => r['conversation_id'] as String).toList();
+          memberList.map((r) => r['conversation_id'] as String).toList();
+      if (conversationIds.isEmpty) return [];
 
       // 第二步：查询会话基本信息
       final convRows = await _client
@@ -55,12 +57,12 @@ class ChatRepository {
       }
 
       // 第三步：批量获取所有消息（用于最新消息预览 + 未读数计算）
+      // 不使用 FK join（避免 users 表关联问题），单独查发送者信息
       final allMsgRows = await _client
           .from('messages')
           .select(
             'id, conversation_id, sender_id, type, content, image_url, '
-            'is_deleted, created_at, '
-            'sender:users!messages_sender_id_fkey(full_name)',
+            'is_deleted, created_at',
           )
           .inFilter('conversation_id', conversationIds)
           .order('created_at', ascending: false);
@@ -82,23 +84,40 @@ class ChatRepository {
 
       final otherUserMap = <String, Map<String, dynamic>>{};
       if (directIds.isNotEmpty) {
+        // 先查对方的 user_id
         final otherMembers = await _client
             .from('conversation_members')
-            .select(
-              'conversation_id, user_id, '
-              'users!conversation_members_user_id_fkey(full_name, avatar_url)',
-            )
+            .select('conversation_id, user_id')
             .inFilter('conversation_id', directIds)
             .neq('user_id', userId);
 
+        // 收集对方 user_id 列表
+        final otherUserIds = <String>{};
         for (final row in otherMembers as List) {
+          otherUserIds.add(row['user_id'] as String);
+        }
+
+        // 批量查询对方用户信息
+        final userInfoMap = <String, Map<String, dynamic>>{};
+        if (otherUserIds.isNotEmpty) {
+          final userRows = await _client
+              .from('users')
+              .select('id, full_name, avatar_url')
+              .inFilter('id', otherUserIds.toList());
+          for (final u in userRows as List) {
+            userInfoMap[u['id'] as String] = u as Map<String, dynamic>;
+          }
+        }
+
+        for (final row in otherMembers) {
           final cid = row['conversation_id'] as String;
           if (!otherUserMap.containsKey(cid)) {
-            final userObj = row['users'] as Map<String, dynamic>?;
+            final uid = row['user_id'] as String;
+            final userInfo = userInfoMap[uid];
             otherUserMap[cid] = {
-              'user_id': row['user_id'] as String? ?? '',
-              'full_name': userObj?['full_name'] as String?,
-              'avatar_url': userObj?['avatar_url'] as String?,
+              'user_id': uid,
+              'full_name': userInfo?['full_name'] as String?,
+              'avatar_url': userInfo?['avatar_url'] as String?,
             };
           }
         }
@@ -174,16 +193,53 @@ class ChatRepository {
           .from('messages')
           .select(
             'id, conversation_id, sender_id, type, content, image_url, '
-            'coupon_payload, is_ai_message, is_deleted, created_at, '
-            'sender:users!messages_sender_id_fkey(full_name, avatar_url)',
+            'coupon_payload, is_ai_message, is_deleted, created_at',
           )
           .eq('conversation_id', conversationId)
           .order('created_at', ascending: false)
           .range(from, to);
 
-      return (data as List)
+      final messages = (data as List)
           .map((e) => MessageModel.fromJson(e as Map<String, dynamic>))
           .toList();
+
+      // 批量查询发送者信息
+      final senderIds = messages
+          .map((m) => m.senderId)
+          .where((id) => id != null && id.isNotEmpty)
+          .toSet();
+      final senderMap = <String, Map<String, dynamic>>{};
+      if (senderIds.isNotEmpty) {
+        final userRows = await _client
+            .from('users')
+            .select('id, full_name, avatar_url')
+            .inFilter('id', senderIds.toList());
+        for (final u in userRows as List) {
+          senderMap[u['id'] as String] = u as Map<String, dynamic>;
+        }
+      }
+
+      // 注入发送者信息
+      return messages.map((m) {
+        if (m.senderId != null && senderMap.containsKey(m.senderId)) {
+          final u = senderMap[m.senderId]!;
+          return MessageModel(
+            id: m.id,
+            conversationId: m.conversationId,
+            senderId: m.senderId,
+            type: m.type,
+            content: m.content,
+            imageUrl: m.imageUrl,
+            couponPayload: m.couponPayload,
+            isAiMessage: m.isAiMessage,
+            isDeleted: m.isDeleted,
+            createdAt: m.createdAt,
+            senderName: u['full_name'] as String?,
+            senderAvatarUrl: u['avatar_url'] as String?,
+          );
+        }
+        return m;
+      }).toList();
     } on PostgrestException catch (e) {
       throw AppException(
         'Failed to load messages: ${e.message}',
