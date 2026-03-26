@@ -30,6 +30,7 @@ const adminNav: NavEntry[] = [
     children: [
       { href: '/settings/email-types', label: 'Email Types' },
       { href: '/settings/email-logs', label: 'Email Logs' },
+      { href: '/settings/algorithm', label: 'Algorithm' },
     ],
   },
 ]
@@ -42,7 +43,8 @@ const merchantNav: NavLink[] = [
 function isOnEmailRoute(pathname: string) {
   return (
     pathname.startsWith('/settings/email-types') ||
-    pathname.startsWith('/settings/email-logs')
+    pathname.startsWith('/settings/email-logs') ||
+    pathname.startsWith('/settings/algorithm')
   )
 }
 

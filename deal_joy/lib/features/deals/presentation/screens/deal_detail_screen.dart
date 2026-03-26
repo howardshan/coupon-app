@@ -11,6 +11,7 @@ import '../../data/models/deal_model.dart';
 import '../../data/models/review_model.dart';
 import '../../domain/providers/deals_provider.dart';
 import '../../domain/providers/history_provider.dart';
+import '../../domain/providers/recommendation_provider.dart';
 import '../../../cart/domain/providers/cart_provider.dart';
 import '../../../auth/domain/providers/auth_provider.dart';
 
@@ -23,10 +24,18 @@ class DealDetailScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final dealAsync = ref.watch(dealDetailProvider(dealId));
 
-    // deal 数据可用时记录浏览历史（postFrame 避免在 build 内产生副作用）
+    // deal 数据可用时记录浏览历史 + 上报 view_deal 埋点
+    // postFrameCallback 避免在 build 内产生副作用
     dealAsync.whenData((deal) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         ref.read(historyRepositoryProvider).addToHistory(deal.id);
+        // 上报浏览行为，用于推荐系统个性化
+        ref.read(recommendationRepositoryProvider).trackEvent(
+          eventType: 'view_deal',
+          dealId: deal.id,
+          merchantId: deal.merchantId,
+          metadata: {'category': deal.category},
+        );
       });
     });
 

@@ -8,6 +8,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../data/models/deal_model.dart';
 import '../../../../core/utils/location_utils.dart';
 import '../../domain/providers/deals_provider.dart';
+import '../../domain/providers/recommendation_provider.dart';
 import '../../../merchant/data/models/merchant_model.dart';
 import '../../../merchant/domain/providers/merchant_provider.dart';
 
@@ -62,6 +63,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final isSearching = searchQuery.isNotEmpty;
     final deals = ref.watch(dealsListProvider(0));
     final featuredDeals = ref.watch(featuredDealsProvider);
+    // 非搜索模式时加载个性化推荐
+    final recommendedDeals = !isSearching ? ref.watch(recommendedDealsProvider) : null;
     final merchantResults =
         isSearching ? ref.watch(merchantSearchProvider) : null;
     final merchantList = ref.watch(merchantListProvider);
@@ -489,6 +492,70 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       ),
                     ),
                   ),
+
+                  // 个性化推荐 section
+                  if (recommendedDeals != null)
+                    recommendedDeals.when(
+                      data: (list) => list.isEmpty
+                          ? const SliverToBoxAdapter(child: SizedBox.shrink())
+                          : SliverToBoxAdapter(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // section 标题
+                                  Padding(
+                                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          Icons.auto_awesome,
+                                          size: 16,
+                                          color: AppColors.primary,
+                                        ),
+                                        const SizedBox(width: 6),
+                                        const Text(
+                                          'Recommended For You',
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  // 水平滚动卡片列表，复用 _SmallDealCard
+                                  SizedBox(
+                                    height: 190,
+                                    child: ListView.separated(
+                                      scrollDirection: Axis.horizontal,
+                                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+                                      itemCount: list.length,
+                                      separatorBuilder: (_, __) =>
+                                          const SizedBox(width: 8),
+                                      itemBuilder: (_, i) => SizedBox(
+                                        width: 160,
+                                        child: _SmallDealCard(deal: list[i]),
+                                      ),
+                                    ),
+                                  ),
+                                  // 推荐区域和商家网格之间的分隔线
+                                  const Padding(
+                                    padding: EdgeInsets.fromLTRB(16, 12, 16, 8),
+                                    child: Divider(
+                                      height: 1,
+                                      thickness: 1,
+                                      color: Color(0xFFE0E0E0),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                      // 加载中静默不显示占位
+                      loading: () =>
+                          const SliverToBoxAdapter(child: SizedBox.shrink()),
+                      error: (_, _) =>
+                          const SliverToBoxAdapter(child: SizedBox.shrink()),
+                    ),
 
                   // 商家双列网格
                   merchantList.when(

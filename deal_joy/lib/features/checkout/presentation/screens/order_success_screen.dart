@@ -5,6 +5,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../orders/domain/providers/coupons_provider.dart';
 import '../../../orders/domain/providers/orders_provider.dart';
+import '../../../deals/domain/providers/recommendation_provider.dart';
 
 class OrderSuccessScreen extends ConsumerWidget {
   final String orderId;
@@ -33,6 +34,16 @@ class OrderSuccessScreen extends ConsumerWidget {
               // 支付成功后刷新券列表和订单列表
               ref.invalidate(userCouponsProvider);
               ref.invalidate(userOrdersProvider);
+
+              // 上报购买行为，用于推荐系统个性化（postFrame 避免 build 内副作用）
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                final dealId = order.deal?.id ?? order.items.firstOrNull?.dealId;
+                ref.read(recommendationRepositoryProvider).trackEvent(
+                  eventType: 'purchase',
+                  dealId: dealId,
+                  metadata: {'amount': order.totalAmount},
+                );
+              });
 
               // V3: 从 items 汇总 deal 信息
               final items = order.items;
