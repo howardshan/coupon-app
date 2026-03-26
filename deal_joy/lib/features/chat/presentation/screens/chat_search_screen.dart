@@ -69,8 +69,6 @@ class _ChatSearchScreenState extends ConsumerState<ChatSearchScreen> {
     try {
       final client = Supabase.instance.client;
 
-          .from('users')
-          .or(
       // 先获取好友 ID 列表，只搜索已添加的好友
       final friendsList = ref.read(friendsProvider).valueOrNull ?? [];
       final friendUserIds = friendsList.map((f) => f.friendId).toList();

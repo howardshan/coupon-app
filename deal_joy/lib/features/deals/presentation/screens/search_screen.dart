@@ -8,6 +8,7 @@ import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../data/models/deal_model.dart';
 import '../../domain/providers/search_provider.dart';
+import '../../domain/providers/recommendation_provider.dart';
 
 // ── 热门搜索标签（硬编码，面向北美Dallas市场）─────────────────
 const _hotSearchTags = [
@@ -92,6 +93,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
     // 保存到历史记录
     ref.read(searchHistoryProvider.notifier).addQuery(trimmed);
+
+    // 上报搜索行为，用于推荐系统个性化
+    ref.read(recommendationRepositoryProvider).trackEvent(
+      eventType: 'search',
+      metadata: {'query': trimmed},
+    );
 
     // 重置过滤和排序
     ref.read(searchSortProvider.notifier).state = SearchSortOption.relevance;

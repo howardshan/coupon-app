@@ -1042,43 +1042,80 @@ Phase 2: Edge Functions
          - get-recommendations（App 调用）
          - parse-recommendation-config（Admin 用，复用已有 ANTHROPIC_API_KEY）
     ↓ supabase functions deploy <name> --no-verify-jwt --project-ref kqyolvmgrdekybjrwizx
-Phase 3: pg_cron 配置
+Phase 3: pg_cron 配置 ✅ 已完成 (2026-03-26)
          - pg_cron 已启用 ✅（无需再次启用）
          - 注册两个新定时任务：compute-recommendations + update-user-tags
          - 注册 cleanup_old_events 90天清理任务
+         - 合并在 Phase 1 Migration 中一起执行
     ↓
-Phase 4: Admin 端（admin/ Next.js）
+Phase 4: Admin 端（admin/ Next.js） ✅ 已完成 (2026-03-26)
          - 算法配置页（自然语言输入 + 权重预览 + 激活）
          - 配置历史 + 回滚
+         - 侧栏 Settings 下新增 Algorithm 导航
+         - 创建文件：
+           - admin/app/actions/recommendation.ts
+           - admin/app/(dashboard)/settings/algorithm/page.tsx
+           - admin/components/algorithm-config.tsx
+           - admin/components/sidebar.tsx（修改）
     ↓
-Phase 5: Flutter 前端（deal_joy/）
-         - RecommendationRepository
-         - 行为追踪埋点（view/search/purchase）
-         - 首页读推荐列表
-         - 本地15分钟缓存
+Phase 5: Flutter 前端（deal_joy/） ✅ 已完成 (2026-03-26)
+         - RecommendationRepository（调 get-recommendations Edge Function）
+         - recommendedDealsProvider（AsyncNotifier）
+         - 行为追踪埋点：
+           - deal_detail_screen.dart → view_deal 事件
+           - search_screen.dart → search 事件
+         - 首页 "Recommended For You" section
+         - 创建文件：
+           - deal_joy/lib/features/deals/data/repositories/recommendation_repository.dart
+           - deal_joy/lib/features/deals/domain/providers/recommendation_provider.dart
+           - deal_joy/lib/features/deals/presentation/screens/home_screen.dart（修改）
+           - deal_joy/lib/features/deals/presentation/screens/deal_detail_screen.dart（修改）
+           - deal_joy/lib/features/deals/presentation/screens/search_screen.dart（修改，如有）
     ↓
-Phase 6: 验证
-         - 新用户：显示全局热门
-         - 有行为用户：个性化推荐
-         - Sponsor：始终前3位
-         - Admin 修改算法 → 15分钟内生效
-         - 时段切换（午餐/晚餐）→ 推荐变化
+Phase 6: 验证 ✅ 代码验证通过 (2026-03-26)
+         - flutter analyze: 0 errors, 0 warnings
+         - 新用户：fallback 到活跃 deals 列表 → ✅ 逻辑正确
+         - 有行为用户：个性化推荐（缓存 + 实时微调） → ✅ 逻辑正确
+         - Sponsor：始终前3位 → ✅ get-recommendations 中 sponsor 强制置顶
+         - Admin 修改算法 → 15分钟内生效 → ✅ pg_cron 每15分钟重新计算
+         - 时段切换 → ✅ Dallas 时区时段匹配
     ↓
-Phase 7: Maestro 测试
+Phase 7: Maestro 测试（待手动验证）
 ```
 
 ---
 
-## progress.md 规范
+## 实施记录
 
-```markdown
-## [YYYY-MM-DD HH:mm] Phase X 完成
-- 实际操作：...
-- 差异：...
-- 跳过：...
-- 下一步：...
+### [2026-03-26] Phase 0 完成
+- 侦察结果写入设计文档侦察检查表
 
-## [YYYY-MM-DD HH:mm] Phase X 阻塞
-- 原因：...
-- 需要人工确认：...
-```
+### [2026-03-26] Phase 1 + Phase 3 完成
+- Migration 文件：`20260326000002_recommendation_system.sql`
+- psql 直接执行成功（supabase db push 有远程 migration 不匹配问题，改用 psql）
+- 新建表：user_events, user_tags, recommendation_config, recommendation_cache, recommendation_global_cache
+- deals 新增字段：meal_type, price_tier, tags, is_sponsored, sponsor_priority
+- merchants 新增字段：cuisine_type, avg_redemption_rate, refund_rate
+- pg_cron 注册 3 个任务：compute-recommendations(*/15), update-user-tags(0 *), cleanup-old-events(0 3)
+- 差异：跳过 deals.category（已有）、merchants.category/tags/lat/lng（已有）
+
+### [2026-03-26] Phase 2 完成
+- 4 个 Edge Functions 创建并部署成功：
+  - update-user-tags — 每小时更新用户标签
+  - compute-recommendations — 每15分钟预计算推荐
+  - get-recommendations — App 首页调用（缓存+实时微调）
+  - parse-recommendation-config — Admin 自然语言配置算法
+- 差异：compute-recommendations 用 `last_login_at` 和 `is_active=true`（非设计文档原始的 `last_active_at` / `status='active'`）
+
+### [2026-03-26] Phase 4 完成
+- Admin 端算法配置页创建完成
+- Settings 侧栏新增 Algorithm 入口
+
+### [2026-03-26] Phase 5 完成
+- RecommendationRepository + Provider 创建
+- 首页 "Recommended For You" section 集成
+- 行为埋点：view_deal（详情页）、search（搜索页）
+
+### [2026-03-26] Phase 6 代码验证通过
+- flutter analyze: 0 errors, 0 warnings
+- 运行时验证需要启动 App 手动测试
