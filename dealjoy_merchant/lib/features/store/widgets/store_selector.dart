@@ -5,6 +5,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/store_summary.dart';
 import '../providers/store_provider.dart';
+import '../../dashboard/providers/dashboard_provider.dart';
+import '../../deals/providers/deals_provider.dart';
+import '../../orders/providers/orders_provider.dart';
+import '../../reviews/providers/reviews_provider.dart';
+import '../../analytics/providers/analytics_provider.dart';
+import '../../earnings/providers/earnings_provider.dart';
+import '../../scan/providers/scan_provider.dart';
+import '../../notifications/providers/notifications_provider.dart';
 
 // ============================================================
 // StoreSelector — 品牌管理员门店切换下拉组件
@@ -93,10 +101,30 @@ class StoreSelector extends ConsumerWidget {
 
     if (selected != null && selected.id != currentStoreId) {
       await ref.read(storeProvider.notifier).switchStore(selected.id);
-      // 切换后刷新品牌门店列表缓存
-      ref.invalidate(brandStoresProvider);
+      // 切换后刷新所有门店相关数据
+      invalidateAllStoreProviders(ref);
     }
   }
+}
+
+// ============================================================
+// invalidateAllStoreProviders — 切换门店后刷新所有数据
+// StoreSelectorPage 也会复用此函数
+// ============================================================
+void invalidateAllStoreProviders(WidgetRef ref) {
+  ref.invalidate(brandStoresProvider);
+  ref.invalidate(dashboardProvider);
+  ref.invalidate(storeOnlineProvider);
+  ref.invalidate(dealsProvider);
+  ref.invalidate(ordersNotifierProvider);
+  ref.invalidate(reviewsProvider);
+  ref.invalidate(reviewStatsProvider);
+  ref.invalidate(overviewProvider);
+  ref.invalidate(earningsSummaryProvider);
+  ref.invalidate(scanNotifierProvider);
+  ref.invalidate(redemptionHistoryProvider);
+  ref.invalidate(notificationsNotifierProvider);
+  ref.invalidate(unreadCountProvider);
 }
 
 // ============================================================

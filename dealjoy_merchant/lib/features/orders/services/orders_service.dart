@@ -4,6 +4,7 @@
 import 'dart:convert';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/merchant_order.dart';
+import '../../store/services/store_service.dart';
 
 /// 订单服务异常
 class OrdersException implements Exception {
@@ -108,7 +109,7 @@ class OrdersService {
       final response = await _supabase.functions.invoke(
         _functionName,
         method: HttpMethod.post,
-        headers: _authHeaders,
+        headers: {...StoreService.merchantIdHeaders, ..._authHeaders},
         body: body,
       );
 
@@ -166,7 +167,7 @@ class OrdersService {
       final response = await _supabase.functions.invoke(
         pathWithQuery,
         method: HttpMethod.get,
-        headers: _authHeaders,
+        headers: {...StoreService.merchantIdHeaders, ..._authHeaders},
       );
 
       final data = _parseResponse(response);
@@ -237,7 +238,7 @@ class OrdersService {
       final response = await _supabase.functions.invoke(
         path,
         method: HttpMethod.get,
-        headers: _authHeaders,
+        headers: {...StoreService.merchantIdHeaders, ..._authHeaders},
       );
 
       // CSV 响应直接是文本
@@ -340,7 +341,7 @@ class OrdersService {
       final response = await _supabase.functions.invoke(
         path,
         method: HttpMethod.get,
-        headers: _authHeaders,
+        headers: {...StoreService.merchantIdHeaders, ..._authHeaders},
       );
 
       final data = _parseResponse(response);
@@ -403,7 +404,7 @@ class OrdersService {
       final response = await _supabase.functions.invoke(
         path,
         method: HttpMethod.patch,
-        headers: _authHeaders,
+        headers: {...StoreService.merchantIdHeaders, ..._authHeaders},
         body: body,
       );
 
@@ -466,7 +467,7 @@ class OrdersService {
       final response = await _supabase.functions.invoke(
         path,
         method: HttpMethod.get,
-        headers: _authHeaders,
+        headers: {...StoreService.merchantIdHeaders, ..._authHeaders},
       );
 
       final data = _parseResponse(response);
@@ -529,7 +530,7 @@ class OrdersService {
       final response = await _supabase.functions.invoke(
         path,
         method: HttpMethod.patch,
-        headers: _authHeaders,
+        headers: {...StoreService.merchantIdHeaders, ..._authHeaders},
         body: body,
       );
 

@@ -18,17 +18,11 @@ class StoreAddressCard extends StatelessWidget {
     this.phone,
   });
 
-  /// 打开地图导航（优先用坐标，否则用地址文本搜索）
+  /// 打开地图导航（用地址文本作为目的地，确保显示真实地址）
   Future<void> _openNavigation() async {
-    final Uri uri;
-    if (lat != null && lng != null) {
-      // 使用精确坐标
-      uri = Uri.parse('https://maps.google.com/?q=$lat,$lng');
-    } else {
-      // 用地址文字搜索
-      final encoded = Uri.encodeComponent(address);
-      uri = Uri.parse('https://maps.google.com/?q=$encoded');
-    }
+    final encoded = Uri.encodeComponent(address);
+    // 使用 daddr（目的地地址）启动导航，地图上会显示实际地址
+    final uri = Uri.parse('https://maps.google.com/?daddr=$encoded');
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }

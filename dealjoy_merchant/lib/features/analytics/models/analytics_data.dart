@@ -20,8 +20,17 @@ class OverviewStats {
   /// 核销量（coupon status='used'）
   final int redemptionsCount;
 
-  /// 收入（非退款订单 total_amount 合计，单位美分 → 展示时除以100）
+  /// 总收入（向后兼容）
   final double revenue;
+
+  /// 已核销收入
+  final double redeemRevenue;
+
+  /// 未核销收入（pending）
+  final double pendingRevenue;
+
+  /// 已结算收入（paid）
+  final double paidRevenue;
 
   /// 当前查询的时间范围（天）
   final int daysRange;
@@ -31,6 +40,9 @@ class OverviewStats {
     required this.ordersCount,
     required this.redemptionsCount,
     required this.revenue,
+    this.redeemRevenue = 0.0,
+    this.pendingRevenue = 0.0,
+    this.paidRevenue = 0.0,
     required this.daysRange,
   });
 
@@ -41,6 +53,9 @@ class OverviewStats {
       ordersCount:      (json['orders_count']      as num?)?.toInt()    ?? 0,
       redemptionsCount: (json['redemptions_count'] as num?)?.toInt()    ?? 0,
       revenue:          (json['revenue']           as num?)?.toDouble() ?? 0.0,
+      redeemRevenue:    (json['redeem_revenue']    as num?)?.toDouble() ?? 0.0,
+      pendingRevenue:   (json['pending_revenue']   as num?)?.toDouble() ?? 0.0,
+      paidRevenue:      (json['paid_revenue']      as num?)?.toDouble() ?? 0.0,
       daysRange:        (json['days_range']        as num?)?.toInt()    ?? 7,
     );
   }
@@ -52,24 +67,10 @@ class OverviewStats {
       ordersCount:      0,
       redemptionsCount: 0,
       revenue:          0.0,
+      redeemRevenue:    0.0,
+      pendingRevenue:   0.0,
+      paidRevenue:      0.0,
       daysRange:        daysRange,
-    );
-  }
-
-  /// 创建修改了部分字段的新实例
-  OverviewStats copyWith({
-    int?    viewsCount,
-    int?    ordersCount,
-    int?    redemptionsCount,
-    double? revenue,
-    int?    daysRange,
-  }) {
-    return OverviewStats(
-      viewsCount:       viewsCount       ?? this.viewsCount,
-      ordersCount:      ordersCount      ?? this.ordersCount,
-      redemptionsCount: redemptionsCount ?? this.redemptionsCount,
-      revenue:          revenue          ?? this.revenue,
-      daysRange:        daysRange        ?? this.daysRange,
     );
   }
 

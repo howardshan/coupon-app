@@ -40,7 +40,11 @@ import '../../features/merchant/presentation/screens/merchant_detail_screen.dart
 import '../../features/merchant/presentation/screens/photo_gallery_screen.dart';
 import '../../features/merchant/presentation/screens/qr_scanner_screen.dart';
 import '../../features/merchant/presentation/screens/brand_detail_screen.dart';
-import '../../features/chat/presentation/screens/chat_screen.dart';
+import '../../features/chat/presentation/screens/chat_list_screen.dart';
+import '../../features/chat/presentation/screens/chat_detail_screen.dart';
+import '../../features/chat/presentation/screens/friend_list_screen.dart';
+import '../../features/chat/presentation/screens/friend_requests_screen.dart';
+import '../../features/chat/presentation/screens/notification_screen.dart';
 import '../../features/cart/data/models/cart_item_model.dart';
 import '../../features/cart/presentation/screens/cart_screen.dart';
 import '../widgets/main_scaffold.dart';
@@ -167,7 +171,7 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/chat',
             pageBuilder: (_, state) => const NoTransitionPage(
               key: ValueKey('tab-chat'),
-              child: ChatScreen(),
+              child: ChatListScreen(),
             ),
           ),
           GoRoute(
@@ -352,11 +356,37 @@ final routerProvider = Provider<GoRouter>((ref) {
         ),
       ),
 
+      // 好友管理页（必须在 /chat/:conversationId 之前，避免被参数路由拦截）
+      GoRoute(
+        path: '/chat/friends',
+        builder: (_, _) => const FriendListScreen(),
+      ),
+      GoRoute(
+        path: '/chat/friend-requests',
+        builder: (_, _) => const FriendRequestsScreen(),
+      ),
+      GoRoute(
+        path: '/chat/notifications',
+        builder: (_, _) => const NotificationScreen(),
+      ),
+
+      // Chat detail — 聊天详情页
+      GoRoute(
+        path: '/chat/:conversationId',
+        builder: (_, state) => ChatDetailScreen(
+          conversationId: state.pathParameters['conversationId']!,
+        ),
+      ),
+
       // Reviews
       GoRoute(
         path: '/review/:dealId',
-        builder: (_, state) =>
-            WriteReviewScreen(dealId: state.pathParameters['dealId']!),
+        builder: (_, state) => WriteReviewScreen(
+          dealId: state.pathParameters['dealId']!,
+          merchantId: state.uri.queryParameters['merchantId'] ?? '',
+          orderItemId: state.uri.queryParameters['orderItemId'] ?? '',
+          existingReviewId: state.uri.queryParameters['reviewId'],
+        ),
       ),
     ],
     errorBuilder: (context, state) =>

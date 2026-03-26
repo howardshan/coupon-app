@@ -306,14 +306,9 @@ class StoreInfoCard extends StatelessWidget {
   }
 
   Future<void> _openNavigation() async {
-    final Uri uri;
-    if (merchant.lat != null && merchant.lng != null) {
-      uri = Uri.parse(
-          'https://maps.google.com/?q=${merchant.lat},${merchant.lng}');
-    } else {
-      final encoded = Uri.encodeComponent(merchant.address ?? '');
-      uri = Uri.parse('https://maps.google.com/?q=$encoded');
-    }
+    final encoded = Uri.encodeComponent(merchant.address ?? '');
+    // 使用 daddr（目的地地址）启动导航，地图上会显示实际地址
+    final uri = Uri.parse('https://maps.google.com/?daddr=$encoded');
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }

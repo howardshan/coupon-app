@@ -213,6 +213,8 @@ class _OrdersListPageState extends ConsumerState<OrdersListPage>
           preferredSize: const Size.fromHeight(48),
           child: TabBar(
             controller: _tabController,
+            isScrollable: true,
+            tabAlignment: TabAlignment.start,
             indicatorColor: const Color(0xFFFF6B35),
             indicatorWeight: 2.5,
             labelColor: const Color(0xFFFF6B35),
