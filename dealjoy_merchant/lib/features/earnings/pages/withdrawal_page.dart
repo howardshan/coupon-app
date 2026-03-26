@@ -41,6 +41,11 @@ class WithdrawalPage extends ConsumerWidget {
           ref.invalidate(withdrawalBalanceProvider);
           ref.invalidate(withdrawalHistoryProvider);
           ref.invalidate(withdrawalSettingsProvider);
+          await Future.wait([
+            ref.read(withdrawalBalanceProvider.future),
+            ref.read(withdrawalHistoryProvider.future),
+            ref.read(withdrawalSettingsProvider.future),
+          ]);
         },
         child: ListView(
           padding: const EdgeInsets.all(16),
@@ -302,9 +307,11 @@ class _WithdrawButton extends ConsumerWidget {
       try {
         final service = ref.read(earningsServiceProvider);
         await service.requestWithdrawal(amount);
-        // 刷新余额和记录
+        // 等待重新拉取完成后再提示，避免 UI 仍显示旧余额 / 空列表
         ref.invalidate(withdrawalBalanceProvider);
         ref.invalidate(withdrawalHistoryProvider);
+        await ref.read(withdrawalBalanceProvider.future);
+        await ref.read(withdrawalHistoryProvider.future);
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(

@@ -306,7 +306,10 @@ class EarningsService {
           message: data['error'] as String? ?? 'Failed to fetch history',
         );
       }
-      final list = data['withdrawals'] as List<dynamic>? ?? [];
+      // Edge Function 返回 { data: [...], pagination }；兼容旧字段 withdrawals
+      final list = (data['data'] as List<dynamic>?) ??
+          (data['withdrawals'] as List<dynamic>?) ??
+          [];
       return list
           .map((e) => WithdrawalRecord.fromJson(e as Map<String, dynamic>))
           .toList();
