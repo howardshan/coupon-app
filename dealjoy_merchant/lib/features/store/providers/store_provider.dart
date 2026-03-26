@@ -168,7 +168,24 @@ class StoreNotifier extends AsyncNotifier<StoreInfo> {
       );
       // 追加到照片列表
       final updatedPhotos = [...current.photos, newPhoto];
-      state = AsyncValue.data(current.copyWith(photos: updatedPhotos));
+      var updated = current.copyWith(photos: updatedPhotos);
+
+      // 自动同步：上传 cover 类型且当前是第一张 → 自动设为 homepage cover
+      if (type == StorePhotoType.cover) {
+        final coverPhotos = updatedPhotos
+            .where((p) => p.type == StorePhotoType.cover)
+            .toList()
+          ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+        if (coverPhotos.isNotEmpty) {
+          final firstCoverUrl = coverPhotos.first.url;
+          if (current.homepageCoverUrl != firstCoverUrl) {
+            await _service.updateHomepageCover(merchantId, firstCoverUrl);
+            updated = updated.copyWith(homepageCoverUrl: firstCoverUrl);
+          }
+        }
+      }
+
+      state = AsyncValue.data(updated);
     } catch (e, st) {
       state = AsyncValue.error(e, st);
     }
@@ -193,15 +210,23 @@ class StoreNotifier extends AsyncNotifier<StoreInfo> {
     try {
       await _service.deletePhoto(photoId);
 
-      // 如果删除的是 cover 类型，自动重排剩余 cover 的 sortOrder
+      // 如果删除的是 cover 类型，自动重排剩余 cover 的 sortOrder + 同步 homepage cover
       if (deletedPhoto?.type == StorePhotoType.cover) {
-        final remainingCoverIds = updatedPhotos
+        final remainingCovers = updatedPhotos
             .where((p) => p.type == StorePhotoType.cover)
             .toList()
           ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
 
-        if (remainingCoverIds.isNotEmpty) {
-          await reorderPhotos(remainingCoverIds.map((p) => p.id).toList());
+        if (remainingCovers.isNotEmpty) {
+          await reorderPhotos(remainingCovers.map((p) => p.id).toList());
+          // 同步第一张为 homepage cover
+          await _syncHomepageCover(current.id, remainingCovers.first.url);
+        } else {
+          // 没有 cover 了，清空 homepage cover
+          await _service.updateHomepageCover(current.id, '');
+          state = AsyncValue.data(
+            (state.valueOrNull ?? current).copyWith(homepageCoverUrl: ''),
+          );
         }
       }
     } catch (e, st) {
@@ -283,9 +308,29 @@ class StoreNotifier extends AsyncNotifier<StoreInfo> {
 
     try {
       await _service.reorderPhotos(orderedIds);
+
+      // 如果排序的是 cover 类型，同步第一张为 homepage cover
+      if (reorderedPhotos.isNotEmpty &&
+          reorderedPhotos.first.type == StorePhotoType.cover) {
+        await _syncHomepageCover(current.id, reorderedPhotos.first.url);
+      }
     } catch (e, st) {
       state = AsyncValue.data(current);
       state = AsyncValue.error(e, st);
+    }
+  }
+
+  // ----------------------------------------------------------
+  // 辅助：同步第一张 cover 照片为 homepage cover
+  // ----------------------------------------------------------
+  Future<void> _syncHomepageCover(String merchantId, String url) async {
+    final cur = state.valueOrNull;
+    if (cur == null || cur.homepageCoverUrl == url) return;
+    try {
+      await _service.updateHomepageCover(merchantId, url);
+      state = AsyncValue.data(cur.copyWith(homepageCoverUrl: url));
+    } catch (_) {
+      // homepage cover 同步失败不阻塞主流程
     }
   }
 

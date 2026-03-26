@@ -4,6 +4,7 @@
 import 'dart:convert';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/dashboard_stats.dart';
+import '../../store/services/store_service.dart';
 
 // ============================================================
 // DashboardService — 封装所有工作台 API 调用
@@ -26,6 +27,7 @@ class DashboardService {
       final response = await _supabase.functions.invoke(
         _functionName,
         method: HttpMethod.get,
+        headers: StoreService.merchantIdHeaders,
       );
 
       // 检查 HTTP 状态码
@@ -65,6 +67,7 @@ class DashboardService {
         _functionName,
         method: HttpMethod.patch,
         body: {'is_online': isOnline},
+        headers: StoreService.merchantIdHeaders,
       );
 
       if (response.status != 200) {
@@ -101,6 +104,7 @@ class DashboardService {
       final response = await _supabase.functions.invoke(
         '$_functionName/brand-overview',
         method: HttpMethod.get,
+        headers: StoreService.merchantIdHeaders,
       );
 
       if (response.status != 200) {
@@ -130,6 +134,7 @@ class DashboardService {
       final response = await _supabase.functions.invoke(
         '$_functionName/brand-rankings?sort_by=$sortBy&days=$days',
         method: HttpMethod.get,
+        headers: StoreService.merchantIdHeaders,
       );
 
       if (response.status != 200) {
@@ -159,6 +164,7 @@ class DashboardService {
       final response = await _supabase.functions.invoke(
         '$_functionName/brand-health',
         method: HttpMethod.get,
+        headers: StoreService.merchantIdHeaders,
       );
 
       if (response.status != 200) {

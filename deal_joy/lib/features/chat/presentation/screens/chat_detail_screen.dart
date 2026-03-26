@@ -1,0 +1,500 @@
+// 聊天详情页
+// 显示指定会话的消息列表，支持发送文字消息和 Realtime 实时订阅
+// 使用 ConsumerStatefulWidget：既能访问 Riverpod providers，又能管理 ScrollController 等本地状态
+
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../../core/theme/app_colors.dart';
+import '../../../auth/domain/providers/auth_provider.dart';
+import '../../data/models/message_model.dart';
+import '../../domain/providers/chat_provider.dart';
+import '../widgets/chat_input_bar.dart';
+import '../widgets/coupon_picker_sheet.dart';
+import '../widgets/message_bubble.dart';
+
+class ChatDetailScreen extends ConsumerStatefulWidget {
+  /// 会话 ID（从路由参数传入）
+  final String conversationId;
+
+  const ChatDetailScreen({super.key, required this.conversationId});
+
+  @override
+  ConsumerState<ChatDetailScreen> createState() => _ChatDetailScreenState();
+}
+
+class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
+  final ScrollController _scrollController = ScrollController();
+
+  /// Supabase Realtime channel（用于监听新消息）
+  RealtimeChannel? _realtimeChannel;
+
+  /// 是否正在加载更多历史消息（防止重复触发）
+  bool _isLoadingMore = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // 监听滚动到顶部，触发加载更多历史消息
+    _scrollController.addListener(_onScroll);
+    // 延迟执行，等 provider 初始化完成后再订阅 Realtime
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initRealtime();
+      _markAsRead();
+    });
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    _realtimeChannel?.unsubscribe();
+    super.dispose();
+  }
+
+  // ============================================================
+  // Realtime 订阅
+  // ============================================================
+
+  /// 订阅 Supabase Realtime，监听当前会话的新消息插入事件
+  void _initRealtime() {
+    final currentUserId = _getCurrentUserId();
+    if (currentUserId == null) return;
+
+    _realtimeChannel = Supabase.instance.client
+        .channel('messages:${widget.conversationId}')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'messages',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'conversation_id',
+            value: widget.conversationId,
+          ),
+          callback: (payload) {
+            // 解析新消息
+            final msg = MessageModel.fromJson(payload.newRecord);
+            // 只处理对方发来的消息（自己发的消息在 send 时已本地添加）
+            if (msg.senderId != currentUserId) {
+              ref
+                  .read(messagesProvider(widget.conversationId).notifier)
+                  .addMessage(msg);
+              // 自动标记已读
+              _markAsRead();
+              // 自动滚动到底部
+              _scrollToBottom();
+            }
+          },
+        )
+        .subscribe();
+  }
+
+  // ============================================================
+  // 标记已读
+  // ============================================================
+
+  Future<void> _markAsRead() async {
+    final currentUserId = _getCurrentUserId();
+    if (currentUserId == null) return;
+    try {
+      await ref.read(chatRepositoryProvider).markAsRead(
+            widget.conversationId,
+            currentUserId,
+          );
+    } catch (_) {
+      // 标记已读失败不影响用户体验，静默处理
+    }
+  }
+
+  // ============================================================
+  // 加载更多历史消息（滚动到顶部触发）
+  // ============================================================
+
+  void _onScroll() {
+    // 列表用 reverse: true，滚到"顶部"实际是 maxScrollExtent
+    if (_scrollController.position.pixels >=
+            _scrollController.position.maxScrollExtent - 100 &&
+        !_isLoadingMore) {
+      _loadMore();
+    }
+  }
+
+  Future<void> _loadMore() async {
+    final notifier =
+        ref.read(messagesProvider(widget.conversationId).notifier);
+    if (!notifier.hasMore) return;
+
+    setState(() => _isLoadingMore = true);
+    try {
+      await notifier.loadMore();
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingMore = false);
+      }
+    }
+  }
+
+  // ============================================================
+  // 发送消息
+  // ============================================================
+
+  Future<void> _sendTextMessage(String text) async {
+    final currentUserId = _getCurrentUserId();
+    if (currentUserId == null) return;
+
+    // 判断是否为客服会话
+    final conversation = ref.read(conversationsProvider).valueOrNull
+        ?.where((c) => c.id == widget.conversationId)
+        .firstOrNull;
+    final isSupport = conversation?.type == 'support';
+
+    try {
+      if (isSupport) {
+        // 客服会话：调用 support-chat Edge Function（AI 回答）
+        // 用户消息由 Edge Function 保存，这里先本地追加一条
+        final userMsg = MessageModel(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          conversationId: widget.conversationId,
+          senderId: currentUserId,
+          type: 'text',
+          content: text,
+          isAiMessage: false,
+          isDeleted: false,
+          createdAt: DateTime.now(),
+        );
+        ref
+            .read(messagesProvider(widget.conversationId).notifier)
+            .addMessage(userMsg);
+        _scrollToBottom();
+
+        final result = await ref.read(chatRepositoryProvider).sendSupportMessage(
+              conversationId: widget.conversationId,
+              message: text,
+            );
+
+        // AI 回复通过 Realtime 自动接收，无需手动添加
+        // 如果转人工，刷新会话列表以更新状态
+        if (result.handoff) {
+          ref.read(conversationsProvider.notifier).refresh();
+        }
+      } else {
+        // 普通会话：直接发送
+        final msg = await ref.read(chatRepositoryProvider).sendTextMessage(
+              widget.conversationId,
+              currentUserId,
+              text,
+            );
+        ref
+            .read(messagesProvider(widget.conversationId).notifier)
+            .addMessage(msg);
+        _scrollToBottom();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to send message: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
+  /// 选择图片并发送
+  Future<void> _handlePickImage() async {
+    final currentUserId = _getCurrentUserId();
+    if (currentUserId == null) return;
+
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 85,
+      maxWidth: 1920,
+    );
+    if (picked == null) return;
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(children: [
+            SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)),
+            SizedBox(width: 12),
+            Text('Sending image...'),
+          ]),
+          duration: Duration(seconds: 10),
+        ),
+      );
+    }
+
+    try {
+      final imageUrl = await ref.read(chatRepositoryProvider).uploadChatImage(
+            userId: currentUserId,
+            file: picked,
+          );
+      final msg = await ref.read(chatRepositoryProvider).sendImageMessage(
+            widget.conversationId,
+            currentUserId,
+            imageUrl,
+          );
+      ref.read(messagesProvider(widget.conversationId).notifier).addMessage(msg);
+      _scrollToBottom();
+      if (mounted) ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to send image: $e'), backgroundColor: AppColors.error),
+        );
+      }
+    }
+  }
+
+  /// 选择 Coupon 卡片并发送
+  Future<void> _handlePickCoupon() async {
+    final currentUserId = _getCurrentUserId();
+    if (currentUserId == null) return;
+
+    final payload = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => CouponPickerSheet(
+        onSelect: (p) => Navigator.of(context).pop(p),
+      ),
+    );
+    if (payload == null) return;
+
+    try {
+      final msg = await ref.read(chatRepositoryProvider).sendCouponMessage(
+            widget.conversationId,
+            currentUserId,
+            payload,
+          );
+      ref.read(messagesProvider(widget.conversationId).notifier).addMessage(msg);
+      _scrollToBottom();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to send coupon: $e'), backgroundColor: AppColors.error),
+        );
+      }
+    }
+  }
+
+  // ============================================================
+  // 工具方法
+  // ============================================================
+
+  /// 获取当前登录用户 ID（同步读取缓存值）
+  String? _getCurrentUserId() {
+    return ref.read(currentUserProvider).valueOrNull?.id;
+  }
+
+  /// 滚动到底部（列表 reverse: true，滚到 minScrollExtent 即底部）
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          0,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  // ============================================================
+  // Build
+  // ============================================================
+
+  @override
+  Widget build(BuildContext context) {
+    // 监听会话信息（用于显示对方名称 / 群名）
+    final conversationsAsync = ref.watch(conversationsProvider);
+    final currentUserId = _getCurrentUserId() ?? '';
+
+    // 从会话列表中找到当前会话
+    final conversation = conversationsAsync.valueOrNull
+        ?.where((c) => c.id == widget.conversationId)
+        .firstOrNull;
+
+    // 会话标题：direct 用对方名字，group 用群名，support 固定
+    final title = conversation?.displayName ?? 'Chat';
+    final isGroupChat = conversation?.type == 'group';
+
+    // 监听消息列表
+    final messagesAsync = ref.watch(messagesProvider(widget.conversationId));
+
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: _buildAppBar(title, conversation?.displayAvatarUrl),
+      body: Column(
+        children: [
+          // 消息列表区域
+          Expanded(
+            child: messagesAsync.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, _) => Center(
+                child: Text(
+                  'Failed to load messages',
+                  style: const TextStyle(color: AppColors.textSecondary),
+                ),
+              ),
+              data: (messages) => _buildMessageList(
+                messages: messages,
+                currentUserId: currentUserId,
+                isGroupChat: isGroupChat,
+              ),
+            ),
+          ),
+
+          // 底部输入栏
+          ChatInputBar(
+            onSendText: _sendTextMessage,
+            onPickImage: _handlePickImage,
+            onPickCoupon: _handlePickCoupon,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 构建 AppBar
+  PreferredSizeWidget _buildAppBar(String title, String? avatarUrl) {
+    return AppBar(
+      backgroundColor: Colors.white,
+      elevation: 0,
+      scrolledUnderElevation: 1,
+      shadowColor: Colors.black12,
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back_ios, color: AppColors.textPrimary),
+        onPressed: () => Navigator.of(context).pop(),
+      ),
+      title: Row(
+        children: [
+          // 头像
+          if (avatarUrl != null && avatarUrl.isNotEmpty)
+            CircleAvatar(
+              radius: 18,
+              backgroundImage: NetworkImage(avatarUrl),
+              backgroundColor: AppColors.surfaceVariant,
+            )
+          else
+            const CircleAvatar(
+              radius: 18,
+              backgroundColor: AppColors.surfaceVariant,
+              child: Icon(Icons.person, size: 18, color: AppColors.textHint),
+            ),
+          const SizedBox(width: 10),
+          // 会话名称
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: AppColors.textPrimary,
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        // 更多操作按钮（预留）
+        IconButton(
+          icon: const Icon(Icons.more_horiz, color: AppColors.textPrimary),
+          onPressed: () {
+            // TODO: 显示更多操作菜单
+          },
+        ),
+      ],
+    );
+  }
+
+  /// 构建消息列表
+  Widget _buildMessageList({
+    required List<MessageModel> messages,
+    required String currentUserId,
+    required bool isGroupChat,
+  }) {
+    // 消息列表为空时显示友好提示
+    if (messages.isEmpty) {
+      return const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.chat_bubble_outline,
+                size: 56, color: AppColors.textHint),
+            SizedBox(height: 12),
+            Text(
+              'Start a conversation!',
+              style: TextStyle(
+                fontSize: 16,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      controller: _scrollController,
+      // reverse: true 使最新消息自动显示在底部
+      reverse: true,
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      itemCount: messages.length + (_isLoadingMore ? 1 : 0),
+      itemBuilder: (context, index) {
+        // 加载更多指示器（显示在列表末尾，即历史消息方向）
+        if (index == messages.length) {
+          return const Padding(
+            padding: EdgeInsets.all(16),
+            child: Center(
+              child: SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          );
+        }
+
+        final message = messages[index];
+
+        // 判断是否需要显示日期分隔符
+        // messages 列表按时间倒序（最新在前），index 0 是最新消息
+        // 需要在"时间更早的那条消息"之前显示日期分隔符
+        bool showDateSeparator = false;
+        if (index < messages.length - 1) {
+          final current = messages[index];
+          final older = messages[index + 1]; // 更早的消息
+          final currentDay = DateTime(
+            current.createdAt.year,
+            current.createdAt.month,
+            current.createdAt.day,
+          );
+          final olderDay = DateTime(
+            older.createdAt.year,
+            older.createdAt.month,
+            older.createdAt.day,
+          );
+          // 如果日期不同，在 older 那条消息上方显示分隔符
+          // 在 reverse 列表中，index+1 的 widget 渲染在更高位置
+          showDateSeparator = currentDay != olderDay;
+        } else {
+          // 最后一条（最旧的）消息始终显示日期
+          showDateSeparator = true;
+        }
+
+        return MessageBubble(
+          message: message,
+          currentUserId: currentUserId,
+          isGroupChat: isGroupChat,
+          showDateSeparator: showDateSeparator,
+        );
+      },
+    );
+  }
+}

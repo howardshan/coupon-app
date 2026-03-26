@@ -10,6 +10,7 @@
 import 'dart:convert';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/earnings_data.dart';
+import '../../store/services/store_service.dart';
 
 /// 财务服务自定义异常
 class EarningsException implements Exception {
@@ -50,6 +51,7 @@ class EarningsService {
       final response = await _supabase.functions.invoke(
         path,
         method: HttpMethod.get,
+        headers: StoreService.merchantIdHeaders,
       );
 
       final data = _parseResponse(response);
@@ -105,6 +107,7 @@ class EarningsService {
       final response = await _supabase.functions.invoke(
         path,
         method: HttpMethod.get,
+        headers: StoreService.merchantIdHeaders,
       );
 
       final data = _parseResponse(response);
@@ -137,6 +140,7 @@ class EarningsService {
       final response = await _supabase.functions.invoke(
         '$_functionName/settlement-schedule',
         method: HttpMethod.get,
+        headers: StoreService.merchantIdHeaders,
       );
 
       final data = _parseResponse(response);
@@ -190,6 +194,7 @@ class EarningsService {
       final response = await _supabase.functions.invoke(
         path,
         method: HttpMethod.get,
+        headers: StoreService.merchantIdHeaders,
       );
 
       final data = _parseResponse(response);
@@ -222,6 +227,7 @@ class EarningsService {
       final response = await _supabase.functions.invoke(
         '$_functionName/account',
         method: HttpMethod.get,
+        headers: StoreService.merchantIdHeaders,
       );
 
       final data = _parseResponse(response);
@@ -249,6 +255,7 @@ class EarningsService {
       final response = await _supabase.functions.invoke(
         '$_withdrawalFn/balance',
         method: HttpMethod.get,
+        headers: StoreService.merchantIdHeaders,
       );
       final data = _parseResponse(response);
       if (data['error'] != null) {
@@ -269,6 +276,7 @@ class EarningsService {
     final response = await _supabase.functions.invoke(
       '$_withdrawalFn/withdraw',
       method: HttpMethod.post,
+      headers: StoreService.merchantIdHeaders,
       body: {'amount': amount},
     );
     final data = _parseResponse(response);
@@ -289,6 +297,7 @@ class EarningsService {
       final response = await _supabase.functions.invoke(
         '$_withdrawalFn/history',
         method: HttpMethod.get,
+        headers: StoreService.merchantIdHeaders,
       );
       final data = _parseResponse(response);
       if (data['error'] != null) {
@@ -313,6 +322,7 @@ class EarningsService {
       final response = await _supabase.functions.invoke(
         '$_withdrawalFn/settings',
         method: HttpMethod.get,
+        headers: StoreService.merchantIdHeaders,
       );
       final data = _parseResponse(response);
       if (data['error'] != null) return WithdrawalSettings.defaults();
@@ -334,6 +344,7 @@ class EarningsService {
     final response = await _supabase.functions.invoke(
       '$_withdrawalFn/connect',
       method: HttpMethod.post,
+      headers: StoreService.merchantIdHeaders,
     );
     final data = _parseResponse(response);
     if (data['error'] != null) {
@@ -357,6 +368,7 @@ class EarningsService {
     final response = await _supabase.functions.invoke(
       '$_withdrawalFn/connect/refresh',
       method: HttpMethod.post,
+      headers: StoreService.merchantIdHeaders,
     );
     final data = _parseResponse(response);
     if (data['error'] != null) {
@@ -380,6 +392,7 @@ class EarningsService {
     final response = await _supabase.functions.invoke(
       '$_withdrawalFn/connect/dashboard',
       method: HttpMethod.get,
+      headers: StoreService.merchantIdHeaders,
     );
     final data = _parseResponse(response);
     if (data['error'] != null) {
@@ -412,6 +425,7 @@ class EarningsService {
     final response = await _supabase.functions.invoke(
       '$_withdrawalFn/settings',
       method: HttpMethod.patch,
+      headers: StoreService.merchantIdHeaders,
       body: body,
     );
     final data = _parseResponse(response);
@@ -493,6 +507,7 @@ class EarningsService {
       final response = await _supabase.functions.invoke(
         '$_functionName/commission-config',
         method: HttpMethod.get,
+        headers: StoreService.merchantIdHeaders,
       );
 
       final data = _parseResponse(response);

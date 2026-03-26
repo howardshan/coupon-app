@@ -10,6 +10,7 @@
 import 'dart:convert';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/analytics_data.dart';
+import '../../store/services/store_service.dart';
 
 // =============================================================
 // AnalyticsException — 数据分析模块自定义异常
@@ -53,6 +54,7 @@ class AnalyticsService {
       final response = await _supabase.functions.invoke(
         path,
         method: HttpMethod.get,
+        headers: StoreService.merchantIdHeaders,
       );
 
       final data = _parseResponse(response);
@@ -89,6 +91,7 @@ class AnalyticsService {
       final response = await _supabase.functions.invoke(
         path,
         method: HttpMethod.get,
+        headers: StoreService.merchantIdHeaders,
       );
 
       final data = _parseResponse(response);
@@ -129,6 +132,7 @@ class AnalyticsService {
       final response = await _supabase.functions.invoke(
         path,
         method: HttpMethod.get,
+        headers: StoreService.merchantIdHeaders,
       );
 
       final data = _parseResponse(response);

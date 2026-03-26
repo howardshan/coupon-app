@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../models/store_summary.dart';
 import '../providers/store_provider.dart';
+import '../widgets/store_selector.dart' show invalidateAllStoreProviders;
 
 class StoreSelectorPage extends ConsumerWidget {
   const StoreSelectorPage({super.key});
@@ -95,8 +96,9 @@ class StoreSelectorPage extends ConsumerWidget {
                   try {
                     final service = ref.read(storeServiceProvider);
                     service.setActiveMerchantId(store.id);
-                    // 直接跳转到 dashboard，让 storeProvider 在 dashboard 自动加载
+                    // 刷新门店信息和所有依赖门店的数据
                     ref.invalidate(storeProvider);
+                    invalidateAllStoreProviders(ref);
                     if (context.mounted) {
                       context.go('/dashboard');
                     }
