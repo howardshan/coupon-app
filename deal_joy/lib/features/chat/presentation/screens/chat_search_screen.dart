@@ -69,18 +69,27 @@ class _ChatSearchScreenState extends ConsumerState<ChatSearchScreen> {
     try {
       final client = Supabase.instance.client;
 
-      // 并行搜索：用户 + 消息
-      final userFuture = client
           .from('users')
-          .select('id, full_name, username, avatar_url')
           .or(
-            'username.ilike.%$query%,'
-            'full_name.ilike.%$query%,'
-            'email.ilike.%$query%,'
-            'phone.ilike.%$query%',
-          )
-          .neq('id', userId)
-          .limit(10);
+      // 先获取好友 ID 列表，只搜索已添加的好友
+      final friendsList = ref.read(friendsProvider).valueOrNull ?? [];
+      final friendUserIds = friendsList.map((f) => f.friendId).toList();
+
+      // 搜索好友（从已有好友中按名字/用户名过滤）
+      Future<List<dynamic>> userFuture;
+      if (friendUserIds.isEmpty) {
+        userFuture = Future.value([]);
+      } else {
+        userFuture = client
+            .from('users')
+            .select('id, full_name, username, avatar_url')
+            .inFilter('id', friendUserIds)
+            .or(
+              'username.ilike.%$query%,'
+              'full_name.ilike.%$query%',
+            )
+            .limit(10);
+      }
 
       // 搜索当前用户参与的会话中的消息
       // 先获取用户的会话 ID
@@ -160,6 +169,62 @@ class _ChatSearchScreenState extends ConsumerState<ChatSearchScreen> {
       // 搜索失败静默处理
     } finally {
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  /// 打开与好友的聊天（查找已有 direct 会话或创建新的）
+  Future<void> _openChatWithUser(String friendUserId) async {
+    final userId = ref.read(currentUserProvider).valueOrNull?.id;
+    if (userId == null) return;
+
+    try {
+      final client = Supabase.instance.client;
+
+      // 查找两人共同的 direct 会话
+      final myConvs = await client
+          .from('conversation_members')
+          .select('conversation_id')
+          .eq('user_id', userId);
+      final myConvIds = (myConvs as List)
+          .map((r) => r['conversation_id'] as String)
+          .toList();
+
+      String? existingConvId;
+      if (myConvIds.isNotEmpty) {
+        // 找对方也在的 direct 会话
+        final shared = await client
+            .from('conversation_members')
+            .select('conversation_id, conversations!inner(type)')
+            .eq('user_id', friendUserId)
+            .inFilter('conversation_id', myConvIds);
+
+        for (final row in shared as List) {
+          final conv = row['conversations'] as Map<String, dynamic>?;
+          if (conv?['type'] == 'direct') {
+            existingConvId = row['conversation_id'] as String;
+            break;
+          }
+        }
+      }
+
+      if (existingConvId != null) {
+        if (mounted) context.push('/chat/$existingConvId');
+        return;
+      }
+
+      // 没有已有会话，通过 RPC 创建（SECURITY DEFINER 绕过 RLS）
+      final newConvId = await client.rpc('create_direct_conversation', params: {
+        'p_user_id': userId,
+        'p_friend_id': friendUserId,
+      }) as String;
+
+      if (mounted) context.push('/chat/$newConvId');
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to open chat: $e'), backgroundColor: AppColors.error),
+        );
+      }
     }
   }
 
@@ -273,9 +338,8 @@ class _ChatSearchScreenState extends ConsumerState<ChatSearchScreen> {
                                   ? Text('@$username',
                                       style: const TextStyle(fontSize: 13, color: AppColors.textSecondary))
                                   : null,
-                              trailing: isFriend
-                                  ? _StatusChip(label: 'Friends')
-                                  : _AddButton(onTap: () => _sendFriendRequest(uid)),
+                              // 点击好友跳转到聊天（创建或打开已有会话）
+                              onTap: () => _openChatWithUser(uid),
                             );
                           }),
                         ],
