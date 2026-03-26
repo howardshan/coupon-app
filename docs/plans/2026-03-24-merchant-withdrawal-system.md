@@ -259,9 +259,10 @@ SELECT cron.schedule(
 ## 安全规范（必须遵守）
 
 1. **Stripe 密钥只从环境变量读取**：`Deno.env.get('STRIPE_SECRET_KEY')`，不得硬编码
-2. **Transfer 幂等 Key**：使用 `withdrawal.id` 作为 `idempotencyKey`，防止网络重试导致重复打款
-3. **stripe_account_id 由后端创建**：不能接受客户端传入的 `stripe_account_id` 声称绑定完成
-4. **Webhook 签名验证不可移除**：`stripe-webhook` 的 `stripe.webhooks.constructEventAsync()` 验证必须保留
+2. **Connect Account Link 回调 URL**：`STRIPE_CONNECT_RETURN_URL`、`STRIPE_CONNECT_REFRESH_URL` 必须为 **https**（Stripe 不接受 `dealjoymerchant://`）；可用静态页再跳回 App 深链，见 `docs/stripe-connect-redirect/redirect.html` 与测试文档「前置条件 0」
+3. **Transfer 幂等 Key**：使用 `withdrawal.id` 作为 `idempotencyKey`，防止网络重试导致重复打款
+4. **stripe_account_id 由后端创建**：不能接受客户端传入的 `stripe_account_id` 声称绑定完成
+5. **Webhook 签名验证不可移除**：`stripe-webhook` 的 `stripe.webhooks.constructEventAsync()` 验证必须保留
 
 ---
 

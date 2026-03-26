@@ -8,7 +8,29 @@
 
 ## 测试前置条件
 
-开始测试前，请确认以下 3 项已就绪：
+开始测试前，请确认以下项已就绪：
+
+### ✅ 前置条件 0 — Connect onboarding 回调 URL（HTTPS，必填）
+
+Stripe 创建 **Account Link** 时，`return_url` / `refresh_url` **不能**使用 `dealjoymerchant://` 等自定义 scheme，否则会报错 **`Not a valid URL`**。
+
+请在 **Supabase Dashboard → Project Settings → Edge Functions → Secrets** 为 `merchant-withdrawal` 配置（或通过 CLI `supabase secrets set`）：
+
+| Secret | 说明 |
+|--------|------|
+| `STRIPE_CONNECT_RETURN_URL` | 完整 **https** URL，用户完成 onboarding 后由 Stripe 打开 |
+| `STRIPE_CONNECT_REFRESH_URL` | 完整 **https** URL，链接过期需刷新流程时由 Stripe 打开 |
+
+**推荐做法：** 将仓库内静态页 `docs/stripe-connect-redirect/redirect.html` 部署到任意 HTTPS 静态托管，例如：
+
+- `STRIPE_CONNECT_RETURN_URL` = `https://<你的域名>/redirect.html?result=success`
+- `STRIPE_CONNECT_REFRESH_URL` = `https://<你的域名>/redirect.html?result=refresh`
+
+该页面会立即跳转到 App 深链 `dealjoymerchant://stripe-callback?result=...`（请确认商家端已配置对应 Android/iOS 深链）。
+
+配置后需 **重新部署** `merchant-withdrawal` Edge Function 使运行时读取到新 Secrets。
+
+---
 
 ### ✅ 前置条件 1 — 平台 Stripe 账户有测试余额
 
