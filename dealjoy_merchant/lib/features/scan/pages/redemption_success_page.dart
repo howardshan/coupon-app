@@ -57,8 +57,11 @@ class _RedemptionSuccessPageState
 
     // 页面进入时播放动画
     _animController.forward();
-    // 核销成功后刷新订单列表（避免需要手动刷新）
-    ref.invalidate(ordersNotifierProvider);
+    // 避免在 initState 里直接触发 provider 依赖，改为首帧后刷新列表
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.invalidate(ordersNotifierProvider);
+    });
   }
 
   @override

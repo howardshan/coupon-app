@@ -239,26 +239,94 @@ async function handleGetBalance(
   const now = new Date();
   const settledCutoff = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-  // 查询已核销且满 T+7 的券对应订单金额（按实际核销门店归属）
-  const { data: settledCoupons, error: settledError } = await admin
-    .from("coupons")
-    .select("order_id, orders!inner(total_amount, platform_fee, net_amount)")
-    .or(`redeemed_at_merchant_id.eq.${merchantId},and(redeemed_at_merchant_id.is.null,merchant_id.eq.${merchantId})`)
-    .eq("status", "used")
-    .lt("used_at", settledCutoff.toISOString());
-
-  if (settledError) {
-    return errorResponse(`Failed to query settled coupons: ${settledError.message}`, 500);
+  // coupons 与 orders 之间存在多条 FK 时，PostgREST 无法解析 orders!inner(...)，会报
+  // "more than one relationship was found for 'coupons' and 'orders'"。
+  // 因此先查 coupons 的 order_id，再单独查询 orders.total_amount。
+  async function queryCouponsForMerchantStatus(
+    status: "used" | "refunded",
+    onlySettled: boolean
+  ) {
+    const baseSelect = "id, order_id";
+    const q1 = admin
+      .from("coupons")
+      .select(baseSelect)
+      .eq("redeemed_at_merchant_id", merchantId)
+      .eq("status", status);
+    const q2 = admin
+      .from("coupons")
+      .select(baseSelect)
+      .is("redeemed_at_merchant_id", null)
+      .eq("merchant_id", merchantId)
+      .eq("status", status);
+    const q1Final = onlySettled ? q1.lt("used_at", settledCutoff.toISOString()) : q1;
+    const q2Final = onlySettled ? q2.lt("used_at", settledCutoff.toISOString()) : q2;
+    const [{ data: partA, error: errA }, { data: partB, error: errB }] = await Promise.all([q1Final, q2Final]);
+    return { partA, partB, errA, errB };
   }
 
-  // 计算已结算总额（商家实收 = net_amount = total_amount - platform_fee）
-  let totalSettled = 0;
-  for (const coupon of settledCoupons ?? []) {
-    // deno-lint-ignore no-explicit-any
-    const order = (coupon as any).orders;
-    if (order) {
-      totalSettled += parseFloat(order.net_amount ?? order.total_amount * 0.85 ?? 0);
+  /** 按 order_id 批量拉取 total_amount，构建 id -> 金额 */
+  async function fetchOrderTotalAmountMap(orderIds: string[]): Promise<Map<string, number>> {
+    const unique = [...new Set(orderIds.filter((id) => id && id.length > 0))];
+    const map = new Map<string, number>();
+    const chunkSize = 200;
+    for (let i = 0; i < unique.length; i += chunkSize) {
+      const chunk = unique.slice(i, i + chunkSize);
+      const { data: rows, error } = await admin
+        .from("orders")
+        .select("id, total_amount")
+        .in("id", chunk);
+      if (error) {
+        console.error("[merchant-withdrawal] /balance orders batch failed", { error: error.message });
+        throw new Error(error.message);
+      }
+      for (const row of rows ?? []) {
+        // deno-lint-ignore no-explicit-any
+        const r = row as any;
+        map.set(r.id, parseFloat(String(r.total_amount ?? 0)));
+      }
     }
+    return map;
+  }
+
+  function netFromOrderTotal(total: number): number {
+    return total * 0.85;
+  }
+
+  // 查询已核销且满 T+7 的券对应订单金额（按实际核销门店归属）
+  const settledRes = await queryCouponsForMerchantStatus("used", true);
+  if (settledRes.errA || settledRes.errB) {
+    console.error("[merchant-withdrawal] /balance settled query failed", {
+      merchantId,
+      errA: settledRes.errA?.message ?? null,
+      errB: settledRes.errB?.message ?? null,
+    });
+    return errorResponse(
+      `Failed to query settled coupons: ${settledRes.errA?.message ?? settledRes.errB?.message ?? "unknown error"}`,
+      500
+    );
+  }
+  const settledCoupons = [...(settledRes.partA ?? []), ...(settledRes.partB ?? [])];
+
+  const settledMap = new Map<string, { id: string; order_id: string }>();
+  for (const c of settledCoupons) {
+    // deno-lint-ignore no-explicit-any
+    const row = c as any;
+    if (row?.id) settledMap.set(row.id, { id: row.id, order_id: row.order_id });
+  }
+  const settledCouponsDedup = Array.from(settledMap.values());
+
+  let orderAmountMap: Map<string, number>;
+  try {
+    orderAmountMap = await fetchOrderTotalAmountMap(settledCouponsDedup.map((c) => c.order_id));
+  } catch (e) {
+    return errorResponse((e as Error).message, 500);
+  }
+
+  // 计算已结算总额（商家实收：无 net_amount 列时按 total_amount * 0.85）
+  let totalSettled = 0;
+  for (const coupon of settledCouponsDedup) {
+    const gross = orderAmountMap.get(coupon.order_id) ?? 0;
+    totalSettled += netFromOrderTotal(gross);
   }
 
   // 查询已提现总额（completed + processing）
@@ -274,19 +342,38 @@ async function handleGetBalance(
   }
 
   // 查询退款扣除（已结算后发生的退款）
-  const { data: refundedCoupons } = await admin
-    .from("coupons")
-    .select("order_id, orders!inner(net_amount)")
-    .or(`redeemed_at_merchant_id.eq.${merchantId},and(redeemed_at_merchant_id.is.null,merchant_id.eq.${merchantId})`)
-    .eq("status", "refunded");
+  const refundedRes = await queryCouponsForMerchantStatus("refunded", false);
+  if (refundedRes.errA || refundedRes.errB) {
+    console.error("[merchant-withdrawal] /balance refunded query failed", {
+      merchantId,
+      errA: refundedRes.errA?.message ?? null,
+      errB: refundedRes.errB?.message ?? null,
+    });
+    return errorResponse(
+      `Failed to query refunded coupons: ${refundedRes.errA?.message ?? refundedRes.errB?.message ?? "unknown error"}`,
+      500
+    );
+  }
+  const refundedCoupons = [...(refundedRes.partA ?? []), ...(refundedRes.partB ?? [])];
+  const refundedMap = new Map<string, { id: string; order_id: string }>();
+  for (const c of refundedCoupons) {
+    // deno-lint-ignore no-explicit-any
+    const row = c as any;
+    if (row?.id) refundedMap.set(row.id, { id: row.id, order_id: row.order_id });
+  }
+  const refundedCouponsDedup = Array.from(refundedMap.values());
+
+  let refundOrderAmountMap: Map<string, number>;
+  try {
+    refundOrderAmountMap = await fetchOrderTotalAmountMap(refundedCouponsDedup.map((c) => c.order_id));
+  } catch (e) {
+    return errorResponse((e as Error).message, 500);
+  }
 
   let totalRefundDeductions = 0;
-  for (const coupon of refundedCoupons ?? []) {
-    // deno-lint-ignore no-explicit-any
-    const order = (coupon as any).orders;
-    if (order) {
-      totalRefundDeductions += parseFloat(order.net_amount ?? 0);
-    }
+  for (const coupon of refundedCouponsDedup) {
+    const gross = refundOrderAmountMap.get(coupon.order_id) ?? 0;
+    totalRefundDeductions += netFromOrderTotal(gross);
   }
 
   const availableBalance = Math.max(0, totalSettled - totalWithdrawn - totalRefundDeductions);
