@@ -140,7 +140,7 @@ async function handleListReviews(
         replied_at,
         created_at,
         deals!inner(merchant_id),
-        users(full_name, avatar_url)
+        users!reviews_user_id_fkey(full_name, avatar_url)
         `,
         { count: 'exact' },
       )

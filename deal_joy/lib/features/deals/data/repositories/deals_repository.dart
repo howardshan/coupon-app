@@ -246,7 +246,7 @@ class DealsRepository {
     try {
       final data = await _client
           .from('reviews')
-          .select('*, users(full_name, avatar_url)')
+          .select('*, users!reviews_user_id_fkey(full_name, avatar_url)')
           .eq('deal_id', dealId)
           .order('created_at', ascending: false)
           .limit(20);
