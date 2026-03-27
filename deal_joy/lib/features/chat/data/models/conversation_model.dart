@@ -41,6 +41,9 @@ class ConversationModel {
   /// 当前用户未读消息数
   final int unreadCount;
 
+  /// 是否被当前用户置顶
+  final bool isPinned;
+
   // ---------- direct 类型：对方用户信息 ----------
 
   /// 对方用户 ID（direct 类型专用）
@@ -65,6 +68,7 @@ class ConversationModel {
     this.lastMessageAt,
     this.lastMessageSenderName,
     this.unreadCount = 0,
+    this.isPinned = false,
     this.otherUserId,
     this.otherUserName,
     this.otherUserAvatarUrl,
@@ -101,6 +105,7 @@ class ConversationModel {
           : null,
       lastMessageSenderName: lastSenderName,
       unreadCount: json['unread_count'] as int? ?? 0,
+      isPinned: json['is_pinned'] as bool? ?? false,
       otherUserId: json['other_user_id'] as String?,
       otherUserName: json['other_user_name'] as String?,
       otherUserAvatarUrl: json['other_user_avatar_url'] as String?,
@@ -126,6 +131,7 @@ class ConversationModel {
       lastMessageAt: lastMessageAt,
       lastMessageSenderName: lastMessageSenderName,
       unreadCount: unreadCount,
+      isPinned: isPinned,
       otherUserId: otherUserId,
       otherUserName: otherUserName,
       otherUserAvatarUrl: otherUserAvatarUrl,
@@ -147,6 +153,7 @@ class ConversationModel {
       lastMessageAt: lastMessageAt,
       lastMessageSenderName: lastMessageSenderName,
       unreadCount: count,
+      isPinned: isPinned,
       otherUserId: otherUserId,
       otherUserName: otherUserName,
       otherUserAvatarUrl: otherUserAvatarUrl,

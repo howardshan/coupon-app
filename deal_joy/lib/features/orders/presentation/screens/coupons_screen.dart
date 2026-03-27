@@ -9,13 +9,14 @@ import '../../data/models/coupon_model.dart';
 import '../../domain/providers/coupons_provider.dart';
 import '../widgets/coupon_card.dart';
 
-/// 四个状态 Tab 的配置
+/// Tab 配置
 const _tabs = [
   (label: 'Unused', status: 'unused'),
   (label: 'Used', status: 'used'),
+  (label: 'To Review', status: 'to_review'),
   (label: 'Expired', status: 'expired'),
   (label: 'Refunded', status: 'refunded'),
-  (label: 'Cancelled', status: 'cancelled'),
+  (label: 'Gifted', status: 'gifted'),
 ];
 
 class CouponsScreen extends ConsumerWidget {
@@ -425,9 +426,10 @@ class _EmptyState extends StatelessWidget {
   IconData _emptyIcon(String status) => switch (status) {
         'unused' => Icons.confirmation_number_outlined,
         'used' => Icons.check_circle_outline,
+        'to_review' => Icons.rate_review_outlined,
         'expired' => Icons.timer_off_outlined,
         'refunded' => Icons.currency_exchange,
-        'cancelled' => Icons.cancel_outlined,
+        'gifted' => Icons.card_giftcard_outlined,
         _ => Icons.confirmation_number_outlined,
       };
 }

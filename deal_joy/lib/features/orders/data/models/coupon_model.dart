@@ -41,6 +41,12 @@ class CouponModel {
   // 购买时门店快照（来自 orders.applicable_store_ids）
   final List<String>? applicableStoreIds;
 
+  // 退款信息（来自 order_items join）
+  final double? unitPrice;
+  final DateTime? refundedAt;
+  final double? refundAmount;
+  final String? refundMethod; // 'original_payment' | 'store_credit'
+
   const CouponModel({
     required this.id,
     required this.orderId,
@@ -68,6 +74,10 @@ class CouponModel {
     this.merchantPhone,
     this.applicableMerchantIds,
     this.applicableStoreIds,
+    this.unitPrice,
+    this.refundedAt,
+    this.refundAmount,
+    this.refundMethod,
   });
 
   factory CouponModel.fromJson(Map<String, dynamic> json) {
@@ -137,6 +147,13 @@ class CouponModel {
           ?.map((e) => e?.toString() ?? '')
           .where((s) => s.isNotEmpty)
           .toList(),
+      // 退款信息（从 order_items join 获取）
+      unitPrice: (orderItems?['unit_price'] as num?)?.toDouble(),
+      refundedAt: orderItems?['refunded_at'] != null
+          ? DateTime.parse(orderItems!['refunded_at'] as String)
+          : null,
+      refundAmount: (orderItems?['refund_amount'] as num?)?.toDouble(),
+      refundMethod: orderItems?['refund_method'] as String?,
     );
   }
 
