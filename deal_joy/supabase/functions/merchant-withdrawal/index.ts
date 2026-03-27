@@ -236,66 +236,105 @@ async function handleGetBalance(
   admin: ReturnType<typeof createClient>,
   merchantId: string
 ): Promise<Response> {
-  const now = new Date();
-  const settledCutoff = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const settledCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
-  // 查询已核销且满 T+7 的券对应订单金额（按实际核销门店归属）
-  const { data: settledCoupons, error: settledError } = await admin
-    .from("coupons")
-    .select("order_id, orders!inner(total_amount, platform_fee, net_amount)")
-    .or(`redeemed_at_merchant_id.eq.${merchantId},and(redeemed_at_merchant_id.is.null,merchant_id.eq.${merchantId})`)
-    .eq("status", "used")
-    .lt("used_at", settledCutoff.toISOString());
+  // Step 1: 读取全局费率
+  const { data: config, error: configErr } = await admin
+    .from("platform_commission_config")
+    .select("commission_rate, stripe_processing_rate, stripe_flat_fee")
+    .single();
+  if (configErr) {
+    console.error("[merchant-withdrawal] /balance config fetch failed", configErr.message);
+    return errorResponse("Failed to fetch commission config", 500);
+  }
+  let vCommissionRate  = parseFloat(String(config?.commission_rate  ?? 0.15));
+  let vStripeRate      = parseFloat(String(config?.stripe_processing_rate ?? 0.03));
+  let vStripeFlatFee   = parseFloat(String(config?.stripe_flat_fee  ?? 0.30));
 
-  if (settledError) {
-    return errorResponse(`Failed to query settled coupons: ${settledError.message}`, 500);
+  // Step 2: 读取商家专属费率及免费期
+  const { data: merchant, error: merchantErr } = await admin
+    .from("merchants")
+    .select("commission_free_until, commission_rate, commission_stripe_rate, commission_stripe_flat_fee, commission_effective_from, commission_effective_to")
+    .eq("id", merchantId)
+    .single();
+  if (merchantErr) {
+    console.error("[merchant-withdrawal] /balance merchant fetch failed", merchantErr.message);
+    return errorResponse("Failed to fetch merchant config", 500);
   }
 
-  // 计算已结算总额（商家实收 = net_amount = total_amount - platform_fee）
-  let totalSettled = 0;
-  for (const coupon of settledCoupons ?? []) {
-    // deno-lint-ignore no-explicit-any
-    const order = (coupon as any).orders;
-    if (order) {
-      totalSettled += parseFloat(order.net_amount ?? order.total_amount * 0.85 ?? 0);
+  // 判断商家专属费率是否在生效期内
+  if (merchant?.commission_rate != null || merchant?.commission_stripe_rate != null) {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const effFrom = merchant.commission_effective_from ? new Date(merchant.commission_effective_from) : null;
+    const effTo   = merchant.commission_effective_to   ? new Date(merchant.commission_effective_to)   : null;
+    const active  = (!effFrom && !effTo)
+      || (effFrom && !effTo && today >= effFrom)
+      || (!effFrom && effTo && today <= effTo)
+      || (effFrom && effTo && today >= effFrom && today <= effTo);
+    if (active) {
+      if (merchant.commission_rate        != null) vCommissionRate = parseFloat(String(merchant.commission_rate));
+      if (merchant.commission_stripe_rate != null) vStripeRate     = parseFloat(String(merchant.commission_stripe_rate));
+      if (merchant.commission_stripe_flat_fee != null) vStripeFlatFee = parseFloat(String(merchant.commission_stripe_flat_fee));
     }
   }
 
-  // 查询已提现总额（completed + processing）
-  const { data: withdrawals } = await admin
+  // 免费期：平台抽成为 0，Stripe 手续费仍正常收取
+  const freeUntil = merchant?.commission_free_until ? new Date(merchant.commission_free_until) : null;
+  if (freeUntil && new Date() <= freeUntil) {
+    vCommissionRate = 0;
+  }
+
+  // Step 3: 查询已结算 order_items（T+7 已过、非退款）
+  // 与 get_merchant_earnings_summary 使用相同的数据源和字段
+  const { data: settledItems, error: itemsErr } = await admin
+    .from("order_items")
+    .select("id, unit_price, redeemed_merchant_id, purchased_merchant_id")
+    .not("redeemed_at", "is", null)
+    .lt("redeemed_at", settledCutoff)
+    .not("customer_status", "in", '("refund_success","refund_pending")')
+    .or(`redeemed_merchant_id.eq.${merchantId},and(redeemed_merchant_id.is.null,purchased_merchant_id.eq.${merchantId})`);
+
+  if (itemsErr) {
+    console.error("[merchant-withdrawal] /balance order_items fetch failed", itemsErr.message);
+    return errorResponse(`Failed to query settled items: ${itemsErr.message}`, 500);
+  }
+
+  // Step 4: 逐行计算 net_amount，汇总已结算总额
+  // 公式与 get_merchant_earnings_summary / get_merchant_transactions 完全一致
+  let totalSettled = 0;
+  for (const item of settledItems ?? []) {
+    // deno-lint-ignore no-explicit-any
+    const unitPrice = parseFloat(String((item as any).unit_price ?? 0));
+    const platformFee = unitPrice * vCommissionRate;
+    const stripeFee   = unitPrice * vStripeRate + vStripeFlatFee;
+    totalSettled += unitPrice - platformFee - stripeFee;
+  }
+
+  // Step 5: 查询已提现总额
+  const { data: withdrawals, error: wErr } = await admin
     .from("withdrawals")
-    .select("amount, status")
+    .select("amount")
     .eq("merchant_id", merchantId)
     .in("status", ["completed", "processing", "pending"]);
+  if (wErr) {
+    console.error("[merchant-withdrawal] /balance withdrawals fetch failed", wErr.message);
+    return errorResponse(`Failed to query withdrawals: ${wErr.message}`, 500);
+  }
 
   let totalWithdrawn = 0;
   for (const w of withdrawals ?? []) {
     totalWithdrawn += parseFloat(String(w.amount));
   }
 
-  // 查询退款扣除（已结算后发生的退款）
-  const { data: refundedCoupons } = await admin
-    .from("coupons")
-    .select("order_id, orders!inner(net_amount)")
-    .or(`redeemed_at_merchant_id.eq.${merchantId},and(redeemed_at_merchant_id.is.null,merchant_id.eq.${merchantId})`)
-    .eq("status", "refunded");
-
-  let totalRefundDeductions = 0;
-  for (const coupon of refundedCoupons ?? []) {
-    // deno-lint-ignore no-explicit-any
-    const order = (coupon as any).orders;
-    if (order) {
-      totalRefundDeductions += parseFloat(order.net_amount ?? 0);
-    }
-  }
-
-  const availableBalance = Math.max(0, totalSettled - totalWithdrawn - totalRefundDeductions);
+  const availableBalance = Math.max(0, totalSettled - totalWithdrawn);
 
   return jsonResponse({
-    available_balance: Math.round(availableBalance * 100) / 100,
-    total_settled: Math.round(totalSettled * 100) / 100,
-    total_withdrawn: Math.round(totalWithdrawn * 100) / 100,
-    total_refund_deductions: Math.round(totalRefundDeductions * 100) / 100,
+    available_balance:       Math.round(availableBalance * 100) / 100,
+    total_settled:           Math.round(totalSettled   * 100) / 100,
+    total_withdrawn:         Math.round(totalWithdrawn * 100) / 100,
+    effective_commission_rate: vCommissionRate,
+    effective_stripe_rate:     vStripeRate,
+    effective_stripe_flat_fee: vStripeFlatFee,
     currency: "usd",
   });
 }
@@ -342,6 +381,36 @@ async function handleWithdraw(
 
   if (pendingWithdrawal) {
     return errorResponse("You already have a pending withdrawal. Please wait for it to complete.");
+  }
+
+  // 读取费率配置（与 handleGetBalance 保持一致，用于 FIFO 净值计算）
+  const { data: feeConfig } = await admin
+    .from("platform_commission_config")
+    .select("commission_rate, stripe_processing_rate, stripe_flat_fee")
+    .single();
+  const { data: feeM } = await admin
+    .from("merchants")
+    .select("commission_free_until, commission_rate, commission_stripe_rate, commission_stripe_flat_fee, commission_effective_from, commission_effective_to")
+    .eq("id", merchantId)
+    .single();
+
+  let fifoCommRate  = parseFloat(String(feeConfig?.commission_rate  ?? 0.15));
+  let fifoStrRate   = parseFloat(String(feeConfig?.stripe_processing_rate ?? 0.03));
+  let fifoStrFlat   = parseFloat(String(feeConfig?.stripe_flat_fee  ?? 0.30));
+
+  if (feeM?.commission_rate != null || feeM?.commission_stripe_rate != null) {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const ef = feeM.commission_effective_from ? new Date(feeM.commission_effective_from) : null;
+    const et = feeM.commission_effective_to   ? new Date(feeM.commission_effective_to)   : null;
+    const active = (!ef && !et) || (ef && !et && today >= ef) || (!ef && et && today <= et) || (ef && et && today >= ef && today <= et);
+    if (active) {
+      if (feeM.commission_rate        != null) fifoCommRate = parseFloat(String(feeM.commission_rate));
+      if (feeM.commission_stripe_rate != null) fifoStrRate  = parseFloat(String(feeM.commission_stripe_rate));
+      if (feeM.commission_stripe_flat_fee != null) fifoStrFlat = parseFloat(String(feeM.commission_stripe_flat_fee));
+    }
+  }
+  if (feeM?.commission_free_until && new Date() <= new Date(feeM.commission_free_until)) {
+    fifoCommRate = 0;
   }
 
   // 创建提现记录（初始状态 pending，Transfer 成功后改为 processing）
@@ -394,7 +463,7 @@ async function handleWithdraw(
         const settledCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
         const { data: eligibleItems } = await admin
           .from("order_items")
-          .select("id, unit_price, service_fee, redeemed_at")
+          .select("id, unit_price, redeemed_at")
           .eq("merchant_status", "unpaid")
           .lt("redeemed_at", settledCutoff)
           .or(`redeemed_merchant_id.eq.${merchantId},and(redeemed_merchant_id.is.null,purchased_merchant_id.eq.${merchantId})`)
@@ -405,7 +474,9 @@ async function handleWithdraw(
           let accumulated = 0;
           for (const item of eligibleItems) {
             if (accumulated >= amount - 0.01) break;
-            const net = (item.unit_price ?? 0) - (item.service_fee ?? 0);
+            // 与 handleGetBalance 使用完全相同的净值公式：扣平台抽成 + Stripe 费
+            const unitPrice = parseFloat(String(item.unit_price ?? 0));
+            const net = unitPrice - unitPrice * fifoCommRate - (unitPrice * fifoStrRate + fifoStrFlat);
             accumulated += net;
             itemsToMark.push(item.id);
           }

@@ -1,28 +1,31 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:deal_joy/features/deals/domain/providers/deals_provider.dart';
+import 'package:deal_joy/core/utils/location_utils.dart';
 import 'package:deal_joy/features/deals/data/models/deal_model.dart';
 
 void main() {
-  group('distanceMiles (Haversine)', () {
+  group('haversineDistanceMiles', () {
     test('同一点距离为0', () {
-      expect(distanceMiles(32.7767, -96.7970, 32.7767, -96.7970), 0.0);
+      expect(
+        haversineDistanceMiles(32.7767, -96.7970, 32.7767, -96.7970),
+        0.0,
+      );
     });
 
     test('Dallas → Fort Worth 约30英里', () {
-      final d = distanceMiles(32.7767, -96.7970, 32.7555, -97.3308);
+      final d = haversineDistanceMiles(32.7767, -96.7970, 32.7555, -97.3308);
       expect(d, greaterThan(28));
       expect(d, lessThan(35));
     });
 
     test('Dallas → Houston 约240英里', () {
-      final d = distanceMiles(32.7767, -96.7970, 29.7604, -95.3698);
+      final d = haversineDistanceMiles(32.7767, -96.7970, 29.7604, -95.3698);
       expect(d, greaterThan(220));
       expect(d, lessThan(260));
     });
 
     test('对称性: A→B == B→A', () {
-      final ab = distanceMiles(32.7767, -96.7970, 29.7604, -95.3698);
-      final ba = distanceMiles(29.7604, -95.3698, 32.7767, -96.7970);
+      final ab = haversineDistanceMiles(32.7767, -96.7970, 29.7604, -95.3698);
+      final ba = haversineDistanceMiles(29.7604, -95.3698, 32.7767, -96.7970);
       expect(ab, closeTo(ba, 0.001));
     });
   });
@@ -63,7 +66,7 @@ void main() {
       expect(deal.discountPercent, 40);
       expect(deal.discountLabel, '40% OFF');
       expect(deal.imageUrls, ['https://example.com/img.jpg']);
-      expect(deal.dishes, ['Dish A', 'Dish B']);
+      expect(deal.products, ['Dish A', 'Dish B']);
       expect(deal.rating, 4.5);
       expect(deal.reviewCount, 100);
       expect(deal.totalSold, 500);
