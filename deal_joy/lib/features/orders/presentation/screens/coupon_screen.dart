@@ -10,7 +10,9 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../data/models/coupon_model.dart';
+import '../../data/models/coupon_gift_model.dart';
 import '../../domain/providers/coupons_provider.dart';
+import '../widgets/gift_bottom_sheet.dart';
 
 String _formatQrCodeForDisplay(String qrCode) {
   final normalized = qrCode.trim().replaceAll('-', '');
@@ -129,6 +131,10 @@ class _CouponDetailBodyState extends State<_CouponDetailBody> {
           else
             _UsedStatusSection(coupon: coupon),
 
+          // ── Gifted 信息（仅 gifted 状态显示） ──────────
+          if (coupon.isVoided && coupon.voidReason == 'gifted' && coupon.orderItemId != null)
+            _GiftInfoSection(orderItemId: coupon.orderItemId!, coupon: coupon),
+
           const SizedBox(height: 8),
           const Divider(indent: 16, endIndent: 16),
           const SizedBox(height: 8),
@@ -169,6 +175,7 @@ class _StatusBanner extends StatelessWidget {
 
   /// 与列表卡片一致：已退款一律按 REFUNDED 展示，未退款但已过期按 EXPIRED，其余按 status
   Color get _color {
+    if (coupon.isVoided && coupon.voidReason == 'gifted') return const Color(0xFF9C27B0);
     if (coupon.isVoided) return AppColors.textSecondary;
     if (coupon.status == 'refunded') return AppColors.warning;
     if (coupon.isExpired) return AppColors.textSecondary;
@@ -182,13 +189,14 @@ class _StatusBanner extends StatelessWidget {
   }
 
   String get _label {
+    if (coupon.isVoided && coupon.voidReason == 'gifted') return 'GIFTED';
     if (coupon.isVoided) return 'CANCELLED';
+    if (coupon.isExpired) return 'EXPIRED REFUND';
     if (coupon.status == 'refunded') return 'REFUNDED';
-    if (coupon.isExpired) return 'EXPIRED';
     return switch (coupon.status) {
       'unused' => 'READY TO USE',
       'used' => 'USED',
-      'expired' => 'EXPIRED',
+      'expired' => 'EXPIRED REFUND',
       'refunded' => 'REFUNDED',
       _ => coupon.status.toUpperCase(),
     };
@@ -313,7 +321,13 @@ class _UsedStatusSection extends StatelessWidget {
   Widget build(BuildContext context) {
     String message;
 
-    if (coupon.isVoided) {
+    if (coupon.isVoided && coupon.voidReason == 'gifted') {
+      message = 'This voucher has been gifted to a friend.';
+      if (coupon.voidedAt != null) {
+        message +=
+            ' (${DateFormat('MMM d, yyyy').format(coupon.voidedAt!.toLocal())})';
+      }
+    } else if (coupon.isVoided) {
       message = coupon.voidReason == 'merchant_edit'
           ? 'This offer was updated by the merchant. This voucher is no longer valid. Contact support if you need help.'
           : 'This voucher is no longer valid.';
@@ -334,14 +348,18 @@ class _UsedStatusSection extends StatelessWidget {
       message = 'This coupon is no longer active.';
     }
 
+    final dateFmt = DateFormat('MMM d, yyyy');
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
       child: Column(
         children: [
           Icon(
-            coupon.isVoided
-                ? Icons.cancel_outlined
-                : coupon.isRefunded
+            coupon.isVoided && coupon.voidReason == 'gifted'
+                ? Icons.card_giftcard_outlined
+                : coupon.isVoided
+                    ? Icons.cancel_outlined
+                    : coupon.isRefunded
                     ? Icons.currency_exchange
                     : coupon.isUsed
                         ? Icons.check_circle_outline
@@ -360,8 +378,119 @@ class _UsedStatusSection extends StatelessWidget {
               fontSize: 14,
             ),
           ),
+
+          // 退款详情卡片（refunded 或 expired+refunded）
+          if (coupon.isRefunded || (coupon.isExpired && coupon.status == 'refunded')) ...[
+            const SizedBox(height: 16),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.shade200),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Refund Details',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  // 购买日期
+                  _DetailRow(
+                    icon: Icons.shopping_bag_outlined,
+                    label: 'Purchased',
+                    value: dateFmt.format(coupon.createdAt.toLocal()),
+                  ),
+                  const SizedBox(height: 8),
+                  // 退款日期
+                  if (coupon.refundedAt != null)
+                    _DetailRow(
+                      icon: Icons.event_outlined,
+                      label: 'Refunded',
+                      value: dateFmt.format(coupon.refundedAt!.toLocal()),
+                    )
+                  else if (coupon.isExpired)
+                    _DetailRow(
+                      icon: Icons.event_outlined,
+                      label: 'Expired',
+                      value: dateFmt.format(coupon.expiresAt.toLocal()),
+                    ),
+                  const SizedBox(height: 8),
+                  // 退款金额
+                  _DetailRow(
+                    icon: Icons.attach_money,
+                    label: 'Refund Amount',
+                    value: coupon.refundAmount != null
+                        ? '\$${coupon.refundAmount!.toStringAsFixed(2)}'
+                        : coupon.unitPrice != null
+                            ? '\$${coupon.unitPrice!.toStringAsFixed(2)}'
+                            : 'N/A',
+                  ),
+                  const SizedBox(height: 8),
+                  // 退款去向
+                  _DetailRow(
+                    icon: Icons.account_balance_wallet_outlined,
+                    label: 'Refunded To',
+                    value: switch (coupon.refundMethod) {
+                      'store_credit' => 'Store Credit',
+                      'original_payment' => 'Original Payment',
+                      _ => 'Original Payment',
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
+    );
+  }
+}
+
+// ──────────────────────────────────────────────
+// 退款详情行
+// ──────────────────────────────────────────────
+class _DetailRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+
+  const _DetailRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: AppColors.textSecondary),
+        const SizedBox(width: 8),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 13,
+            color: AppColors.textSecondary,
+          ),
+        ),
+        const Spacer(),
+        Text(
+          value,
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: AppColors.textPrimary,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -663,6 +792,263 @@ class _RefundPolicySection extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ──────────────────────────────────────────────
+// Gifted 信息区（显示受赠方 + 撤回/更换按钮）
+// ──────────────────────────────────────────────
+class _GiftInfoSection extends ConsumerWidget {
+  final String orderItemId;
+  final CouponModel coupon;
+
+  const _GiftInfoSection({
+    required this.orderItemId,
+    required this.coupon,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final giftAsync = ref.watch(activeGiftProvider(orderItemId));
+
+    return giftAsync.when(
+      data: (gift) {
+        if (gift == null) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFF9C27B0).withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: const Color(0xFF9C27B0).withValues(alpha: 0.2),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 标题
+                const Row(
+                  children: [
+                    Icon(Icons.card_giftcard_outlined,
+                        size: 18, color: Color(0xFF9C27B0)),
+                    SizedBox(width: 8),
+                    Text(
+                      'Gift Details',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF9C27B0),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+
+                // 受赠方
+                _GiftDetailRow(
+                  label: 'Gifted To',
+                  value: gift.recipientDisplay,
+                ),
+                const SizedBox(height: 8),
+
+                // 状态
+                _GiftDetailRow(
+                  label: 'Status',
+                  value: gift.status.displayLabel,
+                  valueColor: switch (gift.status) {
+                    GiftStatus.pending => AppColors.warning,
+                    GiftStatus.claimed => AppColors.success,
+                    GiftStatus.recalled => AppColors.textSecondary,
+                    GiftStatus.expired => AppColors.textHint,
+                  },
+                ),
+                const SizedBox(height: 8),
+
+                // 赠送时间
+                _GiftDetailRow(
+                  label: 'Gifted On',
+                  value: DateFormat('MMM d, yyyy')
+                      .format(gift.createdAt.toLocal()),
+                ),
+
+                // 操作按钮（仅 pending 状态可用）
+                if (gift.canEdit || gift.canRecall) ...[
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      // 更换受赠方
+                      if (gift.canEdit)
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () =>
+                                _editRecipient(context, ref, gift),
+                            icon: const Icon(Icons.edit_outlined, size: 16),
+                            label: const Text('Change Recipient'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFF9C27B0),
+                              side: const BorderSide(
+                                  color: Color(0xFF9C27B0)),
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 10),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              textStyle: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                      if (gift.canEdit && gift.canRecall)
+                        const SizedBox(width: 10),
+                      // 撤回赠送
+                      if (gift.canRecall)
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () =>
+                                _recallGift(context, ref, gift),
+                            icon: const Icon(Icons.undo_rounded, size: 16),
+                            label: const Text('Recall Gift'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppColors.error,
+                              side: const BorderSide(color: AppColors.error),
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 10),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              textStyle: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
+      loading: () => const Padding(
+        padding: EdgeInsets.all(24),
+        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+      ),
+      error: (_, __) => const SizedBox.shrink(),
+    );
+  }
+
+  // 更换受赠方：撤回后重新打开 Gift Bottom Sheet
+  Future<void> _editRecipient(
+      BuildContext context, WidgetRef ref, CouponGiftModel gift) async {
+    final ok =
+        await ref.read(giftNotifierProvider.notifier).recallGift(gift.id);
+    if (!ok || !context.mounted) return;
+
+    // 刷新数据
+    ref.invalidate(activeGiftProvider(orderItemId));
+    ref.invalidate(couponDetailProvider(coupon.id));
+
+    // 弹出 Gift Bottom Sheet（预填之前的收件人）
+    if (context.mounted) {
+      GiftBottomSheet.show(
+        context,
+        dealTitle: coupon.dealTitle ?? '',
+        orderItemId: orderItemId,
+        merchantName: coupon.merchantName,
+        expiresAt: coupon.expiresAt,
+        prefillEmail: gift.recipientEmail,
+        prefillPhone: gift.recipientPhone,
+        onGiftSent: () {
+          ref.invalidate(activeGiftProvider(orderItemId));
+          ref.invalidate(couponDetailProvider(coupon.id));
+        },
+      );
+    }
+  }
+
+  // 撤回赠送
+  Future<void> _recallGift(
+      BuildContext context, WidgetRef ref, CouponGiftModel gift) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Recall Gift'),
+        content: const Text(
+          'Are you sure you want to recall this gift? '
+          'The recipient will no longer be able to claim it.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.error),
+            child: const Text('Recall'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+
+    final ok =
+        await ref.read(giftNotifierProvider.notifier).recallGift(gift.id);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              ok ? 'Gift recalled successfully' : 'Failed to recall gift'),
+          backgroundColor: ok ? AppColors.success : AppColors.error,
+        ),
+      );
+    }
+    if (ok) {
+      ref.invalidate(activeGiftProvider(orderItemId));
+      ref.invalidate(couponDetailProvider(coupon.id));
+      ref.invalidate(userCouponsProvider);
+    }
+  }
+}
+
+// 礼物详情行
+class _GiftDetailRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color? valueColor;
+
+  const _GiftDetailRow({
+    required this.label,
+    required this.value,
+    this.valueColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+              fontSize: 13, color: AppColors.textSecondary),
+        ),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: valueColor ?? AppColors.textPrimary,
+          ),
+        ),
+      ],
     );
   }
 }

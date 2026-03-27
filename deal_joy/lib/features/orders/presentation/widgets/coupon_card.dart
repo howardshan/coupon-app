@@ -11,7 +11,9 @@ Color _statusColor(String status) => switch (status) {
       'unused' => AppColors.primary,
       'used' => AppColors.success,
       'expired' => AppColors.textHint,
+      'expired_refund' => AppColors.warning,
       'refunded' => AppColors.warning,
+      'gifted' => const Color(0xFF9C27B0),
       'voided' => AppColors.textSecondary,
       _ => AppColors.textHint,
     };
@@ -21,7 +23,9 @@ String _statusLabel(String status) => switch (status) {
       'unused' => 'Unused',
       'used' => 'Used',
       'expired' => 'Expired',
+      'expired_refund' => 'Expired Refund',
       'refunded' => 'Refunded',
+      'gifted' => 'Gifted',
       'voided' => 'Cancelled',
       _ => status.toUpperCase(),
     };
@@ -42,18 +46,19 @@ class CouponCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 作废 / 过期优先展示
-    final displayExpired = coupon.isExpired && !coupon.isVoided;
-    final color = coupon.isVoided
-        ? _statusColor('voided')
-        : displayExpired
-            ? _statusColor('expired')
-            : _statusColor(coupon.status);
-    final label = coupon.isVoided
-        ? 'Cancelled'
-        : displayExpired
-            ? 'Expired'
-            : _statusLabel(coupon.status);
+    // 状态判断：gifted > voided > 过期(全部自动退款=Expired Return) > 原始状态
+    final String displayStatus;
+    if (coupon.isVoided && coupon.voidReason == 'gifted') {
+      displayStatus = 'gifted';
+    } else if (coupon.isVoided) {
+      displayStatus = 'voided';
+    } else if (coupon.isExpired) {
+      displayStatus = 'expired_refund';
+    } else {
+      displayStatus = coupon.status;
+    }
+    final color = _statusColor(displayStatus);
+    final label = _statusLabel(displayStatus);
 
     return Card(
       margin: EdgeInsets.zero,

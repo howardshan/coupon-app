@@ -14,7 +14,8 @@ const _couponSelect =
     'order_item_id, coupon_code, '
     'deals(id, title, description, image_urls, refund_policy, '
     'merchants(name, logo_url, address, phone)), '
-    'order_items!order_items_coupon_id_fkey(applicable_store_ids)';
+    'order_items!order_items_coupon_id_fkey('
+    'applicable_store_ids, unit_price, refunded_at, refund_amount, refund_method)';
 
 class CouponsRepository {
   final SupabaseClient _client;

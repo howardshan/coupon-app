@@ -17,14 +17,22 @@ class ProfileScreen extends ConsumerWidget {
     return Scaffold(
       backgroundColor: AppColors.background,
       body: userAsync.when(
-        data: (user) => _ProfileBody(
-          name: user?.fullName ?? 'User',
-          email: user?.email ?? '',
-          avatarUrl: user?.avatarUrl,
-          phone: user?.phone,
-          showMerchantDashboard: user?.role == 'merchant',
-          onSignOut: () => ref.read(authNotifierProvider.notifier).signOut(),
-        ),
+        data: (user) {
+          // 未登录 → 显示登录/注册入口
+          if (user == null) {
+            return _GuestProfileBody(
+              onLogin: () => context.push('/auth/login'),
+            );
+          }
+          return _ProfileBody(
+            name: user.fullName ?? 'User',
+            email: user.email,
+            avatarUrl: user.avatarUrl,
+            phone: user.phone,
+            showMerchantDashboard: user.role == 'merchant',
+            onSignOut: () => ref.read(authNotifierProvider.notifier).signOut(),
+          );
+        },
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Error: $e')),
       ),
@@ -302,40 +310,6 @@ class _ProfileBody extends StatelessWidget {
                   onTap: () => context.push('/profile/billing-address'),
                 ),
               ],
-            ),
-          ),
-
-          const SizedBox(height: 12),
-
-          // ── Email Notifications 入口 ──────────────────────────
-          _SectionCard(
-            child: ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceVariant,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(
-                  Icons.mail_outline,
-                  color: AppColors.textSecondary,
-                  size: 20,
-                ),
-              ),
-              title: const Text(
-                'Email Notifications',
-                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-              ),
-              subtitle: const Text(
-                'Manage email preferences',
-                style: TextStyle(fontSize: 12, color: AppColors.textHint),
-              ),
-              trailing: const Icon(
-                Icons.chevron_right,
-                color: AppColors.textHint,
-              ),
-              onTap: () => context.push('/profile/email-notifications'),
             ),
           ),
 
@@ -624,6 +598,80 @@ class _IconGridItem extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// 未登录时的 Profile 页面 — 显示登录/注册入口
+class _GuestProfileBody extends StatelessWidget {
+  final VoidCallback onLogin;
+
+  const _GuestProfileBody({required this.onLogin});
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 88,
+                height: 88,
+                decoration: const BoxDecoration(
+                  color: AppColors.surfaceVariant,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.person_outline,
+                  size: 40,
+                  color: AppColors.textHint,
+                ),
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                'Welcome to DealJoy',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Sign in to manage orders, save deals,\nand access your coupons.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: AppColors.textSecondary,
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 32),
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: FilledButton(
+                  onPressed: onLogin,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    shape: const StadiumBorder(),
+                  ),
+                  child: const Text(
+                    'Sign In / Register',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
