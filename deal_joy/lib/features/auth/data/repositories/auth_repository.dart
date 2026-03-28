@@ -52,6 +52,26 @@ class AuthRepository {
     }
   }
 
+  // ---- 检查用户名是否已被占用 ----
+  Future<bool> isUsernameTaken(String username) async {
+    final result = await _client
+        .from('users')
+        .select('id')
+        .eq('username', username)
+        .maybeSingle();
+    return result != null;
+  }
+
+  // ---- 检查邮箱是否已被注册 ----
+  Future<bool> isEmailTaken(String email) async {
+    final result = await _client
+        .from('users')
+        .select('id')
+        .eq('email', email)
+        .maybeSingle();
+    return result != null;
+  }
+
   // ---- 邮箱注册 ----
   Future<UserModel> signUpWithEmail({
     required String email,
@@ -70,6 +90,13 @@ class AuthRepository {
       );
       if (response.user == null) {
         throw const AppAuthException('Sign up failed');
+      }
+      // Supabase 对已存在邮箱返回 fake 用户，identities 为空
+      final identities = response.user!.identities;
+      if (identities == null || identities.isEmpty) {
+        throw const AppAuthException(
+          'This email is already registered. Please sign in instead.',
+        );
       }
       return _fetchUserProfile(response.user!.id);
     } on sb.AuthException catch (e) {

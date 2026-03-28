@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -32,6 +33,16 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   // 服务条款是否勾选
   bool _tosAccepted = false;
 
+  // 邮箱查重状态: null=未检查, true=已占用, false=可用
+  bool? _emailTaken;
+  bool _emailChecking = false;
+  Timer? _emailDebounce;
+
+  // Username 查重状态: null=未检查, true=已占用, false=可用
+  bool? _usernameTaken;
+  bool _usernameChecking = false;
+  Timer? _usernameDebounce;
+
   // 邮箱正则：标准 RFC-5322 简化版
   static final _emailRegex = RegExp(
     r'^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$',
@@ -55,10 +66,69 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
         _confirmPasswordValue = _confirmPasswordCtrl.text;
       });
     });
+    // 监听邮箱变化，防抖查重
+    _emailCtrl.addListener(_onEmailChanged);
+    // 监听用户名变化，防抖查重
+    _usernameCtrl.addListener(_onUsernameChanged);
+  }
+
+  // 邮箱输入变化时，防抖 500ms 后查询是否已被注册
+  void _onEmailChanged() {
+    _emailDebounce?.cancel();
+    final trimmed = _emailCtrl.text.trim();
+    if (!_emailRegex.hasMatch(trimmed)) {
+      setState(() {
+        _emailTaken = null;
+        _emailChecking = false;
+      });
+      return;
+    }
+    setState(() => _emailChecking = true);
+    _emailDebounce = Timer(const Duration(milliseconds: 500), () async {
+      final taken = await ref
+          .read(authRepositoryProvider)
+          .isEmailTaken(trimmed);
+      if (mounted && _emailCtrl.text.trim() == trimmed) {
+        setState(() {
+          _emailTaken = taken;
+          _emailChecking = false;
+        });
+      }
+    });
+  }
+
+  // 用户名输入变化时，防抖 500ms 后查询是否已被占用
+  void _onUsernameChanged() {
+    _usernameDebounce?.cancel();
+    final trimmed = _usernameCtrl.text.trim();
+    // 不满足基本格式要求时重置状态
+    if (trimmed.length < 2 || !_usernameRegex.hasMatch(trimmed)) {
+      setState(() {
+        _usernameTaken = null;
+        _usernameChecking = false;
+      });
+      return;
+    }
+    setState(() => _usernameChecking = true);
+    _usernameDebounce = Timer(const Duration(milliseconds: 500), () async {
+      final taken = await ref
+          .read(authRepositoryProvider)
+          .isUsernameTaken(trimmed);
+      if (mounted && _usernameCtrl.text.trim() == trimmed) {
+        setState(() {
+          _usernameTaken = taken;
+          _usernameChecking = false;
+        });
+      }
+    });
   }
 
   @override
   void dispose() {
+    _emailDebounce?.cancel();
+    _emailCtrl.removeListener(_onEmailChanged);
+    _usernameDebounce?.cancel();
+    _usernameCtrl.removeListener(_onUsernameChanged);
     _usernameCtrl.dispose();
     _fullNameCtrl.dispose();
     _emailCtrl.dispose();
@@ -70,7 +140,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   // 注册按钮是否可用：表单合法 + 服务条款已勾选
   bool get _canSubmit => _tosAccepted;
 
-  // 密码策略校验：最少 8 字符、含大写、小写、数字
+  // 密码策略校验：最少 8 字符、含大写、小写、数字、符号
   String? _validatePassword(String? v) {
     if (v == null || v.isEmpty) return 'Password is required';
     if (v.length < 8) return 'At least 8 characters required';
@@ -82,6 +152,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     }
     if (!RegExp(r'[0-9]').hasMatch(v)) {
       return 'Must contain at least one digit';
+    }
+    if (!RegExp(r'[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\\/~`]').hasMatch(v)) {
+      return 'Must contain at least one special character (!@#\$%...)';
     }
     return null;
   }
@@ -96,6 +169,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     if (!_tosAccepted) return;
+    if (_usernameTaken == true || _usernameChecking) return;
+    if (_emailTaken == true || _emailChecking) return;
 
     await ref.read(authNotifierProvider.notifier).signUp(
           _emailCtrl.text.trim(),
@@ -104,15 +179,20 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
           username: _usernameCtrl.text.trim(),
         );
 
-    // signUp 成功后：登出 session，跳转到 OTP 验证码页面
     if (mounted) {
       final state = ref.read(authNotifierProvider);
-      if (!state.hasError) {
-        // 立即登出，防止未验证邮箱就自动登录
+      if (state.hasError) {
+        // 邮箱已注册错误 → 设置状态并刷新表单
+        final errMsg = state.error.toString();
+        if (errMsg.contains('already registered')) {
+          setState(() => _emailTaken = true);
+          _formKey.currentState!.validate();
+        }
+      } else {
+        // signUp 成功：登出 session，跳转到 OTP 验证码页面
         await ref.read(authNotifierProvider.notifier).signOut();
 
         if (mounted) {
-          // 跳转到验证码输入页
           context.pushReplacement(
             '/auth/verify-otp?email=${Uri.encodeComponent(_emailCtrl.text.trim())}',
           );
@@ -126,12 +206,15 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     final authState = ref.watch(authNotifierProvider);
     final isLoading = authState is AsyncLoading;
 
-    // 监听 auth 状态，错误时弹出 SnackBar
+    // 监听 auth 状态，非邮箱重复的错误用 SnackBar 提示
     ref.listen(authNotifierProvider, (_, next) {
       if (next is AsyncError) {
+        final errMsg = next.error.toString();
+        // 邮箱重复错误已在 email 字段下方显示，不再弹 SnackBar
+        if (errMsg.contains('already registered')) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(next.error.toString()),
+            content: Text(errMsg),
             backgroundColor: AppColors.error,
           ),
         );
@@ -149,6 +232,10 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
         elevation: 0,
         backgroundColor: Colors.transparent,
         foregroundColor: AppColors.textPrimary,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded),
+          onPressed: () => context.go('/auth/login'),
+        ),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -196,9 +283,68 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                     if (!_usernameRegex.hasMatch(trimmed)) {
                       return 'Only letters and numbers allowed';
                     }
+                    if (_usernameTaken == true) {
+                      return 'This username is already taken';
+                    }
                     return null;
                   },
                 ),
+                // 用户名查重实时状态提示
+                if (_usernameChecking)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 6, left: 4),
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 12,
+                          height: 12,
+                          child: CircularProgressIndicator(strokeWidth: 1.5),
+                        ),
+                        SizedBox(width: 6),
+                        Text(
+                          'Checking availability...',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                else if (_usernameTaken == false)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 6, left: 4),
+                    child: Row(
+                      children: [
+                        Icon(Icons.check_circle, size: 14, color: AppColors.success),
+                        SizedBox(width: 4),
+                        Text(
+                          'Username is available',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.success,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                else if (_usernameTaken == true)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 6, left: 4),
+                    child: Row(
+                      children: [
+                        Icon(Icons.cancel, size: 14, color: AppColors.error),
+                        SizedBox(width: 4),
+                        Text(
+                          'This username is already taken',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.error,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 const SizedBox(height: 16),
 
                 // ---- Full Name 字段 ----
@@ -232,9 +378,68 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                     if (!_emailRegex.hasMatch(v.trim())) {
                       return 'Enter a valid email address';
                     }
+                    if (_emailTaken == true) {
+                      return 'This email is already registered';
+                    }
                     return null;
                   },
                 ),
+                // 邮箱查重实时状态提示
+                if (_emailChecking)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 6, left: 4),
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 12,
+                          height: 12,
+                          child: CircularProgressIndicator(strokeWidth: 1.5),
+                        ),
+                        SizedBox(width: 6),
+                        Text(
+                          'Checking availability...',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                else if (_emailTaken == false)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 6, left: 4),
+                    child: Row(
+                      children: [
+                        Icon(Icons.check_circle, size: 14, color: AppColors.success),
+                        SizedBox(width: 4),
+                        Text(
+                          'Email is available',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.success,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                else if (_emailTaken == true)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 6, left: 4),
+                    child: Row(
+                      children: [
+                        Icon(Icons.cancel, size: 14, color: AppColors.error),
+                        SizedBox(width: 4),
+                        Text(
+                          'This email is already registered',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.error,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 const SizedBox(height: 16),
 
                 // ---- Password 字段 + 强度指示器 ----
@@ -366,7 +571,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                             fontWeight: FontWeight.w600,
                           ),
                           recognizer: TapGestureRecognizer()
-                            ..onTap = () => context.pop(),
+                            ..onTap = () => context.pushReplacement('/auth/login'),
                         ),
                       ],
                     ),

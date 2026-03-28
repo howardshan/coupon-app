@@ -16,6 +16,7 @@ class CountdownSkipButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: onSkip,
       child: AnimatedBuilder(
         animation: controller,
@@ -45,14 +46,29 @@ class CountdownSkipButton extends StatelessWidget {
                         const AlwaysStoppedAnimation<Color>(Colors.white),
                   ),
                 ),
-                // 剩余秒数文字
-                Text(
-                  '$remaining',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
+                // 剩余秒数 + Skip 文字
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '$remaining',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        height: 1.0,
+                      ),
+                    ),
+                    const Text(
+                      'Skip',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w500,
+                        height: 1.2,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),

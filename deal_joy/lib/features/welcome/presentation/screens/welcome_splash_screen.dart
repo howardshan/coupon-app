@@ -191,7 +191,7 @@ class _WelcomeSplashScreenState extends ConsumerState<WelcomeSplashScreen>
               child: CountdownSkipButton(
                 controller: _countdownController!,
                 durationSeconds: _config!.durationSeconds,
-                onSkip: _navigateNext,
+                onSkip: _advanceOrClose,
               ),
             ),
 

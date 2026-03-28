@@ -290,6 +290,18 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
               if (v.length < 8) {
                 return 'Password must be at least 8 characters';
               }
+              if (!RegExp(r'[A-Z]').hasMatch(v)) {
+                return 'Must contain at least one uppercase letter';
+              }
+              if (!RegExp(r'[a-z]').hasMatch(v)) {
+                return 'Must contain at least one lowercase letter';
+              }
+              if (!RegExp(r'[0-9]').hasMatch(v)) {
+                return 'Must contain at least one digit';
+              }
+              if (!RegExp(r'[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\\/~`]').hasMatch(v)) {
+                return 'Must contain at least one special character (!@#\$%...)';
+              }
               return null;
             },
           ),
