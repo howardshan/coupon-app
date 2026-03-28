@@ -63,9 +63,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final authState = ref.watch(authNotifierProvider);
     final isLoading = authState is AsyncLoading;
 
-    // 监听 auth 状态，出错时在密码框下方显示错误信息
+    // 监听 auth 状态：成功时跳转首页，出错时显示错误信息
     ref.listen(authNotifierProvider, (_, next) {
-      if (next is AsyncError) {
+      if (next is AsyncData && next.value != null) {
+        // 登录成功，跳转首页
+        context.go('/home');
+      } else if (next is AsyncError) {
         final err = next.error!;
         // 直接取 AppException.message，避免显示 "AppException:" 前缀
         final msg = err is AppException ? err.message : err.toString();
@@ -89,13 +92,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 Align(
                   alignment: Alignment.centerLeft,
                   child: TextButton.icon(
-                    onPressed: () {
-                      if (context.canPop()) {
-                        context.pop();
-                      } else {
-                        context.go('/home');
-                      }
-                    },
+                    onPressed: () => context.go('/home'),
                     icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 16),
                     label: const Text('Browse as Guest'),
                     style: TextButton.styleFrom(
@@ -327,7 +324,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ),
                     TextButton(
                       key: const ValueKey('login_signup_btn'),
-                      onPressed: () => context.push('/auth/register'),
+                      onPressed: () => context.pushReplacement('/auth/register'),
                       style: TextButton.styleFrom(
                         foregroundColor: AppColors.primary,
                         padding: EdgeInsets.zero,

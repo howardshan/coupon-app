@@ -26,6 +26,7 @@ class ProfileScreen extends ConsumerWidget {
           }
           return _ProfileBody(
             name: user.fullName ?? 'User',
+            username: user.username,
             email: user.email,
             avatarUrl: user.avatarUrl,
             phone: user.phone,
@@ -42,6 +43,7 @@ class ProfileScreen extends ConsumerWidget {
 
 class _ProfileBody extends StatelessWidget {
   final String name;
+  final String? username;
   final String email;
   final String? avatarUrl;
   final String? phone;
@@ -50,6 +52,7 @@ class _ProfileBody extends StatelessWidget {
 
   const _ProfileBody({
     required this.name,
+    this.username,
     required this.email,
     this.avatarUrl,
     this.phone,
@@ -133,6 +136,14 @@ class _ProfileBody extends StatelessWidget {
                                 color: AppColors.textPrimary,
                               ),
                             ),
+                            if (username != null && username!.isNotEmpty)
+                              Text(
+                                '@$username',
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
                             Row(
                               children: [
                                 const Text(

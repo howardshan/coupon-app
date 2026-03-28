@@ -143,6 +143,10 @@ class _VerifyOtpScreenState extends ConsumerState<VerifyOtpScreen> {
         elevation: 0,
         backgroundColor: Colors.transparent,
         foregroundColor: AppColors.textPrimary,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded),
+          onPressed: () => context.go('/auth/login'),
+        ),
       ),
       body: SafeArea(
         child: SingleChildScrollView(

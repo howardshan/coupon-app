@@ -4,7 +4,7 @@ import '../../../../core/theme/app_colors.dart';
 /// 密码强度等级
 enum PasswordStrength { none, weak, medium, strong }
 
-/// 计算密码强度
+/// 计算密码强度（需要大写、小写、数字、符号才能达到 strong）
 PasswordStrength calculatePasswordStrength(String password) {
   if (password.isEmpty) return PasswordStrength.none;
   if (password.length < 8) return PasswordStrength.weak;
@@ -15,10 +15,10 @@ PasswordStrength calculatePasswordStrength(String password) {
   if (RegExp(r'[a-z]').hasMatch(password)) score++;
   if (RegExp(r'[A-Z]').hasMatch(password)) score++;
   if (RegExp(r'[0-9]').hasMatch(password)) score++;
-  if (RegExp(r'[!@#$%^&*(),.?":{}|<>]').hasMatch(password)) score++;
+  if (RegExp(r'[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\\/~`]').hasMatch(password)) score++;
 
-  if (score <= 2) return PasswordStrength.weak;
-  if (score <= 4) return PasswordStrength.medium;
+  if (score <= 3) return PasswordStrength.weak;
+  if (score <= 5) return PasswordStrength.medium;
   return PasswordStrength.strong;
 }
 
