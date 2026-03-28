@@ -8,6 +8,7 @@ import '../../../../shared/widgets/app_button.dart';
 import '../../../auth/domain/providers/auth_provider.dart';
 import '../../../deals/domain/providers/deals_provider.dart';
 import '../../data/models/review_hashtag_model.dart';
+import '../../../orders/presentation/screens/to_review_screen.dart' show toReviewProvider;
 
 // 评价页面 — 支持新建和编辑模式
 class WriteReviewScreen extends ConsumerStatefulWidget {
@@ -177,9 +178,10 @@ class _WriteReviewScreenState extends ConsumerState<WriteReviewScreen> {
       }
 
       if (mounted) {
-        // 刷新相关 provider 缓存
+        // 刷新相关 provider 缓存（含待评价列表）
         ref.invalidate(dealReviewsProvider(widget.dealId));
         ref.invalidate(dealDetailProvider(widget.dealId));
+        ref.invalidate(toReviewProvider);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(_isEditMode
@@ -192,12 +194,19 @@ class _WriteReviewScreenState extends ConsumerState<WriteReviewScreen> {
       }
     } catch (e) {
       if (mounted) {
+        // 23505 = 唯一键冲突，即已评价过该 deal
+        final isDuplicate = e.toString().contains('23505') ||
+            e.toString().contains('duplicate key');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: $e'),
+            content: Text(isDuplicate
+                ? 'You have already reviewed this deal.'
+                : 'Error: $e'),
             backgroundColor: AppColors.error,
           ),
         );
+        // 重复提交时也刷新待评价列表，让页面正确移除该条目
+        if (isDuplicate) ref.invalidate(toReviewProvider);
       }
     } finally {
       if (mounted) setState(() => _submitting = false);
