@@ -104,19 +104,19 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
           username: _usernameCtrl.text.trim(),
         );
 
-    // signUp 成功后（无错误）显示验证邮件提示
+    // signUp 成功后：登出 session，跳转到 OTP 验证码页面
     if (mounted) {
       final state = ref.read(authNotifierProvider);
       if (!state.hasError) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Verification email sent! Please check your inbox.',
-            ),
-            backgroundColor: AppColors.success,
-            duration: Duration(seconds: 4),
-          ),
-        );
+        // 立即登出，防止未验证邮箱就自动登录
+        await ref.read(authNotifierProvider.notifier).signOut();
+
+        if (mounted) {
+          // 跳转到验证码输入页
+          context.pushReplacement(
+            '/auth/verify-otp?email=${Uri.encodeComponent(_emailCtrl.text.trim())}',
+          );
+        }
       }
     }
   }

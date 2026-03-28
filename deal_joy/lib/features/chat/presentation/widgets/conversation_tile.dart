@@ -64,7 +64,13 @@ class ConversationTile extends StatelessWidget {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      // 置顶图标
+                      if (conversation.isPinned)
+                        const Padding(
+                          padding: EdgeInsets.only(right: 4),
+                          child: Icon(Icons.push_pin, size: 12, color: AppColors.primary),
+                        ),
+                      const SizedBox(width: 4),
                       // 时间
                       Text(
                         _formatTime(conversation.lastMessageAt ?? conversation.updatedAt),

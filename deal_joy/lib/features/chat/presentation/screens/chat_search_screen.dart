@@ -9,6 +9,7 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../auth/domain/providers/auth_provider.dart';
+import '../../domain/providers/chat_provider.dart';
 import '../../domain/providers/friend_provider.dart';
 
 class ChatSearchScreen extends ConsumerStatefulWidget {
@@ -215,6 +216,9 @@ class _ChatSearchScreenState extends ConsumerState<ChatSearchScreen> {
         'p_user_id': userId,
         'p_friend_id': friendUserId,
       }) as String;
+
+      // 刷新会话列表（让 provider 加载新会话的 otherUserName）
+      await ref.read(conversationsProvider.notifier).refresh();
 
       if (mounted) context.push('/chat/$newConvId');
     } catch (e) {
