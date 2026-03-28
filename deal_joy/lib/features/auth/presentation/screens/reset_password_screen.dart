@@ -92,7 +92,7 @@ class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
     // 失败时由 ref.listen 显示 SnackBar
   }
 
-  // 密码规则校验：最少 8 位，包含大写、小写、数字
+  // 密码规则校验：最少 8 位，包含大写、小写、数字、符号
   String? _validatePassword(String? value) {
     if (value == null || value.isEmpty) return 'Password is required';
     if (value.length < 8) return 'At least 8 characters required';
@@ -104,6 +104,9 @@ class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
     }
     if (!RegExp(r'[0-9]').hasMatch(value)) {
       return 'Must contain a digit';
+    }
+    if (!RegExp(r'[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\\/~`]').hasMatch(value)) {
+      return 'Must contain a special character (!@#\$%...)';
     }
     return null;
   }

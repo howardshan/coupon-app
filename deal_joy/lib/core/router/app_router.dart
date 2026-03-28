@@ -58,18 +58,17 @@ import '../widgets/splash_screen.dart';
 /// GoRouter calls redirect() whenever this notifier fires.
 class _AuthChangeNotifier extends ChangeNotifier {
   late final ProviderSubscription _sub;
-  late final ProviderSubscription _userSub;
 
   _AuthChangeNotifier(Ref ref) {
     _sub = ref.listen(authStateProvider, (_, _) => notifyListeners());
-    // 监听用户 profile 变化（手机号填写后触发路由重检查）
-    _userSub = ref.listen(currentUserProvider, (_, _) => notifyListeners());
+    // 注意：不再监听 currentUserProvider，因为 redirect 只依赖 authStateProvider。
+    // currentUserProvider 是 FutureProvider，频繁触发会导致 GoRouter 在导航动画中
+    // 重建路由栈，产生 Navigator key reservation 冲突。
   }
 
   @override
   void dispose() {
     _sub.close();
-    _userSub.close();
     super.dispose();
   }
 }

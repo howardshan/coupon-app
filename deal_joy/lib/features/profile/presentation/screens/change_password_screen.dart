@@ -120,7 +120,7 @@ class _ChangePasswordScreenState extends ConsumerState<ChangePasswordScreen> {
     }
   }
 
-  /// 验证密码策略：最少 8 字符、含大写、小写、数字
+  /// 验证密码策略：最少 8 字符、含大写、小写、数字、符号
   String? _validateNewPassword(String? value) {
     if (value == null || value.isEmpty) {
       return 'Please enter a new password';
@@ -136,6 +136,9 @@ class _ChangePasswordScreenState extends ConsumerState<ChangePasswordScreen> {
     }
     if (!RegExp(r'[0-9]').hasMatch(value)) {
       return 'Password must contain at least one number';
+    }
+    if (!RegExp(r'[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\\/~`]').hasMatch(value)) {
+      return 'Password must contain at least one special character (!@#\$%...)';
     }
     return null;
   }

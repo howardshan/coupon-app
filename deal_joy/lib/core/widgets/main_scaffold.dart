@@ -21,18 +21,8 @@ class MainScaffold extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final location = GoRouterState.of(context).matchedLocation;
     final currentIndex = _locationToIndex(location);
-    final isVerified = ref.watch(isEmailVerifiedProvider);
-    // 未登录时不显示验证横幅
-    final isLoggedIn = ref.watch(authStateProvider).valueOrNull?.session != null;
-
     return Scaffold(
-      body: Column(
-        children: [
-          // 邮箱未验证横幅（仅登录用户且未验证时显示）
-          if (isLoggedIn && !isVerified) _EmailVerificationBanner(ref: ref),
-          Expanded(child: child),
-        ],
-      ),
+      body: child,
       bottomNavigationBar: NavigationBar(
         height: 60,
         selectedIndex: currentIndex,
