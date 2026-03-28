@@ -124,6 +124,14 @@ merchant_photos, merchant_hours, merchant_documents, deal_images
 以下文件的图片画廊滑动相关逻辑**禁止修改**，除非用户明确命令要求：
 - `deal_joy/lib/features/deals/presentation/screens/deal_detail_screen.dart` — `_ImageGallery` widget、`SliverToBoxAdapter` 图片画廊布局结构（图片画廊必须在 `SliverToBoxAdapter` 中，不能放回 `SliverAppBar`/`FlexibleSpaceBar` 内，否则 `PageView` 水平滑动会被拦截）
 
+### 客户端认证页面（登录、注册、验证）
+以下文件**禁止修改**，除非用户明确命令要求：
+- `deal_joy/lib/features/auth/presentation/screens/login_screen.dart`
+- `deal_joy/lib/features/auth/presentation/screens/register_screen.dart`
+- `deal_joy/lib/features/auth/presentation/screens/verify_otp_screen.dart`
+- `deal_joy/lib/features/auth/presentation/screens/welcome_screen.dart`
+- `deal_joy/lib/features/auth/data/repositories/auth_repository.dart` — signUp/signIn/isUsernameTaken/isEmailTaken 逻辑
+
 ## 开发命令
 ```bash
 # Flutter

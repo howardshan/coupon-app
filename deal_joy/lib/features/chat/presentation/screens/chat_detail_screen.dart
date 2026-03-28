@@ -33,6 +33,9 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
   /// 是否正在加载更多历史消息（防止重复触发）
   bool _isLoadingMore = false;
 
+  /// 兜底用户名（当 conversationsProvider 中找不到时使用）
+  String? _fallbackName;
+
   @override
   void initState() {
     super.initState();
@@ -42,6 +45,7 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initRealtime();
       _markAsRead();
+      _loadFallbackName();
     });
   }
 
@@ -94,6 +98,19 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
   // 标记已读
   // ============================================================
 
+  /// 兜底加载对方用户名（当 conversationsProvider 中找不到时）
+  Future<void> _loadFallbackName() async {
+    final currentUserId = _getCurrentUserId();
+    if (currentUserId == null) return;
+    final name = await ref.read(chatRepositoryProvider).fetchOtherUserName(
+          widget.conversationId,
+          currentUserId,
+        );
+    if (mounted && name != null) {
+      setState(() => _fallbackName = name);
+    }
+  }
+
   Future<void> _markAsRead() async {
     final currentUserId = _getCurrentUserId();
     if (currentUserId == null) return;
@@ -102,6 +119,9 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
             widget.conversationId,
             currentUserId,
           );
+      // 刷新会话列表，更新未读计数
+      ref.invalidate(conversationsProvider);
+      ref.invalidate(totalUnreadCountProvider);
     } catch (_) {
       // 标记已读失败不影响用户体验，静默处理
     }
@@ -322,8 +342,11 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
         ?.where((c) => c.id == widget.conversationId)
         .firstOrNull;
 
-    // 会话标题：direct 用对方名字，group 用群名，support 固定
-    final title = conversation?.displayName ?? 'Chat';
+    // 会话标题：优先用 provider 中的名字，fallback 到直接查询的名字
+    final providerName = conversation?.displayName;
+    final title = (providerName != null && providerName != 'Unknown')
+        ? providerName
+        : (_fallbackName ?? 'Chat');
     final isGroupChat = conversation?.type == 'group';
 
     // 监听消息列表
