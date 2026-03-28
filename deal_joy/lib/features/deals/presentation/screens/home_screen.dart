@@ -11,6 +11,7 @@ import '../../domain/providers/deals_provider.dart';
 import '../../domain/providers/recommendation_provider.dart';
 import '../../../merchant/data/models/merchant_model.dart';
 import '../../../merchant/domain/providers/merchant_provider.dart';
+import '../../../welcome/presentation/widgets/home_banner.dart';
 
 // ── Location data (mirrors web app) ──────────────────────────
 const _locationData = {
@@ -341,8 +342,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     ),
                 ],
 
-                // ── 正常模式：分类 + Featured + Deals ──
+                // ── 正常模式：Banner + 分类 + Featured + Deals ──
                 if (!isSearching) ...[
+                  // 首页 Banner 轮播
+                  const SliverToBoxAdapter(child: HomeBanner()),
+
                   // GPS 权限被拒提示条（仅 Near Me 模式下显示）
                   if (ref.watch(isNearMeProvider) &&
                       ref.watch(locationPermissionDeniedProvider))

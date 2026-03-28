@@ -26,6 +26,14 @@ const adminNav: NavEntry[] = [
   { kind: 'link', href: '/support', label: 'Support', icon: '💬' },
   { kind: 'link', href: '/tax-rates', label: 'Tax Rates', icon: '🧾' },
   {
+    kind: 'group', label: 'Content', icon: '🎨',
+    children: [
+      { href: '/settings/splash', label: 'Splash Screen' },
+      { href: '/settings/onboarding', label: 'Onboarding' },
+      { href: '/settings/banner', label: 'Homepage Banner' },
+    ],
+  },
+  {
     kind: 'group', label: 'Settings', icon: '⚙️',
     children: [
       { href: '/settings/email-types', label: 'Email Types' },
@@ -40,12 +48,8 @@ const merchantNav: NavLink[] = [
   { kind: 'link', href: '/deals', label: 'My Deals', icon: '🏷️' },
 ]
 
-function isOnEmailRoute(pathname: string) {
-  return (
-    pathname.startsWith('/settings/email-types') ||
-    pathname.startsWith('/settings/email-logs') ||
-    pathname.startsWith('/settings/algorithm')
-  )
+function isGroupActive(children: { href: string }[], pathname: string) {
+  return children.some(c => pathname === c.href || pathname.startsWith(`${c.href}/`))
 }
 
 export default function Sidebar({ role, email }: SidebarProps) {
@@ -53,12 +57,29 @@ export default function Sidebar({ role, email }: SidebarProps) {
   const router = useRouter()
   const nav = role === 'admin' ? adminNav : null
 
-  const onEmailRoute = isOnEmailRoute(pathname)
-  const [emailGroupOpen, setEmailGroupOpen] = useState(onEmailRoute)
+  // 追踪哪些 group 是展开的（按 label 索引）
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
+    // 初始化：当前路径所属的 group 自动展开
+    const init: Record<string, boolean> = {}
+    if (nav) {
+      for (const entry of nav) {
+        if (entry.kind === 'group' && isGroupActive(entry.children, pathname)) {
+          init[entry.label] = true
+        }
+      }
+    }
+    return init
+  })
 
   useEffect(() => {
-    if (onEmailRoute) setEmailGroupOpen(true)
-  }, [onEmailRoute])
+    // 路径变化时自动展开对应 group
+    if (!nav) return
+    for (const entry of nav) {
+      if (entry.kind === 'group' && isGroupActive(entry.children, pathname)) {
+        setOpenGroups(prev => ({ ...prev, [entry.label]: true }))
+      }
+    }
+  }, [pathname])
 
   async function handleSignOut() {
     const supabase = createClient()
@@ -66,8 +87,6 @@ export default function Sidebar({ role, email }: SidebarProps) {
     router.push('/login')
     router.refresh()
   }
-
-  const showEmailChildren = onEmailRoute || emailGroupOpen
 
   return (
     <aside className="w-56 min-h-screen bg-gray-900 text-white flex flex-col">
@@ -97,27 +116,26 @@ export default function Sidebar({ role, email }: SidebarProps) {
                 )
               }
 
-              // Email 分组
-              const groupActive = entry.children.some(
-                c => pathname === c.href || pathname.startsWith(`${c.href}/`)
-              )
+              // 可折叠分组
+              const groupActive = isGroupActive(entry.children, pathname)
+              const isOpen = groupActive || !!openGroups[entry.label]
               return (
                 <div key={entry.label} className="space-y-0.5">
                   <button
                     type="button"
-                    onClick={() => setEmailGroupOpen(o => !o)}
+                    onClick={() => setOpenGroups(prev => ({ ...prev, [entry.label]: !prev[entry.label] }))}
                     className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors w-full text-left ${
                       groupActive
                         ? 'bg-gray-800 text-white'
                         : 'text-gray-300 hover:bg-gray-800 hover:text-white'
                     }`}
-                    aria-expanded={showEmailChildren}
+                    aria-expanded={isOpen}
                   >
                     <span>{entry.icon}</span>
                     <span className="flex-1">{entry.label}</span>
-                    <span className="text-xs text-gray-500">{showEmailChildren ? '▾' : '▸'}</span>
+                    <span className="text-xs text-gray-500">{isOpen ? '▾' : '▸'}</span>
                   </button>
-                  {showEmailChildren && (
+                  {isOpen && (
                     <div className="ml-4 pl-3 border-l border-gray-700 space-y-0.5">
                       {entry.children.map(child => {
                         const childActive =
