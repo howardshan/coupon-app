@@ -386,16 +386,15 @@ class _SwipeableConversationTileState
                 if (delta < -5 && !_isOpen) _toggle();
                 if (delta > 5 && _isOpen) _toggle();
               },
-              onTap: () {
-                if (_isOpen) {
-                  _close();
-                } else {
-                  widget.onTap();
-                }
-              },
               child: ConversationTile(
                 conversation: widget.conversation,
-                onTap: () {}, // 由外层 GestureDetector 处理
+                onTap: () {
+                  if (_isOpen) {
+                    _close();
+                  } else {
+                    widget.onTap();
+                  }
+                },
               ),
             ),
           ),
