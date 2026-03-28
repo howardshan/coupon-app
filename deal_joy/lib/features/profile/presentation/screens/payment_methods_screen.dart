@@ -306,17 +306,35 @@ class _CardTile extends ConsumerWidget {
 }
 
 // ── 添加新卡按钮 ──────────────────────────────────────────────────────────────
-class _AddCardButton extends ConsumerWidget {
+class _AddCardButton extends ConsumerStatefulWidget {
   const _AddCardButton();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_AddCardButton> createState() => _AddCardButtonState();
+}
+
+class _AddCardButtonState extends ConsumerState<_AddCardButton> {
+  // 正在调用 Stripe 时为 true，防止重复点击
+  bool _isLoading = false;
+
+  @override
+  Widget build(BuildContext context) {
     return ElevatedButton.icon(
-      onPressed: () => _addNewCard(context, ref),
-      icon: const Icon(Icons.add, size: 18),
-      label: const Text('Add New Card'),
+      // 加载中时传 null 禁用按钮，避免重复触发 Stripe 弹窗
+      onPressed: _isLoading ? null : _addNewCard,
+      icon: _isLoading
+          ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+              ),
+            )
+          : const Icon(Icons.add, size: 18),
+      label: Text(_isLoading ? 'Connecting...' : 'Add New Card'),
       style: ElevatedButton.styleFrom(
-        backgroundColor: AppColors.primary,
+        backgroundColor: _isLoading ? AppColors.primary.withValues(alpha: 0.6) : AppColors.primary,
         foregroundColor: Colors.white,
         padding: const EdgeInsets.symmetric(vertical: 14),
         minimumSize: const Size(double.infinity, 0),
@@ -327,7 +345,9 @@ class _AddCardButton extends ConsumerWidget {
   }
 
   /// 通过 Stripe SetupSheet 添加新卡
-  Future<void> _addNewCard(BuildContext context, WidgetRef ref) async {
+  Future<void> _addNewCard() async {
+    if (_isLoading) return; // 双重保险，防止并发
+    setState(() => _isLoading = true);
     try {
       // 调用后端创建 SetupIntent，获取 clientSecret / customerId / ephemeralKey
       final setupData = await ref
@@ -358,6 +378,9 @@ class _AddCardButton extends ConsumerWidget {
         ),
       );
 
+      // Stripe 弹窗出现前恢复按钮，避免弹窗期间按钮一直灰显
+      if (mounted) setState(() => _isLoading = false);
+
       // 弹出卡片录入表单
       await Stripe.instance.presentPaymentSheet();
 
@@ -386,6 +409,8 @@ class _AddCardButton extends ConsumerWidget {
           SnackBar(content: Text('Failed to add card: $e')),
         );
       }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 }
