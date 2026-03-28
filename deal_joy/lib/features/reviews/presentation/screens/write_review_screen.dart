@@ -146,8 +146,9 @@ class _WriteReviewScreenState extends ConsumerState<WriteReviewScreen> {
       final client = ref.read(supabaseClientProvider);
       final payload = {
         'deal_id': widget.dealId,
-        'merchant_id': widget.merchantId,
-        'order_item_id': widget.orderItemId,
+        // 空文字は UUID として無効のため null にする（DB が空文字を拒否するため）
+        if (widget.merchantId.isNotEmpty) 'merchant_id': widget.merchantId,
+        if (widget.orderItemId.isNotEmpty) 'order_item_id': widget.orderItemId,
         'user_id': user.id,
         'reviewer_user_id': user.id,
         // 兼容旧字段
