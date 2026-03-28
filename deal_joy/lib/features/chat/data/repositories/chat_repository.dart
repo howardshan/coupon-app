@@ -2,6 +2,7 @@
 // 直接查询 Supabase 表（conversations / conversation_members / messages）
 // 不走 Edge Function
 
+import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/errors/app_exception.dart';
@@ -99,12 +100,12 @@ class ChatRepository {
           otherUserIds.add(row['user_id'] as String);
         }
 
-        // 批量查询对方用户信息
+        // 批量查询对方用户信息（full_name 为空时 fallback 到 username）
         final userInfoMap = <String, Map<String, dynamic>>{};
         if (otherUserIds.isNotEmpty) {
           final userRows = await _client
               .from('users')
-              .select('id, full_name, avatar_url')
+              .select('id, full_name, username, avatar_url')
               .inFilter('id', otherUserIds.toList());
           for (final u in userRows as List) {
             userInfoMap[u['id'] as String] = u as Map<String, dynamic>;
@@ -116,9 +117,13 @@ class ChatRepository {
           if (!otherUserMap.containsKey(cid)) {
             final uid = row['user_id'] as String;
             final userInfo = userInfoMap[uid];
+            // full_name 为空时 fallback 到 username
+            final displayName = (userInfo?['full_name'] as String?)?.isNotEmpty == true
+                ? userInfo!['full_name'] as String
+                : userInfo?['username'] as String?;
             otherUserMap[cid] = {
               'user_id': uid,
-              'full_name': userInfo?['full_name'] as String?,
+              'full_name': displayName,
               'avatar_url': userInfo?['avatar_url'] as String?,
             };
           }
@@ -169,10 +174,15 @@ class ChatRepository {
         return ConversationModel.fromJson(enrichedJson);
       }).toList();
     } on PostgrestException catch (e) {
+      debugPrint('[Chat] fetchConversations PostgrestException: ${e.message} code=${e.code}');
       throw AppException(
         'Failed to load conversations: ${e.message}',
         code: e.code,
       );
+    } catch (e, st) {
+      debugPrint('[Chat] fetchConversations error: $e');
+      debugPrint('[Chat] stackTrace: $st');
+      rethrow;
     }
   }
 
@@ -353,6 +363,38 @@ class ChatRepository {
         'Failed to send message: ${e.message}',
         code: e.code,
       );
+    }
+  }
+
+  // ================================================================
+  // 查询 direct 会话中对方用户名（用于 chat detail 兜底显示）
+  // ================================================================
+
+  Future<String?> fetchOtherUserName(String conversationId, String currentUserId) async {
+    try {
+      // 查对方 member
+      final rows = await _client
+          .from('conversation_members')
+          .select('user_id')
+          .eq('conversation_id', conversationId)
+          .neq('user_id', currentUserId)
+          .limit(1);
+      if ((rows as List).isEmpty) return null;
+      final otherUserId = rows[0]['user_id'] as String;
+
+      // 查对方用户信息
+      final userRow = await _client
+          .from('users')
+          .select('full_name, username')
+          .eq('id', otherUserId)
+          .maybeSingle();
+      if (userRow == null) return null;
+
+      final fullName = userRow['full_name'] as String?;
+      if (fullName != null && fullName.isNotEmpty) return fullName;
+      return userRow['username'] as String?;
+    } catch (_) {
+      return null;
     }
   }
 
