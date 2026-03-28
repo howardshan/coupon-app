@@ -51,6 +51,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   String _searchMode = 'store';
 
   @override
+  void initState() {
+    super.initState();
+    // 监听输入框内容变化，触发 rebuild 以更新小叉按钮的显示/隐藏
+    _searchCtrl.addListener(() => setState(() {}));
+    // 页面重建时将 Provider 中保存的搜索词同步回输入框，
+    // 避免导航离开再回来时搜索框显示为空但仍处于搜索模式的问题
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final currentQuery = ref.read(searchQueryProvider);
+      if (currentQuery.isNotEmpty && _searchCtrl.text != currentQuery) {
+        _searchCtrl.text = currentQuery;
+        _searchCtrl.selection = TextSelection.collapsed(
+          offset: currentQuery.length,
+        );
+      }
+    });
+  }
+
+  @override
   void dispose() {
     _searchCtrl.dispose();
     super.dispose();
