@@ -26,6 +26,14 @@ class AuthRepository {
       if (response.user == null) {
         throw const AppAuthException('Invalid email or password');
       }
+      // 邮箱未验证时：登出并提示用户去验证
+      if (response.user!.emailConfirmedAt == null) {
+        await _client.auth.signOut();
+        throw const AppAuthException(
+          'Please verify your email before signing in. Check your inbox for the verification link.',
+          code: 'email_not_confirmed',
+        );
+      }
       return _fetchUserProfile(response.user!.id);
     } on sb.AuthException catch (e) {
       // 区分"邮箱未验证"和"凭证错误"，其他统一为通用消息

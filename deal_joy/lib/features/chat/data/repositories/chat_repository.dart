@@ -26,10 +26,10 @@ class ChatRepository {
   ///   5. 计算每个会话未读数（messages.created_at > last_read_at 且 sender_id != 当前用户）
   Future<List<ConversationModel>> fetchConversations(String userId) async {
     try {
-      // 第一步：获取用户加入的会话 ID 和 last_read_at
+      // 第一步：获取用户加入的会话 ID、last_read_at 和置顶状态
       final memberRows = await _client
           .from('conversation_members')
-          .select('conversation_id, last_read_at')
+          .select('conversation_id, last_read_at, is_pinned')
           .eq('user_id', userId);
 
       final memberList = memberRows as List;
@@ -50,10 +50,12 @@ class ChatRepository {
 
       // 构建 last_read_at 映射：conversation_id -> DateTime?
       final lastReadMap = <String, DateTime?>{};
+      final pinnedMap = <String, bool>{};
       for (final r in memberRows) {
+        final cid = r['conversation_id'] as String;
         final raw = r['last_read_at'] as String?;
-        lastReadMap[r['conversation_id'] as String] =
-            raw != null ? DateTime.tryParse(raw) : null;
+        lastReadMap[cid] = raw != null ? DateTime.tryParse(raw) : null;
+        pinnedMap[cid] = r['is_pinned'] as bool? ?? false;
       }
 
       // 第三步：批量获取所有消息（用于最新消息预览 + 未读数计算）
@@ -162,6 +164,7 @@ class ChatRepository {
           enrichedJson['other_user_avatar_url'] = otherUser['avatar_url'];
         }
         enrichedJson['unread_count'] = unreadCountMap[cid] ?? 0;
+        enrichedJson['is_pinned'] = pinnedMap[cid] ?? false;
 
         return ConversationModel.fromJson(enrichedJson);
       }).toList();
@@ -567,6 +570,39 @@ class ChatRepository {
     } catch (e) {
       if (e is AppException) rethrow;
       throw AppException('Failed to send support message: $e');
+    }
+  }
+
+  // ================================================================
+  // 置顶 / 删除会话
+  // ================================================================
+
+  /// 切换会话置顶状态
+  Future<void> togglePin(String conversationId, String userId, bool pinned) async {
+    try {
+      await _client
+          .from('conversation_members')
+          .update({
+            'is_pinned': pinned,
+            'pinned_at': pinned ? DateTime.now().toUtc().toIso8601String() : null,
+          })
+          .eq('conversation_id', conversationId)
+          .eq('user_id', userId);
+    } on PostgrestException catch (e) {
+      throw AppException('Failed to update pin status: ${e.message}', code: e.code);
+    }
+  }
+
+  /// 删除会话（用户离开：设置 left_at，不删除数据）
+  Future<void> leaveConversation(String conversationId, String userId) async {
+    try {
+      await _client
+          .from('conversation_members')
+          .update({'left_at': DateTime.now().toUtc().toIso8601String()})
+          .eq('conversation_id', conversationId)
+          .eq('user_id', userId);
+    } on PostgrestException catch (e) {
+      throw AppException('Failed to delete conversation: ${e.message}', code: e.code);
     }
   }
 }

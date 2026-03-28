@@ -145,7 +145,51 @@ class _VoucherDetailBodyState extends ConsumerState<_VoucherDetailBody> {
       );
     }
 
-    // 获取 usage rules（从第一个 item 读取，同 deal 下所有 item 规则相同）
+    // 判断主要状态并路由到对应展示页
+    final dominantStatus = _getDominantStatus(dealItems);
+
+    return switch (dominantStatus) {
+      CustomerItemStatus.used => _UsedVoucherBody(
+          detail: detail,
+          dealItems: dealItems,
+          orderId: widget.orderId,
+          dealId: widget.dealId,
+        ),
+      CustomerItemStatus.refundSuccess ||
+      CustomerItemStatus.refundPending ||
+      CustomerItemStatus.refundReview => _RefundedVoucherBody(
+          detail: detail,
+          dealItems: dealItems,
+          orderId: widget.orderId,
+          dealId: widget.dealId,
+        ),
+      CustomerItemStatus.expired => _ExpiredVoucherBody(
+          detail: detail,
+          dealItems: dealItems,
+          orderId: widget.orderId,
+          dealId: widget.dealId,
+        ),
+      _ => _buildUnusedBody(context, dealItems),
+    };
+  }
+
+  // 判断所有 items 是否属于同一状态类别
+  CustomerItemStatus? _getDominantStatus(List<OrderItemModel> items) {
+    if (items.isEmpty) return null;
+    final first = items.first.customerStatus;
+    if (items.every((i) => i.customerStatus == first)) return first;
+    // 退款相关状态统一归类
+    if (items.every((i) =>
+        i.customerStatus == CustomerItemStatus.refundSuccess ||
+        i.customerStatus == CustomerItemStatus.refundPending ||
+        i.customerStatus == CustomerItemStatus.refundReview)) {
+      return CustomerItemStatus.refundSuccess;
+    }
+    return null; // 混合状态 → 使用现有多状态布局
+  }
+
+  // ── 现有 unused 布局（保持不变） ──────────────────
+  Widget _buildUnusedBody(BuildContext context, List<OrderItemModel> dealItems) {
     final usageRules = dealItems.first.usageRules;
 
     return Stack(
@@ -1664,6 +1708,579 @@ class _RefundMethodOption extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ══════════════════════════════════════════════════════
+// 状态独立展示页
+// ══════════════════════════════════════════════════════
+
+// ── 简化 Deal 摘要卡片（不含券状态行） ─────────────
+
+class _SimpleDealCard extends StatelessWidget {
+  final List<OrderItemModel> dealItems;
+
+  const _SimpleDealCard({required this.dealItems});
+
+  @override
+  Widget build(BuildContext context) {
+    final first = dealItems.first;
+    final count = dealItems.length;
+    final amountFmt = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
+    final totalPaid = dealItems.fold<double>(0, (s, i) => s + i.unitPrice);
+    final merchantName = first.merchantName ?? first.purchasedMerchantName;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(0, 8, 0, 0),
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: first.dealImageUrl != null
+                ? Image.network(
+                    first.dealImageUrl!,
+                    width: 80,
+                    height: 80,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => _PlaceholderImage(),
+                  )
+                : _PlaceholderImage(),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  first.dealTitle,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                    height: 1.3,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (merchantName != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    merchantName,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      '${amountFmt.format(first.unitPrice)} × $count',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    Text(
+                      'Paid ${amountFmt.format(totalPaid)}',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── 信息行组件 ──────────────────────────────────────
+
+class _StatusInfoRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color? valueColor;
+  final bool isBadge;
+
+  const _StatusInfoRow({
+    required this.label,
+    required this.value,
+    this.valueColor,
+    this.isBadge = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
+        ),
+        if (isBadge)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: (valueColor ?? AppColors.textSecondary)
+                  .withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              value,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: valueColor ?? AppColors.textSecondary,
+              ),
+            ),
+          )
+        else
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: valueColor ?? AppColors.textPrimary,
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+// ── Used 状态展示页 ─────────────────────────────────
+
+class _UsedVoucherBody extends ConsumerWidget {
+  final OrderDetailModel detail;
+  final List<OrderItemModel> dealItems;
+  final String orderId;
+  final String dealId;
+
+  const _UsedVoucherBody({
+    required this.detail,
+    required this.dealItems,
+    required this.orderId,
+    required this.dealId,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final first = dealItems.first;
+    final dateFmt = DateFormat('MMM d, yyyy');
+    final usageRules = first.usageRules;
+    final redeemedMerchant =
+        first.redeemedMerchantName ?? first.merchantName ?? '';
+
+    return Stack(
+      children: [
+        CustomScrollView(
+          slivers: [
+            SliverAppBar(
+              pinned: true,
+              title: const Text(
+                'Voucher Detail',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+              ),
+              backgroundColor: Colors.white,
+              foregroundColor: AppColors.textPrimary,
+              elevation: 0.5,
+            ),
+
+            // Deal 摘要卡片
+            SliverToBoxAdapter(
+              child: _SimpleDealCard(dealItems: dealItems),
+            ),
+
+            // 状态 + 日期信息
+            SliverToBoxAdapter(
+              child: Container(
+                margin: const EdgeInsets.only(top: 8),
+                color: Colors.white,
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    _StatusInfoRow(
+                      label: 'Status',
+                      value: 'Used',
+                      valueColor: const Color(0xFF2979FF),
+                      isBadge: true,
+                    ),
+                    const Divider(height: 24, color: Color(0xFFF0F0F0)),
+                    _StatusInfoRow(
+                      label: 'Purchased',
+                      value: dateFmt.format(detail.createdAt.toLocal()),
+                    ),
+                    if (first.redeemedAt != null) ...[
+                      const SizedBox(height: 12),
+                      _StatusInfoRow(
+                        label: 'Used On',
+                        value: dateFmt.format(first.redeemedAt!.toLocal()),
+                      ),
+                    ],
+                    if (redeemedMerchant.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      _StatusInfoRow(
+                        label: 'Redeemed At',
+                        value: redeemedMerchant,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+
+            // 快捷操作：导航、电话
+            SliverToBoxAdapter(
+              child: _VoucherQuickActions(
+                merchantId: first.purchasedMerchantId,
+                couponId: first.couponId,
+                dealTitle: first.dealTitle,
+                orderItemId: first.id,
+                merchantName: first.merchantName,
+                expiresAt: first.couponExpiresAt,
+              ),
+            ),
+
+            // Usage Notes
+            if (usageRules.isNotEmpty)
+              SliverToBoxAdapter(
+                child: _UsageNotesSection(usageRules: usageRules),
+              ),
+
+            const SliverToBoxAdapter(child: SizedBox(height: 100)),
+          ],
+        ),
+
+        // 底部操作栏：Write Review + Buy Again
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: _UsedBottomBar(
+            dealItems: dealItems,
+            dealId: dealId,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Refunded 状态展示页 ─────────────────────────────
+
+class _RefundedVoucherBody extends ConsumerWidget {
+  final OrderDetailModel detail;
+  final List<OrderItemModel> dealItems;
+  final String orderId;
+  final String dealId;
+
+  const _RefundedVoucherBody({
+    required this.detail,
+    required this.dealItems,
+    required this.orderId,
+    required this.dealId,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final first = dealItems.first;
+    final dateFmt = DateFormat('MMM d, yyyy');
+    final amountFmt = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
+    final usageRules = first.usageRules;
+
+    // 退款信息
+    final totalRefund = dealItems.fold<double>(
+        0, (s, i) => s + (i.refundAmount ?? i.unitPrice));
+    final refundMethod = first.refundMethod;
+
+    // 状态文案
+    final statusLabel =
+        first.customerStatus == CustomerItemStatus.refundPending
+            ? 'Refund Processing'
+            : first.customerStatus == CustomerItemStatus.refundReview
+                ? 'Under Review'
+                : 'Refunded';
+    final statusColor =
+        first.customerStatus == CustomerItemStatus.refundSuccess
+            ? const Color(0xFF9E9E9E)
+            : const Color(0xFFFF9800);
+
+    return Stack(
+      children: [
+        CustomScrollView(
+          slivers: [
+            SliverAppBar(
+              pinned: true,
+              title: const Text(
+                'Voucher Detail',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+              ),
+              backgroundColor: Colors.white,
+              foregroundColor: AppColors.textPrimary,
+              elevation: 0.5,
+            ),
+
+            // Deal 摘要卡片
+            SliverToBoxAdapter(
+              child: _SimpleDealCard(dealItems: dealItems),
+            ),
+
+            // 状态 + 日期 + 退款信息
+            SliverToBoxAdapter(
+              child: Container(
+                margin: const EdgeInsets.only(top: 8),
+                color: Colors.white,
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    _StatusInfoRow(
+                      label: 'Status',
+                      value: statusLabel,
+                      valueColor: statusColor,
+                      isBadge: true,
+                    ),
+                    const Divider(height: 24, color: Color(0xFFF0F0F0)),
+                    _StatusInfoRow(
+                      label: 'Purchased',
+                      value: dateFmt.format(detail.createdAt.toLocal()),
+                    ),
+                    if (first.refundedAt != null) ...[
+                      const SizedBox(height: 12),
+                      _StatusInfoRow(
+                        label: 'Refunded',
+                        value: dateFmt.format(first.refundedAt!.toLocal()),
+                      ),
+                    ],
+                    const Divider(height: 24, color: Color(0xFFF0F0F0)),
+                    _StatusInfoRow(
+                      label: 'Refund Amount',
+                      value: amountFmt.format(totalRefund),
+                      valueColor: AppColors.success,
+                    ),
+                    if (refundMethod != null) ...[
+                      const SizedBox(height: 12),
+                      _StatusInfoRow(
+                        label: 'Refund To',
+                        value: refundMethod == 'store_credit'
+                            ? 'Store Credit'
+                            : 'Original Payment',
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+
+            // Usage Notes
+            if (usageRules.isNotEmpty)
+              SliverToBoxAdapter(
+                child: _UsageNotesSection(usageRules: usageRules),
+              ),
+
+            const SliverToBoxAdapter(child: SizedBox(height: 100)),
+          ],
+        ),
+
+        // 底部：Buy Again
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: _VoucherBottomActionBar(
+            detail: detail,
+            dealId: dealId,
+            orderId: orderId,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Expired 状态展示页 ──────────────────────────────
+
+class _ExpiredVoucherBody extends ConsumerWidget {
+  final OrderDetailModel detail;
+  final List<OrderItemModel> dealItems;
+  final String orderId;
+  final String dealId;
+
+  const _ExpiredVoucherBody({
+    required this.detail,
+    required this.dealItems,
+    required this.orderId,
+    required this.dealId,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final first = dealItems.first;
+    final dateFmt = DateFormat('MMM d, yyyy');
+    final usageRules = first.usageRules;
+
+    return Stack(
+      children: [
+        CustomScrollView(
+          slivers: [
+            SliverAppBar(
+              pinned: true,
+              title: const Text(
+                'Voucher Detail',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+              ),
+              backgroundColor: Colors.white,
+              foregroundColor: AppColors.textPrimary,
+              elevation: 0.5,
+            ),
+
+            // Deal 摘要卡片
+            SliverToBoxAdapter(
+              child: _SimpleDealCard(dealItems: dealItems),
+            ),
+
+            // 状态 + 日期信息
+            SliverToBoxAdapter(
+              child: Container(
+                margin: const EdgeInsets.only(top: 8),
+                color: Colors.white,
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    _StatusInfoRow(
+                      label: 'Status',
+                      value: 'Expired',
+                      valueColor: AppColors.textHint,
+                      isBadge: true,
+                    ),
+                    const Divider(height: 24, color: Color(0xFFF0F0F0)),
+                    _StatusInfoRow(
+                      label: 'Purchased',
+                      value: dateFmt.format(detail.createdAt.toLocal()),
+                    ),
+                    if (first.couponExpiresAt != null) ...[
+                      const SizedBox(height: 12),
+                      _StatusInfoRow(
+                        label: 'Expired On',
+                        value: dateFmt.format(
+                            first.couponExpiresAt!.toLocal()),
+                        valueColor: AppColors.error,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+
+            // Usage Notes
+            if (usageRules.isNotEmpty)
+              SliverToBoxAdapter(
+                child: _UsageNotesSection(usageRules: usageRules),
+              ),
+
+            const SliverToBoxAdapter(child: SizedBox(height: 100)),
+          ],
+        ),
+
+        // 底部：Buy Again
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: _VoucherBottomActionBar(
+            detail: detail,
+            dealId: dealId,
+            orderId: orderId,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Used 状态底部操作栏（Write Review + Buy Again） ─
+
+class _UsedBottomBar extends StatelessWidget {
+  final List<OrderItemModel> dealItems;
+  final String dealId;
+
+  const _UsedBottomBar({
+    required this.dealItems,
+    required this.dealId,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final first = dealItems.first;
+    final merchantId =
+        first.purchasedMerchantId ?? first.redeemedMerchantId ?? '';
+
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: Color(0xFFEEEEEE), width: 1)),
+      ),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        12,
+        16,
+        12 + MediaQuery.of(context).padding.bottom,
+      ),
+      child: Row(
+        children: [
+          // Write Review
+          Expanded(
+            child: OutlinedButton(
+              onPressed: () => context.push(
+                  '/review/${first.dealId}?merchantId=$merchantId&orderItemId=${first.id}'),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: AppColors.accent),
+                foregroundColor: AppColors.accent,
+                padding: const EdgeInsets.symmetric(vertical: 13),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(24),
+                ),
+              ),
+              child: const Text(
+                'Write Review',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          // Buy Again → 跳转到 deal 详情页重新购买
+          Expanded(
+            child: ElevatedButton(
+              onPressed: () => context.push('/deals/$dealId'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 13),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                elevation: 0,
+              ),
+              child: const Text(
+                'Buy Again',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

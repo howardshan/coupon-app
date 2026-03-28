@@ -6,11 +6,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../data/repositories/chat_repository.dart';
 import '../../domain/providers/chat_provider.dart';
 import '../../domain/providers/friend_provider.dart';
 import '../../domain/providers/notification_provider.dart';
 import '../../data/models/conversation_model.dart';
 import '../widgets/conversation_tile.dart';
+import '../../../auth/domain/providers/auth_provider.dart';
 
 class ChatListScreen extends ConsumerWidget {
   const ChatListScreen({super.key});
@@ -129,7 +131,7 @@ class ChatListScreen extends ConsumerWidget {
 }
 
 // 会话列表主体，分组展示客服会话和普通会话
-class _ConversationList extends StatelessWidget {
+class _ConversationList extends ConsumerWidget {
   final List<ConversationModel> conversations;
   final Future<void> Function() onRefresh;
 
@@ -139,11 +141,17 @@ class _ConversationList extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     // 分离客服会话和其他会话
     final supportConvs = conversations.where((c) => c.type == 'support').toList();
-    final otherConvs = conversations.where((c) => c.type != 'support').toList()
-      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    final otherConvs = conversations.where((c) => c.type != 'support').toList();
+
+    // 置顶的排在前面，其次按更新时间倒序
+    otherConvs.sort((a, b) {
+      if (a.isPinned && !b.isPinned) return -1;
+      if (!a.isPinned && b.isPinned) return 1;
+      return b.updatedAt.compareTo(a.updatedAt);
+    });
 
     if (conversations.isEmpty) {
       return const _EmptyState();
@@ -168,11 +176,229 @@ class _ConversationList extends StatelessWidget {
           // 好友/群聊分组
           if (otherConvs.isNotEmpty) ...[
             _SectionHeader(label: 'Messages'),
-            ...otherConvs.map((c) => ConversationTile(
+            ...otherConvs.map((c) => _SwipeableConversationTile(
                   conversation: c,
                   onTap: () => context.push('/chat/${c.id}'),
+                  onPin: () => _togglePin(ref, c),
+                  onDelete: () => _deleteConversation(context, ref, c),
                 )),
           ],
+        ],
+      ),
+    );
+  }
+
+  void _togglePin(WidgetRef ref, ConversationModel c) async {
+    final userId = ref.read(currentUserProvider).valueOrNull?.id;
+    if (userId == null) return;
+    await ref.read(chatRepositoryProvider).togglePin(c.id, userId, !c.isPinned);
+    ref.read(conversationsProvider.notifier).refresh();
+  }
+
+  void _deleteConversation(BuildContext context, WidgetRef ref, ConversationModel c) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete this chat?'),
+        content: const Text('This conversation will be removed from your list.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.error,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () async {
+              Navigator.of(ctx).pop();
+              final userId = ref.read(currentUserProvider).valueOrNull?.id;
+              if (userId == null) return;
+              await ref.read(chatRepositoryProvider).leaveConversation(c.id, userId);
+              ref.read(conversationsProvider.notifier).refresh();
+            },
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// 支持左滑操作的会话 tile（Pin + Delete）
+class _SwipeableConversationTile extends StatefulWidget {
+  final ConversationModel conversation;
+  final VoidCallback onTap;
+  final VoidCallback onPin;
+  final VoidCallback onDelete;
+
+  const _SwipeableConversationTile({
+    required this.conversation,
+    required this.onTap,
+    required this.onPin,
+    required this.onDelete,
+  });
+
+  @override
+  State<_SwipeableConversationTile> createState() =>
+      _SwipeableConversationTileState();
+}
+
+class _SwipeableConversationTileState
+    extends State<_SwipeableConversationTile>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<Offset> _slideAnim;
+  // 按钮总宽度（Pin 64 + Delete 64）
+  static const _actionWidth = 128.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 200),
+    );
+    _slideAnim = Tween<Offset>(
+      begin: Offset.zero,
+      end: const Offset(-_actionWidth, 0),
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  bool _isOpen = false;
+
+  void _toggle() {
+    if (_isOpen) {
+      _controller.reverse();
+    } else {
+      _controller.forward();
+    }
+    _isOpen = !_isOpen;
+  }
+
+  void _close() {
+    if (_isOpen) {
+      _controller.reverse();
+      _isOpen = false;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isPinned = widget.conversation.isPinned;
+
+    return SizedBox(
+      height: 78, // ConversationTile 大约高度
+      child: Stack(
+        children: [
+          // 右侧操作按钮（固定在底层）
+          Positioned(
+            right: 0,
+            top: 0,
+            bottom: 10, // 匹配 ConversationTile margin
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Pin 按钮
+                GestureDetector(
+                  onTap: () {
+                    _close();
+                    widget.onPin();
+                  },
+                  child: Container(
+                    width: 64,
+                    color: isPinned ? AppColors.textSecondary : AppColors.primary,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          isPinned ? Icons.push_pin_outlined : Icons.push_pin,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          isPinned ? 'Unpin' : 'Pin',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                // Delete 按钮
+                GestureDetector(
+                  onTap: () {
+                    _close();
+                    widget.onDelete();
+                  },
+                  child: Container(
+                    width: 64,
+                    decoration: const BoxDecoration(
+                      color: AppColors.error,
+                      borderRadius: BorderRadius.horizontal(
+                        right: Radius.circular(12),
+                      ),
+                    ),
+                    child: const Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.delete_outline, color: Colors.white, size: 20),
+                        SizedBox(height: 2),
+                        Text(
+                          'Delete',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // 滑动的会话卡片
+          AnimatedBuilder(
+            animation: _slideAnim,
+            builder: (context, child) {
+              return Transform.translate(
+                offset: _slideAnim.value,
+                child: child,
+              );
+            },
+            child: GestureDetector(
+              onHorizontalDragUpdate: (details) {
+                // 左滑打开，右滑关闭
+                final delta = details.primaryDelta ?? 0;
+                if (delta < -5 && !_isOpen) _toggle();
+                if (delta > 5 && _isOpen) _toggle();
+              },
+              onTap: () {
+                if (_isOpen) {
+                  _close();
+                } else {
+                  widget.onTap();
+                }
+              },
+              child: ConversationTile(
+                conversation: widget.conversation,
+                onTap: () {}, // 由外层 GestureDetector 处理
+              ),
+            ),
+          ),
         ],
       ),
     );

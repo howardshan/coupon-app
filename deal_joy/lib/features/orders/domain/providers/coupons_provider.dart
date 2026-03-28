@@ -1,9 +1,11 @@
 // 团购券 Riverpod Providers
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../shared/providers/supabase_provider.dart';
 import '../../../auth/domain/providers/auth_provider.dart';
 import '../../data/models/coupon_model.dart';
+import '../../data/models/coupon_gift_model.dart';
 import '../../data/repositories/coupons_repository.dart';
 import '../../../profile/domain/providers/store_credit_provider.dart';
 import 'orders_provider.dart';
@@ -20,29 +22,75 @@ final userCouponsProvider = FutureProvider<List<CouponModel>>((ref) async {
   return ref.watch(couponsRepositoryProvider).fetchUserCoupons(user.id);
 });
 
+/// 用户已评价的 deal ID 集合（用于 To Review tab 过滤）
+final reviewedDealIdsProvider = FutureProvider<Set<String>>((ref) async {
+  final client = Supabase.instance.client;
+  final userId = client.auth.currentUser?.id;
+  if (userId == null) return {};
+  final data = await client
+      .from('reviews')
+      .select('deal_id')
+      .eq('user_id', userId);
+  return (data as List).map((r) => r['deal_id'] as String).toSet();
+});
+
 /// 按状态过滤的团购券列表（derived provider）
-/// Expired：仅「已过期且未退款」；Refunded：仅「已退款」；Unused：未使用且未过期
+/// unused: 未使用且未过期
+/// used: 已核销
+/// to_review: 已核销且未评价
+/// expired: 已过期（含过期后退款的 "Expired Return"）
+/// returned: 未过期就退款的
+/// cancelled: 已作废 (voided)
 final couponsByStatusProvider =
     Provider.family<AsyncValue<List<CouponModel>>, String>((ref, status) {
+  if (status == 'to_review') {
+    // to_review 需要同时等待 coupons 和 reviewedDealIds
+    final couponsAsync = ref.watch(userCouponsProvider);
+    final reviewedAsync = ref.watch(reviewedDealIdsProvider);
+    return couponsAsync.whenData((coupons) {
+      final reviewedIds = reviewedAsync.valueOrNull ?? {};
+      return coupons
+          .where((c) =>
+              c.status == 'used' &&
+              c.dealId.isNotEmpty &&
+              !reviewedIds.contains(c.dealId))
+          .toList();
+    });
+  }
+
   return ref.watch(userCouponsProvider).whenData((coupons) {
-    if (status == 'expired') {
-      return coupons.where((c) => c.isExpired && c.status != 'refunded' && c.status != 'voided').toList();
+    switch (status) {
+      case 'unused':
+        return coupons.where((c) => c.status == 'unused' && !c.isExpired).toList();
+      case 'used':
+        return coupons.where((c) => c.status == 'used').toList();
+      case 'expired':
+        // 已过期的（不含 voided），全部都是 Expired Return（过期自动退款）
+        return coupons.where((c) =>
+            c.isExpired && c.status != 'voided').toList();
+      case 'refunded':
+        // 未过期就主动退款的
+        return coupons.where((c) =>
+            c.status == 'refunded' && !c.isExpired).toList();
+      case 'gifted':
+        return coupons.where((c) => c.status == 'voided' && c.voidReason == 'gifted').toList();
+      default:
+        return coupons.where((c) => c.status == status).toList();
     }
-    if (status == 'unused') {
-      return coupons.where((c) => c.status == 'unused' && !c.isExpired).toList();
-    }
-    // cancelled tab 对应数据库 voided 状态
-    if (status == 'cancelled') {
-      return coupons.where((c) => c.status == 'voided').toList();
-    }
-    return coupons.where((c) => c.status == status).toList();
   });
 });
+
 
 /// 单张团购券详情 Provider（通过 couponId 查询）
 final couponDetailProvider =
     FutureProvider.family<CouponModel, String>((ref, couponId) {
   return ref.watch(couponsRepositoryProvider).fetchCouponDetail(couponId);
+});
+
+/// 查询某个 order_item 的活跃赠送记录（pending/claimed）
+final activeGiftProvider =
+    FutureProvider.family<CouponGiftModel?, String>((ref, orderItemId) {
+  return ref.watch(couponsRepositoryProvider).fetchActiveGift(orderItemId);
 });
 
 /// 根据门店 ID 列表查询门店基本信息（名称+地址），用于券详情页展示可用门店

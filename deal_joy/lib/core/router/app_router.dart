@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart' show AuthChangeEvent;
 import '../../features/auth/domain/providers/auth_provider.dart';
 import '../../features/auth/presentation/screens/login_screen.dart';
 import '../../features/auth/presentation/screens/register_screen.dart';
+import '../../features/auth/presentation/screens/verify_otp_screen.dart';
 import '../../features/auth/presentation/screens/forgot_password_screen.dart';
 import '../../features/auth/presentation/screens/reset_password_screen.dart';
 import '../../features/auth/presentation/screens/phone_number_screen.dart';
@@ -95,11 +96,25 @@ final routerProvider = Provider<GoRouter>((ref) {
       // Still resolving auth — stay on (or go to) splash
       if (isLoading) return isSplash ? null : '/splash';
 
-      // Auth resolved, not logged in
+      // Auth resolved, not logged in — 允许浏览公开页面（首页、搜索等）
       if (!isLoggedIn) {
-        if (isAuthRoute) return null; // already on login/register
-        // 保存用户想去的页面，登录后跳回
-        return '/auth/login?redirect=${Uri.encodeComponent(currentPath)}';
+        if (isAuthRoute) return null; // 已在登录/注册页
+        if (isSplash) return '/home'; // splash 结束跳首页，不强制登录
+
+        // 需要登录的页面：checkout、orders、profile 操作、chat
+        final needsAuth = currentPath.startsWith('/checkout') ||
+            currentPath.startsWith('/orders') ||
+            currentPath.startsWith('/coupons') ||
+            currentPath.startsWith('/review') ||
+            currentPath.startsWith('/chat') && currentPath != '/chat' ||
+            currentPath.startsWith('/profile/edit') ||
+            currentPath.startsWith('/voucher');
+        if (needsAuth) {
+          return '/auth/login?redirect=${Uri.encodeComponent(currentPath)}';
+        }
+
+        // 其他页面允许未登录访问（首页、deal详情、商家详情、搜索、购物车等）
+        return null;
       }
 
       // 密码重置 recovery session — 强制跳转重置密码页，忽略其他跳转逻辑
@@ -107,17 +122,10 @@ final routerProvider = Provider<GoRouter>((ref) {
         return currentPath == '/auth/reset-password' ? null : '/auth/reset-password';
       }
 
-      // 已登录但在重置密码页面 — 允许留在该页面（用户手动导航过来的场景）
+      // 已登录但在重置密码页面 — 允许留在该页面
       if (currentPath == '/auth/reset-password') return null;
 
-      // 已登录 — 检查是否需要填写手机号
-      if (currentPath == '/auth/phone') return null; // 已在手机号页面，不跳转
-      final userAsync = ref.read(currentUserProvider);
-      final userProfile = userAsync.valueOrNull;
-      if (userProfile != null &&
-          (userProfile.phone == null || userProfile.phone!.isEmpty)) {
-        return '/auth/phone';
-      }
+      // 已登录 — 不再强制跳手机号页面（用户可在 Profile 里自行补充）
 
       // Logged in — leave splash or auth routes
       if (isSplash || isAuthRoute) {
@@ -142,6 +150,12 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/auth/register',
         builder: (_, _) => const RegisterScreen(),
+      ),
+      GoRoute(
+        path: '/auth/verify-otp',
+        builder: (_, state) => VerifyOtpScreen(
+          email: state.uri.queryParameters['email'] ?? '',
+        ),
       ),
       GoRoute(
         path: '/auth/forgot-password',
