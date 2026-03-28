@@ -49,6 +49,8 @@ import '../../features/chat/presentation/screens/notification_screen.dart';
 import '../../features/chat/presentation/screens/chat_search_screen.dart';
 import '../../features/cart/data/models/cart_item_model.dart';
 import '../../features/cart/presentation/screens/cart_screen.dart';
+import '../../features/welcome/presentation/screens/welcome_splash_screen.dart';
+import '../../features/welcome/presentation/screens/onboarding_screen.dart';
 import '../widgets/main_scaffold.dart';
 import '../widgets/splash_screen.dart';
 
@@ -82,7 +84,7 @@ final routerProvider = Provider<GoRouter>((ref) {
 
   return GoRouter(
     navigatorKey: _rootNavigatorKey,
-    initialLocation: '/splash',
+    initialLocation: '/welcome',
     refreshListenable: notifier,
     redirect: (context, state) {
       final authState = ref.read(authStateProvider);
@@ -93,13 +95,19 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isAuthRoute = currentPath.startsWith('/auth');
       final isSplash = currentPath == '/splash';
 
-      // Still resolving auth — stay on (or go to) splash
-      if (isLoading) return isSplash ? null : '/splash';
+      final isWelcome = currentPath == '/welcome';
+      final isOnboarding = currentPath == '/onboarding';
+
+      // Still resolving auth — 允许在 welcome/onboarding/splash 页面停留
+      if (isLoading) {
+        if (isSplash || isWelcome || isOnboarding) return null;
+        return '/splash';
+      }
 
       // Auth resolved, not logged in — 允许浏览公开页面（首页、搜索等）
       if (!isLoggedIn) {
-        if (isAuthRoute) return null; // 已在登录/注册页
-        if (isSplash) return '/home'; // splash 结束跳首页，不强制登录
+        if (isAuthRoute || isWelcome || isOnboarding) return null;
+        if (isSplash) return '/home'; // auth loading 结束跳首页，不强制登录
 
         // 需要登录的页面：checkout、orders、profile 操作、chat
         final needsAuth = currentPath.startsWith('/checkout') ||
@@ -127,7 +135,10 @@ final routerProvider = Provider<GoRouter>((ref) {
 
       // 已登录 — 不再强制跳手机号页面（用户可在 Profile 里自行补充）
 
-      // Logged in — leave splash or auth routes
+      // Welcome splash 和 Onboarding 自己控制退出，不被 redirect 干扰
+      if (isWelcome || isOnboarding) return null;
+
+      // Logged in — leave auth loading splash or auth routes
       if (isSplash || isAuthRoute) {
         // 登录后跳回之前的页面
         final redirect = state.uri.queryParameters['redirect'];
@@ -142,7 +153,13 @@ final routerProvider = Provider<GoRouter>((ref) {
       return null; // no redirect needed
     },
     routes: [
-      // Splash (shown while auth state resolves)
+      // 开屏广告 Splash（每次启动显示，无配置时自动跳过）
+      GoRoute(path: '/welcome', builder: (_, _) => const WelcomeSplashScreen()),
+
+      // 首次安装引导页
+      GoRoute(path: '/onboarding', builder: (_, _) => const OnboardingScreen()),
+
+      // Auth loading（认证状态解析中显示）
       GoRoute(path: '/splash', builder: (_, _) => const SplashScreen()),
 
       // Auth routes
