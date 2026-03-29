@@ -3,6 +3,9 @@ import { getServiceRoleClient } from '@/lib/supabase/service'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import BanUserButton from '@/components/ban-user-button'
+import UserDetailSpendingAndActivityModal from '@/components/user-detail-spending-and-activity-modal'
+import RoleSelect from '@/components/role-select'
+import UserDetailPasswordPanel from '@/components/user-detail-password-panel'
 
 export default async function UserDetailPage({
   params,
@@ -21,7 +24,7 @@ export default async function UserDetailPage({
   // 用户基本信息
   const { data: userInfo } = await supabase
     .from('users')
-    .select('id, email, full_name, role, avatar_url, bio, phone, created_at, updated_at')
+    .select('id, email, full_name, role, avatar_url, bio, phone, username, created_at, updated_at, last_login_at, registration_source')
     .eq('id', id)
     .single()
 
@@ -40,6 +43,11 @@ export default async function UserDetailPage({
   const { data: authUser } = await serviceClient.auth.admin.getUserById(id)
   const bannedUntil = authUser?.user?.banned_until
   const isBanned = bannedUntil && new Date(bannedUntil) > new Date()
+  const authEmail = authUser?.user?.email?.trim() ?? ''
+  const hasEmail = authEmail.length > 0
+  const identities = authUser?.user?.identities ?? []
+  const emailIdentity = identities.some((i) => i.provider === 'email')
+  const oauthOnly = identities.length > 0 && !emailIdentity
 
   // 购买记录（orders）— 用 service client 绕过 RLS
   const { data: orders } = await serviceClient
@@ -57,11 +65,12 @@ export default async function UserDetailPage({
     .order('created_at', { ascending: false })
     .limit(50)
 
-  // 统计
+  // 统计（侧栏摘要 + 主列如需可复用）
   const totalSpent = orders?.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0) ?? 0
   const totalOrders = orders?.length ?? 0
   const usedCoupons = coupons?.filter(c => c.status === 'used').length ?? 0
   const activeCoupons = coupons?.filter(c => c.status === 'unused').length ?? 0
+  const avgOrder = totalOrders > 0 ? totalSpent / totalOrders : 0
 
   return (
     <div className="space-y-6">
@@ -70,253 +79,123 @@ export default async function UserDetailPage({
         ← Back to Users
       </Link>
 
-      {/* 用户信息卡片 */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-4">
-            {userInfo.avatar_url ? (
-              <img src={userInfo.avatar_url} alt="" className="w-16 h-16 rounded-full object-cover border-2 border-gray-200" />
-            ) : (
-              <div className="w-16 h-16 rounded-full bg-gray-200 flex items-center justify-center text-2xl text-gray-400">
-                {(userInfo.full_name || userInfo.email)?.[0]?.toUpperCase() || '?'}
+      {/* 用 flex 双列，避免 grid 任意值 minmax(0,1fr) 中逗号导致 Tailwind 不生成样式、整页退化为单列 */}
+      <div className="flex flex-col gap-5 md:flex-row md:items-start md:gap-6">
+        {/* 主列：用户资料（订单/券在侧栏弹窗中查看） */}
+        <div className="min-w-0 flex-1 space-y-6 order-1">
+          {/* 用户信息卡片 */}
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <div className="flex items-start gap-4">
+              {userInfo.avatar_url ? (
+                <img src={userInfo.avatar_url} alt="" className="w-16 h-16 rounded-full object-cover border-2 border-gray-200 shrink-0" />
+              ) : (
+                <div className="w-16 h-16 rounded-full bg-gray-200 flex items-center justify-center text-2xl text-gray-400 shrink-0">
+                  {(userInfo.full_name || userInfo.email)?.[0]?.toUpperCase() || '?'}
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <h1 className="text-xl font-bold text-gray-900">{userInfo.full_name || '—'}</h1>
+                {isBanned && (
+                  <span className="inline-block mt-2 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">
+                    Banned until {new Date(bannedUntil!).toLocaleDateString('en-US')}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* 只读资料字段（管理员不可改邮箱/电话） */}
+            <dl className="mt-6 grid gap-3 sm:grid-cols-2 text-sm border-t border-gray-100 pt-6">
+              <div>
+                <dt className="text-xs font-medium text-gray-500">Username</dt>
+                <dd className="mt-0.5 text-gray-900 font-mono">{userInfo.username || '—'}</dd>
+              </div>
+              <div className="sm:col-span-2">
+                <dt className="text-xs font-medium text-gray-500">Email</dt>
+                <dd className="mt-0.5 text-gray-900 break-all">{hasEmail ? authEmail : (userInfo.email || '—')}</dd>
+                <p className="text-xs text-gray-400 mt-1">Read-only for admins. Users change email in the app / support process.</p>
+              </div>
+              <div>
+                <dt className="text-xs font-medium text-gray-500">Phone</dt>
+                <dd className="mt-0.5 text-gray-900">{userInfo.phone || '—'}</dd>
+                <p className="text-xs text-gray-400 mt-1">Read-only for admins.</p>
+              </div>
+              <div>
+                <dt className="text-xs font-medium text-gray-500">User ID</dt>
+                <dd className="mt-0.5 text-gray-600 font-mono text-xs break-all">{userInfo.id}</dd>
+              </div>
+              {userInfo.registration_source && (
+                <div>
+                  <dt className="text-xs font-medium text-gray-500">Registration source</dt>
+                  <dd className="mt-0.5 text-gray-900">{userInfo.registration_source}</dd>
+                </div>
+              )}
+              {userInfo.last_login_at && (
+                <div>
+                  <dt className="text-xs font-medium text-gray-500">Last login</dt>
+                  <dd className="mt-0.5 text-gray-900">{new Date(userInfo.last_login_at).toLocaleString('en-US')}</dd>
+                </div>
+              )}
+            </dl>
+
+            {oauthOnly && (
+              <p className="mt-4 text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                This account may sign in with a social provider. Password reset / set password still apply if the user has an email on file.
+              </p>
+            )}
+
+            {userInfo.bio && (
+              <div className="mt-4 pt-4 border-t border-gray-100">
+                <p className="text-xs font-medium text-gray-500">Bio</p>
+                <p className="text-sm text-gray-700 mt-1 whitespace-pre-wrap">{userInfo.bio}</p>
               </div>
             )}
-            <div>
-              <h1 className="text-xl font-bold text-gray-900">{userInfo.full_name || '—'}</h1>
-              <p className="text-sm text-gray-500">{userInfo.email}</p>
-              {userInfo.phone && <p className="text-sm text-gray-500">{userInfo.phone}</p>}
-              {userInfo.bio && <p className="text-sm text-gray-400 mt-1">{userInfo.bio}</p>}
+
+            {/* 日期信息 */}
+            <div className="flex flex-wrap gap-4 mt-4 pt-4 border-t border-gray-100 text-xs text-gray-400">
+              <span>Joined: {new Date(userInfo.created_at).toLocaleDateString('en-US')}</span>
+              {userInfo.updated_at && <span>Profile updated: {new Date(userInfo.updated_at).toLocaleDateString('en-US')}</span>}
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-              userInfo.role === 'admin' ? 'bg-red-100 text-red-700' :
-              userInfo.role === 'merchant' ? 'bg-blue-100 text-blue-700' :
-              'bg-gray-100 text-gray-600'
-            }`}>
-              {userInfo.role}
-            </span>
-            {isBanned && (
-              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">
-                Banned until {new Date(bannedUntil).toLocaleDateString('en-US')}
-              </span>
-            )}
-          </div>
         </div>
 
-        {/* 统计数据 */}
-        <div className="grid grid-cols-4 gap-4 mt-6 pt-6 border-t border-gray-100">
-          <div>
-            <p className="text-xs text-gray-500">Total Orders</p>
-            <p className="text-lg font-semibold text-gray-900">{totalOrders}</p>
+        {/* 右侧侧栏：固定宽度列，大屏贴顶 sticky */}
+        <aside className="order-2 flex w-full shrink-0 flex-col gap-3 md:sticky md:top-4 md:w-72 md:max-w-[22rem] lg:w-80">
+          <UserDetailSpendingAndActivityModal
+            totalOrders={totalOrders}
+            totalSpent={totalSpent}
+            avgOrder={avgOrder}
+            activeCoupons={activeCoupons}
+            usedCoupons={usedCoupons}
+            orders={orders ?? []}
+            coupons={coupons ?? []}
+          />
+
+          <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-3">
+            <h2 className="text-sm font-semibold text-gray-900">Role</h2>
+            <p className="mt-0.5 text-xs text-gray-500">App role for this account.</p>
+            <div className="mt-2">
+              <RoleSelect userId={id} currentRole={userInfo.role} variant="panel" />
+            </div>
           </div>
-          <div>
-            <p className="text-xs text-gray-500">Total Spent</p>
-            <p className="text-lg font-semibold text-gray-900">${totalSpent.toFixed(2)}</p>
+
+          <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-3">
+            <h2 className="text-sm font-semibold text-gray-900">Password</h2>
+            <div className="mt-2">
+              <UserDetailPasswordPanel userId={id} hasEmail={hasEmail} />
+            </div>
           </div>
-          <div>
-            <p className="text-xs text-gray-500">Active Coupons</p>
-            <p className="text-lg font-semibold text-gray-900">{activeCoupons}</p>
+
+          <div className="bg-white rounded-lg border border-red-200 shadow-sm p-3">
+            <h2 className="text-sm font-semibold text-red-600">Account moderation</h2>
+            <p className="mt-1 text-xs text-gray-600 leading-snug">
+              Banning restricts sign-in. Use only when necessary.
+            </p>
+            <div className="mt-2">
+              <BanUserButton userId={id} isBanned={!!isBanned} bannedUntil={bannedUntil ?? null} compact />
+            </div>
           </div>
-          <div>
-            <p className="text-xs text-gray-500">Used Coupons</p>
-            <p className="text-lg font-semibold text-gray-900">{usedCoupons}</p>
-          </div>
-        </div>
-
-        {/* 日期信息 */}
-        <div className="flex gap-6 mt-4 pt-4 border-t border-gray-100 text-xs text-gray-400">
-          <span>Joined: {new Date(userInfo.created_at).toLocaleDateString('en-US')}</span>
-          {userInfo.updated_at && <span>Last updated: {new Date(userInfo.updated_at).toLocaleDateString('en-US')}</span>}
-        </div>
-      </div>
-
-      {/* 黑名单操作 */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h2 className="text-base font-semibold text-gray-900 mb-4">Account Actions</h2>
-        <BanUserButton userId={id} isBanned={!!isBanned} bannedUntil={bannedUntil ?? null} />
-      </div>
-
-      {/* 购买记录 */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
-          <h2 className="text-base font-semibold text-gray-900">Purchase History ({totalOrders})</h2>
-        </div>
-        {orders && orders.length > 0 ? (
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-b border-gray-200">
-              <tr>
-                <th className="text-left px-4 py-2 font-medium text-gray-600">Order</th>
-                <th className="text-left px-4 py-2 font-medium text-gray-600">Deal(s)</th>
-                <th className="text-left px-4 py-2 font-medium text-gray-600">Merchant</th>
-                <th className="text-left px-4 py-2 font-medium text-gray-600">Qty</th>
-                <th className="text-left px-4 py-2 font-medium text-gray-600">Total</th>
-                <th className="text-left px-4 py-2 font-medium text-gray-600">Status</th>
-                <th className="text-left px-4 py-2 font-medium text-gray-600">Date</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {orders.map(o => {
-                const items = (o as any).order_items as any[] | null
-                const hasItems = items && items.length > 0
-
-                // V3: 从 order_items 提取 deal 和商家信息
-                const uniqueDeals = new Map<string, { title: string; merchantName: string }>()
-                if (hasItems) {
-                  for (const item of items) {
-                    const d = item.deals as any
-                    const m = Array.isArray(d?.merchants) ? d.merchants[0] : d?.merchants
-                    if (d && !uniqueDeals.has(item.deal_id)) {
-                      uniqueDeals.set(item.deal_id, { title: d.title, merchantName: m?.name ?? '—' })
-                    }
-                  }
-                }
-
-                const dealNames = hasItems
-                  ? Array.from(uniqueDeals.values()).map(d => d.title)
-                  : [(o.deals as any)?.title ?? '—']
-                const merchantNames = hasItems
-                  ? [...new Set(Array.from(uniqueDeals.values()).map(d => d.merchantName))]
-                  : [(o.deals as any)?.merchants?.name ?? '—']
-                const qty = hasItems ? items.length : 1
-
-                return (
-                  <tr key={o.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-2 text-gray-700 font-mono">
-                      <Link href={`/orders/${o.id}`} className="text-blue-600 hover:underline">
-                        {(o as any).order_number ?? o.id.slice(0, 8)}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-2 text-gray-900">
-                      {dealNames.slice(0, 2).map((name, i) => (
-                        <div key={i}>{name}</div>
-                      ))}
-                      {dealNames.length > 2 && (
-                        <span className="text-xs text-gray-500">+{dealNames.length - 2} more</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-2 text-gray-600">{merchantNames.join(', ')}</td>
-                    <td className="px-4 py-2 text-gray-600">{qty}</td>
-                    <td className="px-4 py-2 text-gray-900 font-medium">${(Number(o.total_amount) || 0).toFixed(2)}</td>
-                    <td className="px-4 py-2">
-                      {hasItems ? (
-                        <div className="flex flex-wrap gap-1">
-                          {(() => {
-                            const statusCounts: Record<string, number> = {}
-                            for (const item of items) {
-                              const s = item.customer_status as string
-                              statusCounts[s] = (statusCounts[s] ?? 0) + 1
-                            }
-                            return Object.entries(statusCounts).map(([s, count]) => (
-                              <OrderStatusBadge key={s} status={s} count={count > 1 ? count : undefined} />
-                            ))
-                          })()}
-                        </div>
-                      ) : (
-                        <OrderStatusBadge status={o.status} />
-                      )}
-                    </td>
-                    <td className="px-4 py-2 text-gray-500">{new Date(o.created_at).toLocaleDateString()}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        ) : (
-          <p className="text-center text-gray-400 py-8">No orders found</p>
-        )}
-      </div>
-
-      {/* 券使用记录 */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
-          <h2 className="text-base font-semibold text-gray-900">Coupon Records ({coupons?.length ?? 0})</h2>
-        </div>
-        {coupons && coupons.length > 0 ? (
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-b border-gray-200">
-              <tr>
-                <th className="text-left px-4 py-2 font-medium text-gray-600">Deal</th>
-                <th className="text-left px-4 py-2 font-medium text-gray-600">Merchant</th>
-                <th className="text-left px-4 py-2 font-medium text-gray-600">Status</th>
-                <th className="text-left px-4 py-2 font-medium text-gray-600">Used At</th>
-                <th className="text-left px-4 py-2 font-medium text-gray-600">Expires</th>
-                <th className="text-left px-4 py-2 font-medium text-gray-600">Created</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {coupons.map(c => (
-                <tr key={c.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-2 text-gray-900">{(c.deals as any)?.title ?? '—'}</td>
-                  <td className="px-4 py-2 text-gray-600">{(c.deals as any)?.merchants?.name ?? '—'}</td>
-                  <td className="px-4 py-2">
-                    <CouponStatusBadge status={c.status} />
-                  </td>
-                  <td className="px-4 py-2 text-gray-500">
-                    {c.used_at ? new Date(c.used_at).toLocaleDateString('en-US') : '—'}
-                  </td>
-                  <td className="px-4 py-2 text-gray-500">
-                    {c.expires_at ? new Date(c.expires_at).toLocaleDateString('en-US') : '—'}
-                  </td>
-                  <td className="px-4 py-2 text-gray-500">{new Date(c.created_at).toLocaleDateString('en-US')}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <p className="text-center text-gray-400 py-8">No coupons found</p>
-        )}
+        </aside>
       </div>
     </div>
-  )
-}
-
-// 订单状态 Badge
-function OrderStatusBadge({ status, count }: { status: string; count?: number }) {
-  const styles: Record<string, string> = {
-    unused: 'bg-blue-100 text-blue-700',
-    used: 'bg-gray-100 text-gray-600',
-    expired: 'bg-red-100 text-red-700',
-    refund_pending: 'bg-amber-100 text-amber-700',
-    refund_review: 'bg-orange-100 text-orange-700',
-    refund_reject: 'bg-amber-100 text-amber-700',
-    refund_success: 'bg-purple-100 text-purple-700',
-    paid: 'bg-green-100 text-green-700',
-    pending: 'bg-yellow-100 text-yellow-700',
-    refunded: 'bg-red-100 text-red-700',
-    voided: 'bg-gray-100 text-gray-600',
-    captured: 'bg-blue-100 text-blue-700',
-  }
-  const labels: Record<string, string> = {
-    unused: 'Unused',
-    used: 'Used',
-    expired: 'Expired',
-    refund_pending: 'Refund Pending',
-    refund_review: 'Refund Review',
-    refund_reject: 'Rejected',
-    refund_success: 'Refunded',
-  }
-  return (
-    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${styles[status] ?? 'bg-gray-100 text-gray-600'}`}>
-      {labels[status] ?? status}{count != null ? ` ×${count}` : ''}
-    </span>
-  )
-}
-
-// 券状态 Badge
-function CouponStatusBadge({ status }: { status: string }) {
-  const styles: Record<string, string> = {
-    unused: 'bg-blue-100 text-blue-700',
-    active: 'bg-green-100 text-green-700',
-    used: 'bg-gray-100 text-gray-600',
-    expired: 'bg-red-100 text-red-700',
-    refunded: 'bg-purple-100 text-purple-700',
-    voided: 'bg-gray-100 text-gray-600',
-    gifted: 'bg-purple-100 text-purple-700',
-  }
-  return (
-    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${styles[status] ?? 'bg-gray-100 text-gray-600'}`}>
-      {status}
-    </span>
   )
 }

@@ -8,10 +8,13 @@ export default function BanUserButton({
   userId,
   isBanned,
   bannedUntil,
+  compact = false,
 }: {
   userId: string
   isBanned: boolean
   bannedUntil: string | null
+  /** 用户详情侧栏：更小按钮与间距 */
+  compact?: boolean
 }) {
   const [loading, setLoading] = useState(false)
   const [showBanOptions, setShowBanOptions] = useState(false)
@@ -21,8 +24,8 @@ export default function BanUserButton({
     try {
       await unbanUser(userId)
       toast.success('User unbanned successfully')
-    } catch (e: any) {
-      toast.error(e.message || 'Failed to unban user')
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Failed to unban user')
     } finally {
       setLoading(false)
     }
@@ -39,8 +42,8 @@ export default function BanUserButton({
         toast.success(`User banned for ${days} days`)
       }
       setShowBanOptions(false)
-    } catch (e: any) {
-      toast.error(e.message || 'Failed to ban user')
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Failed to ban user')
     } finally {
       setLoading(false)
     }
@@ -48,21 +51,27 @@ export default function BanUserButton({
 
   if (isBanned) {
     return (
-      <div className="flex items-center gap-4">
-        <div className="flex-1">
-          <p className="text-sm text-red-600 font-medium">This user is currently banned</p>
+      <div className={compact ? 'space-y-1.5' : 'flex items-center gap-4'}>
+        <div className={compact ? '' : 'flex-1'}>
+          <p className={compact ? 'text-xs text-red-600 font-medium' : 'text-sm text-red-600 font-medium'}>
+            Currently banned
+          </p>
           {bannedUntil && (
-            <p className="text-xs text-gray-500 mt-1">
-              Until: {new Date(bannedUntil).toLocaleString()}
+            <p className="text-[11px] text-gray-500 mt-0.5">
+              Until {new Date(bannedUntil).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' })}
             </p>
           )}
         </div>
         <button
           onClick={handleUnban}
           disabled={loading}
-          className="px-4 py-2 text-sm font-medium rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 transition-colors"
+          className={
+            compact
+              ? 'px-2.5 py-1.5 text-xs font-medium rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 transition-colors w-full sm:w-auto'
+              : 'px-4 py-2 text-sm font-medium rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 transition-colors'
+          }
         >
-          {loading ? 'Processing...' : 'Unban User'}
+          {loading ? 'Processing...' : 'Unban'}
         </button>
       </div>
     )
@@ -73,14 +82,18 @@ export default function BanUserButton({
       {!showBanOptions ? (
         <button
           onClick={() => setShowBanOptions(true)}
-          className="px-4 py-2 text-sm font-medium rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors"
+          className={
+            compact
+              ? 'px-2.5 py-1.5 text-xs font-medium rounded-md bg-red-600 text-white hover:bg-red-700 transition-colors'
+              : 'px-4 py-2 text-sm font-medium rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors'
+          }
         >
-          Ban User
+          Ban user
         </button>
       ) : (
-        <div className="space-y-3">
-          <p className="text-sm text-gray-600">Select ban duration:</p>
-          <div className="flex flex-wrap gap-2">
+        <div className={compact ? 'space-y-2' : 'space-y-3'}>
+          <p className={compact ? 'text-xs text-gray-600' : 'text-sm text-gray-600'}>Ban duration:</p>
+          <div className="flex flex-wrap gap-1.5">
             {[
               { label: '7 days', days: 7 },
               { label: '30 days', days: 30 },
@@ -91,7 +104,11 @@ export default function BanUserButton({
                 key={opt.days}
                 onClick={() => handleBan(opt.days)}
                 disabled={loading}
-                className="px-3 py-1.5 text-sm font-medium rounded-lg border border-red-300 text-red-700 hover:bg-red-50 disabled:opacity-50 transition-colors"
+                className={
+                  compact
+                    ? 'px-2 py-1 text-xs font-medium rounded-md border border-red-300 text-red-700 hover:bg-red-50 disabled:opacity-50 transition-colors'
+                    : 'px-3 py-1.5 text-sm font-medium rounded-lg border border-red-300 text-red-700 hover:bg-red-50 disabled:opacity-50 transition-colors'
+                }
               >
                 {opt.label}
               </button>
@@ -99,18 +116,27 @@ export default function BanUserButton({
             <button
               onClick={() => handleBan('permanent')}
               disabled={loading}
-              className="px-3 py-1.5 text-sm font-medium rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 transition-colors"
+              className={
+                compact
+                  ? 'px-2 py-1 text-xs font-medium rounded-md bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 transition-colors'
+                  : 'px-3 py-1.5 text-sm font-medium rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 transition-colors'
+              }
             >
               Permanent
             </button>
             <button
               onClick={() => setShowBanOptions(false)}
-              className="px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors"
+              disabled={loading}
+              className={
+                compact
+                  ? 'px-2 py-1 text-xs font-medium rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors'
+                  : 'px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors'
+              }
             >
               Cancel
             </button>
           </div>
-          {loading && <p className="text-xs text-gray-400">Processing...</p>}
+          {loading && <p className={compact ? 'text-[11px] text-gray-400' : 'text-xs text-gray-400'}>Processing...</p>}
         </div>
       )}
     </div>
