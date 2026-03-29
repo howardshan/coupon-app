@@ -26,6 +26,8 @@ class CartRepository {
       original_price,
       discount_price,
       max_per_account,
+      stock_limit,
+      total_sold,
       merchants(id, name)
     )
   ''';
