@@ -35,6 +35,7 @@ export async function updateUserRole(userId: string, role: 'user' | 'merchant' |
 
   if (error) throw new Error(error.message)
   revalidatePath('/users')
+  revalidatePath(`/users/${userId}`)
 }
 
 // 审核商家：通过（使用 service_role 写库，避免 merchant_staff RLS 无限递归）
@@ -485,4 +486,52 @@ export async function unbanUser(userId: string) {
   if (error) throw new Error(error.message)
   revalidatePath(`/users/${userId}`)
   revalidatePath('/users')
+}
+
+const MIN_ADMIN_PASSWORD_LENGTH = 8
+
+/** 管理员触发：生成恢复链接并通过 C12 模板通道发送邮件（无 referenceId，允许重复发送） */
+export async function sendUserPasswordRecoveryEmail(userId: string) {
+  await requireAdmin()
+  const supabase = getServiceRoleClient()
+
+  const { data: authData, error: getErr } = await supabase.auth.admin.getUserById(userId)
+  if (getErr) throw new Error(getErr.message)
+  const email = authData.user?.email?.trim()
+  if (!email) throw new Error('User has no email on file')
+
+  const redirectTo = process.env.DEALJOY_PASSWORD_RECOVERY_REDIRECT_URL?.trim() || undefined
+
+  const { data: linkData, error: linkErr } = await supabase.auth.admin.generateLink({
+    type: 'recovery',
+    email,
+    ...(redirectTo ? { options: { redirectTo } } : {}),
+  })
+  if (linkErr) throw new Error(linkErr.message)
+  const actionLink = linkData?.properties?.action_link
+  if (!actionLink) throw new Error('Failed to generate recovery link')
+
+  await sendAdminEmail({
+    to: email,
+    subject: 'Reset your CrunchyPlum password',
+    htmlBody: `<p>You requested a password reset for your account.</p><p><a href="${actionLink.replace(/&/g, '&amp;')}">Click here to set a new password</a></p><p>If you did not request this, you can ignore this email.</p>`,
+    textBody: `Reset your password: ${actionLink}`,
+    emailCode: 'C12',
+    recipientType: 'customer',
+  })
+  revalidatePath(`/users/${userId}`)
+}
+
+/** 管理员直接设置用户登录密码（不展示旧密码） */
+export async function adminSetUserPassword(userId: string, newPassword: string) {
+  await requireAdmin()
+  const pw = newPassword.trim()
+  if (pw.length < MIN_ADMIN_PASSWORD_LENGTH) {
+    throw new Error(`Password must be at least ${MIN_ADMIN_PASSWORD_LENGTH} characters`)
+  }
+
+  const supabase = getServiceRoleClient()
+  const { error } = await supabase.auth.admin.updateUserById(userId, { password: pw })
+  if (error) throw new Error(error.message)
+  revalidatePath(`/users/${userId}`)
 }
