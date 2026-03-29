@@ -9,6 +9,8 @@ import UserDetailPasswordPanel from '@/components/user-detail-password-panel'
 import UserBillingAddressesPanel, {
   type BillingAddressRow,
 } from '@/components/user-billing-addresses-panel'
+import UserStoreCreditPanel from '@/components/user-store-credit-panel'
+import { mapStoreCreditTransaction } from '@/lib/store-credit-map'
 
 export default async function UserDetailPage({
   params,
@@ -97,6 +99,25 @@ export default async function UserDetailPage({
     created_at: String(r.created_at ?? ''),
     updated_at: String(r.updated_at ?? ''),
   }))
+
+  const { data: storeCreditRow } = await serviceClient
+    .from('store_credits')
+    .select('amount')
+    .eq('user_id', id)
+    .maybeSingle()
+
+  const storeCreditBalance = Math.round(Number(storeCreditRow?.amount ?? 0) * 100) / 100
+
+  const { data: storeCreditTxRaw } = await serviceClient
+    .from('store_credit_transactions')
+    .select('id, amount, type, description, order_item_id, created_at')
+    .eq('user_id', id)
+    .order('created_at', { ascending: false })
+    .limit(100)
+
+  const storeCreditTransactions = (storeCreditTxRaw ?? []).map((r) =>
+    mapStoreCreditTransaction(r as unknown as Record<string, unknown>)
+  )
 
   return (
     <div className="space-y-6">
@@ -196,6 +217,12 @@ export default async function UserDetailPage({
             usedCoupons={usedCoupons}
             orders={orders ?? []}
             coupons={coupons ?? []}
+          />
+
+          <UserStoreCreditPanel
+            userId={id}
+            balance={storeCreditBalance}
+            transactions={storeCreditTransactions}
           />
 
           <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-3">
