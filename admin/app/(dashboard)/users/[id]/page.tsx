@@ -6,6 +6,11 @@ import BanUserButton from '@/components/ban-user-button'
 import UserDetailSpendingAndActivityModal from '@/components/user-detail-spending-and-activity-modal'
 import RoleSelect from '@/components/role-select'
 import UserDetailPasswordPanel from '@/components/user-detail-password-panel'
+import UserBillingAddressesPanel, {
+  type BillingAddressRow,
+} from '@/components/user-billing-addresses-panel'
+import UserStoreCreditPanel from '@/components/user-store-credit-panel'
+import { mapStoreCreditTransaction } from '@/lib/store-credit-map'
 
 export default async function UserDetailPage({
   params,
@@ -71,6 +76,48 @@ export default async function UserDetailPage({
   const usedCoupons = coupons?.filter(c => c.status === 'used').length ?? 0
   const activeCoupons = coupons?.filter(c => c.status === 'unused').length ?? 0
   const avgOrder = totalOrders > 0 ? totalSpent / totalOrders : 0
+
+  // 用户账单地址（service role 绕过 RLS）
+  const { data: billingAddressesRaw } = await serviceClient
+    .from('billing_addresses')
+    .select('*')
+    .eq('user_id', id)
+    .order('is_default', { ascending: false })
+    .order('created_at', { ascending: true })
+
+  const billingAddresses: BillingAddressRow[] = (billingAddressesRaw ?? []).map((r) => ({
+    id: String(r.id),
+    user_id: String(r.user_id),
+    label: String(r.label ?? ''),
+    address_line1: String(r.address_line1 ?? ''),
+    address_line2: String(r.address_line2 ?? ''),
+    city: String(r.city ?? ''),
+    state: String(r.state ?? ''),
+    postal_code: String(r.postal_code ?? ''),
+    country: String(r.country ?? 'US'),
+    is_default: Boolean(r.is_default),
+    created_at: String(r.created_at ?? ''),
+    updated_at: String(r.updated_at ?? ''),
+  }))
+
+  const { data: storeCreditRow } = await serviceClient
+    .from('store_credits')
+    .select('amount')
+    .eq('user_id', id)
+    .maybeSingle()
+
+  const storeCreditBalance = Math.round(Number(storeCreditRow?.amount ?? 0) * 100) / 100
+
+  const { data: storeCreditTxRaw } = await serviceClient
+    .from('store_credit_transactions')
+    .select('id, amount, type, description, order_item_id, created_at')
+    .eq('user_id', id)
+    .order('created_at', { ascending: false })
+    .limit(100)
+
+  const storeCreditTransactions = (storeCreditTxRaw ?? []).map((r) =>
+    mapStoreCreditTransaction(r as unknown as Record<string, unknown>)
+  )
 
   return (
     <div className="space-y-6">
@@ -156,6 +203,8 @@ export default async function UserDetailPage({
               {userInfo.updated_at && <span>Profile updated: {new Date(userInfo.updated_at).toLocaleDateString('en-US')}</span>}
             </div>
           </div>
+
+          <UserBillingAddressesPanel userId={id} addresses={billingAddresses} />
         </div>
 
         {/* 右侧侧栏：固定宽度列，大屏贴顶 sticky */}
@@ -168,6 +217,12 @@ export default async function UserDetailPage({
             usedCoupons={usedCoupons}
             orders={orders ?? []}
             coupons={coupons ?? []}
+          />
+
+          <UserStoreCreditPanel
+            userId={id}
+            balance={storeCreditBalance}
+            transactions={storeCreditTransactions}
           />
 
           <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-3">
