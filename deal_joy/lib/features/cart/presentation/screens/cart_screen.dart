@@ -411,13 +411,41 @@ class _DealGroup extends ConsumerWidget {
                         icon: Icons.add,
                         color: AppColors.primary,
                         onTap: () async {
-                          // 从 cart_item 元数据中读取 max_per_account
+                          // 购物车中当前 deal 已有数量（含本组）
+                          final cartCount = quantity; // quantity = items.length
                           final maxPerAccount = first.maxPerAccount;
+                          final stockLimit = first.stockLimit;
+                          // total_sold 由触发器维护，存储在 deals 表，不受 RLS 影响
+                          final totalSold = first.totalSold;
+
+                          // 校验总库存（stock_limit）
+                          // 调用 SECURITY DEFINER RPC 获取真实剩余库存，绕过 RLS 限制
+                          if (stockLimit > 0) {
+                            final remaining = await Supabase.instance.client.rpc(
+                              'get_deal_remaining_stock',
+                              params: {'p_deal_id': first.dealId},
+                            ) as int? ?? stockLimit;
+                            if (cartCount >= remaining) {
+                              final ctx = context;
+                              if (ctx.mounted) {
+                                ScaffoldMessenger.of(ctx).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                        "Sorry, this deal is sold out or has limited stock remaining"),
+                                    behavior: SnackBarBehavior.floating,
+                                  ),
+                                );
+                              }
+                              return;
+                            }
+                          }
+
+                          // 校验每人限购（max_per_account）
                           if (maxPerAccount > 0) {
                             final userId =
                                 ref.read(currentUserProvider).value?.id;
                             if (userId != null) {
-                              // 查询该用户已购买且未退款的该 deal 数量
+                              // 查询该用户已购买且未退款的该 deal 数量（只看自己，RLS 正常工作）
                               final res = await Supabase.instance.client
                                   .from('order_items')
                                   .select('id, orders!inner(user_id)')
@@ -425,11 +453,7 @@ class _DealGroup extends ConsumerWidget {
                                   .eq('orders.user_id', userId)
                                   .neq('customer_status', 'refund_success');
                               final purchasedCount = (res as List).length;
-                              // 购物车中当前 deal 已有数量（含本组）
-                              final cartCount =
-                                  quantity; // quantity = items.length
-                              if (purchasedCount + cartCount >=
-                                  maxPerAccount) {
+                              if (purchasedCount + cartCount >= maxPerAccount) {
                                 final ctx = context;
                                 if (ctx.mounted) {
                                   ScaffoldMessenger.of(ctx).showSnackBar(
@@ -444,6 +468,7 @@ class _DealGroup extends ConsumerWidget {
                               }
                             }
                           }
+
                           // 复制第一个 item 的信息，新增一行 cart_item
                           ref
                               .read(cartProvider.notifier)
