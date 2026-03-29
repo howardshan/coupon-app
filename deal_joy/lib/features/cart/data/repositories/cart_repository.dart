@@ -32,13 +32,13 @@ class CartRepository {
     )
   ''';
 
-  /// 获取用户购物车列表（按创建时间倒序）
+  /// 获取用户购物车列表（按创建时间正序，保持新增商品位置稳定）
   Future<List<CartItemModel>> fetchCartItems(String userId) async {
     final data = await _client
         .from('cart_items')
         .select(_selectFields)
         .eq('user_id', userId)
-        .order('created_at', ascending: false);
+        .order('created_at', ascending: true);
 
     return (data as List)
         .map((e) => CartItemModel.fromJson(e as Map<String, dynamic>))
