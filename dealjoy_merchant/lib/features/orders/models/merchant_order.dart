@@ -320,6 +320,12 @@ class MerchantOrderItem {
   /// 核销时间
   final DateTime? couponRedeemedAt;
 
+  /// Deal 原价（来自 deals.original_price）
+  final double dealOriginalPrice;
+
+  /// Deal 折扣价（来自 deals.discount_price）
+  final double dealDiscountPrice;
+
   const MerchantOrderItem({
     required this.orderItemId,
     required this.orderId,
@@ -329,6 +335,8 @@ class MerchantOrderItem {
     required this.serviceFee,
     required this.customerStatus,
     required this.merchantStatus,
+    this.dealOriginalPrice = 0.0,
+    this.dealDiscountPrice = 0.0,
     this.couponCode,
     this.couponStatus,
     this.couponExpiresAt,
@@ -346,6 +354,8 @@ class MerchantOrderItem {
       serviceFee: (json['service_fee'] as num?)?.toDouble() ?? 0.0,
       customerStatus: json['customer_status'] as String? ?? 'unused',
       merchantStatus: json['merchant_status'] as String? ?? 'active',
+      dealOriginalPrice: (json['deal_original_price'] as num?)?.toDouble() ?? 0.0,
+      dealDiscountPrice: (json['deal_discount_price'] as num?)?.toDouble() ?? 0.0,
       couponCode: json['coupon_code'] as String?,
       couponStatus: json['coupon_status'] as String?,
       couponExpiresAt: json['coupon_expires_at'] != null
@@ -570,6 +580,9 @@ class MerchantOrderDetail extends MerchantOrder {
   /// 客户邮箱（V3 customer 对象新增）
   final String? customerEmail;
 
+  /// Store Credit 抵扣金额（>0 表示用了 Store Credit）
+  final double storeCreditUsed;
+
   const MerchantOrderDetail({
     super.orderItemId,
     required super.id,
@@ -602,6 +615,7 @@ class MerchantOrderDetail extends MerchantOrder {
     this.itemsAmount = 0.0,
     this.serviceFeeTotal = 0.0,
     this.customerEmail,
+    this.storeCreditUsed = 0.0,
   });
 
   /// 从 Edge Function 返回的详情 JSON 构造
@@ -613,8 +627,10 @@ class MerchantOrderDetail extends MerchantOrder {
 
     final timelineJson = orderJson['timeline'] as List<dynamic>? ?? [];
 
-    // V3 items 列表
-    final itemsJson = orderJson['items'] as List<dynamic>? ?? [];
+    // V3 items 列表：Edge Function 将 items 放在顶层（json['items']），不在 order 内部
+    final itemsJson = (json['items'] as List<dynamic>?)
+        ?? (orderJson['items'] as List<dynamic>?)
+        ?? [];
     final items = itemsJson
         .map((e) => MerchantOrderItem.fromJson(e as Map<String, dynamic>))
         .toList();
@@ -669,10 +685,15 @@ class MerchantOrderDetail extends MerchantOrder {
       refundRejectedAt: orderJson['refund_rejected_at'] != null
           ? DateTime.parse(orderJson['refund_rejected_at'] as String)
           : null,
-      dealOriginalPrice:
-          (orderJson['deal_original_price'] as num?)?.toDouble() ?? 0.0,
-      dealDiscountPrice:
-          (orderJson['deal_discount_price'] as num?)?.toDouble() ?? 0.0,
+      dealOriginalPrice: (orderJson['deal_original_price'] as num?)?.toDouble()
+          ?? (items.isNotEmpty ? items.first.dealOriginalPrice : 0.0),
+      // dealDiscountPrice：优先用 deals.discount_price，否则回退到实际支付单价
+      dealDiscountPrice: (() {
+        final fromDeal = (orderJson['deal_discount_price'] as num?)?.toDouble()
+            ?? (items.isNotEmpty ? items.first.dealDiscountPrice : null);
+        if (fromDeal != null && fromDeal > 0) return fromDeal;
+        return unitPrice; // 用实际支付单价作为最终兜底
+      })(),
       paymentIntentIdMasked:
           orderJson['payment_intent_id_masked'] as String?,
       paymentStatus: orderJson['payment_status'] as String?,
@@ -684,6 +705,7 @@ class MerchantOrderDetail extends MerchantOrder {
       items: items,
       itemsAmount: (orderJson['items_amount'] as num?)?.toDouble() ?? 0.0,
       serviceFeeTotal: (orderJson['service_fee_total'] as num?)?.toDouble() ?? 0.0,
+      storeCreditUsed: (orderJson['store_credit_used'] as num?)?.toDouble() ?? 0.0,
     );
   }
 }

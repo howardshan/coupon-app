@@ -368,7 +368,7 @@ async function handleDetail(
 ): Promise<Response> {
   console.log('[merchant-orders] handleDetail V3', { orderId, merchantId });
 
-  // 查询 order 基本信息 + 用户信息
+  // 查询 order 基本信息 + 用户信息（含退款申请时间用于 timeline）
   const { data: order, error: orderError } = await client
     .from('orders')
     .select(`
@@ -377,9 +377,11 @@ async function handleDetail(
       total_amount,
       service_fee_total,
       items_amount,
+      store_credit_used,
       paid_at,
       created_at,
       updated_at,
+      refund_requested_at,
       users!inner (
         full_name,
         email
@@ -470,6 +472,8 @@ async function handleDetail(
       id: row.id,
       deal_id: row.deal_id,
       deal_title: deal?.title ?? null,
+      deal_original_price: deal?.original_price ?? null,
+      deal_discount_price: deal?.discount_price ?? null,
       unit_price: row.unit_price,
       service_fee: row.service_fee,
       // V3 双状态
@@ -494,6 +498,46 @@ async function handleDetail(
     };
   });
 
+  // 构造 timeline（从 order 和 items 数据推算各阶段时间）
+  const timeline: Array<{ event: string; timestamp: string | null; completed: boolean }> = [];
+
+  // 1. purchased：订单创建
+  timeline.push({
+    event: 'purchased',
+    timestamp: (order.paid_at ?? order.created_at) as string | null,
+    completed: true,
+  });
+
+  // 2. redeemed：任意一张券已核销
+  const redeemedItem = items.find((i) => i.redeemed_at);
+  if (redeemedItem) {
+    timeline.push({
+      event: 'redeemed',
+      timestamp: redeemedItem.redeemed_at as string | null,
+      completed: true,
+    });
+  }
+
+  // 3. refund_requested：如果订单有退款申请时间
+  const refundRequestedAt = (order as Record<string, unknown>).refund_requested_at as string | null ?? null;
+  if (refundRequestedAt) {
+    timeline.push({
+      event: 'refund_requested',
+      timestamp: refundRequestedAt,
+      completed: true,
+    });
+  }
+
+  // 4. refunded：任意一张券已退款
+  const refundedItem = items.find((i) => i.refunded_at);
+  if (refundedItem) {
+    timeline.push({
+      event: 'refunded',
+      timestamp: refundedItem.refunded_at as string | null,
+      completed: true,
+    });
+  }
+
   return jsonResponse({
     order: {
       id: order.id,
@@ -501,8 +545,10 @@ async function handleDetail(
       total_amount: order.total_amount,
       service_fee_total: (order.service_fee_total as number | null) ?? 0,
       items_amount: (order.items_amount as number | null) ?? order.total_amount,
+      store_credit_used: (order.store_credit_used as number | null) ?? 0,
       paid_at: order.paid_at,
       created_at: order.created_at,
+      timeline,
     },
     items: formattedItems,
     customer: {

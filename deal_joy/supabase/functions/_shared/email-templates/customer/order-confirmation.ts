@@ -12,12 +12,14 @@ export interface C2OrderItem {
 }
 
 export interface C2OrderConfirmationData {
-  customerEmail:  string;
-  orderNumber:    string;
-  items:          C2OrderItem[];
-  subtotal:       number;
-  serviceFee:     number;
-  totalAmount:    number;
+  customerEmail:    string;
+  orderNumber:      string;
+  items:            C2OrderItem[];
+  subtotal:         number;
+  serviceFee:       number;
+  totalAmount:      number;   // Stripe 实际扣款金额
+  storeCreditUsed?: number;   // Store Credit 抵扣金额（>0 时展示）
+  orderTotal?:      number;   // 订单实际总额（subtotal + serviceFee），用于展示
 }
 
 export function buildC2Email(data: C2OrderConfirmationData): { subject: string; html: string } {
@@ -65,12 +67,25 @@ export function buildC2Email(data: C2OrderConfirmationData): { subject: string; 
           ${formatCurrency(data.serviceFee)}
         </td>
       </tr>
+      ${(data.storeCreditUsed ?? 0) > 0 ? `
+      <tr>
+        <td style="padding:4px 0 8px;font-size:13px;color:#2E7D32;">Store Credit</td>
+        <td style="padding:4px 0 8px;font-size:13px;color:#2E7D32;text-align:right;">
+          -${formatCurrency(data.storeCreditUsed!)}
+        </td>
+      </tr>` : ''}
       <tr style="border-top:2px solid #E0E0E0;">
         <td style="padding:12px 0 4px;font-size:15px;font-weight:700;color:#212121;">Total</td>
         <td style="padding:12px 0 4px;font-size:15px;font-weight:700;color:#212121;text-align:right;">
-          ${formatCurrency(data.totalAmount)}
+          ${formatCurrency(data.orderTotal ?? (data.subtotal + data.serviceFee))}
         </td>
       </tr>
+      ${(data.storeCreditUsed ?? 0) > 0 ? `
+      <tr>
+        <td style="padding:4px 0 0;font-size:12px;color:#2E7D32;font-style:italic;" colspan="2">
+          Fully paid by Store Credit
+        </td>
+      </tr>` : ''}
     </table>
 
     <p style="margin:16px 0 0;font-size:13px;color:#757575;line-height:1.6;">

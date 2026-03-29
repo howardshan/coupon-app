@@ -306,13 +306,17 @@ Deno.serve(async (req) => {
             unitPrice: item.unitPrice,
             quantity:  1,
           }));
+          const c2ServiceFee = SERVICE_FEE_PER_COUPON * items.length;
+          const c2OrderTotal = (subtotal ?? 0) + c2ServiceFee;
           const { subject: c2Subject, html: c2Html } = buildC2Email({
-            customerEmail: userInfo.email,
+            customerEmail:  userInfo.email,
             orderNumber,
-            items:        c2Items,
-            subtotal:     subtotal ?? 0,
-            serviceFee:   SERVICE_FEE_PER_COUPON * items.length,
-            totalAmount,
+            items:          c2Items,
+            subtotal:       subtotal ?? 0,
+            serviceFee:     c2ServiceFee,
+            totalAmount,                   // Stripe 实际扣款（可能为 0）
+            storeCreditUsed: creditUsed > 0 ? creditUsed : undefined,
+            orderTotal:      c2OrderTotal, // 展示用总额
           });
           emailPromises.push(sendEmail(serviceClient, {
             to:            userInfo.email,
