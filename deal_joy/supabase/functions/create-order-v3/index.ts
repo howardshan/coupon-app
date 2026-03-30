@@ -301,18 +301,30 @@ Deno.serve(async (req) => {
 
         // C2：订单确认邮件 → 发给客户
         if (userInfo?.email) {
-          const c2Items = items.map((item: { dealId: string; unitPrice: number }) => ({
-            dealTitle: (dealMap.get(item.dealId) as { title: string } | undefined)?.title ?? 'Deal',
-            unitPrice: item.unitPrice,
-            quantity:  1,
-          }));
+          // 按 dealId + unitPrice 分组合并，相同 deal 显示为一行（含数量）
+          const c2GroupMap = new Map<string, { dealTitle: string; unitPrice: number; quantity: number }>();
+          for (const item of items as Array<{ dealId: string; unitPrice: number }>) {
+            const key = `${item.dealId}__${item.unitPrice}`;
+            const title = (dealMap.get(item.dealId) as { title: string } | undefined)?.title ?? 'Deal';
+            if (c2GroupMap.has(key)) {
+              c2GroupMap.get(key)!.quantity += 1;
+            } else {
+              c2GroupMap.set(key, { dealTitle: title, unitPrice: item.unitPrice, quantity: 1 });
+            }
+          }
+          const c2Items = Array.from(c2GroupMap.values());
+          const c2ServiceFee = SERVICE_FEE_PER_COUPON * items.length;
+          const c2OrderTotal = (subtotal ?? 0) + c2ServiceFee;
           const { subject: c2Subject, html: c2Html } = buildC2Email({
-            customerEmail: userInfo.email,
+            customerEmail:   userInfo.email,
             orderNumber,
-            items:        c2Items,
-            subtotal:     subtotal ?? 0,
-            serviceFee:   SERVICE_FEE_PER_COUPON * items.length,
-            totalAmount,
+            items:           c2Items,
+            subtotal:        subtotal ?? 0,
+            serviceFee:      c2ServiceFee,
+            totalAmount,                    // Stripe 实际扣款（可能为 0）
+            storeCreditUsed: creditUsed > 0 ? creditUsed : undefined,
+            orderTotal:      c2OrderTotal,  // 展示用总额
+            fullyPaidByCredit: totalAmount <= 0, // 只有真正全额覆盖才显示该文案
           });
           emailPromises.push(sendEmail(serviceClient, {
             to:            userInfo.email,
@@ -326,20 +338,27 @@ Deno.serve(async (req) => {
         }
 
         // M5：新订单通知 → 按 purchasedMerchantId 分组，每家各发一封
-        const merchantItemsMap = new Map<string, Array<{ dealTitle: string; quantity: number; unitPrice: number }>>();
+        // 同一商家内再按 dealId + unitPrice 合并，相同 deal 显示为一行
+        const merchantItemsMap = new Map<string, Map<string, { dealTitle: string; quantity: number; unitPrice: number }>>();
         for (const item of items as Array<{ dealId: string; unitPrice: number; purchasedMerchantId?: string }>) {
           const deal = dealMap.get(item.dealId) as { merchant_id: string; title: string } | undefined;
           const mid  = item.purchasedMerchantId ?? deal?.merchant_id;
           if (!mid) continue;
-          if (!merchantItemsMap.has(mid)) merchantItemsMap.set(mid, []);
-          merchantItemsMap.get(mid)!.push({
-            dealTitle: deal?.title ?? 'Deal',
-            quantity:  1,
-            unitPrice: item.unitPrice,
-          });
+          if (!merchantItemsMap.has(mid)) merchantItemsMap.set(mid, new Map());
+          const dealKey = `${item.dealId}__${item.unitPrice}`;
+          const merchantDeals = merchantItemsMap.get(mid)!;
+          if (merchantDeals.has(dealKey)) {
+            merchantDeals.get(dealKey)!.quantity += 1;
+          } else {
+            merchantDeals.set(dealKey, {
+              dealTitle: deal?.title ?? 'Deal',
+              quantity:  1,
+              unitPrice: item.unitPrice,
+            });
+          }
         }
 
-        for (const [merchantId, merchantItems] of merchantItemsMap.entries()) {
+        for (const [merchantId, merchantDealsMap] of merchantItemsMap.entries()) {
           const { data: merchantRow } = await serviceClient
             .from('merchants')
             .select('name, user_id')
@@ -354,6 +373,7 @@ Deno.serve(async (req) => {
             .single();
           if (!merchantUser?.email) continue;
 
+          const merchantItems = Array.from(merchantDealsMap.values());
           const merchantTotal = merchantItems.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0);
           const { subject: m5Subject, html: m5Html } = buildM5Email({
             merchantName: merchantRow.name,

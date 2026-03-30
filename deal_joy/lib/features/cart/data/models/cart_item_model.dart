@@ -24,6 +24,10 @@ class CartItemModel {
   final String? merchantId;
   // 每账号限购数量快照，-1 表示无限制
   final int maxPerAccount;
+  // 该 deal 总库存上限，-1 或 0 表示无限制
+  final int stockLimit;
+  // 该 deal 全局已售出数量（由触发器维护，不受 RLS 限制）
+  final int totalSold;
 
   const CartItemModel({
     required this.id,
@@ -40,6 +44,8 @@ class CartItemModel {
     required this.merchantName,
     this.merchantId,
     this.maxPerAccount = -1,
+    this.stockLimit = -1,
+    this.totalSold = 0,
   });
 
   /// 从 Supabase 查询结果解析（含 deals join merchants 嵌套）
@@ -76,6 +82,8 @@ class CartItemModel {
       merchantName: merchant['name'] as String? ?? '',
       merchantId: merchant['id'] as String?,
       maxPerAccount: deal['max_per_account'] as int? ?? -1,
+      stockLimit: deal['stock_limit'] as int? ?? -1,
+      totalSold: deal['total_sold'] as int? ?? 0,
     );
   }
 }

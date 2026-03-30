@@ -184,7 +184,7 @@ Deno.serve(async (req) => {
 
     const { data: deals, error: dealsError } = await supabase
       .from('deals')
-      .select('id, discount_price, is_active, expires_at, max_per_account, merchant_id')
+      .select('id, discount_price, is_active, expires_at, max_per_account, stock_limit, total_sold, merchant_id')
       .in('id', dealIds);
 
     if (dealsError) {
@@ -192,8 +192,8 @@ Deno.serve(async (req) => {
       return errorResponse('Failed to validate deals', 500);
     }
 
-    // 构建 dealId → deal 映射（含 max_per_account、merchant_id 字段）
-    const dealMap = new Map<string, { discount_price: number; is_active: boolean; expires_at: string; max_per_account: number | null; merchant_id: string }>();
+    // 构建 dealId → deal 映射（含 max_per_account、stock_limit、total_sold、merchant_id 字段）
+    const dealMap = new Map<string, { discount_price: number; is_active: boolean; expires_at: string; max_per_account: number | null; stock_limit: number | null; total_sold: number | null; merchant_id: string }>();
     for (const deal of (deals ?? [])) {
       dealMap.set(deal.id, deal);
     }
@@ -268,6 +268,39 @@ Deno.serve(async (req) => {
       if (purchasedCount + requestedCount > maxPerAccount) {
         return errorResponse(
           `Purchase limit exceeded for this deal: maximum ${maxPerAccount} per account (already purchased ${purchasedCount})`,
+        );
+      }
+    }
+
+    // ---------- 总库存校验：COUNT order_items 统计已售份数 ----------
+    for (const dealId of dealIds) {
+      const dealData = dealMap.get(dealId);
+      if (!dealData) continue;
+
+      const stockLimit = dealData.stock_limit ?? -1;
+      // -1 或 0 表示不限库存
+      if (stockLimit <= 0) continue;
+
+      // 统计已售出且未退款的 order_items（每行 = 1 份 deal，与 RPC get_deal_remaining_stock 逻辑一致）
+      // 后端用 service role，无 RLS 限制，可直接 COUNT 全局数据
+      const { count: soldCount, error: soldError } = await supabase
+        .from('order_items')
+        .select('id', { count: 'exact', head: true })
+        .eq('deal_id', dealId)
+        .not('customer_status', 'eq', 'refund_success');
+
+      if (soldError) {
+        console.error(`查询 deal ${dealId} 库存数量失败:`, soldError);
+        return errorResponse('Failed to check stock availability', 500);
+      }
+
+      const sold = soldCount ?? 0;
+      // 本次请求中该 deal 的购买数量
+      const requestedCount = items.filter((i: { dealId: string }) => i.dealId === dealId).length;
+
+      if (sold + requestedCount > stockLimit) {
+        return errorResponse(
+          `Not enough stock for this deal: only ${stockLimit - sold} remaining`,
         );
       }
     }

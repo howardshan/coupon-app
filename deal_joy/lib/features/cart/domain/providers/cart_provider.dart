@@ -68,13 +68,14 @@ class CartNotifier extends AsyncNotifier<List<CartItemModel>> {
   }
 
   /// 从已有 CartItemModel 复制一份加入购物车（数量 +1 用）
+  /// 使用乐观更新：将新 item 追加到列表末尾，不触发全局 AsyncLoading
   Future<void> addDealFromCartItem(CartItemModel item) async {
     final user = await ref.read(currentUserProvider.future);
     if (user == null) return;
 
-    state = const AsyncLoading();
-    state = await AsyncValue.guard(() async {
-      await _repo.addToCart(
+    // 不设 AsyncLoading，避免全页面闪烁
+    try {
+      final newItem = await _repo.addToCart(
         userId: user.id,
         dealId: item.dealId,
         unitPrice: item.unitPrice,
@@ -82,20 +83,27 @@ class CartNotifier extends AsyncNotifier<List<CartItemModel>> {
         applicableStoreIds: item.applicableStoreIds,
         selectedOptions: item.selectedOptions,
       );
-      return _repo.fetchCartItems(user.id);
-    });
+      // 追加到列表末尾（配合 ASC 排序，保持分组位置稳定）
+      final current = state.valueOrNull ?? [];
+      state = AsyncData([...current, newItem]);
+    } catch (e, st) {
+      state = AsyncError(e, st);
+    }
   }
 
   /// 移除指定 cart_item（通过主键 id）
+  /// 使用乐观删除：先从 state 移除，失败时回滚，不触发全局 AsyncLoading
   Future<void> removeItem(String cartItemId) async {
-    final user = await ref.read(currentUserProvider.future);
-    if (user == null) return;
+    final current = state.valueOrNull ?? [];
+    // 乐观更新：立即从 UI 移除，不等待网络
+    state = AsyncData(current.where((item) => item.id != cartItemId).toList());
 
-    state = const AsyncLoading();
-    state = await AsyncValue.guard(() async {
+    try {
       await _repo.removeFromCart(cartItemId);
-      return _repo.fetchCartItems(user.id);
-    });
+    } catch (e, st) {
+      // 网络失败：回滚到删除前的状态
+      state = AsyncData(current);
+    }
   }
 
   /// 批量加入购物车（Buy Again 专用）
