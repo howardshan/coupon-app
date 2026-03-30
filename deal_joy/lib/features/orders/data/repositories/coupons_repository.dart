@@ -2,6 +2,7 @@
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/errors/app_exception.dart';
+import '../../../../core/errors/postgrest_auth_mapper.dart';
 import '../models/coupon_model.dart';
 import '../models/coupon_gift_model.dart';
 
@@ -35,7 +36,7 @@ class CouponsRepository {
           .map((e) => CouponModel.fromJson(e as Map<String, dynamic>))
           .toList();
     } on PostgrestException catch (e) {
-      throw AppException('Failed to load coupons: ${e.message}', code: e.code);
+      throwForCouponListPostgrest(e);
     }
   }
 
@@ -49,7 +50,7 @@ class CouponsRepository {
           .single();
       return CouponModel.fromJson(data);
     } on PostgrestException catch (e) {
-      throw AppException('Coupon not found: ${e.message}', code: e.code);
+      throwForCouponDetailPostgrest(e);
     }
   }
 
@@ -234,6 +235,12 @@ class CouponsRepository {
       if (data == null) return null;
       return CouponGiftModel.fromJson(data);
     } on PostgrestException catch (e) {
+      if (isPostgrestSessionExpiredLike(e)) {
+        throw AppAuthException(
+          'Your session has expired. Please sign in again.',
+          code: e.code ?? 'session_expired',
+        );
+      }
       throw AppException('Failed to fetch gift info: ${e.message}',
           code: e.code);
     }

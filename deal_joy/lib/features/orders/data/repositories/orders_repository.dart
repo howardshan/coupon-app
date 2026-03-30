@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/errors/app_exception.dart';
+import '../../../../core/errors/postgrest_auth_mapper.dart';
 // FunctionException 已在 supabase_flutter 中导出，无需额外导入
 import '../models/order_detail_model.dart';
 import '../models/order_model.dart';
@@ -166,7 +167,7 @@ class OrdersRepository {
           .single();
       return data;
     } on PostgrestException catch (e) {
-      throw AppException('Coupon not found: ${e.message}', code: e.code);
+      throwForCouponFetchPostgrest(e);
     }
   }
 }
