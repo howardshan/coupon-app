@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { getServiceRoleClient } from '@/lib/supabase/service'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 
@@ -9,10 +10,10 @@ export default async function BrandsPage() {
 
   if (profile?.role !== 'admin') redirect('/dashboard')
 
-  // 查询所有品牌 + 关联门店数量 + 品牌管理员数量
+  // 查询所有品牌 + 关联门店数量 + 品牌管理员数量（包含 commission_rate）
   const { data: brands } = await supabase
     .from('brands')
-    .select('id, name, logo_url, created_at')
+    .select('id, name, logo_url, commission_rate, created_at')
     .order('created_at', { ascending: false })
 
   // 获取每个品牌的门店数量
@@ -46,6 +47,27 @@ export default async function BrandsPage() {
     }
   }
 
+  // 获取每个品牌的本月收入数据
+  const serviceClient = getServiceRoleClient()
+  const now = new Date()
+  const monthStartStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+  let revenueMap: Record<string, number> = {}
+
+  if (brandIds.length > 0) {
+    // 并行调用每个品牌的 earnings summary
+    const earningsPromises = brandIds.map(async (brandId) => {
+      const { data } = await serviceClient.rpc('get_brand_earnings_summary', {
+        p_brand_id: brandId,
+        p_month_start: monthStartStr,
+      })
+      return { brandId, revenue: data?.[0]?.total_brand_revenue ?? 0 }
+    })
+    const earningsResults = await Promise.all(earningsPromises)
+    for (const r of earningsResults) {
+      revenueMap[r.brandId] = r.revenue
+    }
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -60,6 +82,8 @@ export default async function BrandsPage() {
               <th className="text-left px-4 py-3 font-medium text-gray-600">Brand</th>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Stores</th>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Admins</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600">Commission</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600">Revenue (This Month)</th>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Created</th>
               <th className="text-left px-4 py-3 font-medium text-gray-600"></th>
             </tr>
@@ -83,6 +107,8 @@ export default async function BrandsPage() {
                 </td>
                 <td className="px-4 py-3 text-gray-600">{storeCountMap[b.id] ?? 0}</td>
                 <td className="px-4 py-3 text-gray-600">{adminCountMap[b.id] ?? 0}</td>
+                <td className="px-4 py-3 text-gray-600">{b.commission_rate ? `${(b.commission_rate * 100).toFixed(0)}%` : '—'}</td>
+                <td className="px-4 py-3 text-gray-600 font-medium">${(revenueMap[b.id] ?? 0).toFixed(2)}</td>
                 <td className="px-4 py-3 text-gray-500">{new Date(b.created_at).toLocaleDateString('en-US')}</td>
                 <td className="px-4 py-3">
                   <Link

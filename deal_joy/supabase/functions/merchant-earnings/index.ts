@@ -225,42 +225,28 @@ async function handleTransactions(
     const rows = Array.isArray(data) ? data : [];
     const totalCount = rows.length > 0 ? parseInt(rows[0].total_count ?? '0') : 0;
 
-    // 聚合合计行（含 stripe_fee）
+    // 聚合合计行（含 stripe_fee + brand_fee）
     const totals = rows.reduce(
-      (acc: { amount: number; platform_fee: number; stripe_fee: number; net_amount: number }, row: {
-        amount: string;
-        platform_fee: string;
-        stripe_fee: string;
-        net_amount: string;
-      }) => ({
+      (acc: { amount: number; platform_fee: number; brand_fee: number; stripe_fee: number; net_amount: number }, row: any) => ({
         amount: acc.amount + parseFloat(row.amount ?? '0'),
         platform_fee: acc.platform_fee + parseFloat(row.platform_fee ?? '0'),
+        brand_fee: acc.brand_fee + parseFloat(row.brand_fee ?? '0'),
         stripe_fee: acc.stripe_fee + parseFloat(row.stripe_fee ?? '0'),
         net_amount: acc.net_amount + parseFloat(row.net_amount ?? '0'),
       }),
-      { amount: 0, platform_fee: 0, stripe_fee: 0, net_amount: 0 },
+      { amount: 0, platform_fee: 0, brand_fee: 0, stripe_fee: 0, net_amount: 0 },
     );
 
     return jsonResponse({
-      data: rows.map((row: {
-        order_id: string;
-        deal_title: string;
-        validity_type: string;
-        amount: string;
-        platform_fee_rate: string;
-        platform_fee: string;
-        stripe_fee: string;
-        net_amount: string;
-        status: string;
-        created_at: string;
-        total_count: string;
-      }) => ({
+      data: rows.map((row: any) => ({
         order_id:          row.order_id,
         deal_title:        row.deal_title ?? '',
         validity_type:     row.validity_type ?? 'fixed_date',
         amount:            parseFloat(row.amount ?? '0'),
         platform_fee_rate: parseFloat(row.platform_fee_rate ?? '0'),
         platform_fee:      parseFloat(row.platform_fee ?? '0'),
+        brand_fee_rate:    parseFloat(row.brand_fee_rate ?? '0'),
+        brand_fee:         parseFloat(row.brand_fee ?? '0'),
         stripe_fee:        parseFloat(row.stripe_fee ?? '0'),
         net_amount:        parseFloat(row.net_amount ?? '0'),
         status:            row.status,
@@ -275,6 +261,7 @@ async function handleTransactions(
       totals: {
         amount:       Math.round(totals.amount * 100) / 100,
         platform_fee: Math.round(totals.platform_fee * 100) / 100,
+        brand_fee:    Math.round(totals.brand_fee * 100) / 100,
         stripe_fee:   Math.round(totals.stripe_fee * 100) / 100,
         net_amount:   Math.round(totals.net_amount * 100) / 100,
       },
@@ -458,7 +445,7 @@ async function handleCommissionConfig(
   merchantId: string,
 ): Promise<Response> {
   try {
-    // 同时查全局配置表和商家表（新增 commission_rate 统一费率字段）
+    // 同时查全局配置表和商家表（含 brand_id 用于查询品牌佣金率）
     const [configRes, merchantRes] = await Promise.all([
       client
         .from('platform_commission_config')
@@ -466,7 +453,7 @@ async function handleCommissionConfig(
         .single(),
       client
         .from('merchants')
-        .select('commission_free_until, commission_rate, commission_stripe_rate, commission_stripe_flat_fee, commission_effective_from, commission_effective_to')
+        .select('commission_free_until, commission_rate, commission_stripe_rate, commission_stripe_flat_fee, commission_effective_from, commission_effective_to, brand_id')
         .eq('id', merchantId)
         .single(),
     ]);
@@ -479,6 +466,20 @@ async function handleCommissionConfig(
     const config = configRes.data;
     const m = merchantRes.data ?? {};
     const commissionFreeUntil = m.commission_free_until ?? null;
+
+    // 查询品牌佣金率（通过 merchants.brand_id → brands.commission_rate）
+    let brandCommissionRate = 0;
+    const brandId = (m as any).brand_id ?? null;
+    if (brandId) {
+      const { data: brandData } = await client
+        .from('brands')
+        .select('commission_rate')
+        .eq('id', brandId)
+        .maybeSingle();
+      if (brandData?.commission_rate != null) {
+        brandCommissionRate = parseFloat(String(brandData.commission_rate));
+      }
+    }
     // 免费期含当天：用 DATE 比较
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -534,6 +535,8 @@ async function handleCommissionConfig(
       merchant_rates_active:      merchantRatesActive,
       effective_commission_rate:  effectiveCommissionRate,
       effective_rates:            effectiveRates,
+      // 品牌佣金率（0 表示无品牌或品牌不抽佣）
+      brand_commission_rate:      brandCommissionRate,
     });
   } catch (e) {
     console.error('handleCommissionConfig error:', e);

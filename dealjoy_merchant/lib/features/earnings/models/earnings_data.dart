@@ -75,8 +75,10 @@ class EarningsTransaction {
   final double amount;          // 原始金额（含平台手续费）
   final double platformFeeRate; // 本笔实际费率（0 表示免费期）
   final double platformFee;     // 平台手续费
+  final double brandFeeRate;    // 品牌佣金费率
+  final double brandFee;        // 品牌佣金金额
   final double stripeFee;       // Stripe 刷卡手续费
-  final double netAmount;       // 商家实收（= amount - platformFee - stripeFee）
+  final double netAmount;       // 商家实收（= amount - platformFee - brandFee - stripeFee）
   final String status;          // 订单状态原始值
   final DateTime createdAt;     // 下单时间
 
@@ -87,6 +89,8 @@ class EarningsTransaction {
     required this.amount,
     required this.platformFeeRate,
     required this.platformFee,
+    this.brandFeeRate = 0.0,
+    this.brandFee = 0.0,
     required this.stripeFee,
     required this.netAmount,
     required this.status,
@@ -102,6 +106,8 @@ class EarningsTransaction {
       amount:          (json['amount'] as num?)?.toDouble() ?? 0.0,
       platformFeeRate: (json['platform_fee_rate'] as num?)?.toDouble() ?? 0.0,
       platformFee:     (json['platform_fee'] as num?)?.toDouble() ?? 0.0,
+      brandFeeRate:    (json['brand_fee_rate'] as num?)?.toDouble() ?? 0.0,
+      brandFee:        (json['brand_fee'] as num?)?.toDouble() ?? 0.0,
       stripeFee:       (json['stripe_fee'] as num?)?.toDouble() ?? 0.0,
       netAmount:       (json['net_amount'] as num?)?.toDouble() ?? 0.0,
       status:          json['status'] as String? ?? 'unknown',
@@ -658,6 +664,8 @@ class CommissionConfig {
   // 实际生效的 Stripe 费率
   final double effectiveStripeRate;
   final double effectiveStripeFlatFee;
+  // 品牌佣金费率（0 表示无品牌或品牌不抽佣）
+  final double brandCommissionRate;
 
   const CommissionConfig({
     required this.freeMonths,
@@ -670,6 +678,7 @@ class CommissionConfig {
     required this.merchantRatesActive,
     required this.effectiveStripeRate,
     required this.effectiveStripeFlatFee,
+    this.brandCommissionRate = 0.0,
   });
 
   factory CommissionConfig.fromJson(Map<String, dynamic> json) {
@@ -700,6 +709,7 @@ class CommissionConfig {
       merchantRatesActive:    json['merchant_rates_active'] as bool? ?? false,
       effectiveStripeRate:    effectiveStripeRate,
       effectiveStripeFlatFee: effectiveStripeFlatFee,
+      brandCommissionRate:   (json['brand_commission_rate'] as num?)?.toDouble() ?? 0.0,
     );
   }
 
