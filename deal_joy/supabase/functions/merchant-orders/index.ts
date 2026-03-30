@@ -175,11 +175,9 @@ function mapLegacyStatusToCustomerStatus(status: string): string | null {
 }
 
 // =============================================================
-// handleList — V3: order_items 维度分页列表
-// 每行 = 1 张券（order_item）
-// 商家可见范围：
-//   purchased_merchant_id = merchantId
-//   OR applicable_store_ids 包含 merchantId
+// handleList — V4: order 维度分页列表
+// 查询 order_items 后在应用层按 order_id 分组，每行 = 1 个 order
+// 只聚合属于当前商家的 items 金额与状态
 // =============================================================
 async function handleList(
   client: ReturnType<typeof createClient>,
@@ -187,9 +185,9 @@ async function handleList(
   params: URLSearchParams | Record<string, unknown>,
 ): Promise<Response> {
   // 解析筛选参数
-  const customerStatus = getParam(params, 'customer_status');  // V3 customer 状态筛选
-  const merchantStatus = getParam(params, 'merchant_status');  // V3 merchant 状态筛选
-  const status = getParam(params, 'status');                   // 向后兼容旧 status 参数
+  const customerStatus = getParam(params, 'customer_status');
+  const merchantStatus = getParam(params, 'merchant_status');
+  const status = getParam(params, 'status');
   const dateFrom = getParam(params, 'date_from');
   const dateTo = getParam(params, 'date_to');
   const dealId = getParam(params, 'deal_id');
@@ -197,68 +195,50 @@ async function handleList(
   const perPage = Math.min(Math.max(parseInt(getParam(params, 'per_page') ?? '20', 10), 1), 100);
   const offset = (page - 1) * perPage;
 
-  // 构建 order_items 查询，JOIN orders / deals / users / coupons
+  // 查询 order_items，获取属于当前商家的全部项
   let query = client
     .from('order_items')
     .select(`
       id,
       order_id,
       deal_id,
-      coupon_id,
       unit_price,
       service_fee,
-      purchased_merchant_id,
-      applicable_store_ids,
-      redeemed_merchant_id,
+      customer_status,
+      merchant_status,
       redeemed_at,
       refunded_at,
       refund_reason,
-      refund_amount,
-      refund_method,
-      customer_status,
-      merchant_status,
       created_at,
-      updated_at,
       orders!inner (
         id,
         order_number,
-        total_amount,
-        service_fee_total,
-        items_amount,
-        paid_at,
         created_at,
+        paid_at,
         users!inner (
-          full_name,
-          email
+          full_name
         )
       ),
       deals!inner (
         id,
-        title,
-        original_price,
-        discount_price
+        title
       ),
       coupons!order_items_coupon_id_fkey (
-        id,
-        qr_code,
         coupon_code,
+        qr_code,
         status,
-        expires_at,
-        redeemed_at,
-        used_at
+        expires_at
       )
-    `, { count: 'exact' })
-    // 商家可见条件：购买时选择的门店 OR 适用门店列表包含该门店
+    `)
     .or(`purchased_merchant_id.eq.${merchantId},applicable_store_ids.cs.{${merchantId}}`);
 
-  // V3 双状态筛选（优先）
+  // 状态筛选
   if (customerStatus) {
     query = query.eq('customer_status', customerStatus);
   }
   if (merchantStatus) {
     query = query.eq('merchant_status', merchantStatus);
   }
-  // 向后兼容：旧 status 参数映射到 customer_status（未指定 V3 参数时生效）
   if (status && !customerStatus && !merchantStatus) {
     const mapped = mapLegacyStatusToCustomerStatus(status);
     if (mapped) {
@@ -266,7 +246,7 @@ async function handleList(
     }
   }
 
-  // 日期范围筛选（基于 order_items.created_at）
+  // 日期范围筛选
   if (dateFrom) {
     query = query.gte('created_at', dateFrom);
   }
@@ -274,83 +254,131 @@ async function handleList(
     query = query.lte('created_at', dateTo + 'T23:59:59.999Z');
   }
 
-  // 指定 deal 筛选
   if (dealId) {
     query = query.eq('deal_id', dealId);
   }
 
-  // 排序按 order_items.created_at DESC + 分页
-  const { data, error, count } = await query
+  // 拉取全部匹配项（上限 2000），应用层按 order_id 分组分页
+  const { data, error } = await query
     .order('created_at', { ascending: false })
-    .range(offset, offset + perPage - 1);
+    .limit(2000);
 
   if (error) {
     console.error('[merchant-orders] handleList error:', error);
-    return errorResponse('Failed to fetch order items', 'server_error', 500);
+    return errorResponse('Failed to fetch orders', 'server_error', 500);
   }
 
   const rows = (data ?? []) as Record<string, unknown>[];
-  const totalCount = count ?? 0;
 
-  // 格式化输出：扁平化字段结构，便于前端消费
-  const items = rows.map((row) => {
-    const order = row.orders as Record<string, unknown> | null;
+  // 按 order_id 分组
+  const orderMap = new Map<string, {
+    orderId: string;
+    orderNumber: string;
+    userName: string;
+    orderCreatedAt: string;
+    paidAt: string | null;
+    merchantTotal: number;
+    items: Record<string, unknown>[];
+    dealTitleSet: Set<string>;
+    dealTitles: string[];
+    primaryCouponExpiresAt: string | null;
+  }>();
+
+  for (const row of rows) {
+    const orderId = row.order_id as string;
+
+    if (!orderMap.has(orderId)) {
+      const order = row.orders as Record<string, unknown> | null;
+      const usersData = order?.users as Record<string, unknown> | null;
+      const fullName = (usersData?.full_name as string | null) ?? 'Customer';
+
+      orderMap.set(orderId, {
+        orderId,
+        orderNumber: (order?.order_number as string | null) ?? 'DJ-????????',
+        userName: fullName.split(' ')[0],
+        orderCreatedAt: (order?.created_at as string) ?? (row.created_at as string),
+        paidAt: (order?.paid_at as string | null) ?? null,
+        merchantTotal: 0,
+        items: [],
+        dealTitleSet: new Set(),
+        dealTitles: [],
+        primaryCouponExpiresAt: null,
+      });
+    }
+
+    const group = orderMap.get(orderId)!;
+    group.items.push(row);
+    group.merchantTotal += (row.unit_price as number) ?? 0;
+
+    // 收集 deal 标题（去重）
     const deal = row.deals as Record<string, unknown> | null;
-    // coupons 可能是数组（多条）或单条，取第一条
-    const couponArr = row.coupons as Record<string, unknown>[] | Record<string, unknown> | null;
-    const coupon = Array.isArray(couponArr) ? (couponArr[0] ?? null) : couponArr;
-    const usersData = order?.users as Record<string, unknown> | null;
-    const fullName = (usersData?.full_name as string | null) ?? 'Customer';
-    const displayName = fullName.split(' ')[0]; // 脱敏：只取 first name
+    const title = (deal?.title as string) ?? '';
+    if (title && !group.dealTitleSet.has(title)) {
+      group.dealTitleSet.add(title);
+      group.dealTitles.push(title);
+    }
 
-    return {
-      // order_item 核心字段
-      order_item_id: row.id,
-      order_id: row.order_id,
-      order_number: order?.order_number ?? null,
-      // deal 信息
-      deal_id: row.deal_id,
-      deal_title: deal?.title ?? null,
-      deal_original_price: deal?.original_price ?? null,
-      deal_discount_price: deal?.discount_price ?? null,
-      // 金额（单张）
-      unit_price: row.unit_price,
-      service_fee: row.service_fee,
-      total_amount: order?.total_amount ?? null,
-      // V3 双状态
-      customer_status: row.customer_status,
-      merchant_status: row.merchant_status,
-      // 门店快照
-      purchased_merchant_id: row.purchased_merchant_id,
-      redeemed_merchant_id: row.redeemed_merchant_id,
-      // 用户信息（脱敏）
-      user_display_name: displayName,
-      // coupon 信息
-      coupon_id: row.coupon_id,
-      coupon_code: (coupon?.coupon_code ?? coupon?.qr_code) as string | null ?? null,
-      coupon_status: coupon?.status ?? null,
-      coupon_expires_at: coupon?.expires_at ?? null,
-      // 核销信息
-      redeemed_at: row.redeemed_at,
-      // 退款信息
-      refunded_at: row.refunded_at,
-      refund_reason: row.refund_reason,
-      refund_amount: row.refund_amount,
-      refund_method: row.refund_method,
-      // 时间戳
-      created_at: row.created_at,
-      updated_at: row.updated_at,
-      paid_at: order?.paid_at ?? null,
-    };
-  });
+    // 收集 unused items 中最早的券过期时间（前端用来计算 expired / pending_refund）
+    if (row.customer_status === 'unused') {
+      const couponRaw = row.coupons as Record<string, unknown>[] | Record<string, unknown> | null;
+      const coupon = Array.isArray(couponRaw) ? (couponRaw[0] ?? null) : couponRaw;
+      const expiresAt = (coupon as Record<string, unknown> | null)?.expires_at as string | null;
+      if (expiresAt && (!group.primaryCouponExpiresAt || expiresAt < group.primaryCouponExpiresAt)) {
+        group.primaryCouponExpiresAt = expiresAt;
+      }
+    }
+  }
+
+  // 按 order 的 created_at DESC 排序
+  const sortedOrders = Array.from(orderMap.values())
+    .sort((a, b) => new Date(b.orderCreatedAt).getTime() - new Date(a.orderCreatedAt).getTime());
+
+  const totalCount = sortedOrders.length;
+  const pagedOrders = sortedOrders.slice(offset, offset + perPage);
+
+  // 格式化输出
+  const result = pagedOrders.map((group) => ({
+    order_id: group.orderId,
+    order_number: group.orderNumber,
+    user_name: group.userName,
+    merchant_total: Math.round(group.merchantTotal * 100) / 100,
+    item_count: group.items.length,
+    deal_titles: group.dealTitles,
+    customer_status: computePrimaryStatus(group.items),
+    coupon_expires_at: group.primaryCouponExpiresAt,
+    created_at: group.orderCreatedAt,
+    paid_at: group.paidAt,
+  }));
 
   return jsonResponse({
-    data: items,
+    data: result,
     total: totalCount,
     page,
     per_page: perPage,
     has_more: page * perPage < totalCount,
   });
+}
+
+// 计算 order 下 items 的主状态（最需关注的状态优先）
+function computePrimaryStatus(items: Record<string, unknown>[]): string {
+  const priority: Record<string, number> = {
+    'refund_review': 7,
+    'refund_pending': 6,
+    'refund_reject': 5,
+    'unused': 4,
+    'used': 3,
+    'paid': 2,
+    'refund_success': 1,
+    'expired': 0,
+  };
+  let maxP = -1;
+  let primary = 'unused';
+  for (const item of items) {
+    const s = (item.customer_status as string) ?? 'unused';
+    const p = priority[s] ?? 0;
+    if (p > maxP) { maxP = p; primary = s; }
+  }
+  return primary;
 }
 
 // =============================================================
@@ -461,6 +489,15 @@ async function handleDetail(
   const usersData = order.users as Record<string, unknown> | null;
   const fullName = (usersData?.full_name as string | null) ?? 'Customer';
   const customerName = fullName.split(' ')[0];
+
+  // 计算商家专属金额（只统计属于当前商家的 items）
+  let merchantItemsAmount = 0;
+  let merchantServiceFeeTotal = 0;
+  for (const item of items) {
+    merchantItemsAmount += (item.unit_price as number) ?? 0;
+    merchantServiceFeeTotal += (item.service_fee as number) ?? 0;
+  }
+  const merchantTotal = merchantItemsAmount + merchantServiceFeeTotal;
 
   // 格式化 items 列表
   const formattedItems = items.map((row) => {

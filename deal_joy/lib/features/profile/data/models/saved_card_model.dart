@@ -74,6 +74,15 @@ class SavedCard {
   String get expiryText =>
       '${expMonth.toString().padLeft(2, '0')}/${expYear.toString().substring(2)}';
 
+  /// 卡片是否已过期
+  bool get isExpired {
+    final now = DateTime.now();
+    // 过期年月：该月最后一天之后算过期
+    if (expYear < now.year) return true;
+    if (expYear == now.year && expMonth < now.month) return true;
+    return false;
+  }
+
   /// 品牌名称首字母大写，例如 "Visa"、"Mastercard"
   String get brandDisplayName {
     if (brand.isEmpty) return 'Card';

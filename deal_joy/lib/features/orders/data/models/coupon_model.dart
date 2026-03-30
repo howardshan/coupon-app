@@ -41,6 +41,9 @@ class CouponModel {
   // 购买时门店快照（来自 orders.applicable_store_ids）
   final List<String>? applicableStoreIds;
 
+  // 订单编号（来自 orders join）
+  final String? orderNumber;
+
   // 退款信息（来自 order_items join）
   final double? unitPrice;
   final DateTime? refundedAt;
@@ -74,6 +77,7 @@ class CouponModel {
     this.merchantPhone,
     this.applicableMerchantIds,
     this.applicableStoreIds,
+    this.orderNumber,
     this.unitPrice,
     this.refundedAt,
     this.refundAmount,
@@ -141,6 +145,8 @@ class CouponModel {
           ?.map((e) => e?.toString() ?? '')
           .where((s) => s.isNotEmpty)
           .toList(),
+      // 订单编号（从 orders join 获取）
+      orderNumber: orders?['order_number'] as String?,
       // V3：优先从 order_items join 获取，向后兼容旧版从 orders join 获取
       applicableStoreIds: ((orderItems?['applicable_store_ids'] ??
                   orders?['applicable_store_ids']) as List?)

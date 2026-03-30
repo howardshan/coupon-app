@@ -176,11 +176,10 @@ class _ConversationList extends ConsumerWidget {
           // 好友/群聊分组
           if (otherConvs.isNotEmpty) ...[
             _SectionHeader(label: 'Messages'),
-            ...otherConvs.map((c) => _SwipeableConversationTile(
+            ...otherConvs.map((c) => ConversationTile(
                   conversation: c,
                   onTap: () => context.push('/chat/${c.id}'),
-                  onPin: () => _togglePin(ref, c),
-                  onDelete: () => _deleteConversation(context, ref, c),
+                  onLongPress: () => _showConversationActions(context, ref, c),
                 )),
           ],
         ],
@@ -188,14 +187,69 @@ class _ConversationList extends ConsumerWidget {
     );
   }
 
-  void _togglePin(WidgetRef ref, ConversationModel c) async {
+  void _showConversationActions(BuildContext context, WidgetRef ref, ConversationModel c) {
     final userId = ref.read(currentUserProvider).valueOrNull?.id;
     if (userId == null) return;
-    await ref.read(chatRepositoryProvider).togglePin(c.id, userId, !c.isPinned);
-    ref.read(conversationsProvider.notifier).refresh();
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // 拖动指示条
+            Container(
+              margin: const EdgeInsets.only(top: 12, bottom: 8),
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.textHint,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            // 置顶/取消置顶
+            ListTile(
+              leading: Icon(
+                c.isPinned ? Icons.push_pin_outlined : Icons.push_pin,
+                color: AppColors.primary,
+              ),
+              title: Text(c.isPinned ? 'Unpin' : 'Pin to Top'),
+              onTap: () async {
+                Navigator.of(ctx).pop();
+                await ref.read(chatRepositoryProvider).togglePin(c.id, userId, !c.isPinned);
+                ref.read(conversationsProvider.notifier).refresh();
+              },
+            ),
+            // 删除聊天
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: AppColors.error),
+              title: const Text('Delete Chat'),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                _confirmDeleteChat(context, ref, c, userId);
+              },
+            ),
+            // 取消好友（仅 direct 类型）
+            if (c.type == 'direct' && c.otherUserId != null)
+              ListTile(
+                leading: const Icon(Icons.person_remove_outlined, color: AppColors.error),
+                title: const Text('Remove Friend'),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  _confirmRemoveFriend(context, ref, c, userId);
+                },
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
   }
 
-  void _deleteConversation(BuildContext context, WidgetRef ref, ConversationModel c) {
+  void _confirmDeleteChat(BuildContext context, WidgetRef ref, ConversationModel c, String userId) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -213,12 +267,41 @@ class _ConversationList extends ConsumerWidget {
             ),
             onPressed: () async {
               Navigator.of(ctx).pop();
-              final userId = ref.read(currentUserProvider).valueOrNull?.id;
-              if (userId == null) return;
               await ref.read(chatRepositoryProvider).leaveConversation(c.id, userId);
               ref.read(conversationsProvider.notifier).refresh();
             },
             child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmRemoveFriend(BuildContext context, WidgetRef ref, ConversationModel c, String userId) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remove friend?'),
+        content: Text('Remove ${c.displayName} from your friends list? This will also delete the chat.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.error,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () async {
+              Navigator.of(ctx).pop();
+              // 取消好友
+              await ref.read(friendRepositoryProvider).removeFriend(userId, c.otherUserId!);
+              // 删除聊天
+              await ref.read(chatRepositoryProvider).leaveConversation(c.id, userId);
+              ref.read(conversationsProvider.notifier).refresh();
+            },
+            child: const Text('Remove'),
           ),
         ],
       ),

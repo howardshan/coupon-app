@@ -10,17 +10,20 @@ import '../../data/models/conversation_model.dart';
 class ConversationTile extends StatelessWidget {
   final ConversationModel conversation;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
 
   const ConversationTile({
     super.key,
     required this.conversation,
     required this.onTap,
+    this.onLongPress,
   });
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
+      onLongPress: onLongPress,
       child: Container(
         margin: const EdgeInsets.only(bottom: 10),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -116,13 +119,15 @@ class ConversationTile extends StatelessWidget {
 
   /// 构建最后消息预览文本，客服会话时带 sender 前缀
   String _buildPreviewText(ConversationModel c) {
+    // 非文字类型消息优先按类型显示
+    if (c.lastMessageType == 'image') return '[Image]';
+    if (c.lastMessageType == 'coupon') return '[Coupon]';
+    if (c.lastMessageType == 'deal_share') return '[Deal shared]';
+    if (c.lastMessageType == 'merchant_share') return '[Store shared]';
+
     final content = c.lastMessageContent;
     if (content == null || content.isEmpty) return 'No messages yet';
 
-    // 图片类型消息
-    if (c.lastMessageType == 'image') return '[Image]';
-    // 券码消息
-    if (c.lastMessageType == 'coupon') return '[Coupon]';
     // 系统消息
     if (c.lastMessageType == 'system') return content;
 

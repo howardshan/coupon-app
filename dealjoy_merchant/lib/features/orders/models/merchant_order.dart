@@ -296,6 +296,12 @@ class MerchantOrderItem {
   /// Deal ID
   final String dealId;
 
+  /// Deal 原价
+  final double dealOriginalPrice;
+
+  /// Deal 折扣价
+  final double dealDiscountPrice;
+
   /// 单价
   final double unitPrice;
 
@@ -331,6 +337,8 @@ class MerchantOrderItem {
     required this.orderId,
     required this.dealTitle,
     required this.dealId,
+    this.dealOriginalPrice = 0.0,
+    this.dealDiscountPrice = 0.0,
     required this.unitPrice,
     required this.serviceFee,
     required this.customerStatus,
@@ -341,6 +349,8 @@ class MerchantOrderItem {
     this.couponStatus,
     this.couponExpiresAt,
     this.couponRedeemedAt,
+    this.refundReason,
+    this.refundAmount,
   });
 
   /// 从 Edge Function 返回的 JSON 构造（null-safe）
@@ -350,6 +360,8 @@ class MerchantOrderItem {
       orderId: json['order_id'] as String? ?? '',
       dealTitle: json['deal_title'] as String? ?? '',
       dealId: json['deal_id'] as String? ?? '',
+      dealOriginalPrice: (json['deal_original_price'] as num?)?.toDouble() ?? 0.0,
+      dealDiscountPrice: (json['deal_discount_price'] as num?)?.toDouble() ?? 0.0,
       unitPrice: (json['unit_price'] as num?)?.toDouble() ?? 0.0,
       serviceFee: (json['service_fee'] as num?)?.toDouble() ?? 0.0,
       customerStatus: json['customer_status'] as String? ?? 'unused',
@@ -364,6 +376,8 @@ class MerchantOrderItem {
       couponRedeemedAt: json['coupon_redeemed_at'] != null
           ? DateTime.parse(json['coupon_redeemed_at'] as String)
           : null,
+      refundReason: json['refund_reason'] as String?,
+      refundAmount: (json['refund_amount'] as num?)?.toDouble(),
     );
   }
 
@@ -377,11 +391,8 @@ class MerchantOrderItem {
 // =============================================================
 
 /// 订单列表中单条订单数据
-/// V3 适配：列表接口按 order_items 维度返回（每行=一张券）
+/// V4: 以 order 为维度，聚合当前商家的 items 信息
 class MerchantOrder {
-  /// order_items 主键（V3 新增，列表维度唯一标识）
-  final String? orderItemId;
-
   /// orders 表 ID
   final String id;
 
@@ -391,237 +402,170 @@ class MerchantOrder {
   /// 用户展示名（脱敏：只有 first name）
   final String userName;
 
-  /// Deal 标题
-  final String dealTitle;
+  /// 属于当前商家的 deal 标题列表（去重）
+  final List<String> dealTitles;
 
-  /// Deal ID
-  final String dealId;
+  /// 属于当前商家的 items 数量（券张数）
+  final int itemCount;
 
-  /// 购买数量
-  final int quantity;
+  /// 商家专属金额合计（仅本商家的 items 单价之和）
+  final double merchantTotal;
 
-  /// 单价
-  final double unitPrice;
-
-  /// 手续费（V3 新增）
-  final double serviceFee;
-
-  /// 总金额
-  final double totalAmount;
-
-  /// 用户侧状态（V3：对应 customer_status；向后兼容也读旧 status 字段）
+  /// 主状态（items 中最需关注的状态）
   final OrderStatus status;
 
-  /// 商家侧原始状态字符串（V3 新增）
-  final String? merchantStatus;
-
-  /// 优惠券码（已核销或已退款时才有值）
-  final String? couponCode;
-
-  /// 优惠券状态
-  final String? couponStatus;
-
-  /// 核销时间
-  final DateTime? couponRedeemedAt;
-
-  /// 券过期时间（列表接口返回，用于展示 Expired / Pending Refund）
+  /// 券过期时间（unused items 中最早的，用于展示 Expired / Pending Refund）
   final DateTime? couponExpiresAt;
-
-  /// 退款原因
-  final String? refundReason;
 
   /// 创建时间
   final DateTime createdAt;
 
-  /// 退款申请时间
-  final DateTime? refundRequestedAt;
-
-  /// 退款完成时间
-  final DateTime? refundedAt;
-
-  /// 管理员拒绝退款时间（详情页展示 Refund Rejected 标签）
-  final DateTime? refundRejectedAt;
-
   const MerchantOrder({
-    this.orderItemId,
     required this.id,
     required this.orderNumber,
     required this.userName,
-    required this.dealTitle,
-    required this.dealId,
-    required this.quantity,
-    required this.unitPrice,
-    this.serviceFee = 0.0,
-    required this.totalAmount,
+    required this.dealTitles,
+    required this.itemCount,
+    required this.merchantTotal,
     required this.status,
-    this.merchantStatus,
-    this.couponCode,
-    this.couponStatus,
-    this.couponRedeemedAt,
     this.couponExpiresAt,
-    this.refundReason,
     required this.createdAt,
-    this.refundRequestedAt,
-    this.refundedAt,
-    this.refundRejectedAt,
   });
 
   /// 展示用状态（未使用且已过期时显示 Expired / Pending Refund）
   OrderStatus get displayStatus =>
       OrderStatus.displayStatus(status, couponExpiresAt);
 
-  /// 订单详情页：多个状态标签列表（如 [Paid, Expired]、[Paid, Refund Rejected]）
-  List<OrderStatus> get detailStatusTags {
-    if (status == OrderStatus.refundFailed) return [OrderStatus.refundFailed];
-    if (status != OrderStatus.paid) return [status];
-    final tags = <OrderStatus>[OrderStatus.paid];
-    if (refundRejectedAt != null) tags.add(OrderStatus.refundRejected);
-    if (couponExpiresAt == null) return tags;
-    final now = DateTime.now();
-    if (now.isBefore(couponExpiresAt!)) return tags;
-    final elapsed = now.difference(couponExpiresAt!);
-    if (elapsed >= const Duration(hours: 24)) {
-      tags.add(OrderStatus.pendingRefund);
-    } else {
-      tags.add(OrderStatus.expired);
-    }
-    return tags;
+  /// Deal 摘要文本（列表卡片展示用）
+  String get dealSummary {
+    if (dealTitles.isEmpty) return '';
+    if (dealTitles.length == 1) return dealTitles.first;
+    return '${dealTitles.first} +${dealTitles.length - 1} more';
   }
 
-  /// 从 Edge Function / 数据库函数返回的 JSON 构造
-  /// V3 适配：优先读 order_item_id / customer_status，向后兼容旧 status/user_display_name 字段
+  /// 从 V4 Edge Function 返回的 JSON 构造（order 维度）
   factory MerchantOrder.fromJson(Map<String, dynamic> json) {
-    // V3：order_id 是订单 ID，order_item_id 是券行 ID；旧版 id 直接是订单 ID
     final orderId = json['order_id'] as String? ?? json['id'] as String? ?? '';
-    final orderItemId = json['order_item_id'] as String?;
 
-    // V3 customer_status 优先，向后兼容旧 status 字段
     final rawStatus = json['customer_status'] as String?
         ?? json['status'] as String?
         ?? 'unused';
 
-    // V3 user_name 优先，向后兼容旧 user_display_name
     final userName = json['user_name'] as String?
         ?? json['user_display_name'] as String?
         ?? 'Customer';
 
+    // deal_titles 可能是 List<dynamic> 或不存在
+    final rawTitles = json['deal_titles'] as List<dynamic>?;
+    final dealTitles = rawTitles?.map((e) => e.toString()).toList()
+        ?? [json['deal_title'] as String? ?? ''];
+
     return MerchantOrder(
-      orderItemId: orderItemId,
       id: orderId,
       orderNumber: json['order_number'] as String? ?? 'DJ-????????',
       userName: userName,
-      dealTitle: json['deal_title'] as String? ?? '',
-      dealId: json['deal_id'] as String? ?? '',
-      quantity: (json['quantity'] as num?)?.toInt() ?? 1,
-      unitPrice: (json['unit_price'] as num?)?.toDouble() ?? 0.0,
-      serviceFee: (json['service_fee'] as num?)?.toDouble() ?? 0.0,
-      totalAmount: (json['total_amount'] as num?)?.toDouble() ?? 0.0,
+      dealTitles: dealTitles,
+      itemCount: (json['item_count'] as num?)?.toInt()
+          ?? (json['quantity'] as num?)?.toInt()
+          ?? 1,
+      merchantTotal: (json['merchant_total'] as num?)?.toDouble()
+          ?? (json['total_amount'] as num?)?.toDouble()
+          ?? 0.0,
       status: OrderStatus.fromString(rawStatus),
-      merchantStatus: json['merchant_status'] as String?,
-      couponCode: json['coupon_code'] as String?,
-      couponStatus: json['coupon_status'] as String?,
-      couponRedeemedAt: json['coupon_redeemed_at'] != null
-          ? DateTime.parse(json['coupon_redeemed_at'] as String)
-          : null,
       couponExpiresAt: json['coupon_expires_at'] != null
           ? DateTime.parse(json['coupon_expires_at'] as String)
           : null,
-      refundReason: json['refund_reason'] as String?,
       createdAt: DateTime.parse(
           json['created_at'] as String? ?? DateTime.now().toIso8601String()),
-      refundRequestedAt: json['refund_requested_at'] != null
-          ? DateTime.parse(json['refund_requested_at'] as String)
-          : null,
-      refundedAt: json['refunded_at'] != null
-          ? DateTime.parse(json['refunded_at'] as String)
-          : null,
-      refundRejectedAt: json['refund_rejected_at'] != null
-          ? DateTime.parse(json['refund_rejected_at'] as String)
-          : null,
     );
   }
 }
 
 // =============================================================
-// MerchantOrderDetail — 订单详情数据模型（含时间线）
+// MerchantOrderDetail — 订单详情数据模型（独立类，不继承 MerchantOrder）
 // =============================================================
 
 /// 订单详情（包含所有展示信息、子项列表和时间线）
-/// V3 适配：新增 items / itemsAmount / serviceFeeTotal / customerEmail 字段
-/// handleDetail 响应结构: { order: {..., items: [...], timeline: [...]}, customer: {...} }
-class MerchantOrderDetail extends MerchantOrder {
-  /// Deal 原始定价
-  final double dealOriginalPrice;
+/// V4: 独立类，商家专属金额，items 列表展示每张券状态
+/// handleDetail 响应结构: { order: {...}, items: [...], customer: {...} }
+class MerchantOrderDetail {
+  /// orders 表 ID
+  final String id;
 
-  /// Deal 折扣价
-  final double dealDiscountPrice;
+  /// 可读订单号
+  final String orderNumber;
 
-  /// 支付意图 ID（脱敏显示）
-  final String? paymentIntentIdMasked;
+  /// 用户展示名（脱敏）
+  final String userName;
 
-  /// 支付状态（来自 payments 表）
-  final String? paymentStatus;
+  /// 客户邮箱
+  final String? customerEmail;
 
-  /// 退款金额（如有）
-  final double? refundAmount;
+  /// 商家专属总金额（items_amount + service_fee_total）
+  final double merchantTotal;
+
+  /// 商品金额小计（仅本商家的 items）
+  final double itemsAmount;
+
+  /// 平台手续费合计
+  final double serviceFeeTotal;
+
+  /// 订单子项列表（每行=一张券，仅属于本商家）
+  final List<MerchantOrderItem> items;
 
   /// 完整时间线
   final OrderTimeline timeline;
 
-  /// 订单子项列表（V3：每行=一张券）
-  final List<MerchantOrderItem> items;
+  /// 创建时间
+  final DateTime createdAt;
 
-  /// 商品金额小计（items_amount，V3 新增）
-  final double itemsAmount;
-
-  /// 平台手续费合计（service_fee_total，V3 新增）
-  final double serviceFeeTotal;
-
-  /// 客户邮箱（V3 customer 对象新增）
-  final String? customerEmail;
+  /// 支付时间
+  final DateTime? paidAt;
 
   /// Store Credit 抵扣金额（>0 表示用了 Store Credit）
   final double storeCreditUsed;
 
   const MerchantOrderDetail({
-    super.orderItemId,
-    required super.id,
-    required super.orderNumber,
-    required super.userName,
-    required super.dealTitle,
-    required super.dealId,
-    required super.quantity,
-    required super.unitPrice,
-    super.serviceFee = 0.0,
-    required super.totalAmount,
-    required super.status,
-    super.merchantStatus,
-    super.couponCode,
-    super.couponStatus,
-    super.couponRedeemedAt,
-    super.couponExpiresAt,
-    super.refundReason,
-    required super.createdAt,
-    super.refundRequestedAt,
-    super.refundedAt,
-    super.refundRejectedAt,
-    required this.dealOriginalPrice,
-    required this.dealDiscountPrice,
-    this.paymentIntentIdMasked,
-    this.paymentStatus,
-    this.refundAmount,
-    required this.timeline,
-    this.items = const [],
+    required this.id,
+    required this.orderNumber,
+    required this.userName,
+    this.customerEmail,
+    required this.merchantTotal,
     this.itemsAmount = 0.0,
     this.serviceFeeTotal = 0.0,
     this.customerEmail,
     this.storeCreditUsed = 0.0,
   });
 
-  /// 从 Edge Function 返回的详情 JSON 构造
-  /// 兼容 V3 新结构 { order: {...}, customer: {...} } 和旧结构（order 为顶层）
+  /// 计算主状态（从 items 中推导）
+  OrderStatus get primaryStatus {
+    if (items.isEmpty) return OrderStatus.unused;
+    // 取最需关注的状态
+    const priority = {
+      'refund_review': 7,
+      'refund_pending': 6,
+      'refund_reject': 5,
+      'unused': 4,
+      'used': 3,
+      'paid': 2,
+      'refund_success': 1,
+    };
+    int maxP = -1;
+    OrderStatus primary = OrderStatus.unused;
+    for (final item in items) {
+      final p = priority[item.customerStatus] ?? 0;
+      if (p > maxP) {
+        maxP = p;
+        primary = item.orderStatus;
+      }
+    }
+    return primary;
+  }
+
+  /// 从 V4 Edge Function 返回的详情 JSON 构造
+  /// 结构: { order: {...}, items: [...], customer: {...} }
   factory MerchantOrderDetail.fromJson(Map<String, dynamic> json) {
-    // V3 结构：顶层有 order 和 customer 两个 key
+    // V4 结构：顶层有 order, items, customer 三个 key
     final orderJson = json['order'] as Map<String, dynamic>? ?? json;
     final customerJson = json['customer'] as Map<String, dynamic>?;
 
@@ -635,21 +579,16 @@ class MerchantOrderDetail extends MerchantOrder {
         .map((e) => MerchantOrderItem.fromJson(e as Map<String, dynamic>))
         .toList();
 
-    // 用户名：V3 customer.name 优先，再回退旧字段
+    // 用户名
     final userName = customerJson?['name'] as String?
         ?? orderJson['user_display_name'] as String?
         ?? 'Customer';
 
-    // 状态：优先读 customer_status，兼容旧 status
-    final rawStatus = orderJson['customer_status'] as String?
-        ?? orderJson['status'] as String?
-        ?? 'unused';
-
-    // 单价/数量：V3 可能没有这两个字段，用 items 推算
-    final unitPrice = (orderJson['unit_price'] as num?)?.toDouble()
-        ?? (items.isNotEmpty ? items.first.unitPrice : 0.0);
-    final quantity = (orderJson['quantity'] as num?)?.toInt()
-        ?? items.length;
+    // 商家专属金额
+    final itemsAmount = (orderJson['items_amount'] as num?)?.toDouble() ?? 0.0;
+    final serviceFeeTotal = (orderJson['service_fee_total'] as num?)?.toDouble() ?? 0.0;
+    final merchantTotal = (orderJson['total_amount'] as num?)?.toDouble()
+        ?? (itemsAmount + serviceFeeTotal);
 
     return MerchantOrderDetail(
       id: orderJson['id'] as String? ?? '',
@@ -679,11 +618,8 @@ class MerchantOrderDetail extends MerchantOrder {
       refundReason: orderJson['refund_reason'] as String?,
       createdAt: DateTime.parse(
           orderJson['created_at'] as String? ?? DateTime.now().toIso8601String()),
-      refundRequestedAt: orderJson['refund_requested_at'] != null
-          ? DateTime.parse(orderJson['refund_requested_at'] as String)
-          : null,
-      refundedAt: orderJson['refunded_at'] != null
-          ? DateTime.parse(orderJson['refunded_at'] as String)
+      paidAt: orderJson['paid_at'] != null
+          ? DateTime.parse(orderJson['paid_at'] as String)
           : null,
       refundRejectedAt: orderJson['refund_rejected_at'] != null
           ? DateTime.parse(orderJson['refund_rejected_at'] as String)

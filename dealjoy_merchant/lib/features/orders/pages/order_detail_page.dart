@@ -1,6 +1,6 @@
 // 订单详情页面
-// 展示完整订单信息：用户信息 / Deal信息 / 支付信息 / 券码 / 时间线
-// 退款订单展示 "Automatically refunded by DealJoy" 说明
+// V4: 展示 order 级别信息 + 属于当前商家的 items 列表
+// 每张券显示状态、coupon code（已 redeem 时）、金额
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -42,7 +42,6 @@ class OrderDetailPage extends ConsumerWidget {
         ),
         centerTitle: true,
         actions: [
-          // 刷新按钮
           IconButton(
             icon: const Icon(Icons.refresh_rounded, size: 20),
             color: Colors.grey.shade600,
@@ -73,51 +72,28 @@ class OrderDetailPage extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 顶部：订单号 + 状态 Badge
+          // 顶部：订单号 + 主状态 + 时间
           _buildHeader(detail),
           const SizedBox(height: 12),
 
-          // 自动退款说明横幅（仅退款订单显示）
-          if (detail.status == OrderStatus.refunded)
-            _buildRefundBanner(detail),
-
-          // 区块1：用户信息
+          // 区块1：客户信息
           _SectionCard(
             title: 'Customer',
             icon: Icons.person_outline_rounded,
             children: [
-              _InfoRow(
-                label: 'Name',
-                value: detail.userName,
-              ),
+              _InfoRow(label: 'Name', value: detail.userName),
+              if (detail.customerEmail != null &&
+                  detail.customerEmail!.isNotEmpty)
+                _InfoRow(label: 'Email', value: detail.customerEmail!),
             ],
           ),
 
-          // 区块2：Deal 信息
-          _SectionCard(
-            title: 'Deal',
-            icon: Icons.local_offer_outlined,
-            children: [
-              _InfoRow(label: 'Title', value: detail.dealTitle),
-              _InfoRow(
-                label: 'Original Price',
-                value: amountFmt.format(detail.dealOriginalPrice),
-              ),
-              _InfoRow(
-                label: 'Deal Price',
-                value: amountFmt.format(detail.dealDiscountPrice),
-                valueColor: const Color(0xFFFF6B35),
-              ),
-              _InfoRow(
-                label: 'Quantity',
-                value: '× ${detail.quantity}',
-              ),
-            ],
-          ),
+          // 区块2：Vouchers 列表（每张券一个卡片）
+          _buildVouchersSection(detail, amountFmt),
 
-          // 区块3：支付信息
+          // 区块3：Payment 汇总（商家专属金额）
           _SectionCard(
-            title: 'Payment',
+            title: 'Payment Summary',
             icon: Icons.credit_card_outlined,
             children: [
               _InfoRow(
@@ -136,77 +112,29 @@ class OrderDetailPage extends ConsumerWidget {
                 value: amountFmt.format(detail.totalAmount),
                 valueBold: true,
               ),
-              if (detail.paymentIntentIdMasked != null)
+              if (detail.serviceFeeTotal > 0)
                 _InfoRow(
-                  label: 'Transaction ID',
-                  value: detail.paymentIntentIdMasked!,
-                  monospace: true,
+                  label: 'Service Fee',
+                  value: amountFmt.format(detail.serviceFeeTotal),
                 ),
-              if (detail.paymentStatus != null)
-                _InfoRow(
-                  label: 'Payment Status',
-                  value: _capitalise(detail.paymentStatus!),
-                ),
-              if (detail.refundAmount != null)
-                _InfoRow(
-                  label: 'Refunded Amount',
-                  value: amountFmt.format(detail.refundAmount!),
-                  valueColor: const Color(0xFFF59E0B),
-                ),
+              _InfoRow(
+                label: 'Your Total',
+                value: amountFmt.format(detail.merchantTotal),
+                valueBold: true,
+                valueColor: const Color(0xFFFF6B35),
+              ),
             ],
           ),
 
-          // 区块4：券码（已核销或已退款时显示）
-          if (detail.couponCode != null)
+          // 区块4：时间线
+          if (detail.timeline.events.isNotEmpty)
             _SectionCard(
-              title: 'Voucher',
-              icon: Icons.qr_code_2_rounded,
+              title: 'Timeline',
+              icon: Icons.timeline_rounded,
               children: [
-                _CouponCodeRow(code: detail.couponCode!),
-                if (detail.couponExpiresAt != null)
-                  _InfoRow(
-                    label: 'Expires',
-                    value: DateFormat('MMM d, yyyy')
-                        .format(detail.couponExpiresAt!.toLocal()),
-                  ),
-                if (detail.couponStatus != null)
-                  _InfoRow(
-                    label: 'Coupon Status',
-                    value: _capitalise(detail.couponStatus!),
-                  ),
+                OrderTimelineWidget(timeline: detail.timeline),
               ],
             ),
-
-          // 区块5：退款原因（如有）
-          if (detail.status == OrderStatus.refunded &&
-              detail.refundReason != null &&
-              detail.refundReason!.isNotEmpty)
-            _SectionCard(
-              title: 'Refund Reason',
-              icon: Icons.info_outline_rounded,
-              iconColor: const Color(0xFFF59E0B),
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: Text(
-                    detail.refundReason!,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      color: Color(0xFF92400E),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-
-          // 区块6：时间线
-          _SectionCard(
-            title: 'Timeline',
-            icon: Icons.timeline_rounded,
-            children: [
-              OrderTimelineWidget(timeline: detail.timeline),
-            ],
-          ),
 
           const SizedBox(height: 16),
         ],
@@ -246,12 +174,14 @@ class OrderDetailPage extends ConsumerWidget {
           const SizedBox(height: 8),
           Row(
             children: [
-              Wrap(
-                spacing: 8,
-                runSpacing: 4,
-                children: detail.detailStatusTags
-                    .map((s) => OrderStatusBadge(status: s, fontSize: 13))
-                    .toList(),
+              OrderStatusBadge(status: detail.primaryStatus, fontSize: 13),
+              const SizedBox(width: 8),
+              Text(
+                '${detail.items.length} voucher${detail.items.length > 1 ? 's' : ''}',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey.shade500,
+                ),
               ),
               const Spacer(),
               Text(
@@ -264,73 +194,205 @@ class OrderDetailPage extends ConsumerWidget {
               ),
             ],
           ),
-          if ((detail.detailStatusTags.contains(OrderStatus.expired) ||
-                  detail.detailStatusTags.contains(OrderStatus.pendingRefund)) &&
-              detail.status == OrderStatus.paid)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Text(
-                detail.detailStatusTags.contains(OrderStatus.expired)
-                    ? 'Coupon expired; will be auto-refunded 24h after expiry.'
-                    : 'Auto-refund in progress (runs hourly).',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey.shade600,
-                ),
-              ),
-            ),
         ],
       ),
     );
   }
 
-  // 退款横幅
-  Widget _buildRefundBanner(MerchantOrderDetail detail) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFFBEB),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: const Color(0xFFF59E0B).withValues(alpha: 0.4),
-        ),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(
-            Icons.currency_exchange_rounded,
-            size: 18,
-            color: Color(0xFFF59E0B),
+  // Vouchers 区块：展示每张券
+  Widget _buildVouchersSection(
+      MerchantOrderDetail detail, NumberFormat amountFmt) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 区块标题
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+          child: Row(
+            children: [
+              const Icon(Icons.confirmation_number_outlined,
+                  size: 16, color: Color(0xFFFF6B35)),
+              const SizedBox(width: 8),
+              Text(
+                'Vouchers (${detail.items.length})',
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF6B7280),
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Automatically refunded by DealJoy',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF92400E),
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  detail.refundedAt != null
-                      ? 'Refunded on ${DateFormat('MMM d, yyyy').format(detail.refundedAt!.toLocal())}. No action required from you.'
-                      : 'This order was automatically refunded. No action required from you.',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.brown.shade600,
-                  ),
-                ),
-              ],
-            ),
+        ),
+        // 每张券一个卡片
+        ...detail.items.asMap().entries.map((entry) {
+          final index = entry.key;
+          final item = entry.value;
+          return _buildVoucherCard(item, index + 1, detail.items.length,
+              amountFmt);
+        }),
+        const SizedBox(height: 4),
+      ],
+    );
+  }
+
+  // 单张券卡片
+  Widget _buildVoucherCard(MerchantOrderItem item, int index, int total,
+      NumberFormat amountFmt) {
+    final itemStatus = OrderStatus.displayStatus(
+      item.orderStatus,
+      item.couponExpiresAt,
+    );
+    final isRedeemed =
+        item.customerStatus == 'used' || item.customerStatus == 'redeemed';
+    final isRefunded = item.customerStatus == 'refund_success' ||
+        item.customerStatus == 'refunded';
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
           ),
         ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 第一行：序号 + deal 标题 + 状态
+            Row(
+              children: [
+                // 序号圆圈
+                Container(
+                  width: 24,
+                  height: 24,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF3F4F6),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    '$index',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF6B7280),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    item.dealTitle,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1A1A1A),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                OrderStatusBadge(status: itemStatus),
+              ],
+            ),
+            const SizedBox(height: 10),
+
+            // 金额行
+            Row(
+              children: [
+                Text(
+                  'Price: ${amountFmt.format(item.unitPrice)}',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+                if (item.dealOriginalPrice > 0 &&
+                    item.dealOriginalPrice != item.unitPrice) ...[
+                  const SizedBox(width: 8),
+                  Text(
+                    amountFmt.format(item.dealOriginalPrice),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey.shade400,
+                      decoration: TextDecoration.lineThrough,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+
+            // 券过期时间
+            if (item.couponExpiresAt != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Expires: ${DateFormat('MMM d, yyyy').format(item.couponExpiresAt!.toLocal())}',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+              ),
+            ],
+
+            // 核销信息：已 redeem 时显示 coupon code
+            if (isRedeemed && item.couponCode != null) ...[
+              const SizedBox(height: 10),
+              _CouponCodeRow(code: item.couponCode!),
+              if (item.couponRedeemedAt != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    'Redeemed: ${DateFormat('MMM d, yyyy · h:mm a').format(item.couponRedeemedAt!.toLocal())}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.green.shade600,
+                    ),
+                  ),
+                ),
+            ],
+
+            // 退款信息
+            if (isRefunded) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFFBEB),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.currency_exchange_rounded,
+                        size: 13, color: Color(0xFFF59E0B)),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        item.refundReason != null &&
+                                item.refundReason!.isNotEmpty
+                            ? 'Refunded — ${item.refundReason}'
+                            : 'Refunded by DealJoy',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF92400E),
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -373,9 +435,6 @@ class OrderDetailPage extends ConsumerWidget {
       ),
     );
   }
-
-  String _capitalise(String s) =>
-      s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
 }
 
 // =============================================================
@@ -412,7 +471,6 @@ class _SectionCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 区块标题
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
             child: Row(
@@ -432,7 +490,6 @@ class _SectionCard extends StatelessWidget {
             ),
           ),
           Divider(color: Colors.grey.shade100, height: 1),
-          // 内容区
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
             child: Column(
@@ -455,14 +512,12 @@ class _InfoRow extends StatelessWidget {
     required this.value,
     this.valueColor,
     this.valueBold = false,
-    this.monospace = false,
   });
 
   final String label;
   final String value;
   final Color? valueColor;
   final bool valueBold;
-  final bool monospace;
 
   @override
   Widget build(BuildContext context) {
@@ -489,8 +544,6 @@ class _InfoRow extends StatelessWidget {
                 fontWeight:
                     valueBold ? FontWeight.w700 : FontWeight.w500,
                 color: valueColor ?? const Color(0xFF1A1A1A),
-                fontFamily: monospace ? 'monospace' : null,
-                letterSpacing: monospace ? 0.5 : null,
               ),
               textAlign: TextAlign.right,
             ),
@@ -511,48 +564,48 @@ class _CouponCodeRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: const Color(0xFFF3F4F6),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.grey.shade200),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                code,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontFamily: 'monospace',
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF1A1A1A),
-                  letterSpacing: 1,
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0FDF4),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.qr_code_2_rounded,
+              size: 16, color: Color(0xFF10B981)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              code,
+              style: const TextStyle(
+                fontSize: 14,
+                fontFamily: 'monospace',
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF1A1A1A),
+                letterSpacing: 1,
+              ),
+            ),
+          ),
+          GestureDetector(
+            onTap: () {
+              Clipboard.setData(ClipboardData(text: code));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Coupon code copied'),
+                  duration: Duration(seconds: 2),
+                  behavior: SnackBarBehavior.floating,
                 ),
-              ),
+              );
+            },
+            child: Icon(
+              Icons.copy_rounded,
+              size: 16,
+              color: Colors.grey.shade500,
             ),
-            GestureDetector(
-              onTap: () {
-                Clipboard.setData(ClipboardData(text: code));
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Coupon code copied'),
-                    duration: Duration(seconds: 2),
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
-              },
-              child: Icon(
-                Icons.copy_rounded,
-                size: 16,
-                color: Colors.grey.shade500,
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

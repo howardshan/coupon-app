@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shimmer/shimmer.dart';
+import 'package:share_plus/share_plus.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../chat/presentation/widgets/share_to_friend_sheet.dart';
 import '../../../../core/utils/location_utils.dart';
 import '../../../deals/domain/providers/deals_provider.dart';
 import '../../../deals/domain/providers/history_provider.dart';
@@ -124,6 +126,66 @@ class _MerchantDetailScreenState extends ConsumerState<MerchantDetailScreen> {
     if (mounted) setState(() => _isTabClick = false);
   }
 
+  // 分享选项弹窗
+  void _showShareOptions(BuildContext context, MerchantDetailModel merchant) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              margin: const EdgeInsets.only(top: 12, bottom: 8),
+              width: 36, height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.textHint,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.people_outline, color: AppColors.primary),
+              title: const Text('Share to Friends'),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  shape: const RoundedRectangleBorder(
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+                  ),
+                  builder: (_) => ShareToFriendSheet(
+                    payload: {
+                      'type': 'merchant_share',
+                      'merchant_id': merchant.id,
+                      'merchant_name': merchant.name,
+                      'merchant_logo_url': merchant.logoUrl ?? '',
+                      'merchant_address': merchant.address ?? '',
+                      'merchant_cover_url': merchant.allPhotoUrls.isNotEmpty
+                          ? merchant.allPhotoUrls.first
+                          : '',
+                    },
+                  ),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.share_outlined, color: AppColors.textSecondary),
+              title: const Text('Share via...'),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                Share.share('Check out ${merchant.name} on DealJoy!');
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final detailAsync =
@@ -181,7 +243,9 @@ class _MerchantDetailScreenState extends ConsumerState<MerchantDetailScreen> {
                         .read(savedMerchantsNotifierProvider.notifier)
                         .toggle(widget.merchantId),
                   ),
-                  _ActionBtn(Icons.share_outlined, onTap: () {}),
+                  _ActionBtn(Icons.share_outlined, onTap: () {
+                    _showShareOptions(context, merchant);
+                  }),
                   const SizedBox(width: 8),
                 ],
                 backgroundColor:

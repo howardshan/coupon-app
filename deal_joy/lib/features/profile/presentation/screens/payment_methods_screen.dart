@@ -6,7 +6,7 @@ import '../../data/models/saved_card_model.dart';
 import '../../domain/providers/payment_methods_provider.dart';
 
 /// 已保存卡片管理页面
-/// 支持：查看列表 / 设为默认 / 左滑删除 / 添加新卡
+/// 支持：查看列表 / 点击进入详情 / 添加新卡
 class PaymentMethodsScreen extends ConsumerWidget {
   const PaymentMethodsScreen({super.key});
 
@@ -34,9 +34,9 @@ class PaymentMethodsScreen extends ConsumerWidget {
               children: [
                 const Icon(Icons.error_outline, size: 48, color: AppColors.textHint),
                 const SizedBox(height: 12),
-                Text(
+                const Text(
                   'Failed to load cards',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
                     color: AppColors.textPrimary,
@@ -109,7 +109,7 @@ class _CardListBody extends ConsumerWidget {
     return ListView.separated(
       padding: const EdgeInsets.all(16),
       itemCount: cards.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 10),
+      separatorBuilder: (_, __) => const SizedBox(height: 10),
       itemBuilder: (context, index) {
         final card = cards[index];
         return _CardTile(card: card);
@@ -225,6 +225,323 @@ class _CardTile extends ConsumerWidget {
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (_) => _CardOptionsSheet(card: card, ref: ref),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await ref.read(paymentMethodsProvider.notifier).deleteCard(c.id);
+      if (context.mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Card removed'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to remove card: $e')),
+        );
+      }
+    }
+  }
+}
+
+// ── 编辑卡片 Bottom Sheet ──────────────────────────────────────────────────
+class _EditCardSheet extends ConsumerStatefulWidget {
+  final SavedCard card;
+  const _EditCardSheet({required this.card});
+
+  @override
+  ConsumerState<_EditCardSheet> createState() => _EditCardSheetState();
+}
+
+class _EditCardSheetState extends ConsumerState<_EditCardSheet> {
+  late final TextEditingController _expMonthCtrl;
+  late final TextEditingController _expYearCtrl;
+  late final TextEditingController _line1Ctrl;
+  late final TextEditingController _line2Ctrl;
+  late final TextEditingController _cityCtrl;
+  late final TextEditingController _stateCtrl;
+  late final TextEditingController _postalCodeCtrl;
+  late final TextEditingController _countryCtrl;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final c = widget.card;
+    _expMonthCtrl = TextEditingController(text: c.expMonth.toString().padLeft(2, '0'));
+    _expYearCtrl = TextEditingController(text: c.expYear.toString());
+    _line1Ctrl = TextEditingController(text: c.billingAddress?.line1 ?? '');
+    _line2Ctrl = TextEditingController(text: c.billingAddress?.line2 ?? '');
+    _cityCtrl = TextEditingController(text: c.billingAddress?.city ?? '');
+    _stateCtrl = TextEditingController(text: c.billingAddress?.state ?? '');
+    _postalCodeCtrl = TextEditingController(text: c.billingAddress?.postalCode ?? '');
+    _countryCtrl = TextEditingController(text: c.billingAddress?.country.isNotEmpty == true ? c.billingAddress!.country : 'US');
+  }
+
+  @override
+  void dispose() {
+    _expMonthCtrl.dispose();
+    _expYearCtrl.dispose();
+    _line1Ctrl.dispose();
+    _line2Ctrl.dispose();
+    _cityCtrl.dispose();
+    _stateCtrl.dispose();
+    _postalCodeCtrl.dispose();
+    _countryCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final month = int.tryParse(_expMonthCtrl.text.trim());
+    final year = int.tryParse(_expYearCtrl.text.trim());
+    if (month == null || month < 1 || month > 12) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter a valid month (01-12)')),
+      );
+      return;
+    }
+    if (year == null || year < DateTime.now().year) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter a valid year')),
+      );
+      return;
+    }
+
+    setState(() => _saving = true);
+    try {
+      await ref.read(paymentMethodsProvider.notifier).updateCard(
+        paymentMethodId: widget.card.id,
+        expMonth: month,
+        expYear: year,
+        billingAddress: {
+          'line1': _line1Ctrl.text.trim(),
+          'line2': _line2Ctrl.text.trim(),
+          'city': _cityCtrl.text.trim(),
+          'state': _stateCtrl.text.trim(),
+          'postalCode': _postalCodeCtrl.text.trim(),
+          'country': _countryCtrl.text.trim(),
+        },
+      );
+      if (mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Card updated successfully'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to update card: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        24, 20, 24, MediaQuery.of(context).viewInsets.bottom + 24,
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 标题
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Edit ${widget.card.brandDisplayName} ${widget.card.displayText}',
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close, size: 20),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // 过期日期
+            const Text('Expiration Date',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _expMonthCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Month',
+                      hintText: 'MM',
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    ),
+                    maxLength: 2,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextField(
+                    controller: _expYearCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Year',
+                      hintText: 'YYYY',
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    ),
+                    maxLength: 4,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // 账单地址
+            const Text('Billing Address',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _line1Ctrl,
+              decoration: const InputDecoration(
+                labelText: 'Address Line 1',
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _line2Ctrl,
+              decoration: const InputDecoration(
+                labelText: 'Address Line 2 (optional)',
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _cityCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'City',
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextField(
+                    controller: _stateCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'State',
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _postalCodeCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Postal Code',
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextField(
+                    controller: _countryCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Country',
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+
+            // 保存按钮
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _saving ? null : _save,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  textStyle: const TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.w600),
+                ),
+                child: _saving
+                    ? const SizedBox(
+                        width: 20, height: 20,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Text('Save Changes'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── 信息行 ──────────────────────────────────────────────────────────────────
+class _InfoRow extends StatelessWidget {
+  final String label;
+  final String value;
+  const _InfoRow({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
+        ),
+        Text(
+          value,
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: AppColors.textPrimary,
+          ),
+        ),
+      ],
     );
   }
 }

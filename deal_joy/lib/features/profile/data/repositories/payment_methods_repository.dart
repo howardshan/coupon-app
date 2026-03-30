@@ -76,6 +76,41 @@ class PaymentMethodsRepository {
     }
   }
 
+  /// 更新卡片信息（过期日期 + 账单地址）
+  Future<void> updateCard({
+    required String paymentMethodId,
+    int? expMonth,
+    int? expYear,
+    Map<String, String>? billingAddress,
+  }) async {
+    try {
+      final body = <String, dynamic>{
+        'action': 'update_card',
+        'paymentMethodId': paymentMethodId,
+      };
+      if (expMonth != null && expYear != null) {
+        body['expMonth'] = expMonth;
+        body['expYear'] = expYear;
+      }
+      if (billingAddress != null) {
+        body['billingAddress'] = billingAddress;
+      }
+
+      final response = await _client.functions.invoke(
+        'manage-payment-methods',
+        method: HttpMethod.post,
+        body: body,
+      );
+
+      if (response.status != 200) {
+        final errMsg = response.data?['error'] as String? ?? 'Failed to update card';
+        throw Exception(errMsg);
+      }
+    } catch (e) {
+      throw Exception('Failed to update card: $e');
+    }
+  }
+
   /// 为添加新卡片创建 SetupIntent
   /// 返回 { clientSecret, customerId, ephemeralKey }
   Future<Map<String, String>> createSetupIntent() async {

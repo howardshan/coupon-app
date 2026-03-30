@@ -315,6 +315,58 @@ class ChatRepository {
     });
   }
 
+  /// 发送分享消息（deal_share / merchant_share）
+  /// payload 中必须包含 'type' 字段
+  Future<MessageModel> sendShareMessage(
+    String conversationId,
+    String senderId,
+    Map<String, dynamic> payload,
+  ) async {
+    final shareType = payload['type'] as String;
+    return _sendMessage(conversationId, senderId, {
+      'type': shareType,
+      'coupon_payload': payload,
+    });
+  }
+
+  /// 获取或创建两人的 direct 会话，返回会话 ID
+  Future<String> getOrCreateDirectChat(String currentUserId, String friendUserId) async {
+    try {
+      // 查当前用户的所有会话
+      final myConvs = await _client
+          .from('conversation_members')
+          .select('conversation_id')
+          .eq('user_id', currentUserId);
+      final myConvIds = (myConvs as List)
+          .map((r) => r['conversation_id'] as String)
+          .toList();
+
+      if (myConvIds.isNotEmpty) {
+        // 查好友也在的 direct 会话
+        final shared = await _client
+            .from('conversation_members')
+            .select('conversation_id, conversations!inner(type)')
+            .eq('user_id', friendUserId)
+            .inFilter('conversation_id', myConvIds);
+        for (final row in shared as List) {
+          final conv = row['conversations'] as Map<String, dynamic>?;
+          if (conv?['type'] == 'direct') {
+            return row['conversation_id'] as String;
+          }
+        }
+      }
+
+      // 没有已有会话，通过 RPC 创建
+      final newConvId = await _client.rpc('create_direct_conversation', params: {
+        'p_user_id': currentUserId,
+        'p_friend_id': friendUserId,
+      }) as String;
+      return newConvId;
+    } on PostgrestException catch (e) {
+      throw AppException('Failed to create chat: ${e.message}', code: e.code);
+    }
+  }
+
   /// 发送 Coupon 卡片消息
   Future<MessageModel> sendCouponMessage(
     String conversationId,

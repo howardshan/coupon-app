@@ -3,6 +3,7 @@
 
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../store/services/store_service.dart';
 import '../models/settings_models.dart';
 
 // ============================================================
@@ -115,6 +116,8 @@ class SettingsService {
   //    调用 Supabase Auth signOut，清除本地 Session
   // ----------------------------------------------------------
   Future<void> signOut() async {
+    // 清除品牌管理员持久化的门店 ID
+    await StoreService.clearPersistedMerchantId();
     await _supabase.auth.signOut();
   }
 

@@ -225,6 +225,56 @@ Deno.serve(async (req) => {
     }
 
       // -------------------------------------------------------
+      // POST update_card — 更新卡片过期日期 + 账单地址
+      // body: { action: 'update_card', paymentMethodId, expMonth?, expYear?, billingAddress? }
+      // -------------------------------------------------------
+      if (body.action === 'update_card') {
+        const result = await getStripeCustomerId(req);
+        if (result.error) return result.error;
+        const { customerId } = result;
+
+        const { paymentMethodId, expMonth, expYear, billingAddress } = body;
+        if (!paymentMethodId) {
+          return errorResponse('paymentMethodId is required');
+        }
+
+        // 校验该支付方式确实属于此 Customer（防越权）
+        const pm = await stripe.paymentMethods.retrieve(paymentMethodId);
+        if (pm.customer !== customerId) {
+          return errorResponse('Payment method does not belong to this customer', 403);
+        }
+
+        // 构建更新参数
+        const updateParams: Record<string, unknown> = {};
+
+        // 更新过期日期
+        if (expMonth !== undefined && expYear !== undefined) {
+          updateParams.card = {
+            exp_month: Number(expMonth),
+            exp_year: Number(expYear),
+          };
+        }
+
+        // 更新账单地址
+        if (billingAddress) {
+          updateParams.billing_details = {
+            address: {
+              line1: billingAddress.line1 || '',
+              line2: billingAddress.line2 || '',
+              city: billingAddress.city || '',
+              state: billingAddress.state || '',
+              postal_code: billingAddress.postalCode || '',
+              country: billingAddress.country || 'US',
+            },
+          };
+        }
+
+        await stripe.paymentMethods.update(paymentMethodId, updateParams as any);
+
+        return successResponse({ success: true });
+      }
+
+      // -------------------------------------------------------
       // POST set_default — 设置默认卡
       // body: { action: 'set_default', paymentMethodId: string }
       // -------------------------------------------------------
