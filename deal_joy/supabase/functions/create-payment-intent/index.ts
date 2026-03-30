@@ -116,10 +116,12 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { items, userId, paymentMethod, storeCreditUsed } = body;
+    const { items, userId, paymentMethod, storeCreditUsed, saveCard } = body;
     // paymentMethod: 'card' | 'google' | 'apple'
     // storeCreditUsed: Store Credit 抵扣金额（可选，默认 0）
+    // saveCard: 是否保存卡片供下次使用（可选，默认 false）
     const creditUsed = Number(storeCreditUsed ?? 0);
+    const shouldSaveCard = saveCard === true;
 
     // ---------- 基础参数校验 ----------
     if (!userId) {
@@ -440,15 +442,21 @@ Deno.serve(async (req) => {
     };
     if (isCardOnly) {
       // 信用卡模式：只允许 card，禁用 Link
-      // setup_future_usage 放在 card 级别，不触发 Link 保存选项
       piParams.payment_method_types = ['card'];
+      // 使用已保存卡时要求重新输入 CVV（安全校验）
+      // 同时支持保存卡片供下次使用
       piParams.payment_method_options = {
-        card: { setup_future_usage: 'off_session' },
+        card: {
+          require_cvc_recollection: true,
+          ...(shouldSaveCard ? { setup_future_usage: 'off_session' } : {}),
+        },
       };
     } else {
       // Google Pay / Apple Pay：启用所有支付方式
       piParams.automatic_payment_methods = { enabled: true };
-      piParams.setup_future_usage = 'off_session';
+      if (shouldSaveCard) {
+        piParams.setup_future_usage = 'off_session';
+      }
     }
     const paymentIntent = await stripe.paymentIntents.create(piParams as any);
 

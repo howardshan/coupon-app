@@ -111,8 +111,16 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   bool _usingSavedCard = false;    // 是否使用已保存卡片支付
   bool _savedCardsLoaded = false;  // 是否已加载过卡片列表
 
+  // 已保存卡 CVV 重新输入
+  final _cvcCtrl = TextEditingController();
+
+  // 新卡支付时的保存选项
+  bool _saveCardForFuture = false;  // 勾选：保存卡片供下次使用
+  bool _setAsDefaultCard = false;   // 勾选：设为默认支付方式
+
   @override
   void dispose() {
+    _cvcCtrl.dispose();
     _couponCtrl.dispose();
     _addressLine1Ctrl.dispose();
     _addressLine2Ctrl.dispose();
@@ -234,7 +242,9 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   /// - 使用新卡时：需要 CardField 完整 + 必填地址已填
   bool get _canPayByCard {
     if (_usingSavedCard && _selectedSavedCard != null) {
-      // 使用已保存卡：地址已从卡片自动填充，只需确认 line1 非空
+      // 使用已保存卡：需要重新输入 CVV（3-4位）+ 地址非空
+      final cvc = _cvcCtrl.text.trim();
+      if (cvc.length < 3 || cvc.length > 4) return false;
       return _addressLine1Ctrl.text.trim().isNotEmpty &&
           _cityCtrl.text.trim().isNotEmpty &&
           _stateCtrl.text.trim().isNotEmpty &&
@@ -347,14 +357,24 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         paymentMethod: _selectedPayment,
         billingDetails: billingDetails,
         storeCreditUsed: creditUsed,
-        // 使用已保存 Stripe 卡片时传入 paymentMethodId，跳过 CardField 确认
+        // 使用已保存 Stripe 卡片时传入 paymentMethodId + CVV
         savedPaymentMethodId: (_usingSavedCard && _selectedSavedCard != null)
             ? _selectedSavedCard!.id
             : null,
+        savedCardCvc: (_usingSavedCard && _selectedSavedCard != null)
+            ? _cvcCtrl.text.trim()
+            : null,
+        // 新卡支付时，用户勾选了保存卡片才传 true
+        saveCard: !_usingSavedCard && _saveCardForFuture,
       );
 
       // 支付成功后异步保存 billing address（fire-and-forget）
       _saveBillingAddressAfterPayment(userId);
+
+      // 支付成功后异步设为默认卡（fire-and-forget）
+      if (!_usingSavedCard && _setAsDefaultCard) {
+        _setNewCardAsDefaultAfterPayment();
+      }
 
       if (mounted) {
         // 清空购物车 + 刷新 Store Credit 余额
@@ -436,14 +456,24 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         selectedOptions: selectedOptions,
         paymentMethod: _selectedPayment,
         billingDetails: billingDetails,
-        // 使用已保存 Stripe 卡片时传入 paymentMethodId，跳过 CardField 确认
+        // 使用已保存 Stripe 卡片时传入 paymentMethodId + CVV
         savedPaymentMethodId: (_usingSavedCard && _selectedSavedCard != null)
             ? _selectedSavedCard!.id
             : null,
+        savedCardCvc: (_usingSavedCard && _selectedSavedCard != null)
+            ? _cvcCtrl.text.trim()
+            : null,
+        // 新卡支付时，用户勾选了保存卡片才传 true
+        saveCard: !_usingSavedCard && _saveCardForFuture,
       );
 
       // 支付成功后异步保存 billing address（fire-and-forget）
       _saveBillingAddressAfterPayment(userId);
+
+      // 支付成功后异步设为默认卡（fire-and-forget）
+      if (!_usingSavedCard && _setAsDefaultCard) {
+        _setNewCardAsDefaultAfterPayment();
+      }
 
       if (mounted) {
         // 单 deal 快速购买，不经过购物车，无需清理购物车状态
@@ -711,6 +741,9 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                           setState(() => _cardComplete = card?.complete ?? false);
                         },
                       ),
+                      const SizedBox(height: 8),
+                      // 保存卡片勾选框
+                      _buildSaveCardCheckboxes(),
                     ],
                   ),
                 ),
@@ -1160,6 +1193,9 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                               setState(() => _cardComplete = card?.complete ?? false);
                             },
                           ),
+                          const SizedBox(height: 8),
+                          // 保存卡片勾选框
+                          _buildSaveCardCheckboxes(),
                         ],
                       ),
                     ),
@@ -1452,6 +1488,51 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
               ),
             );
           }),
+          // 选中已保存卡时显示 CVV 输入框
+          if (_usingSavedCard && _selectedSavedCard != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                children: [
+                  const SizedBox(width: 30), // 与卡片信息对齐
+                  const Icon(Icons.lock_outline, size: 16, color: AppColors.textHint),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: 80,
+                    child: TextField(
+                      controller: _cvcCtrl,
+                      keyboardType: TextInputType.number,
+                      obscureText: true,
+                      maxLength: 4,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                      onChanged: (_) => setState(() {}),
+                      decoration: const InputDecoration(
+                        hintText: 'CVV',
+                        hintStyle: TextStyle(fontSize: 13, color: AppColors.textHint),
+                        counterText: '', // 隐藏字符计数
+                        isDense: true,
+                        contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        border: OutlineInputBorder(),
+                        enabledBorder: OutlineInputBorder(
+                          borderSide: BorderSide(color: AppColors.surfaceVariant),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderSide: BorderSide(color: AppColors.primary),
+                        ),
+                      ),
+                      style: const TextStyle(fontSize: 14, letterSpacing: 2),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Required for security',
+                      style: TextStyle(fontSize: 11, color: AppColors.textHint),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           // "Use a new card" 选项
           GestureDetector(
             behavior: HitTestBehavior.opaque,
@@ -1526,6 +1607,89 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         ],
       ),
     );
+  }
+
+  // ── 保存卡片勾选框（新卡支付时显示） ────────────────────────────
+
+  Widget _buildSaveCardCheckboxes() {
+    return Column(
+      children: [
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => setState(() {
+            _saveCardForFuture = !_saveCardForFuture;
+            // 取消保存时同步取消设为默认
+            if (!_saveCardForFuture) _setAsDefaultCard = false;
+          }),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 24,
+                height: 24,
+                child: Checkbox(
+                  value: _saveCardForFuture,
+                  onChanged: (v) => setState(() {
+                    _saveCardForFuture = v ?? false;
+                    if (!_saveCardForFuture) _setAsDefaultCard = false;
+                  }),
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Text('Save this card for future purchases',
+                  style: TextStyle(fontSize: 13)),
+            ],
+          ),
+        ),
+        const SizedBox(height: 4),
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => setState(() {
+            _setAsDefaultCard = !_setAsDefaultCard;
+            // 勾选默认时自动勾选保存
+            if (_setAsDefaultCard) _saveCardForFuture = true;
+          }),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 24,
+                height: 24,
+                child: Checkbox(
+                  value: _setAsDefaultCard,
+                  onChanged: (v) => setState(() {
+                    _setAsDefaultCard = v ?? false;
+                    if (_setAsDefaultCard) _saveCardForFuture = true;
+                  }),
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Text('Set as default payment method',
+                  style: TextStyle(fontSize: 13)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ── 支付成功后将新卡设为默认（fire-and-forget） ──────────────────
+
+  void _setNewCardAsDefaultAfterPayment() {
+    Future.delayed(const Duration(seconds: 1), () async {
+      try {
+        final repo = ref.read(paymentMethodsRepositoryProvider);
+        final cards = await repo.fetchSavedCards();
+        if (cards.isEmpty) return;
+        // Stripe 返回的卡片列表默认按创建时间倒序，第一张即最新保存的卡
+        final newestCard = cards.first;
+        await repo.setDefaultCard(newestCard.id);
+        // 刷新已保存卡片缓存
+        ref.invalidate(paymentMethodsProvider);
+      } catch (e) {
+        debugPrint('设为默认卡失败（不影响支付结果）: $e');
+      }
+    });
   }
 
   // ── 账单地址区域（Credit Card 模式专用） ──────────────────────────

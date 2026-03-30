@@ -30,6 +30,22 @@ class PaymentMethodsNotifier extends AsyncNotifier<List<SavedCard>> {
     await refresh();
   }
 
+  /// 更新卡片信息，成功后刷新列表
+  Future<void> updateCard({
+    required String paymentMethodId,
+    int? expMonth,
+    int? expYear,
+    Map<String, String>? billingAddress,
+  }) async {
+    await _repo.updateCard(
+      paymentMethodId: paymentMethodId,
+      expMonth: expMonth,
+      expYear: expYear,
+      billingAddress: billingAddress,
+    );
+    await refresh();
+  }
+
   /// 删除卡片，成功后刷新列表
   Future<void> deleteCard(String paymentMethodId) async {
     await _repo.deleteCard(paymentMethodId);

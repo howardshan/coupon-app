@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../chat/presentation/widgets/share_to_friend_sheet.dart';
 import '../../data/models/deal_model.dart';
 import '../../data/models/review_model.dart';
 import '../../domain/providers/deals_provider.dart';
@@ -227,10 +228,7 @@ class _DealDetailBodyState extends ConsumerState<_DealDetailBody> {
                       _AdaptiveCircleButton(
                         icon: Icons.share_outlined,
                         progress: _scrollProgress,
-                        onTap: () => Share.share(
-                          '${deal.title} - \$${deal.discountPrice.toStringAsFixed(2)} '
-                          '(${deal.effectiveDiscountLabel}) on DealJoy!',
-                        ),
+                        onTap: () => _showShareOptions(context, deal),
                       ),
                       const SizedBox(width: 8),
                       _AdaptiveCircleButton(
@@ -252,6 +250,69 @@ class _DealDetailBodyState extends ConsumerState<_DealDetailBody> {
 }
 
 /// 打开三个点菜单底部弹出框（美团风格）
+// 分享选项弹窗（分享给好友 / 系统分享）
+void _showShareOptions(BuildContext context, DealModel deal) {
+  showModalBottomSheet(
+    context: context,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+    ),
+    builder: (ctx) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            margin: const EdgeInsets.only(top: 12, bottom: 8),
+            width: 36, height: 4,
+            decoration: BoxDecoration(
+              color: AppColors.textHint,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.people_outline, color: AppColors.primary),
+            title: const Text('Share to Friends'),
+            onTap: () {
+              Navigator.of(ctx).pop();
+              showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                shape: const RoundedRectangleBorder(
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+                ),
+                builder: (_) => ShareToFriendSheet(
+                  payload: {
+                    'type': 'deal_share',
+                    'deal_id': deal.id,
+                    'deal_title': deal.title,
+                    'deal_image_url': deal.imageUrls.isNotEmpty ? deal.imageUrls.first : '',
+                    'discount_price': deal.discountPrice,
+                    'original_price': deal.originalPrice,
+                    'merchant_id': deal.merchantId,
+                    'merchant_name': deal.merchant?.name ?? '',
+                  },
+                ),
+              );
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.share_outlined, color: AppColors.textSecondary),
+            title: const Text('Share via...'),
+            onTap: () {
+              Navigator.of(ctx).pop();
+              Share.share(
+                '${deal.title} - \$${deal.discountPrice.toStringAsFixed(2)} '
+                '(${deal.effectiveDiscountLabel}) on DealJoy!',
+              );
+            },
+          ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    ),
+  );
+}
+
 void _showMoreMenu(BuildContext context) {
   showModalBottomSheet(
     context: context,

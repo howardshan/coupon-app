@@ -8,6 +8,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../features/store/services/store_service.dart';
 
 import '../app_shell.dart';
 
@@ -255,6 +256,18 @@ final appRouter = GoRouter(
         default:
           // 无商家记录 → 跳转注册流程
           return '/auth/register';
+      }
+    }
+
+    // 品牌管理员重启时：恢复上次选中的门店 ID，若无则跳 store-selector
+    final roleType = MerchantStatusCache.roleType;
+    if ((roleType == 'brand_admin' || roleType == 'staff_regional_manager') &&
+        StoreService.globalActiveMerchantId == null &&
+        !loc.startsWith('/store-selector')) {
+      final restored = await StoreService.restoreActiveMerchantId();
+      if (!restored) {
+        // 没有保存过门店 ID → 跳转选店页
+        return '/store-selector';
       }
     }
 

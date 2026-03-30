@@ -116,6 +116,40 @@ class _CouponDetailBodyState extends State<_CouponDetailBody> {
   Widget build(BuildContext context) {
     final coupon = widget.coupon;
 
+    // 退款状态使用专属布局（refunded 和 expired refunded 共用）
+    if (coupon.isRefunded || coupon.status == 'expired') {
+      return SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // ── 状态 Banner ──────────────────────────────
+            _StatusBanner(coupon: coupon),
+
+            // ── 退款状态说明 + 退款详情卡片 ───────────────
+            _UsedStatusSection(coupon: coupon),
+
+            const SizedBox(height: 8),
+            const Divider(indent: 16, endIndent: 16),
+            const SizedBox(height: 8),
+
+            // ── Deal 信息 ─────────────────────────────────
+            _DealInfoSection(coupon: coupon),
+
+            const SizedBox(height: 8),
+            const Divider(indent: 16, endIndent: 16),
+            const SizedBox(height: 8),
+
+            // ── 商户信息 ──────────────────────────────────
+            _MerchantInfoSection(coupon: coupon),
+
+            // ── Buy Again 按钮 ───────────────────────────
+            _BuyAgainButton(coupon: coupon),
+            const SizedBox(height: 32),
+          ],
+        ),
+      );
+    }
+
     return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -402,6 +436,15 @@ class _UsedStatusSection extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 10),
+                  // 订单编号
+                  if (coupon.orderNumber != null && coupon.orderNumber!.isNotEmpty) ...[
+                    _DetailRow(
+                      icon: Icons.receipt_long_outlined,
+                      label: 'Order Number',
+                      value: coupon.orderNumber!,
+                    ),
+                    const SizedBox(height: 8),
+                  ],
                   // 购买日期
                   _DetailRow(
                     icon: Icons.shopping_bag_outlined,
@@ -1457,6 +1500,69 @@ class _ActionButtonsState extends ConsumerState<_ActionButtons> {
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+// ──────────────────────────────────────────────
+// Buy Again 按钮（仅 refunded 状态，deal 仍上架时显示）
+// ──────────────────────────────────────────────
+class _BuyAgainButton extends StatefulWidget {
+  final CouponModel coupon;
+
+  const _BuyAgainButton({required this.coupon});
+
+  @override
+  State<_BuyAgainButton> createState() => _BuyAgainButtonState();
+}
+
+class _BuyAgainButtonState extends State<_BuyAgainButton> {
+  bool _loading = true;
+  bool _dealAvailable = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkDealAvailability();
+  }
+
+  Future<void> _checkDealAvailability() async {
+    try {
+      final deal = await Supabase.instance.client
+          .from('deals')
+          .select('id')
+          .eq('id', widget.coupon.dealId)
+          .eq('is_active', true)
+          .maybeSingle();
+      if (mounted) {
+        setState(() {
+          _dealAvailable = deal != null;
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading || !_dealAvailable) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+      child: ElevatedButton.icon(
+        onPressed: () => context.push('/deals/${widget.coupon.dealId}'),
+        icon: const Icon(Icons.shopping_bag_outlined),
+        label: const Text('Buy Again'),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppColors.primary,
+          foregroundColor: Colors.white,
+          minimumSize: const Size(double.infinity, 48),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12)),
+        ),
       ),
     );
   }

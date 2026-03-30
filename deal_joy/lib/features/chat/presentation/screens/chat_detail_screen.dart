@@ -8,8 +8,11 @@ import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../auth/domain/providers/auth_provider.dart';
+import 'package:go_router/go_router.dart';
+import '../../data/models/conversation_model.dart';
 import '../../data/models/message_model.dart';
 import '../../domain/providers/chat_provider.dart';
+import '../../domain/providers/friend_provider.dart';
 import '../widgets/chat_input_bar.dart';
 import '../widgets/coupon_picker_sheet.dart';
 import '../widgets/message_bubble.dart';
@@ -354,7 +357,7 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: _buildAppBar(title, conversation?.displayAvatarUrl),
+      appBar: _buildAppBar(title, conversation?.displayAvatarUrl, conversation),
       body: Column(
         children: [
           // 消息列表区域
@@ -387,7 +390,7 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
   }
 
   /// 构建 AppBar
-  PreferredSizeWidget _buildAppBar(String title, String? avatarUrl) {
+  PreferredSizeWidget _buildAppBar(String title, String? avatarUrl, ConversationModel? conversation) {
     return AppBar(
       backgroundColor: Colors.white,
       elevation: 0,
@@ -425,14 +428,139 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
         ],
       ),
       actions: [
-        // 更多操作按钮（预留）
         IconButton(
           icon: const Icon(Icons.more_horiz, color: AppColors.textPrimary),
-          onPressed: () {
-            // TODO: 显示更多操作菜单
-          },
+          onPressed: () => _showMoreActions(conversation),
         ),
       ],
+    );
+  }
+
+  /// 显示更多操作菜单（置顶、删除聊天、取消好友）
+  void _showMoreActions(ConversationModel? conversation) {
+    final userId = ref.read(currentUserProvider).valueOrNull?.id;
+    if (userId == null || conversation == null) return;
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // 拖动指示条
+            Container(
+              margin: const EdgeInsets.only(top: 12, bottom: 8),
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.textHint,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            // 置顶/取消置顶
+            ListTile(
+              leading: Icon(
+                conversation.isPinned ? Icons.push_pin_outlined : Icons.push_pin,
+                color: AppColors.primary,
+              ),
+              title: Text(conversation.isPinned ? 'Unpin' : 'Pin to Top'),
+              onTap: () async {
+                Navigator.of(ctx).pop();
+                await ref.read(chatRepositoryProvider).togglePin(
+                  conversation.id, userId, !conversation.isPinned,
+                );
+                ref.read(conversationsProvider.notifier).refresh();
+              },
+            ),
+            // 删除聊天
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: AppColors.error),
+              title: const Text('Delete Chat'),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                _confirmDeleteChat(conversation, userId);
+              },
+            ),
+            // 取消好友（仅 direct 类型）
+            if (conversation.type == 'direct' && conversation.otherUserId != null)
+              ListTile(
+                leading: const Icon(Icons.person_remove_outlined, color: AppColors.error),
+                title: const Text('Remove Friend'),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  _confirmRemoveFriend(conversation, userId);
+                },
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 确认删除聊天对话框
+  void _confirmDeleteChat(ConversationModel conversation, String userId) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete this chat?'),
+        content: const Text('This conversation will be removed from your list.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.error,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () async {
+              Navigator.of(ctx).pop();
+              await ref.read(chatRepositoryProvider).leaveConversation(conversation.id, userId);
+              ref.read(conversationsProvider.notifier).refresh();
+              if (mounted) Navigator.of(context).pop(); // 返回聊天列表
+            },
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 确认取消好友对话框
+  void _confirmRemoveFriend(ConversationModel conversation, String userId) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remove friend?'),
+        content: Text('Remove ${conversation.displayName} from your friends list? This will also delete the chat.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.error,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () async {
+              Navigator.of(ctx).pop();
+              // 取消好友
+              await ref.read(friendRepositoryProvider).removeFriend(userId, conversation.otherUserId!);
+              // 删除聊天
+              await ref.read(chatRepositoryProvider).leaveConversation(conversation.id, userId);
+              ref.read(conversationsProvider.notifier).refresh();
+              if (mounted) Navigator.of(context).pop(); // 返回聊天列表
+            },
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
     );
   }
 
