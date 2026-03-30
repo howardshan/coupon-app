@@ -1,7 +1,6 @@
 // 团购券 Riverpod Providers
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../shared/providers/supabase_provider.dart';
 import '../../../auth/domain/providers/auth_provider.dart';
 import '../../data/models/coupon_model.dart';
@@ -22,42 +21,15 @@ final userCouponsProvider = FutureProvider<List<CouponModel>>((ref) async {
   return ref.watch(couponsRepositoryProvider).fetchUserCoupons(user.id);
 });
 
-/// 用户已评价的 deal ID 集合（用于 To Review tab 过滤）
-final reviewedDealIdsProvider = FutureProvider<Set<String>>((ref) async {
-  final client = Supabase.instance.client;
-  final userId = client.auth.currentUser?.id;
-  if (userId == null) return {};
-  final data = await client
-      .from('reviews')
-      .select('deal_id')
-      .eq('user_id', userId);
-  return (data as List).map((r) => r['deal_id'] as String).toSet();
-});
-
 /// 按状态过滤的团购券列表（derived provider）
 /// unused: 未使用且未过期
 /// used: 已核销
-/// to_review: 已核销且未评价
 /// expired: 已过期（含过期后退款的 "Expired Return"）
 /// returned: 未过期就退款的
 /// cancelled: 已作废 (voided)
+/// 注：待评价 / 已提交评价见 My Coupons → Reviews（toReviewProvider / myWrittenReviewsProvider）
 final couponsByStatusProvider =
     Provider.family<AsyncValue<List<CouponModel>>, String>((ref, status) {
-  if (status == 'to_review') {
-    // to_review 需要同时等待 coupons 和 reviewedDealIds
-    final couponsAsync = ref.watch(userCouponsProvider);
-    final reviewedAsync = ref.watch(reviewedDealIdsProvider);
-    return couponsAsync.whenData((coupons) {
-      final reviewedIds = reviewedAsync.valueOrNull ?? {};
-      return coupons
-          .where((c) =>
-              c.status == 'used' &&
-              c.dealId.isNotEmpty &&
-              !reviewedIds.contains(c.dealId))
-          .toList();
-    });
-  }
-
   return ref.watch(userCouponsProvider).whenData((coupons) {
     switch (status) {
       case 'unused':

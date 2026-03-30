@@ -9,7 +9,7 @@ import '../../../auth/domain/providers/auth_provider.dart';
 import '../../../deals/domain/providers/deals_provider.dart';
 import '../../data/models/review_hashtag_model.dart';
 import '../../../orders/domain/providers/coupons_provider.dart';
-import '../../../orders/presentation/screens/to_review_screen.dart' show toReviewProvider;
+import '../../../orders/domain/providers/pending_reviews_provider.dart';
 import '../../domain/providers/my_reviews_provider.dart';
 
 // 评价页面 — 支持新建和编辑模式
@@ -185,7 +185,7 @@ class _WriteReviewScreenState extends ConsumerState<WriteReviewScreen> {
         ref.invalidate(dealDetailProvider(widget.dealId));
         ref.invalidate(toReviewProvider);
         ref.invalidate(myWrittenReviewsProvider);
-        ref.invalidate(reviewedDealIdsProvider);
+        ref.invalidate(userCouponsProvider);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(_isEditMode
@@ -213,7 +213,7 @@ class _WriteReviewScreenState extends ConsumerState<WriteReviewScreen> {
         if (isDuplicate) {
           ref.invalidate(toReviewProvider);
           ref.invalidate(myWrittenReviewsProvider);
-          ref.invalidate(reviewedDealIdsProvider);
+          ref.invalidate(userCouponsProvider);
         }
       }
     } finally {

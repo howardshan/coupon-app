@@ -42,7 +42,7 @@
 
 #### Reviews 评价系统 ✅
 - 状态：已完成，提交评价、展示评价测试通过
-- 扩展（2026-03）：`myWrittenReviewsProvider`、聚合页 `/my-reviews`、已用券详情「Your Review」区块、My Coupons Used 列表评价状态（用户明确要求）
+- 扩展（2026-03）：`myWrittenReviewsProvider`、`pending_reviews_provider`（`toReviewProvider`）、聚合页 `/my-reviews`、已用券详情「Your Review」、My Coupons Used 评价提示、**My Coupons 顶层 Tab「Reviews」含子 Tab Pending | Submitted**（用户明确要求）
 - 受保护文件：
   - `deal_joy/lib/features/reviews/`（整个目录）
 

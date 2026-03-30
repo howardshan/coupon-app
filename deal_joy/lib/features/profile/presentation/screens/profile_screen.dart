@@ -254,9 +254,10 @@ class _ProfileBody extends StatelessWidget {
                       onTap: () => context.push('/coupons'),
                     ),
                     _IconGridItem(
-                      icon: Icons.chat_bubble_outline,
-                      label: 'To Review',
-                      onTap: () => context.push('/to-review'),
+                      icon: Icons.rate_review_outlined,
+                      label: 'Reviews',
+                      onTap: () =>
+                          context.push('/coupons?tab=reviews&sub=pending'),
                     ),
                     _IconGridItem(
                       icon: Icons.assignment_return_outlined,
@@ -264,37 +265,6 @@ class _ProfileBody extends StatelessWidget {
                       onTap: () => context.push('/coupons'),
                     ),
                   ],
-                ),
-                const Divider(height: 24),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                  leading: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Icon(
-                      Icons.edit_note_outlined,
-                      color: AppColors.primary,
-                      size: 20,
-                    ),
-                  ),
-                  title: const Text(
-                    'My Reviews',
-                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-                  ),
-                  subtitle: const Text(
-                    'View or edit your ratings',
-                    style: TextStyle(fontSize: 11, color: AppColors.textHint),
-                  ),
-                  trailing: const Icon(
-                    Icons.chevron_right,
-                    color: AppColors.textHint,
-                    size: 18,
-                  ),
-                  onTap: () => context.push('/my-reviews'),
                 ),
               ],
             ),

@@ -381,8 +381,27 @@ final routerProvider = Provider<GoRouter>((ref) {
             RefundRequestScreen(orderId: state.pathParameters['orderId']!),
       ),
 
-      // My Coupons list (tabbed by status)
-      GoRoute(path: '/coupons', builder: (_, _) => const CouponsScreen()),
+      // My Coupons list（支持 ?tab=reviews&sub=pending|submitted）
+      GoRoute(
+        path: '/coupons',
+        builder: (_, state) {
+          final tab = state.uri.queryParameters['tab'];
+          final sub = state.uri.queryParameters['sub'];
+          var initialTab = 0;
+          if (tab == 'reviews') initialTab = 2;
+          var initialSub = 0;
+          if (sub == 'submitted') {
+            initialSub = 1;
+          } else if (sub == 'pending') {
+            initialSub = 0;
+          }
+          return CouponsScreen(
+            key: ValueKey('coupons-$initialTab-$initialSub'),
+            initialTabIndex: initialTab,
+            initialReviewsSubIndex: initialSub,
+          );
+        },
+      ),
 
       // Gift claim — 受赠方通过 deep link 领取礼品券
       GoRoute(
