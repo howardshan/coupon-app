@@ -31,12 +31,12 @@ class _OrdersListPageState extends ConsumerState<OrdersListPage>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
 
-  // Tab 配置（null = All）
+  // Tab 配置（null = All，4 种核心状态）
   static const List<OrderStatus?> _tabs = [
     null,
     OrderStatus.unused,
-    OrderStatus.paid,
     OrderStatus.redeemed,
+    OrderStatus.settled,
     OrderStatus.refunded,
   ];
 

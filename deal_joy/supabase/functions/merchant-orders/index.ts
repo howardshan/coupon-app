@@ -188,6 +188,8 @@ async function handleList(
   const customerStatus = getParam(params, 'customer_status');
   const merchantStatus = getParam(params, 'merchant_status');
   const status = getParam(params, 'status');
+  // display_status：商家端组合状态筛选（优先级最高）
+  const displayStatus = getParam(params, 'display_status');
   const dateFrom = getParam(params, 'date_from');
   const dateTo = getParam(params, 'date_to');
   const dealId = getParam(params, 'deal_id');
@@ -232,14 +234,31 @@ async function handleList(
     `)
     .or(`purchased_merchant_id.eq.${merchantId},applicable_store_ids.cs.{${merchantId}}`);
 
-  // 状态筛选
-  if (customerStatus) {
+  // display_status 组合筛选（优先），映射 4 种商家端展示状态
+  if (displayStatus) {
+    switch (displayStatus) {
+      case 'unused':
+        // 待使用：用户尚未核销
+        query = query.eq('customer_status', 'unused');
+        break;
+      case 'redeemed':
+        // 已核销待结算：用户已使用，商家尚未收到结算
+        query = query.eq('customer_status', 'used').eq('merchant_status', 'unpaid');
+        break;
+      case 'settled':
+        // 已结算：商家已收到结算款
+        query = query.eq('customer_status', 'used').eq('merchant_status', 'paid');
+        break;
+      case 'refunded':
+        // 已退款：用户申请退款成功
+        query = query.eq('customer_status', 'refund_success');
+        break;
+    }
+  } else if (customerStatus) {
     query = query.eq('customer_status', customerStatus);
-  }
-  if (merchantStatus) {
+  } else if (merchantStatus) {
     query = query.eq('merchant_status', merchantStatus);
-  }
-  if (status && !customerStatus && !merchantStatus) {
+  } else if (status) {
     const mapped = mapLegacyStatusToCustomerStatus(status);
     if (mapped) {
       query = query.eq('customer_status', mapped);
@@ -345,6 +364,8 @@ async function handleList(
     item_count: group.items.length,
     deal_titles: group.dealTitles,
     customer_status: computePrimaryStatus(group.items),
+    // 商家端结算状态（用于商家视角的筛选与展示）
+    merchant_status: computePrimaryMerchantStatus(group.items),
     coupon_expires_at: group.primaryCouponExpiresAt,
     created_at: group.orderCreatedAt,
     paid_at: group.paidAt,
@@ -359,6 +380,24 @@ async function handleList(
   });
 }
 
+// 计算 order 下 items 的商家结算主状态（优先级：unpaid > unused > paid > refund_success）
+function computePrimaryMerchantStatus(items: Record<string, unknown>[]): string {
+  const priority: Record<string, number> = {
+    'unpaid': 3,
+    'unused': 2,
+    'paid': 1,
+    'refund_success': 0,
+  };
+  let maxP = -1;
+  let primary = 'unused';
+  for (const item of items) {
+    const s = (item.merchant_status as string) ?? 'unused';
+    const p = priority[s] ?? 0;
+    if (p > maxP) { maxP = p; primary = s; }
+  }
+  return primary;
+}
+
 // 计算 order 下 items 的主状态（最需关注的状态优先）
 function computePrimaryStatus(items: Record<string, unknown>[]): string {
   const priority: Record<string, number> = {
@@ -366,8 +405,8 @@ function computePrimaryStatus(items: Record<string, unknown>[]): string {
     'refund_pending': 6,
     'refund_reject': 5,
     'unused': 4,
+    'paid': 4,      // paid = 已付款未使用，与 unused 同级
     'used': 3,
-    'paid': 2,
     'refund_success': 1,
     'expired': 0,
   };

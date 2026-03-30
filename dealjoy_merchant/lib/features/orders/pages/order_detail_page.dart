@@ -363,10 +363,11 @@ class OrderDetailPage extends ConsumerWidget {
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
-                        item.refundReason != null &&
-                                item.refundReason!.isNotEmpty
-                            ? 'Refunded — ${item.refundReason}'
-                            : 'Refunded by DealJoy',
+                        item.refundedAt != null
+                            ? 'Refunded on ${DateFormat('MMM d, yyyy · h:mm a').format(item.refundedAt!.toLocal())}${item.refundReason != null && item.refundReason!.isNotEmpty ? ' — ${item.refundReason}' : ''}'
+                            : (item.refundReason != null && item.refundReason!.isNotEmpty
+                                ? 'Refunded — ${item.refundReason}'
+                                : 'Refunded by DealJoy'),
                         style: const TextStyle(
                           fontSize: 12,
                           color: Color(0xFF92400E),
