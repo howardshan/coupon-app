@@ -180,6 +180,36 @@ class CouponCard extends StatelessWidget {
                 const SizedBox(height: 8),
               ],
 
+              // 好友赠送来源标签
+              if (coupon.giftedFromUserName != null &&
+                  coupon.giftedFromUserName!.isNotEmpty) ...[
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF9C27B0).withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.card_giftcard,
+                          size: 13, color: Color(0xFF9C27B0)),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Gift from ${coupon.giftedFromUserName}',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Color(0xFF9C27B0),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+
               // 底部行：有效期 + 购买日期
               const Divider(height: 1),
               const SizedBox(height: 8),

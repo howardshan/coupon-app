@@ -151,7 +151,7 @@ class AuthRepository {
     try {
       final response = await _client.auth.signInWithOAuth(
         sb.OAuthProvider.apple,
-        redirectTo: 'io.supabase.dealjoy://login-callback/',
+        redirectTo: 'io.supabase.crunchyplum://login-callback/',
       );
       // OAuth 方式会在浏览器中处理，此处返回 bool
       // 实际用户数据通过 authStateChanges 流获取
@@ -183,7 +183,7 @@ class AuthRepository {
     try {
       await _client.auth.resetPasswordForEmail(
         email,
-        redirectTo: 'io.supabase.dealjoy://login-callback/',
+        redirectTo: 'io.supabase.crunchyplum://login-callback/',
       );
     } catch (_) {
       // 静默处理，不泄露邮箱存在性

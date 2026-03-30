@@ -110,7 +110,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     children: [
                       // Logo 文字
                       Text(
-                        'DealJoy',
+                        'Crunchy Plum',
                         style: Theme.of(context)
                             .textTheme
                             .headlineLarge

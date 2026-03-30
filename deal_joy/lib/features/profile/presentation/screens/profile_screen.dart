@@ -384,7 +384,7 @@ class _ProfileBody extends StatelessWidget {
           const SizedBox(height: 16),
           const Center(
             child: Text(
-              'DealJoy Version 2.4.1',
+              'Crunchy Plum Version 2.4.1',
               style: TextStyle(fontSize: 10, color: AppColors.textHint),
             ),
           ),
@@ -410,7 +410,7 @@ class _BecomeMerchantCard extends StatelessWidget {
     final uri = Uri(
       scheme: 'mailto',
       path: AppConstants.merchantPartnerEmail,
-      query: 'subject=Become a DealJoy Merchant',
+      query: 'subject=Become a Crunchy Plum Merchant',
     );
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
@@ -645,7 +645,7 @@ class _GuestProfileBody extends StatelessWidget {
               ),
               const SizedBox(height: 24),
               const Text(
-                'Welcome to DealJoy',
+                'Welcome to Crunchy Plum',
                 style: TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.bold,

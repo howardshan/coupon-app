@@ -110,6 +110,78 @@ export default async function BrandDetailPage({
   })
   const earnings = brandEarnings?.[0] ?? null
 
+  // 最近交易记录（品牌下所有门店，以券为最小单位）
+  type TxnRow = { id: string; orderId: string; orderNumber: string; customerEmail: string; dealTitle: string; storeName: string; storeId: string | null; amount: number; status: string; redeemedAt: string | null; refundedAt: string | null; date: string }
+  let brandRecentTxns: TxnRow[] = []
+  if (storeIds.length > 0) {
+    // V3: 门店 deal 的 order_items
+    const { data: dealItems } = await adminDb
+      .from('order_items')
+      .select('id, order_id, unit_price, customer_status, redeemed_at, refunded_at, created_at, orders(id, order_number, users(id, email)), deals!inner(id, title, merchant_id, merchants(id, name))')
+      .in('deals.merchant_id', storeIds)
+      .order('created_at', { ascending: false })
+      .limit(30)
+
+    // V3: 在门店核销的 order_items
+    const { data: redeemedItems } = await adminDb
+      .from('order_items')
+      .select('id, order_id, unit_price, customer_status, redeemed_at, refunded_at, redeemed_merchant_id, created_at, orders(id, order_number, users(id, email)), deals(id, title, merchant_id, merchants(id, name))')
+      .in('redeemed_merchant_id', storeIds)
+      .order('created_at', { ascending: false })
+      .limit(30)
+
+    // V2 coupons
+    const { data: v2Coupons } = await adminDb
+      .from('coupons')
+      .select('id, order_id, status, used_at, created_at, orders(id, order_number, unit_price, users(id, email)), deals!inner(id, title, merchant_id, merchants(id, name))')
+      .is('order_item_id', null)
+      .in('deals.merchant_id', storeIds)
+      .order('created_at', { ascending: false })
+      .limit(30)
+
+    const { data: v2Redeemed } = await adminDb
+      .from('coupons')
+      .select('id, order_id, status, used_at, created_at, redeemed_at_merchant_id, orders(id, order_number, unit_price, users(id, email)), deals(id, title, merchant_id, merchants(id, name))')
+      .is('order_item_id', null)
+      .in('redeemed_at_merchant_id', storeIds)
+      .order('created_at', { ascending: false })
+      .limit(30)
+
+    const txnMap = new Map<string, TxnRow>()
+    for (const item of [...(dealItems ?? []), ...(redeemedItems ?? [])]) {
+      if (txnMap.has(item.id)) continue
+      const o = Array.isArray(item.orders) ? item.orders[0] : item.orders
+      const d = Array.isArray(item.deals) ? item.deals[0] : item.deals
+      const m = d?.merchants; const store = Array.isArray(m) ? m[0] : m
+      const cu = o?.users; const c = Array.isArray(cu) ? cu[0] : cu
+      txnMap.set(item.id, {
+        id: item.id, orderId: o?.id ?? item.order_id, orderNumber: o?.order_number ?? item.order_id?.slice(0, 8) ?? '—',
+        customerEmail: c?.email ?? '—', dealTitle: d?.title ?? '—',
+        storeName: store?.name ?? '—', storeId: store?.id ?? null,
+        amount: Number(item.unit_price), status: item.customer_status,
+        redeemedAt: item.redeemed_at, refundedAt: item.refunded_at, date: item.created_at,
+      })
+    }
+    for (const cp of [...(v2Coupons ?? []), ...(v2Redeemed ?? [])]) {
+      const key = `v2_${cp.id}`
+      if (txnMap.has(key)) continue
+      const o = Array.isArray(cp.orders) ? cp.orders[0] : cp.orders
+      const d = Array.isArray(cp.deals) ? cp.deals[0] : cp.deals
+      const m = d?.merchants; const store = Array.isArray(m) ? m[0] : m
+      const cu = o?.users; const c = Array.isArray(cu) ? cu[0] : cu
+      txnMap.set(key, {
+        id: cp.id, orderId: o?.id ?? cp.order_id, orderNumber: o?.order_number ?? cp.order_id?.slice(0, 8) ?? '—',
+        customerEmail: c?.email ?? '—', dealTitle: d?.title ?? '—',
+        storeName: store?.name ?? '—', storeId: store?.id ?? null,
+        amount: Number(o?.unit_price ?? 0), status: cp.status,
+        redeemedAt: cp.used_at, refundedAt: null, date: cp.created_at,
+      })
+    }
+    brandRecentTxns = Array.from(txnMap.values())
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .slice(0, 20)
+  }
+
   // 未关联品牌的已通过门店（给 AddStoreToBrand 下拉用）
   const { data: unlinkedStores } = await adminDb
     .from('merchants')
@@ -193,6 +265,69 @@ export default async function BrandDetailPage({
               <p className="text-xl font-bold text-red-500">${(earnings?.refunded_amount ?? 0).toFixed(2)}</p>
             </div>
           </div>
+        </div>
+
+        {/* 最近交易（以券为最小单位） */}
+        <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">
+            Recent Transactions ({brandRecentTxns.length})
+          </h2>
+          {brandRecentTxns.length > 0 ? (
+            <table className="w-full text-sm">
+              <thead className="border-b border-gray-200">
+                <tr>
+                  <th className="text-left pb-2 font-medium text-gray-500">Order #</th>
+                  <th className="text-left pb-2 font-medium text-gray-500">Customer</th>
+                  <th className="text-left pb-2 font-medium text-gray-500">Deal</th>
+                  <th className="text-left pb-2 font-medium text-gray-500">Store</th>
+                  <th className="text-right pb-2 font-medium text-gray-500">Amount</th>
+                  <th className="text-left pb-2 font-medium text-gray-500">Status</th>
+                  <th className="text-left pb-2 font-medium text-gray-500">Action Time</th>
+                  <th className="text-left pb-2 font-medium text-gray-500">Date</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {brandRecentTxns.map((t) => {
+                  const actionTime = t.redeemedAt ?? t.refundedAt
+                  return (
+                  <tr key={t.id} className="hover:bg-gray-50">
+                    <td className="py-2">
+                      <Link href={`/orders/${t.orderId}`} className="text-blue-600 hover:underline font-medium font-mono text-xs">
+                        {t.orderNumber}
+                      </Link>
+                    </td>
+                    <td className="py-2 text-gray-600 text-xs">{t.customerEmail}</td>
+                    <td className="py-2 text-gray-700 text-xs max-w-[160px] truncate">{t.dealTitle}</td>
+                    <td className="py-2 text-xs">
+                      {t.storeId ? (
+                        <Link href={`/merchants/${t.storeId}`} className="text-blue-600 hover:underline">{t.storeName}</Link>
+                      ) : '—'}
+                    </td>
+                    <td className="py-2 text-gray-900 font-medium text-xs text-right">${t.amount.toFixed(2)}</td>
+                    <td className="py-2">
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                        t.status === 'unused' ? 'bg-blue-100 text-blue-700'
+                        : t.status === 'used' ? 'bg-green-100 text-green-700'
+                        : t.status === 'refunded' || t.status === 'refund_success' ? 'bg-purple-100 text-purple-700'
+                        : t.status === 'expired' ? 'bg-red-100 text-red-700'
+                        : t.status === 'gifted' ? 'bg-pink-100 text-pink-700'
+                        : t.status === 'refund_pending' || t.status === 'refund_review' ? 'bg-amber-100 text-amber-700'
+                        : 'bg-gray-100 text-gray-600'
+                      }`}>
+                        {t.status === 'used' ? 'Redeemed' : t.status === 'refund_success' ? 'Refunded' : t.status}
+                      </span>
+                    </td>
+                    <td className="py-2 text-gray-500 text-xs">
+                      {actionTime ? new Date(actionTime).toLocaleString() : '—'}
+                    </td>
+                    <td className="py-2 text-gray-500 text-xs">{new Date(t.date).toLocaleDateString('en-US')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p className="text-sm text-gray-500">No transactions yet.</p>
+          )}
         </div>
 
         {/* 门店列表 */}

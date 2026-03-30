@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "447514243069",
+    "project_id": "crunchy-plum",
+    "storage_bucket": "crunchy-plum.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:447514243069:android:2d1f055187f0c365283394",
+        "android_client_info": {
+          "package_name": "com.crunchyplum.crunchy_plum"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAa_dkWn2rnX8HrB_OWf-ZViXz84tTrPJk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

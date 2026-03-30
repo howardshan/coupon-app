@@ -78,6 +78,99 @@ export default async function MerchantReviewPage({
   })
   const mEarnings = merchantEarnings?.[0] ?? null
 
+  // 最近交易记录 — 以券为最小单位
+  const itemSelect = 'id, order_id, unit_price, customer_status, redeemed_at, redeemed_merchant_id, refunded_at, refund_amount, refund_method, created_at, orders(id, order_number, created_at, users(id, email)), deals!inner(id, title), coupons!order_items_coupon_id_fkey(coupon_code)'
+
+  // V3: 该商家 deal 的 order_items
+  const { data: dealItems } = await serviceClient
+    .from('order_items')
+    .select(itemSelect)
+    .eq('deals.merchant_id', id)
+    .order('created_at', { ascending: false })
+    .limit(30)
+
+  // V3: 在该门店核销的 order_items
+  const { data: redeemedItems } = await serviceClient
+    .from('order_items')
+    .select('id, order_id, unit_price, customer_status, redeemed_at, redeemed_merchant_id, refunded_at, refund_amount, refund_method, created_at, orders(id, order_number, created_at, users(id, email)), deals(id, title), coupons!order_items_coupon_id_fkey(coupon_code)')
+    .eq('redeemed_merchant_id', id)
+    .order('created_at', { ascending: false })
+    .limit(30)
+
+  // V2: 该商家的 coupons（没有 order_item_id 的旧券）
+  const { data: v2Coupons } = await serviceClient
+    .from('coupons')
+    .select('id, order_id, coupon_code, status, used_at, created_at, orders(id, order_number, unit_price, created_at, users(id, email)), deals!inner(id, title)')
+    .is('order_item_id', null)
+    .eq('deals.merchant_id', id)
+    .order('created_at', { ascending: false })
+    .limit(30)
+
+  const { data: v2RedeemedCoupons } = await serviceClient
+    .from('coupons')
+    .select('id, order_id, coupon_code, status, used_at, created_at, redeemed_at_merchant_id, orders(id, order_number, unit_price, created_at, users(id, email)), deals(id, title)')
+    .is('order_item_id', null)
+    .eq('redeemed_at_merchant_id', id)
+    .order('created_at', { ascending: false })
+    .limit(30)
+
+  // 统一格式：合并 V3 items + V2 coupons，去重后按时间排序
+  type TxnRow = { id: string; orderId: string; orderNumber: string; customerEmail: string; dealTitle: string; amount: number; status: string; redeemedAt: string | null; refundedAt: string | null; refundAmount: number | null; refundMethod: string | null; date: string; isV3: boolean }
+  const txnMap = new Map<string, TxnRow>()
+
+  // V3 items
+  for (const item of [...(dealItems ?? []), ...(redeemedItems ?? [])]) {
+    if (txnMap.has(item.id)) continue
+    const orderInfo = Array.isArray(item.orders) ? item.orders[0] : item.orders
+    const dealInfo = Array.isArray(item.deals) ? item.deals[0] : item.deals
+    const customerInfo = orderInfo?.users
+    const customer = Array.isArray(customerInfo) ? customerInfo[0] : customerInfo
+    txnMap.set(item.id, {
+      id: item.id,
+      orderId: orderInfo?.id ?? item.order_id,
+      orderNumber: orderInfo?.order_number ?? item.order_id?.slice(0, 8) ?? '—',
+      customerEmail: customer?.email ?? '—',
+      dealTitle: dealInfo?.title ?? '—',
+      amount: Number(item.unit_price),
+      status: item.customer_status,
+      redeemedAt: item.redeemed_at,
+      refundedAt: item.refunded_at,
+      refundAmount: item.refund_amount ? Number(item.refund_amount) : null,
+      refundMethod: item.refund_method,
+      date: item.created_at,
+      isV3: true,
+    })
+  }
+
+  // V2 coupons
+  for (const c of [...(v2Coupons ?? []), ...(v2RedeemedCoupons ?? [])]) {
+    const key = `v2_${c.id}`
+    if (txnMap.has(key)) continue
+    const orderInfo = Array.isArray(c.orders) ? c.orders[0] : c.orders
+    const dealInfo = Array.isArray(c.deals) ? c.deals[0] : c.deals
+    const customer = orderInfo?.users
+    const cust = Array.isArray(customer) ? customer[0] : customer
+    txnMap.set(key, {
+      id: c.id,
+      orderId: orderInfo?.id ?? c.order_id,
+      orderNumber: orderInfo?.order_number ?? c.order_id?.slice(0, 8) ?? '—',
+      customerEmail: cust?.email ?? '—',
+      dealTitle: dealInfo?.title ?? '—',
+      amount: Number(orderInfo?.unit_price ?? 0),
+      status: c.status,
+      redeemedAt: c.used_at,
+      refundedAt: null,
+      refundAmount: null,
+      refundMethod: null,
+      date: c.created_at,
+      isV3: false,
+    })
+  }
+
+  const recentTxns = Array.from(txnMap.values())
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    .slice(0, 20)
+
   // brands join 可能返回数组或单对象，统一处理
   const brandsRaw = merchant.brands as any
   const brandInfo = Array.isArray(brandsRaw) ? brandsRaw[0] ?? null : brandsRaw ?? null
@@ -205,6 +298,63 @@ export default async function MerchantReviewPage({
               <p className="text-xl font-bold text-red-500">${(mEarnings?.refunded_amount ?? 0).toFixed(2)}</p>
             </div>
           </div>
+        </div>
+
+        {/* 最近交易（以券为最小单位） */}
+        <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">
+            Recent Transactions ({recentTxns.length})
+          </h2>
+          {recentTxns.length > 0 ? (
+            <table className="w-full text-sm">
+              <thead className="border-b border-gray-200">
+                <tr>
+                  <th className="text-left pb-2 font-medium text-gray-500">Order #</th>
+                  <th className="text-left pb-2 font-medium text-gray-500">Customer</th>
+                  <th className="text-left pb-2 font-medium text-gray-500">Deal</th>
+                  <th className="text-right pb-2 font-medium text-gray-500">Amount</th>
+                  <th className="text-left pb-2 font-medium text-gray-500">Status</th>
+                  <th className="text-left pb-2 font-medium text-gray-500">Action Time</th>
+                  <th className="text-left pb-2 font-medium text-gray-500">Date</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {recentTxns.map((t) => {
+                  const actionTime = t.redeemedAt ?? t.refundedAt
+                  return (
+                  <tr key={t.id} className="hover:bg-gray-50">
+                    <td className="py-2">
+                      <Link href={`/orders/${t.orderId}`} className="text-blue-600 hover:underline font-medium font-mono text-xs">
+                        {t.orderNumber}
+                      </Link>
+                    </td>
+                    <td className="py-2 text-gray-600 text-xs">{t.customerEmail}</td>
+                    <td className="py-2 text-gray-700 text-xs max-w-[200px] truncate">{t.dealTitle}</td>
+                    <td className="py-2 text-gray-900 font-medium text-xs text-right">${t.amount.toFixed(2)}</td>
+                    <td className="py-2">
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                        t.status === 'unused' ? 'bg-blue-100 text-blue-700'
+                        : t.status === 'used' ? 'bg-green-100 text-green-700'
+                        : t.status === 'refunded' || t.status === 'refund_success' ? 'bg-purple-100 text-purple-700'
+                        : t.status === 'expired' ? 'bg-red-100 text-red-700'
+                        : t.status === 'gifted' ? 'bg-pink-100 text-pink-700'
+                        : t.status === 'refund_pending' || t.status === 'refund_review' ? 'bg-amber-100 text-amber-700'
+                        : 'bg-gray-100 text-gray-600'
+                      }`}>
+                        {t.status === 'used' ? 'Redeemed' : t.status === 'refund_success' ? 'Refunded' : t.status}
+                      </span>
+                    </td>
+                    <td className="py-2 text-gray-500 text-xs">
+                      {actionTime ? new Date(actionTime).toLocaleString() : '—'}
+                    </td>
+                    <td className="py-2 text-gray-500 text-xs">{new Date(t.date).toLocaleDateString('en-US')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p className="text-sm text-gray-500">No transactions yet.</p>
+          )}
         </div>
 
         <div className="bg-white rounded-xl border border-gray-200 p-6">

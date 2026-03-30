@@ -2,6 +2,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../features/chat/domain/providers/notification_provider.dart';
 import '../../../features/orders/domain/providers/orders_provider.dart';
 import '../../../features/orders/domain/providers/coupons_provider.dart';
 
@@ -38,6 +39,22 @@ class RealtimeService {
             // coupons 状态变化（如退款）→ 刷新券列表
             debugPrint('[Realtime] coupons updated: ${payload.newRecord}');
             _ref.invalidate(userCouponsProvider);
+          },
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'notifications',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'user_id',
+            value: userId,
+          ),
+          callback: (payload) {
+            // 新通知到达 → 刷新未读计数和通知列表
+            debugPrint('[Realtime] new notification: ${payload.newRecord}');
+            _ref.invalidate(unreadNotificationCountProvider);
+            _ref.invalidate(notificationsProvider);
           },
         )
         .subscribe((status, [error]) {

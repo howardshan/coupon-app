@@ -1,5 +1,5 @@
 // ============================================================
-// DealJoy — merchant-register Edge Function
+// Crunchy Plum — merchant-register Edge Function
 // 接受商家注册信息，插入 merchants + merchant_documents 表
 // 返回 merchant_id 和 pending 状态
 // ============================================================

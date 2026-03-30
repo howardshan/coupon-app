@@ -29,7 +29,7 @@ function errorResponse(message: string, status = 400): Response {
 }
 
 // AI 客服系统提示词
-const SUPPORT_SYSTEM_PROMPT = `You are a helpful customer support assistant for DealJoy, a local deals and coupon platform in the Dallas area.
+const SUPPORT_SYSTEM_PROMPT = `You are a helpful customer support assistant for Crunchy Plum, a local deals and coupon platform in the Dallas area.
 
 You can help with:
 - Order and coupon status questions

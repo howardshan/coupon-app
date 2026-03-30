@@ -427,7 +427,7 @@ class CheckoutRepository {
     required double amount,
     String? customerId,
     String? ephemeralKey,
-    String label = 'DealJoy',
+    String label = 'Crunchy Plum',
     BillingDetails? billingDetails,
     String? savedPaymentMethodId,
     String? savedCardCvc,
@@ -439,7 +439,7 @@ class CheckoutRepository {
         confirmParams: PlatformPayConfirmParams.googlePay(
           googlePay: GooglePayParams(
             testEnv: true, // 上线改为 false
-            merchantName: 'DealJoy',
+            merchantName: 'Crunchy Plum',
             merchantCountryCode: 'US',
             currencyCode: 'usd',
           ),

@@ -1,8 +1,10 @@
 // 团购券 Riverpod Providers
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../shared/providers/supabase_provider.dart';
 import '../../../auth/domain/providers/auth_provider.dart';
+import '../../../chat/domain/providers/chat_provider.dart';
 import '../../data/models/coupon_model.dart';
 import '../../data/models/coupon_gift_model.dart';
 import '../../data/repositories/coupons_repository.dart';
@@ -195,12 +197,97 @@ class GiftNotifier extends AsyncNotifier<void> {
     return !state.hasError;
   }
 
+  /// 赠送给好友 — 调用 send-gift + 发送 chat 消息
+  Future<bool> sendGiftToFriend({
+    required String orderItemId,
+    required String recipientUserId,
+    String? giftMessage,
+    required String dealTitle,
+    String? dealImageUrl,
+    String? merchantName,
+  }) async {
+    state = const AsyncValue.loading();
+    state = await AsyncValue.guard(() async {
+      // 1. 调用 send-gift Edge Function（传 recipient_user_id）
+      final result = await ref.read(couponsRepositoryProvider).sendGift(
+            orderItemId: orderItemId,
+            recipientUserId: recipientUserId,
+            giftMessage: giftMessage,
+          );
+
+      // 2. 发送 chat 消息通知好友
+      try {
+        final userId =
+            (await ref.read(currentUserProvider.future))?.id;
+        if (userId != null) {
+          final chatRepo = ref.read(chatRepositoryProvider);
+          final convId =
+              await chatRepo.getOrCreateDirectChat(userId, recipientUserId);
+          await chatRepo.sendCouponMessage(convId, userId, {
+            'gift_action': 'gift_sent',
+            'gift_id': result['gift_id'],
+            'deal_title': dealTitle,
+            'deal_image_url': dealImageUrl,
+            'merchant_name': merchantName,
+            'gift_message': giftMessage,
+          });
+          // 刷新会话列表
+          ref.invalidate(conversationsProvider);
+        }
+      } catch (e) {
+        // chat 消息发送失败不阻断赠送流程
+        debugPrint('[GiftNotifier] chat message failed: $e');
+      }
+    });
+    if (!state.hasError) {
+      ref.invalidate(userCouponsProvider);
+      ref.invalidate(userOrdersProvider);
+    }
+    return !state.hasError;
+  }
+
   /// 撤回赠送
   Future<bool> recallGift(String giftId) async {
     state = const AsyncValue.loading();
     state = await AsyncValue.guard(
       () => ref.read(couponsRepositoryProvider).recallGift(giftId),
     );
+    if (!state.hasError) {
+      ref.invalidate(userCouponsProvider);
+      ref.invalidate(userOrdersProvider);
+    }
+    return !state.hasError;
+  }
+
+  /// 撤回好友赠送 — 调用 recall-gift + 发送 chat 撤回消息
+  Future<bool> recallFriendGift({
+    required String giftId,
+    required String recipientUserId,
+    required String dealTitle,
+  }) async {
+    state = const AsyncValue.loading();
+    state = await AsyncValue.guard(() async {
+      await ref.read(couponsRepositoryProvider).recallGift(giftId);
+
+      // 发送 chat 撤回通知消息
+      try {
+        final userId =
+            (await ref.read(currentUserProvider.future))?.id;
+        if (userId != null) {
+          final chatRepo = ref.read(chatRepositoryProvider);
+          final convId =
+              await chatRepo.getOrCreateDirectChat(userId, recipientUserId);
+          await chatRepo.sendCouponMessage(convId, userId, {
+            'gift_action': 'gift_recalled',
+            'gift_id': giftId,
+            'deal_title': dealTitle,
+          });
+          ref.invalidate(conversationsProvider);
+        }
+      } catch (e) {
+        debugPrint('[GiftNotifier] recall chat message failed: $e');
+      }
+    });
     if (!state.hasError) {
       ref.invalidate(userCouponsProvider);
       ref.invalidate(userOrdersProvider);

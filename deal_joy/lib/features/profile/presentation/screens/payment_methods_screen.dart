@@ -586,7 +586,7 @@ class _AddCardButtonState extends ConsumerState<_AddCardButton> {
       await Stripe.instance.initPaymentSheet(
         paymentSheetParameters: SetupPaymentSheetParameters(
           setupIntentClientSecret: clientSecret,
-          merchantDisplayName: 'DealJoy',
+          merchantDisplayName: 'Crunchy Plum',
           customerId: customerId,
           customerEphemeralKeySecret: ephemeralKey,
           style: ThemeMode.light,
