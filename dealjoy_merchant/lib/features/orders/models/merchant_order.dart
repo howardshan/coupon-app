@@ -7,94 +7,66 @@ import 'package:flutter/material.dart';
 // OrderStatus — 订单状态枚举
 // =============================================================
 
-/// 订单状态（与数据库 order_status enum 映射 + 展示用 expired / pendingRefund）
+/// 订单状态枚举（4 种核心状态 + 3 种展示用状态）
 enum OrderStatus {
-  /// 未使用
+  /// 券未用（customer_status=unused）
   unused,
-  /// 已支付/已结算
-  paid,
-  /// 已核销（used）
+  /// 已核销，待结算（customer_status=used, merchant_status=unpaid）
   redeemed,
-  /// 退款处理中（refund_requested）
-  refundRequested,
-  /// 已退款
+  /// 已核销，已结算（customer_status=used, merchant_status=paid）
+  settled,
+  /// 已退款（customer_status=refund_success）
   refunded,
-  /// 已取消 / 过期（DB 或展示）
-  cancelled,
+  /// 已赠送
+  gifted,
   /// 展示用：券已过期、未满 24h
   expired,
   /// 展示用：过期 ≥24h、待自动退款
-  pendingRefund,
+  pendingRefund;
 
-  /// Stripe 退款失败
-  refundFailed,
+  /// 从 customer_status + merchant_status 组合映射
+  static OrderStatus fromCombined(String customerStatus, String merchantStatus) {
+    switch (customerStatus) {
+      case 'used':
+      case 'redeemed':
+        if (merchantStatus == 'paid') return OrderStatus.settled;
+        return OrderStatus.redeemed;
+      case 'refund_success':
+      case 'refunded':
+        return OrderStatus.refunded;
+      case 'gifted':
+      case 'unused':
+      default:
+        return OrderStatus.unused;
+    }
+  }
 
-  /// 管理员拒绝退款（详情页标签，主状态仍为 paid）
-  refundRejected;
-
-  /// 从数据库字符串值映射
+  /// 向后兼容：从单个状态字符串映射
   factory OrderStatus.fromString(String value) {
     switch (value.toLowerCase()) {
       case 'unused':
+      case 'gifted':
         return OrderStatus.unused;
       case 'used':
       case 'redeemed':
       case 'unpaid':
-        return OrderStatus.redeemed; // 已核销（待结算）
-      case 'pending':
-        return OrderStatus.pendingRefund; // 结算处理中（复用 pendingRefund 枚举）
+        return OrderStatus.redeemed;
+      case 'settled':
       case 'paid':
-        return OrderStatus.paid; // 已结算
-      case 'refund_requested':
-      case 'refund_request':
-      case 'refund_pending':
-      case 'refund_review':
-        return OrderStatus.refundRequested;
+        return OrderStatus.settled;
       case 'refunded':
       case 'refund_success':
         return OrderStatus.refunded;
-      case 'refund_failed':
-      case 'refund_reject':
-        return OrderStatus.refundFailed;
       case 'expired':
-      case 'cancelled':
-        return OrderStatus.cancelled;
+        return OrderStatus.expired;
       default:
-        return OrderStatus.paid;
+        return OrderStatus.unused;
     }
   }
 
-  /// UI 展示文本
-  String get displayLabel {
-    switch (this) {
-      case OrderStatus.unused:
-        return 'Unused';
-      case OrderStatus.paid:
-        return 'Paid';
-      case OrderStatus.redeemed:
-        return 'Redeemed';
-      case OrderStatus.refundRequested:
-        return 'Refund Requested';
-      case OrderStatus.refunded:
-        return 'Refunded';
-      case OrderStatus.cancelled:
-        return 'Cancelled';
-      case OrderStatus.expired:
-        return 'Expired';
-      case OrderStatus.pendingRefund:
-        return 'Pending Refund';
-      case OrderStatus.refundFailed:
-        return 'Refund Failed';
-      case OrderStatus.refundRejected:
-        return 'Refund Rejected';
-    }
-  }
-
-  /// 根据原始状态 + 券过期时间计算展示用状态（未使用且已过期 → Expired / Pending Refund）
+  /// 根据原始状态 + 券过期时间计算展示用状态
   static OrderStatus displayStatus(OrderStatus raw, DateTime? couponExpiresAt) {
-    if (raw != OrderStatus.unused && raw != OrderStatus.paid) return raw;
-    if (raw == OrderStatus.paid) return OrderStatus.paid;
-    // unused 券检查是否过期
+    if (raw != OrderStatus.unused) return raw;
     if (couponExpiresAt == null) return OrderStatus.unused;
     final now = DateTime.now();
     if (now.isBefore(couponExpiresAt)) return OrderStatus.unused;
@@ -103,61 +75,69 @@ enum OrderStatus {
     return OrderStatus.expired;
   }
 
+  /// UI 展示文本
+  String get displayLabel {
+    switch (this) {
+      case OrderStatus.unused:
+        return 'Unused';
+      case OrderStatus.redeemed:
+        return 'Redeemed';
+      case OrderStatus.settled:
+        return 'Settled';
+      case OrderStatus.refunded:
+        return 'Refunded';
+      case OrderStatus.gifted:
+        return 'Gifted';
+      case OrderStatus.expired:
+        return 'Expired';
+      case OrderStatus.pendingRefund:
+        return 'Pending Refund';
+    }
+  }
+
   /// Tab 标签文本（All 单独处理）
   static String tabLabel(OrderStatus? status) {
     if (status == null) return 'All';
     return status.displayLabel;
   }
 
-  /// 状态对应颜色（Badge 颜色）
+  /// Badge 文字颜色
   Color get badgeColor {
     switch (this) {
       case OrderStatus.unused:
         return const Color(0xFF6366F1); // 靛蓝色
-      case OrderStatus.paid:
-        return const Color(0xFF3B82F6); // 蓝色
       case OrderStatus.redeemed:
         return const Color(0xFF10B981); // 绿色
-      case OrderStatus.refundRequested:
-        return const Color(0xFFEF4444); // 红色
+      case OrderStatus.settled:
+        return const Color(0xFF3B82F6); // 蓝色
       case OrderStatus.refunded:
-        return const Color(0xFFF59E0B); // 橙色
-      case OrderStatus.cancelled:
-        return const Color(0xFF9CA3AF); // 灰色
+        return const Color(0xFFF59E0B); // 琥珀色
+      case OrderStatus.gifted:
+        return const Color(0xFF8B5CF6); // 紫色
       case OrderStatus.expired:
-        return const Color(0xFFDC2626); // 红
+        return const Color(0xFFDC2626); // 红色
       case OrderStatus.pendingRefund:
-        return const Color(0xFFD97706); // 琥珀
-      case OrderStatus.refundFailed:
-        return const Color(0xFFDC2626); // 红
-      case OrderStatus.refundRejected:
-        return const Color(0xFFF59E0B); // 琥珀
+        return const Color(0xFFD97706); // 深琥珀色
     }
   }
 
-  /// 状态对应背景颜色（浅色）
+  /// Badge 背景颜色
   Color get badgeBackground {
     switch (this) {
       case OrderStatus.unused:
         return const Color(0xFFEEF2FF); // 靛蓝浅色
-      case OrderStatus.paid:
-        return const Color(0xFFEFF6FF);
       case OrderStatus.redeemed:
-        return const Color(0xFFECFDF5);
-      case OrderStatus.refundRequested:
-        return const Color(0xFFFEF2F2);
+        return const Color(0xFFECFDF5); // 绿色浅色
+      case OrderStatus.settled:
+        return const Color(0xFFEFF6FF); // 蓝色浅色
       case OrderStatus.refunded:
-        return const Color(0xFFFFFBEB);
-      case OrderStatus.cancelled:
-        return const Color(0xFFF3F4F6);
+        return const Color(0xFFFFFBEB); // 琥珀浅色
+      case OrderStatus.gifted:
+        return const Color(0xFFF5F3FF); // 紫色浅色
       case OrderStatus.expired:
-        return const Color(0xFFFEF2F2);
+        return const Color(0xFFFEF2F2); // 红色浅色
       case OrderStatus.pendingRefund:
-        return const Color(0xFFFFFBEB);
-      case OrderStatus.refundFailed:
-        return const Color(0xFFFEF2F2);
-      case OrderStatus.refundRejected:
-        return const Color(0xFFFFFBEB);
+        return const Color(0xFFFFFBEB); // 琥珀浅色
     }
   }
 }
@@ -326,11 +306,14 @@ class MerchantOrderItem {
   /// 核销时间
   final DateTime? couponRedeemedAt;
 
-  /// Deal 原价（来自 deals.original_price）
-  final double dealOriginalPrice;
+  /// 退款时间
+  final DateTime? refundedAt;
 
-  /// Deal 折扣价（来自 deals.discount_price）
-  final double dealDiscountPrice;
+  /// 退款原因
+  final String? refundReason;
+
+  /// 退款金额
+  final double? refundAmount;
 
   const MerchantOrderItem({
     required this.orderItemId,
@@ -343,12 +326,11 @@ class MerchantOrderItem {
     required this.serviceFee,
     required this.customerStatus,
     required this.merchantStatus,
-    this.dealOriginalPrice = 0.0,
-    this.dealDiscountPrice = 0.0,
     this.couponCode,
     this.couponStatus,
     this.couponExpiresAt,
     this.couponRedeemedAt,
+    this.refundedAt,
     this.refundReason,
     this.refundAmount,
   });
@@ -366,24 +348,25 @@ class MerchantOrderItem {
       serviceFee: (json['service_fee'] as num?)?.toDouble() ?? 0.0,
       customerStatus: json['customer_status'] as String? ?? 'unused',
       merchantStatus: json['merchant_status'] as String? ?? 'active',
-      dealOriginalPrice: (json['deal_original_price'] as num?)?.toDouble() ?? 0.0,
-      dealDiscountPrice: (json['deal_discount_price'] as num?)?.toDouble() ?? 0.0,
       couponCode: json['coupon_code'] as String?,
       couponStatus: json['coupon_status'] as String?,
       couponExpiresAt: json['coupon_expires_at'] != null
           ? DateTime.parse(json['coupon_expires_at'] as String)
           : null,
-      couponRedeemedAt: json['coupon_redeemed_at'] != null
-          ? DateTime.parse(json['coupon_redeemed_at'] as String)
+      couponRedeemedAt: (json['coupon_redeemed_at'] ?? json['redeemed_at']) != null
+          ? DateTime.parse((json['coupon_redeemed_at'] ?? json['redeemed_at']) as String)
+          : null,
+      refundedAt: json['refunded_at'] != null
+          ? DateTime.parse(json['refunded_at'] as String)
           : null,
       refundReason: json['refund_reason'] as String?,
       refundAmount: (json['refund_amount'] as num?)?.toDouble(),
     );
   }
 
-  /// 从 customer_status 解析 OrderStatus（用于展示）
+  /// 从 customer_status + merchant_status 组合解析 OrderStatus（用于展示）
   OrderStatus get orderStatus =>
-      OrderStatus.fromString(customerStatus);
+      OrderStatus.fromCombined(customerStatus, merchantStatus);
 }
 
 // =============================================================
@@ -411,6 +394,9 @@ class MerchantOrder {
   /// 商家专属金额合计（仅本商家的 items 单价之和）
   final double merchantTotal;
 
+  /// 商家侧主状态（从 merchant_status 字段取得）
+  final String merchantStatusRaw;
+
   /// 主状态（items 中最需关注的状态）
   final OrderStatus status;
 
@@ -427,6 +413,7 @@ class MerchantOrder {
     required this.dealTitles,
     required this.itemCount,
     required this.merchantTotal,
+    this.merchantStatusRaw = 'unused',
     required this.status,
     this.couponExpiresAt,
     required this.createdAt,
@@ -451,6 +438,9 @@ class MerchantOrder {
         ?? json['status'] as String?
         ?? 'unused';
 
+    // 商家侧状态（用于区分 redeemed 待结算 / settled 已结算）
+    final rawMerchantStatus = json['merchant_status'] as String? ?? 'unused';
+
     final userName = json['user_name'] as String?
         ?? json['user_display_name'] as String?
         ?? 'Customer';
@@ -471,7 +461,8 @@ class MerchantOrder {
       merchantTotal: (json['merchant_total'] as num?)?.toDouble()
           ?? (json['total_amount'] as num?)?.toDouble()
           ?? 0.0,
-      status: OrderStatus.fromString(rawStatus),
+      merchantStatusRaw: rawMerchantStatus,
+      status: OrderStatus.fromCombined(rawStatus, rawMerchantStatus),
       couponExpiresAt: json['coupon_expires_at'] != null
           ? DateTime.parse(json['coupon_expires_at'] as String)
           : null,
@@ -522,9 +513,6 @@ class MerchantOrderDetail {
   /// 支付时间
   final DateTime? paidAt;
 
-  /// Store Credit 抵扣金额（>0 表示用了 Store Credit）
-  final double storeCreditUsed;
-
   const MerchantOrderDetail({
     required this.id,
     required this.orderNumber,
@@ -533,30 +521,31 @@ class MerchantOrderDetail {
     required this.merchantTotal,
     this.itemsAmount = 0.0,
     this.serviceFeeTotal = 0.0,
-    this.customerEmail,
-    this.storeCreditUsed = 0.0,
+    this.items = const [],
+    required this.timeline,
+    required this.createdAt,
+    this.paidAt,
   });
 
-  /// 计算主状态（从 items 中推导）
+  /// 计算主状态（从 items 中推导，取优先级最高的状态）
   OrderStatus get primaryStatus {
     if (items.isEmpty) return OrderStatus.unused;
-    // 取最需关注的状态
+    // 优先级：redeemed(待结算) > unused > refunded > settled > gifted
     const priority = {
-      'refund_review': 7,
-      'refund_pending': 6,
-      'refund_reject': 5,
-      'unused': 4,
-      'used': 3,
-      'paid': 2,
-      'refund_success': 1,
+      OrderStatus.redeemed: 5,
+      OrderStatus.unused: 4,
+      OrderStatus.refunded: 3,
+      OrderStatus.settled: 2,
+      OrderStatus.gifted: 1,
     };
     int maxP = -1;
     OrderStatus primary = OrderStatus.unused;
     for (final item in items) {
-      final p = priority[item.customerStatus] ?? 0;
+      final status = item.orderStatus;
+      final p = priority[status] ?? 0;
       if (p > maxP) {
         maxP = p;
-        primary = item.orderStatus;
+        primary = status;
       }
     }
     return primary;
@@ -571,9 +560,9 @@ class MerchantOrderDetail {
 
     final timelineJson = orderJson['timeline'] as List<dynamic>? ?? [];
 
-    // V3 items 列表：Edge Function 将 items 放在顶层（json['items']），不在 order 内部
-    final itemsJson = (json['items'] as List<dynamic>?)
-        ?? (orderJson['items'] as List<dynamic>?)
+    // items 列表（V4 在顶层，V3 在 order 内）
+    final itemsJson = json['items'] as List<dynamic>?
+        ?? orderJson['items'] as List<dynamic>?
         ?? [];
     final items = itemsJson
         .map((e) => MerchantOrderItem.fromJson(e as Map<String, dynamic>))
@@ -595,60 +584,16 @@ class MerchantOrderDetail {
       orderNumber: orderJson['order_number'] as String? ?? 'DJ-????????',
       userName: userName,
       customerEmail: customerJson?['email'] as String?,
-      dealTitle: orderJson['deal_title'] as String?
-          ?? (items.isNotEmpty ? items.first.dealTitle : ''),
-      dealId: orderJson['deal_id'] as String?
-          ?? (items.isNotEmpty ? items.first.dealId : ''),
-      quantity: quantity,
-      unitPrice: unitPrice,
-      serviceFee: (orderJson['service_fee'] as num?)?.toDouble() ?? 0.0,
-      // merchant_total：该商家自己的应收总额（新字段）；旧订单回退 total_amount
-      totalAmount: (orderJson['merchant_total'] as num?)?.toDouble()
-          ?? (orderJson['total_amount'] as num?)?.toDouble()
-          ?? 0.0,
-      status: OrderStatus.fromString(rawStatus),
-      merchantStatus: orderJson['merchant_status'] as String?,
-      couponCode: orderJson['coupon_code'] as String?
-          ?? (items.isNotEmpty ? items.first.couponCode : null),
-      couponStatus: orderJson['coupon_status'] as String?
-          ?? (items.isNotEmpty ? items.first.couponStatus : null),
-      couponRedeemedAt: orderJson['coupon_redeemed_at'] != null
-          ? DateTime.parse(orderJson['coupon_redeemed_at'] as String)
-          : (items.isNotEmpty ? items.first.couponRedeemedAt : null),
-      refundReason: orderJson['refund_reason'] as String?,
+      merchantTotal: merchantTotal,
+      itemsAmount: itemsAmount,
+      serviceFeeTotal: serviceFeeTotal,
+      items: items,
+      timeline: OrderTimeline.fromJsonList(timelineJson),
       createdAt: DateTime.parse(
           orderJson['created_at'] as String? ?? DateTime.now().toIso8601String()),
       paidAt: orderJson['paid_at'] != null
           ? DateTime.parse(orderJson['paid_at'] as String)
           : null,
-      refundRejectedAt: orderJson['refund_rejected_at'] != null
-          ? DateTime.parse(orderJson['refund_rejected_at'] as String)
-          : null,
-      dealOriginalPrice: (orderJson['deal_original_price'] as num?)?.toDouble()
-          ?? (items.isNotEmpty ? items.first.dealOriginalPrice : 0.0),
-      // dealDiscountPrice：优先用 deals.discount_price，否则回退到实际支付单价
-      dealDiscountPrice: (() {
-        final fromDeal = (orderJson['deal_discount_price'] as num?)?.toDouble()
-            ?? (items.isNotEmpty ? items.first.dealDiscountPrice : null);
-        if (fromDeal != null && fromDeal > 0) return fromDeal;
-        return unitPrice; // 用实际支付单价作为最终兜底
-      })(),
-      paymentIntentIdMasked:
-          orderJson['payment_intent_id_masked'] as String?,
-      paymentStatus: orderJson['payment_status'] as String?,
-      refundAmount: (orderJson['refund_amount'] as num?)?.toDouble(),
-      couponExpiresAt: orderJson['coupon_expires_at'] != null
-          ? DateTime.parse(orderJson['coupon_expires_at'] as String)
-          : (items.isNotEmpty ? items.first.couponExpiresAt : null),
-      timeline: OrderTimeline.fromJsonList(timelineJson),
-      items: items,
-      itemsAmount: (orderJson['merchant_items_amount'] as num?)?.toDouble()
-          ?? (orderJson['items_amount'] as num?)?.toDouble()
-          ?? 0.0,
-      serviceFeeTotal: (orderJson['merchant_service_fee'] as num?)?.toDouble()
-          ?? (orderJson['service_fee_total'] as num?)?.toDouble()
-          ?? 0.0,
-      storeCreditUsed: (orderJson['store_credit_used'] as num?)?.toDouble() ?? 0.0,
     );
   }
 }
@@ -712,27 +657,21 @@ class OrderFilter {
     return OrderFilter(status: status);
   }
 
-  /// 生成状态字符串（传给 API 的 status 参数）
+  /// 生成状态字符串（传给 API 的 display_status 参数）
   String? get statusParam {
     if (status == null) return null;
     switch (status!) {
       case OrderStatus.unused:
         return 'unused';
-      case OrderStatus.paid:
-        return 'paid';
       case OrderStatus.redeemed:
-        return 'used';
-      case OrderStatus.refundRequested:
-        return 'refund_requested';
+        return 'redeemed';
+      case OrderStatus.settled:
+        return 'settled';
       case OrderStatus.refunded:
         return 'refunded';
-      case OrderStatus.refundFailed:
-        return 'refund_failed';
-      case OrderStatus.cancelled:
-        return 'expired';
+      case OrderStatus.gifted:
       case OrderStatus.expired:
       case OrderStatus.pendingRefund:
-      case OrderStatus.refundRejected:
         // 展示用状态，筛选用 DB 的 unused
         return 'unused';
     }

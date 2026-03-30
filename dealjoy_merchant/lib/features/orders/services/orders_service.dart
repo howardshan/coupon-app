@@ -99,7 +99,7 @@ class OrdersService {
       };
       if (filter != null) {
         final statusParam = filter.statusParam;
-        if (statusParam != null) body['status'] = statusParam;
+        if (statusParam != null) body['display_status'] = statusParam;
         if (filter.dateFrom != null) body['date_from'] = _formatDate(filter.dateFrom!);
         if (filter.dateTo != null) body['date_to'] = _formatDate(filter.dateTo!);
         if (filter.dealId != null) body['deal_id'] = filter.dealId!;
