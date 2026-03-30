@@ -118,21 +118,15 @@ class _CardListBody extends ConsumerWidget {
   }
 }
 
-// ── 单张卡片 Tile（点击进入详情页）────────────────────────────────────────────
-class _CardTile extends StatelessWidget {
+// ── 单张卡片 Tile（点击打开操作底部弹层）─────────────────────────────────────
+class _CardTile extends ConsumerWidget {
   final SavedCard card;
   const _CardTile({required this.card});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return GestureDetector(
-      onTap: () {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => _CardDetailScreen(card: card),
-          ),
-        );
-      },
+      onTap: () => _showCardOptions(context, ref),
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
@@ -177,30 +171,10 @@ class _CardTile extends StatelessWidget {
                           color: AppColors.textPrimary,
                         ),
                       ),
-                      if (card.isExpired) ...[
+                      if (card.isDefault) ...[
                         const SizedBox(width: 8),
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: AppColors.error.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: const Text(
-                            'Expired',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.error,
-                            ),
-                          ),
-                        ),
-                      ] else if (card.isDefault) ...[
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 2,
-                          ),
                           decoration: BoxDecoration(
                             color: AppColors.primary.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(6),
@@ -220,19 +194,13 @@ class _CardTile extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     'Expires ${card.expiryText}',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppColors.textSecondary,
-                    ),
+                    style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
                   ),
                   if (card.billingAddress != null && card.billingAddress!.summary.isNotEmpty) ...[
                     const SizedBox(height: 2),
                     Text(
                       card.billingAddress!.summary,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: AppColors.textHint,
-                      ),
+                      style: const TextStyle(fontSize: 11, color: AppColors.textHint),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -240,394 +208,23 @@ class _CardTile extends StatelessWidget {
                 ],
               ),
             ),
-            const Icon(
-              Icons.chevron_right,
-              size: 18,
-              color: AppColors.textHint,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ── 卡片详情页 ──────────────────────────────────────────────────────────────
-class _CardDetailScreen extends ConsumerWidget {
-  final SavedCard card;
-  const _CardDetailScreen({required this.card});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // 监听最新卡片列表，确保详情页状态实时更新
-    final cardsAsync = ref.watch(paymentMethodsProvider);
-    final latestCard = cardsAsync.whenOrNull(
-      data: (cards) {
-        try {
-          return cards.firstWhere((c) => c.id == card.id);
-        } catch (_) {
-          return null;
-        }
-      },
-    );
-    final displayCard = latestCard ?? card;
-
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        title: const Text('Card Details'),
-        backgroundColor: Colors.white,
-        foregroundColor: AppColors.textPrimary,
-        elevation: 0,
-        surfaceTintColor: Colors.transparent,
-        actions: [
-          // 编辑按钮
-          IconButton(
-            onPressed: () => _showEditSheet(context, ref, displayCard),
-            icon: const Icon(Icons.edit_outlined, size: 22),
-            tooltip: 'Edit Card',
-          ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          children: [
-            // ── 过期警告 ────────────────────────────────────
-            if (displayCard.isExpired)
-              Container(
-                width: double.infinity,
-                margin: const EdgeInsets.only(bottom: 16),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                decoration: BoxDecoration(
-                  color: AppColors.error.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.error.withValues(alpha: 0.3)),
-                ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.warning_amber_rounded, size: 20, color: AppColors.error),
-                    SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        'This card has expired and cannot be used for payments. Please update the expiration date or remove it.',
-                        style: TextStyle(fontSize: 13, color: AppColors.error),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-            // ── 卡片预览卡 ────────────────────────────────────
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: displayCard.isExpired
-                      ? [const Color(0xFF6B6B6B), const Color(0xFF9E9E9E)]
-                      : [const Color(0xFF2D3142), const Color(0xFF4F5D75)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.15),
-                    blurRadius: 16,
-                    offset: const Offset(0, 6),
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        displayCard.brandDisplayName,
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      if (displayCard.isExpired)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: AppColors.error.withValues(alpha: 0.8),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: const Text(
-                            'Expired',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        )
-                      else if (displayCard.isDefault)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: const Text(
-                            'Default',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 28),
-                  Text(
-                    '•••• •••• •••• ${displayCard.last4}',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 2,
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  Row(
-                    children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'EXPIRES',
-                            style: TextStyle(
-                              color: Colors.white54,
-                              fontSize: 10,
-                              letterSpacing: 1,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            displayCard.expiryText,
-                            style: TextStyle(
-                              color: displayCard.isExpired
-                                  ? const Color(0xFFFF8A80)
-                                  : Colors.white,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 24),
-
-            // ── 卡片信息详情 ────────────────────────────────────
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: AppColors.surfaceVariant),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Card Information',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  _InfoRow(label: 'Brand', value: displayCard.brandDisplayName),
-                  const SizedBox(height: 10),
-                  _InfoRow(label: 'Card Number', value: '•••• •••• •••• ${displayCard.last4}'),
-                  const SizedBox(height: 10),
-                  _InfoRow(label: 'Expiration', value: displayCard.expiryText),
-                  if (displayCard.billingAddress != null &&
-                      displayCard.billingAddress!.summary.isNotEmpty) ...[
-                    const SizedBox(height: 14),
-                    const Divider(height: 1),
-                    const SizedBox(height: 14),
-                    const Text(
-                      'Billing Address',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    if (displayCard.billingAddress!.line1.isNotEmpty)
-                      _InfoRow(label: 'Address', value: displayCard.billingAddress!.line1),
-                    if (displayCard.billingAddress!.line2.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      _InfoRow(label: 'Address 2', value: displayCard.billingAddress!.line2),
-                    ],
-                    if (displayCard.billingAddress!.city.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      _InfoRow(label: 'City', value: displayCard.billingAddress!.city),
-                    ],
-                    if (displayCard.billingAddress!.state.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      _InfoRow(label: 'State', value: displayCard.billingAddress!.state),
-                    ],
-                    if (displayCard.billingAddress!.postalCode.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      _InfoRow(label: 'Postal Code', value: displayCard.billingAddress!.postalCode),
-                    ],
-                    if (displayCard.billingAddress!.country.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      _InfoRow(label: 'Country', value: displayCard.billingAddress!.country),
-                    ],
-                  ],
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 24),
-
-            // ── 操作按钮 ────────────────────────────────────
-            // 编辑卡片
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () => _showEditSheet(context, ref, displayCard),
-                icon: const Icon(Icons.edit_outlined, size: 18),
-                label: const Text('Edit Card'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.textPrimary,
-                  side: const BorderSide(color: AppColors.surfaceVariant),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                  textStyle: const TextStyle(
-                      fontSize: 15, fontWeight: FontWeight.w600),
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 12),
-
-            // 设为默认（过期卡片禁用）
-            if (!displayCard.isDefault)
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: displayCard.isExpired
-                      ? null
-                      : () => _setAsDefault(context, ref, displayCard),
-                  icon: const Icon(Icons.star_outline, size: 18),
-                  label: Text(displayCard.isExpired
-                      ? 'Cannot Set Expired Card as Default'
-                      : 'Set as Default'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                    disabledBackgroundColor: AppColors.surfaceVariant,
-                    disabledForegroundColor: AppColors.textHint,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                    textStyle: const TextStyle(
-                        fontSize: 15, fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ),
-
-            if (!displayCard.isDefault)
-              const SizedBox(height: 12),
-
-            // 删除卡片
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () => _deleteCard(context, ref, displayCard),
-                icon: const Icon(Icons.delete_outline, size: 18),
-                label: const Text('Remove Card'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.error,
-                  side: const BorderSide(color: AppColors.error),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                  textStyle: const TextStyle(
-                      fontSize: 15, fontWeight: FontWeight.w600),
-                ),
-              ),
-            ),
+            // 右箭头提示可点击
+            const Icon(Icons.chevron_right, size: 18, color: AppColors.textHint),
           ],
         ),
       ),
     );
   }
 
-  /// 弹出编辑卡片 Bottom Sheet
-  void _showEditSheet(BuildContext context, WidgetRef ref, SavedCard c) {
+  /// 点击卡片后弹出操作底部弹层：详情 / 设为默认 / 删除
+  void _showCardOptions(BuildContext context, WidgetRef ref) {
     showModalBottomSheet(
       context: context,
-      isScrollControlled: true,
+      backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (ctx) => _EditCardSheet(card: c),
-    );
-  }
-
-  Future<void> _setAsDefault(BuildContext context, WidgetRef ref, SavedCard c) async {
-    try {
-      await ref.read(paymentMethodsProvider.notifier).setDefault(c.id);
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${c.brandDisplayName} ${c.displayText} set as default'),
-            backgroundColor: AppColors.success,
-          ),
-        );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to update default card: $e')),
-        );
-      }
-    }
-  }
-
-  Future<void> _deleteCard(BuildContext context, WidgetRef ref, SavedCard c) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Remove Card'),
-        content: Text(
-          'Remove ${c.brandDisplayName} ${c.displayText}? This cannot be undone.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: TextButton.styleFrom(foregroundColor: AppColors.error),
-            child: const Text('Remove'),
-          ),
-        ],
-      ),
+      builder: (_) => _CardOptionsSheet(card: card, ref: ref),
     );
 
     if (confirmed != true) return;
@@ -950,17 +547,35 @@ class _InfoRow extends StatelessWidget {
 }
 
 // ── 添加新卡按钮 ──────────────────────────────────────────────────────────────
-class _AddCardButton extends ConsumerWidget {
+class _AddCardButton extends ConsumerStatefulWidget {
   const _AddCardButton();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_AddCardButton> createState() => _AddCardButtonState();
+}
+
+class _AddCardButtonState extends ConsumerState<_AddCardButton> {
+  // 正在调用 Stripe 时为 true，防止重复点击
+  bool _isLoading = false;
+
+  @override
+  Widget build(BuildContext context) {
     return ElevatedButton.icon(
-      onPressed: () => _addNewCard(context, ref),
-      icon: const Icon(Icons.add, size: 18),
-      label: const Text('Add New Card'),
+      // 加载中时传 null 禁用按钮，避免重复触发 Stripe 弹窗
+      onPressed: _isLoading ? null : _addNewCard,
+      icon: _isLoading
+          ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+              ),
+            )
+          : const Icon(Icons.add, size: 18),
+      label: Text(_isLoading ? 'Connecting...' : 'Add New Card'),
       style: ElevatedButton.styleFrom(
-        backgroundColor: AppColors.primary,
+        backgroundColor: _isLoading ? AppColors.primary.withValues(alpha: 0.6) : AppColors.primary,
         foregroundColor: Colors.white,
         padding: const EdgeInsets.symmetric(vertical: 14),
         minimumSize: const Size(double.infinity, 0),
@@ -971,7 +586,9 @@ class _AddCardButton extends ConsumerWidget {
   }
 
   /// 通过 Stripe SetupSheet 添加新卡
-  Future<void> _addNewCard(BuildContext context, WidgetRef ref) async {
+  Future<void> _addNewCard() async {
+    if (_isLoading) return; // 双重保险，防止并发
+    setState(() => _isLoading = true);
     try {
       // 调用后端创建 SetupIntent，获取 clientSecret / customerId / ephemeralKey
       final setupData = await ref
@@ -1002,6 +619,9 @@ class _AddCardButton extends ConsumerWidget {
         ),
       );
 
+      // Stripe 弹窗出现前恢复按钮，避免弹窗期间按钮一直灰显
+      if (mounted) setState(() => _isLoading = false);
+
       // 弹出卡片录入表单
       await Stripe.instance.presentPaymentSheet();
 
@@ -1030,6 +650,239 @@ class _AddCardButton extends ConsumerWidget {
           SnackBar(content: Text('Failed to add card: $e')),
         );
       }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
+  }
+}
+
+// ── 卡片操作底部弹层：详情 / 设为默认 / 删除 ────────────────────────────────
+class _CardOptionsSheet extends ConsumerStatefulWidget {
+  final SavedCard card;
+  final WidgetRef ref;
+
+  const _CardOptionsSheet({required this.card, required this.ref});
+
+  @override
+  ConsumerState<_CardOptionsSheet> createState() => _CardOptionsSheetState();
+}
+
+class _CardOptionsSheetState extends ConsumerState<_CardOptionsSheet> {
+  bool _isSettingDefault = false;
+  bool _isDeleting = false;
+
+  SavedCard get card => widget.card;
+
+  /// 设为默认卡
+  Future<void> _setDefault() async {
+    setState(() => _isSettingDefault = true);
+    try {
+      await ref.read(paymentMethodsProvider.notifier).setDefault(card.id);
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${card.brandDisplayName} ${card.displayText} set as default'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to set default: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSettingDefault = false);
+    }
+  }
+
+  /// 删除卡片（含二次确认）
+  Future<void> _delete() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remove Card'),
+        content: Text(
+          'Remove ${card.brandDisplayName} ${card.displayText}? This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.error),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    setState(() => _isDeleting = true);
+    try {
+      await ref.read(paymentMethodsProvider.notifier).deleteCard(card.id);
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${card.brandDisplayName} ${card.displayText} removed'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to remove card: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isDeleting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final addr = card.billingAddress;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 标题栏
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceVariant,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(card.brandIcon, size: 22, color: AppColors.textSecondary),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${card.brandDisplayName} ${card.displayText}',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    Text(
+                      'Expires ${card.expiryText}',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (card.isDefault)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Text(
+                    'Default',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+
+          // 账单地址详情（若有）
+          if (addr != null && addr.summary.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            const Divider(height: 1),
+            const SizedBox(height: 14),
+            const Text(
+              'Billing Address',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textSecondary,
+                letterSpacing: 0.5,
+              ),
+            ),
+            const SizedBox(height: 6),
+            if (addr.line1.isNotEmpty)
+              Text(addr.line1,
+                  style: const TextStyle(fontSize: 14, color: AppColors.textPrimary)),
+            if (addr.line2.isNotEmpty)
+              Text(addr.line2,
+                  style: const TextStyle(fontSize: 14, color: AppColors.textPrimary)),
+            if (addr.city.isNotEmpty || addr.state.isNotEmpty || addr.postalCode.isNotEmpty)
+              Text(
+                [addr.city, addr.state, addr.postalCode]
+                    .where((s) => s.isNotEmpty)
+                    .join(', '),
+                style: const TextStyle(fontSize: 14, color: AppColors.textPrimary),
+              ),
+            if (addr.country.isNotEmpty)
+              Text(addr.country,
+                  style: const TextStyle(fontSize: 14, color: AppColors.textPrimary)),
+          ],
+
+          const SizedBox(height: 20),
+          const Divider(height: 1),
+          const SizedBox(height: 8),
+
+          // 设为默认（仅非默认卡显示）
+          if (!card.isDefault)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.star_outline, color: AppColors.primary),
+              title: const Text('Set as Default',
+                  style: TextStyle(fontWeight: FontWeight.w500)),
+              trailing: _isSettingDefault
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.chevron_right, color: AppColors.textHint),
+              onTap: _isSettingDefault ? null : _setDefault,
+            ),
+
+          // 删除卡片
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: _isDeleting
+                ? const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.error),
+                  )
+                : const Icon(Icons.delete_outline, color: AppColors.error),
+            title: Text(
+              'Remove Card',
+              style: TextStyle(
+                color: _isDeleting ? AppColors.textHint : AppColors.error,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            onTap: _isDeleting ? null : _delete,
+          ),
+        ],
+      ),
+    );
   }
 }

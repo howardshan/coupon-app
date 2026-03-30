@@ -1,12 +1,26 @@
 // DealJoy 商家端 App 入口
 // 初始化: Supabase + flutter_dotenv + Riverpod + go_router
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'router/app_router.dart';
+import 'features/dashboard/providers/dashboard_provider.dart';
+import 'features/orders/providers/orders_provider.dart';
+import 'features/store/providers/store_provider.dart';
+import 'features/deals/providers/deals_provider.dart';
+import 'features/reviews/providers/reviews_provider.dart';
+import 'features/notifications/providers/notifications_provider.dart';
+import 'features/earnings/providers/earnings_provider.dart';
+import 'features/analytics/providers/analytics_provider.dart';
+import 'features/scan/providers/scan_provider.dart';
+import 'features/menu/providers/menu_provider.dart';
+import 'features/menu/providers/category_provider.dart';
+import 'features/influencer/providers/influencer_provider.dart';
 
 // 全局禁用 overscroll 拉伸效果（Android 默认有 stretch/glow）
 class _NoOverscrollBehavior extends ScrollBehavior {
@@ -42,8 +56,53 @@ Future<void> main() async {
   );
 }
 
-class DealJoyMerchantApp extends StatelessWidget {
+class DealJoyMerchantApp extends ConsumerStatefulWidget {
   const DealJoyMerchantApp({super.key});
+
+  @override
+  ConsumerState<DealJoyMerchantApp> createState() => _DealJoyMerchantAppState();
+}
+
+class _DealJoyMerchantAppState extends ConsumerState<DealJoyMerchantApp> {
+  StreamSubscription<AuthState>? _authSub;
+
+  @override
+  void initState() {
+    super.initState();
+    // 监听账号切换：登录新账号后，invalidate 所有业务数据 Provider，
+    // 避免新账号看到旧账号缓存数据（需要手动下拉刷新的问题）
+    _authSub = Supabase.instance.client.auth.onAuthStateChange.listen((event) {
+      if (event.event == AuthChangeEvent.signedIn) {
+        _invalidateAllBusinessProviders();
+      }
+    });
+  }
+
+  /// 切换账号后强制清空所有业务 Provider 缓存，触发重新拉取
+  void _invalidateAllBusinessProviders() {
+    ref.invalidate(dashboardProvider);
+    ref.invalidate(ordersNotifierProvider);
+    ref.invalidate(orderFilterProvider);
+    ref.invalidate(merchantDealsForFilterProvider);
+    ref.invalidate(storeProvider);
+    ref.invalidate(dealsProvider);
+    ref.invalidate(reviewsProvider);
+    ref.invalidate(notificationsNotifierProvider);
+    ref.invalidate(unreadCountProvider);
+    ref.invalidate(earningsSummaryProvider);
+    ref.invalidate(transactionsProvider);
+    ref.invalidate(overviewProvider);
+    ref.invalidate(redemptionHistoryProvider);
+    ref.invalidate(menuProvider);
+    ref.invalidate(categoryProvider);
+    ref.invalidate(influencerProvider);
+  }
+
+  @override
+  void dispose() {
+    _authSub?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {

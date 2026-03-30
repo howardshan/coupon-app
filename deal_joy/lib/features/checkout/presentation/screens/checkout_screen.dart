@@ -655,30 +655,43 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
             ),
             const SizedBox(height: 10),
 
-            // ── 购物车 deal 列表 ──────────────────────────────────
-            Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.surfaceVariant),
-              ),
-              child: Column(
-                children: [
-                  ...items.asMap().entries.map((entry) {
-                    final idx = entry.key;
-                    final item = entry.value;
-                    return Column(
-                      children: [
-                        _CartItemRow(item: item),
-                        // 非最后一项显示分割线
-                        if (idx < items.length - 1)
-                          const Divider(height: 1, indent: 16, endIndent: 16),
-                      ],
-                    );
-                  }),
-                ],
-              ),
-            ),
+            // ── 购物车 deal 列表（按 dealId 分组，相同 deal 合并为一行）──
+            Builder(builder: (context) {
+              // 按 dealId 分组，保持添加顺序
+              final groupMap = <String, List<CartItemModel>>{};
+              final groupOrder = <String>[];
+              for (final item in items) {
+                if (!groupMap.containsKey(item.dealId)) {
+                  groupMap[item.dealId] = [];
+                  groupOrder.add(item.dealId);
+                }
+                groupMap[item.dealId]!.add(item);
+              }
+              final groups = groupOrder.map((id) => groupMap[id]!).toList();
+
+              return Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppColors.surfaceVariant),
+                ),
+                child: Column(
+                  children: [
+                    ...groups.asMap().entries.map((entry) {
+                      final idx = entry.key;
+                      final group = entry.value;
+                      return Column(
+                        children: [
+                          _CartItemRow(item: group.first, quantity: group.length),
+                          if (idx < groups.length - 1)
+                            const Divider(height: 1, indent: 16, endIndent: 16),
+                        ],
+                      );
+                    }),
+                  ],
+                ),
+              );
+            }),
             const SizedBox(height: 20),
 
             // ── 支付方式 ──────────────────────────────────────────
@@ -2026,11 +2039,15 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
 // ── 购物车 deal 行（购物车模式专用） ─────────────────────────────────────────
 class _CartItemRow extends StatelessWidget {
   final CartItemModel item;
+  // 同一 deal 的数量（分组后传入，默认 1）
+  final int quantity;
 
-  const _CartItemRow({required this.item});
+  const _CartItemRow({required this.item, this.quantity = 1});
 
   @override
   Widget build(BuildContext context) {
+    final subtotal = item.unitPrice * quantity;
+
     return Padding(
       padding: const EdgeInsets.all(14),
       child: Row(
@@ -2063,33 +2080,66 @@ class _CartItemRow extends StatelessWidget {
               child: const Icon(Icons.local_offer, color: AppColors.textHint, size: 20),
             ),
           const SizedBox(width: 12),
-          // 标题 + 商家名
+          // 标题 + 商家名 + 单价
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  item.dealTitle,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
-                  ),
+                // 标题行：标题 + 数量 badge（数量 > 1 时显示）
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        item.dealTitle,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ),
+                    if (quantity > 1) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '× $quantity',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
                 const SizedBox(height: 2),
                 Text(
                   item.merchantName,
                   style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
                 ),
+                const SizedBox(height: 4),
+                // 数量 > 1 时显示单价 × 数量
+                if (quantity > 1)
+                  Text(
+                    '\$${item.unitPrice.toStringAsFixed(2)} × $quantity',
+                    style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                  ),
               ],
             ),
           ),
           const SizedBox(width: 8),
-          // 单价
+          // 右侧价格：数量 > 1 显示小计，否则显示单价
           Text(
-            '\$${item.unitPrice.toStringAsFixed(2)}',
+            '\$${subtotal.toStringAsFixed(2)}',
             style: const TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.bold,

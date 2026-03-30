@@ -26,7 +26,7 @@ class PaymentMethodsRepository {
       // 后端返回 { paymentMethods: [...] } 或直接返回数组
       final List<dynamic> list = data is List
           ? data
-          : (data['paymentMethods'] as List<dynamic>? ?? data['cards'] as List<dynamic>? ?? []);
+          : (data['paymentMethods'] as List<dynamic>? ?? []);
 
       return list
           .whereType<Map<String, dynamic>>()

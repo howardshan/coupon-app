@@ -396,7 +396,7 @@ async function handleDetail(
 ): Promise<Response> {
   console.log('[merchant-orders] handleDetail V3', { orderId, merchantId });
 
-  // 查询 order 基本信息 + 用户信息
+  // 查询 order 基本信息 + 用户信息（含退款申请时间用于 timeline）
   const { data: order, error: orderError } = await client
     .from('orders')
     .select(`
@@ -405,9 +405,11 @@ async function handleDetail(
       total_amount,
       service_fee_total,
       items_amount,
+      store_credit_used,
       paid_at,
       created_at,
       updated_at,
+      refund_requested_at,
       users!inner (
         full_name,
         email
@@ -533,17 +535,69 @@ async function handleDetail(
     };
   });
 
+  // 计算该商家在本订单中的金额汇总（仅统计属于该商家的 items）
+  const merchantItemsAmount = formattedItems.reduce(
+    (sum, item) => sum + ((item.unit_price as number) || 0), 0
+  );
+  const merchantServiceFee = formattedItems.reduce(
+    (sum, item) => sum + ((item.service_fee as number) || 0), 0
+  );
+  const merchantTotal = merchantItemsAmount + merchantServiceFee;
+
+  // 构造 timeline（从 order 和 items 数据推算各阶段时间）
+  const timeline: Array<{ event: string; timestamp: string | null; completed: boolean }> = [];
+
+  // 1. purchased：订单创建
+  timeline.push({
+    event: 'purchased',
+    timestamp: (order.paid_at ?? order.created_at) as string | null,
+    completed: true,
+  });
+
+  // 2. redeemed：任意一张券已核销
+  const redeemedItem = items.find((i) => i.redeemed_at);
+  if (redeemedItem) {
+    timeline.push({
+      event: 'redeemed',
+      timestamp: redeemedItem.redeemed_at as string | null,
+      completed: true,
+    });
+  }
+
+  // 3. refund_requested：如果订单有退款申请时间
+  const refundRequestedAt = (order as Record<string, unknown>).refund_requested_at as string | null ?? null;
+  if (refundRequestedAt) {
+    timeline.push({
+      event: 'refund_requested',
+      timestamp: refundRequestedAt,
+      completed: true,
+    });
+  }
+
+  // 4. refunded：任意一张券已退款
+  const refundedItem = items.find((i) => i.refunded_at);
+  if (refundedItem) {
+    timeline.push({
+      event: 'refunded',
+      timestamp: refundedItem.refunded_at as string | null,
+      completed: true,
+    });
+  }
+
   return jsonResponse({
     order: {
       id: order.id,
       order_number: order.order_number,
-      // V4: 商家专属金额（只统计属于当前商家的 items）
-      total_amount: Math.round(merchantTotal * 100) / 100,
-      items_amount: Math.round(merchantItemsAmount * 100) / 100,
-      service_fee_total: Math.round(merchantServiceFeeTotal * 100) / 100,
-      quantity: items.length,
+      total_amount: order.total_amount,           // 订单全局总额（含所有商家，仅供参考）
+      merchant_items_amount: merchantItemsAmount, // 该商家的商品金额小计
+      merchant_service_fee: merchantServiceFee,   // 该商家的手续费合计
+      merchant_total: merchantTotal,              // 该商家的应收总额（展示用）
+      service_fee_total: (order.service_fee_total as number | null) ?? 0,
+      items_amount: (order.items_amount as number | null) ?? order.total_amount,
+      store_credit_used: (order.store_credit_used as number | null) ?? 0,
       paid_at: order.paid_at,
       created_at: order.created_at,
+      timeline,
     },
     items: formattedItems,
     customer: {

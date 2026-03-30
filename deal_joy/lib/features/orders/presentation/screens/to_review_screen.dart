@@ -13,6 +13,7 @@ class _ReviewableItem {
   final String dealId;
   final String dealTitle;
   final String? dealImageUrl;
+  final String? merchantId;
   final String? merchantName;
   final DateTime? usedAt;
 
@@ -21,6 +22,7 @@ class _ReviewableItem {
     required this.dealId,
     required this.dealTitle,
     this.dealImageUrl,
+    this.merchantId,
     this.merchantName,
     this.usedAt,
   });
@@ -33,10 +35,10 @@ final toReviewProvider = FutureProvider<List<_ReviewableItem>>((ref) async {
 
   final client = Supabase.instance.client;
 
-  // 查询已使用的券
+  // 查询已使用的券（同时获取 merchant_id 用于跳转评价页面）
   final usedCoupons = await client
       .from('coupons')
-      .select('id, deal_id, used_at, deals(title, image_urls, merchants(name))')
+      .select('id, deal_id, used_at, deals(title, image_urls, merchant_id, merchants(id, name))')
       .eq('user_id', user.id)
       .eq('status', 'used')
       .order('used_at', ascending: false);
@@ -59,6 +61,9 @@ final toReviewProvider = FutureProvider<List<_ReviewableItem>>((ref) async {
     final deals = c['deals'] as Map<String, dynamic>?;
     final merchants = deals?['merchants'] as Map<String, dynamic>?;
     final imageUrls = deals?['image_urls'] as List?;
+    // merchant_id 优先从 deals 直接字段取，其次从嵌套 merchants 对象取
+    final merchantId = (deals?['merchant_id'] as String?)
+        ?? (merchants?['id'] as String?);
 
     items.add(_ReviewableItem(
       couponId: c['id'] as String? ?? '',
@@ -67,6 +72,7 @@ final toReviewProvider = FutureProvider<List<_ReviewableItem>>((ref) async {
       dealImageUrl: (imageUrls != null && imageUrls.isNotEmpty)
           ? imageUrls.first as String?
           : null,
+      merchantId: merchantId,
       merchantName: merchants?['name'] as String?,
       usedAt: c['used_at'] != null
           ? DateTime.tryParse(c['used_at'] as String)
@@ -209,7 +215,12 @@ class _ReviewCard extends StatelessWidget {
             const SizedBox(width: 8),
             // 写评价按钮
             ElevatedButton(
-              onPressed: () => context.push('/review/${item.dealId}'),
+              onPressed: () {
+                // couponId は order_items テーブルの ID ではないため orderItemId として渡せない
+                // merchantId のみ渡す（orderItemId は省略）
+                final merchantId = item.merchantId ?? '';
+                context.push('/review/${item.dealId}?merchantId=$merchantId');
+              },
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
                 foregroundColor: Colors.white,
