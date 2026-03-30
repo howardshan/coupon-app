@@ -36,6 +36,7 @@ import '../../features/profile/presentation/screens/change_password_screen.dart'
 import '../../features/profile/presentation/screens/change_phone_screen.dart';
 import '../../features/profile/presentation/screens/billing_address_screen.dart';
 import '../../features/reviews/presentation/screens/write_review_screen.dart';
+import '../../features/reviews/presentation/screens/my_reviews_screen.dart';
 import '../../features/merchant/presentation/screens/merchant_dashboard_screen.dart';
 import '../../features/merchant/presentation/screens/merchant_detail_screen.dart';
 import '../../features/merchant/presentation/screens/photo_gallery_screen.dart';
@@ -112,6 +113,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         final needsAuth = currentPath.startsWith('/checkout') ||
             currentPath.startsWith('/orders') ||
             currentPath.startsWith('/coupons') ||
+            currentPath.startsWith('/my-reviews') ||
             currentPath.startsWith('/review') ||
             currentPath.startsWith('/chat') && currentPath != '/chat' ||
             currentPath.startsWith('/profile/edit') ||
@@ -348,6 +350,9 @@ final routerProvider = Provider<GoRouter>((ref) {
       // 待评价页面
       GoRoute(path: '/to-review', builder: (_, _) => const ToReviewScreen()),
 
+      // 我的评价（已提交列表）
+      GoRoute(path: '/my-reviews', builder: (_, _) => const MyReviewsScreen()),
+
       // Order detail
       GoRoute(
         path: '/order/:orderId',
@@ -376,8 +381,35 @@ final routerProvider = Provider<GoRouter>((ref) {
             RefundRequestScreen(orderId: state.pathParameters['orderId']!),
       ),
 
-      // My Coupons list (tabbed by status)
-      GoRoute(path: '/coupons', builder: (_, _) => const CouponsScreen()),
+      // My Coupons list（?tab= 与 coupons_screen _tabs 顺序一致；reviews 可配 sub=）
+      GoRoute(
+        path: '/coupons',
+        builder: (_, state) {
+          final tab = state.uri.queryParameters['tab'];
+          final sub = state.uri.queryParameters['sub'];
+          // 与 deal_joy/.../coupons_screen.dart _tabs 下标一致
+          var initialTab = switch (tab) {
+            'unused' => 0,
+            'used' => 1,
+            'reviews' => 2,
+            'expired' => 3,
+            'refunded' => 4,
+            'gifted' => 5,
+            _ => 0,
+          };
+          var initialSub = 0;
+          if (sub == 'submitted') {
+            initialSub = 1;
+          } else if (sub == 'pending') {
+            initialSub = 0;
+          }
+          return CouponsScreen(
+            key: ValueKey('coupons-$initialTab-$initialSub'),
+            initialTabIndex: initialTab,
+            initialReviewsSubIndex: initialSub,
+          );
+        },
+      ),
 
       // Gift claim — 受赠方通过 deep link 领取礼品券
       GoRoute(

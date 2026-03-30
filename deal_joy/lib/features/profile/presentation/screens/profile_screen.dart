@@ -251,17 +251,18 @@ class _ProfileBody extends StatelessWidget {
                     _IconGridItem(
                       icon: Icons.schedule_outlined,
                       label: 'To Use',
-                      onTap: () => context.push('/coupons'),
+                      onTap: () => context.push('/coupons?tab=unused'),
                     ),
                     _IconGridItem(
-                      icon: Icons.chat_bubble_outline,
-                      label: 'To Review',
-                      onTap: () => context.push('/to-review'),
+                      icon: Icons.rate_review_outlined,
+                      label: 'Reviews',
+                      onTap: () =>
+                          context.push('/coupons?tab=reviews&sub=pending'),
                     ),
                     _IconGridItem(
                       icon: Icons.assignment_return_outlined,
                       label: 'Refunds',
-                      onTap: () => context.push('/coupons'),
+                      onTap: () => context.push('/coupons?tab=refunded'),
                     ),
                   ],
                 ),

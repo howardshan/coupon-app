@@ -91,8 +91,30 @@ class OrderDetailPage extends ConsumerWidget {
           // 区块2：Vouchers 列表（每张券一个卡片）
           _buildVouchersSection(detail, amountFmt),
 
-          // 区块3：Payment 汇总（佣金明细 + 商家实收）
-          _buildPaymentSummary(detail, amountFmt),
+          // 区块3：Payment 汇总（商家专属金额）
+          _SectionCard(
+            title: 'Payment Summary',
+            icon: Icons.credit_card_outlined,
+            children: [
+              _InfoRow(
+                label: 'Subtotal',
+                value: amountFmt.format(detail.itemsAmount > 0
+                    ? detail.itemsAmount
+                    : detail.merchantTotal - detail.serviceFeeTotal),
+              ),
+              if (detail.serviceFeeTotal > 0)
+                _InfoRow(
+                  label: 'Service Fee',
+                  value: amountFmt.format(detail.serviceFeeTotal),
+                ),
+              _InfoRow(
+                label: 'Your Total',
+                value: amountFmt.format(detail.merchantTotal),
+                valueBold: true,
+                valueColor: const Color(0xFFFF6B35),
+              ),
+            ],
+          ),
 
           // 区块4：时间线
           if (detail.timeline.events.isNotEmpty)

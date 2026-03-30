@@ -5,45 +5,148 @@ import 'package:intl/intl.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../reviews/domain/providers/my_reviews_provider.dart';
+import '../../../reviews/presentation/widgets/submitted_reviews_list.dart';
 import '../../data/models/coupon_model.dart';
 import '../../domain/providers/coupons_provider.dart';
 import '../widgets/coupon_card.dart';
+import '../widgets/pending_reviews_list.dart';
 
 /// Tab 配置
 const _tabs = [
   (label: 'Unused', status: 'unused'),
   (label: 'Used', status: 'used'),
-  (label: 'To Review', status: 'to_review'),
+  (label: 'Reviews', status: 'reviews'),
   (label: 'Expired', status: 'expired'),
   (label: 'Refunded', status: 'refunded'),
   (label: 'Gifted', status: 'gifted'),
 ];
 
-class CouponsScreen extends ConsumerWidget {
-  const CouponsScreen({super.key});
+class CouponsScreen extends ConsumerStatefulWidget {
+  /// 顶层 Tab 初始索引（0=Unused … 2=Reviews）
+  final int initialTabIndex;
+
+  /// Reviews 内子 Tab：0=Pending，1=Submitted
+  final int initialReviewsSubIndex;
+
+  const CouponsScreen({
+    super.key,
+    this.initialTabIndex = 0,
+    this.initialReviewsSubIndex = 0,
+  });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return DefaultTabController(
+  ConsumerState<CouponsScreen> createState() => _CouponsScreenState();
+}
+
+class _CouponsScreenState extends ConsumerState<CouponsScreen>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    final idx = widget.initialTabIndex.clamp(0, _tabs.length - 1);
+    _tabController = TabController(
       length: _tabs.length,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('My Coupons'),
-          bottom: TabBar(
-            isScrollable: true,
-            tabAlignment: TabAlignment.start,
-            indicatorColor: AppColors.primary,
-            labelColor: AppColors.primary,
-            unselectedLabelColor: AppColors.textSecondary,
-            tabs: _tabs.map((t) => Tab(text: t.label)).toList(),
-          ),
-        ),
-        body: TabBarView(
-          children: _tabs
-              .map((t) => _CouponTabView(status: t.status))
-              .toList(),
+      vsync: this,
+      initialIndex: idx,
+    );
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('My Coupons'),
+        bottom: TabBar(
+          controller: _tabController,
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
+          indicatorColor: AppColors.primary,
+          labelColor: AppColors.primary,
+          unselectedLabelColor: AppColors.textSecondary,
+          tabs: _tabs.map((t) => Tab(text: t.label)).toList(),
         ),
       ),
+      body: TabBarView(
+        controller: _tabController,
+        children: _tabs.map((t) {
+          if (t.status == 'reviews') {
+            return _ReviewsHubBody(
+              key: ValueKey('reviews-hub-${widget.initialReviewsSubIndex}'),
+              initialSubIndex: widget.initialReviewsSubIndex,
+            );
+          }
+          return _CouponTabView(status: t.status);
+        }).toList(),
+      ),
+    );
+  }
+}
+
+/// Reviews 顶层 Tab：Pending（按 deal 去重）| Submitted（已发布）
+class _ReviewsHubBody extends ConsumerStatefulWidget {
+  final int initialSubIndex;
+
+  const _ReviewsHubBody({super.key, required this.initialSubIndex});
+
+  @override
+  ConsumerState<_ReviewsHubBody> createState() => _ReviewsHubBodyState();
+}
+
+class _ReviewsHubBodyState extends ConsumerState<_ReviewsHubBody>
+    with SingleTickerProviderStateMixin {
+  late TabController _subController;
+
+  @override
+  void initState() {
+    super.initState();
+    final sub = widget.initialSubIndex.clamp(0, 1);
+    _subController = TabController(length: 2, vsync: this, initialIndex: sub);
+  }
+
+  @override
+  void dispose() {
+    _subController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Material(
+          color: Theme.of(context).colorScheme.surface,
+          child: TabBar(
+            controller: _subController,
+            labelColor: AppColors.primary,
+            unselectedLabelColor: AppColors.textSecondary,
+            indicatorColor: AppColors.primary,
+            tabs: const [
+              Tab(text: 'Pending'),
+              Tab(text: 'Submitted'),
+            ],
+          ),
+        ),
+        Expanded(
+          child: TabBarView(
+            controller: _subController,
+            physics: const NeverScrollableScrollPhysics(),
+            children: const [
+              PendingReviewsList(),
+              SubmittedReviewsList(),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
@@ -115,6 +218,65 @@ class _CouponList extends StatelessWidget {
     // Unused tab：按商家分组 → 同名券合并
     if (status == 'unused') {
       return _buildGroupedView(context);
+    }
+
+    // Used tab：结合「我的评价」列表展示已评/待写提示
+    if (status == 'used') {
+      final reviewsAsync = ref.watch(myWrittenReviewsProvider);
+      return reviewsAsync.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, _) => Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.error_outline, size: 48, color: AppColors.textHint),
+                const SizedBox(height: 12),
+                Text(
+                  'Failed to load review status',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  e.toString(),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () => ref.invalidate(myWrittenReviewsProvider),
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          ),
+        ),
+        data: (myReviews) => RefreshIndicator(
+          onRefresh: () async {
+            ref.invalidate(userCouponsProvider);
+            ref.invalidate(myWrittenReviewsProvider);
+          },
+          child: ListView.separated(
+            padding: const EdgeInsets.all(16),
+            itemCount: coupons.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 12),
+            itemBuilder: (_, i) {
+              final c = coupons[i];
+              final matched = matchWrittenReviewForCoupon(c, myReviews);
+              return CouponCard(
+                coupon: c,
+                writtenReview: matched,
+                showWriteReviewHint: matched == null,
+                onTap: () => context.push('/coupon/${c.id}'),
+              );
+            },
+          ),
+        ),
+      );
     }
 
     // 其他 tab 保持原来的平铺列表
@@ -426,7 +588,7 @@ class _EmptyState extends StatelessWidget {
   IconData _emptyIcon(String status) => switch (status) {
         'unused' => Icons.confirmation_number_outlined,
         'used' => Icons.check_circle_outline,
-        'to_review' => Icons.rate_review_outlined,
+        'reviews' => Icons.rate_review_outlined,
         'expired' => Icons.timer_off_outlined,
         'refunded' => Icons.currency_exchange,
         'gifted' => Icons.card_giftcard_outlined,
