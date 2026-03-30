@@ -36,6 +36,7 @@ import '../../features/profile/presentation/screens/change_password_screen.dart'
 import '../../features/profile/presentation/screens/change_phone_screen.dart';
 import '../../features/profile/presentation/screens/billing_address_screen.dart';
 import '../../features/reviews/presentation/screens/write_review_screen.dart';
+import '../../features/reviews/presentation/screens/my_reviews_screen.dart';
 import '../../features/merchant/presentation/screens/merchant_dashboard_screen.dart';
 import '../../features/merchant/presentation/screens/merchant_detail_screen.dart';
 import '../../features/merchant/presentation/screens/photo_gallery_screen.dart';
@@ -112,6 +113,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         final needsAuth = currentPath.startsWith('/checkout') ||
             currentPath.startsWith('/orders') ||
             currentPath.startsWith('/coupons') ||
+            currentPath.startsWith('/my-reviews') ||
             currentPath.startsWith('/review') ||
             currentPath.startsWith('/chat') && currentPath != '/chat' ||
             currentPath.startsWith('/profile/edit') ||
@@ -347,6 +349,9 @@ final routerProvider = Provider<GoRouter>((ref) {
 
       // 待评价页面
       GoRoute(path: '/to-review', builder: (_, _) => const ToReviewScreen()),
+
+      // 我的评价（已提交列表）
+      GoRoute(path: '/my-reviews', builder: (_, _) => const MyReviewsScreen()),
 
       // Order detail
       GoRoute(

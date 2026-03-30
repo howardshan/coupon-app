@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../reviews/domain/providers/my_reviews_provider.dart';
 import '../../data/models/coupon_model.dart';
 import '../../domain/providers/coupons_provider.dart';
 import '../widgets/coupon_card.dart';
@@ -115,6 +116,65 @@ class _CouponList extends StatelessWidget {
     // Unused tab：按商家分组 → 同名券合并
     if (status == 'unused') {
       return _buildGroupedView(context);
+    }
+
+    // Used tab：结合「我的评价」列表展示已评/待写提示
+    if (status == 'used') {
+      final reviewsAsync = ref.watch(myWrittenReviewsProvider);
+      return reviewsAsync.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, _) => Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.error_outline, size: 48, color: AppColors.textHint),
+                const SizedBox(height: 12),
+                Text(
+                  'Failed to load review status',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  e.toString(),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () => ref.invalidate(myWrittenReviewsProvider),
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          ),
+        ),
+        data: (myReviews) => RefreshIndicator(
+          onRefresh: () async {
+            ref.invalidate(userCouponsProvider);
+            ref.invalidate(myWrittenReviewsProvider);
+          },
+          child: ListView.separated(
+            padding: const EdgeInsets.all(16),
+            itemCount: coupons.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 12),
+            itemBuilder: (_, i) {
+              final c = coupons[i];
+              final matched = matchWrittenReviewForCoupon(c, myReviews);
+              return CouponCard(
+                coupon: c,
+                writtenReview: matched,
+                showWriteReviewHint: matched == null,
+                onTap: () => context.push('/coupon/${c.id}'),
+              );
+            },
+          ),
+        ),
+      );
     }
 
     // 其他 tab 保持原来的平铺列表
