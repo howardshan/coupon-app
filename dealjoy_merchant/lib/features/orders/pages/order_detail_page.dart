@@ -121,24 +121,21 @@ class OrderDetailPage extends ConsumerWidget {
             icon: Icons.credit_card_outlined,
             children: [
               _InfoRow(
+                label: 'Subtotal',
+                value: amountFmt.format(detail.itemsAmount > 0
+                    ? detail.itemsAmount
+                    : detail.totalAmount - detail.serviceFeeTotal),
+              ),
+              if (detail.serviceFeeTotal > 0)
+                _InfoRow(
+                  label: 'Service Fee',
+                  value: amountFmt.format(detail.serviceFeeTotal),
+                ),
+              _InfoRow(
                 label: 'Total',
                 value: amountFmt.format(detail.totalAmount),
                 valueBold: true,
               ),
-              if (detail.storeCreditUsed > 0)
-                _InfoRow(
-                  label: 'Store Credit',
-                  value: '-${amountFmt.format(detail.storeCreditUsed)}',
-                  valueColor: const Color(0xFF2E7D32),
-                ),
-              if (detail.storeCreditUsed > 0)
-                _InfoRow(
-                  label: 'Amount Charged',
-                  value: amountFmt.format(
-                      (detail.totalAmount - detail.storeCreditUsed)
-                          .clamp(0.0, double.infinity)),
-                  valueBold: true,
-                ),
               if (detail.paymentIntentIdMasked != null)
                 _InfoRow(
                   label: 'Transaction ID',

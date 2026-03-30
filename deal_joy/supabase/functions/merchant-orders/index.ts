@@ -498,6 +498,15 @@ async function handleDetail(
     };
   });
 
+  // 计算该商家在本订单中的金额汇总（仅统计属于该商家的 items）
+  const merchantItemsAmount = formattedItems.reduce(
+    (sum, item) => sum + ((item.unit_price as number) || 0), 0
+  );
+  const merchantServiceFee = formattedItems.reduce(
+    (sum, item) => sum + ((item.service_fee as number) || 0), 0
+  );
+  const merchantTotal = merchantItemsAmount + merchantServiceFee;
+
   // 构造 timeline（从 order 和 items 数据推算各阶段时间）
   const timeline: Array<{ event: string; timestamp: string | null; completed: boolean }> = [];
 
@@ -542,7 +551,10 @@ async function handleDetail(
     order: {
       id: order.id,
       order_number: order.order_number,
-      total_amount: order.total_amount,
+      total_amount: order.total_amount,           // 订单全局总额（含所有商家，仅供参考）
+      merchant_items_amount: merchantItemsAmount, // 该商家的商品金额小计
+      merchant_service_fee: merchantServiceFee,   // 该商家的手续费合计
+      merchant_total: merchantTotal,              // 该商家的应收总额（展示用）
       service_fee_total: (order.service_fee_total as number | null) ?? 0,
       items_amount: (order.items_amount as number | null) ?? order.total_amount,
       store_credit_used: (order.store_credit_used as number | null) ?? 0,

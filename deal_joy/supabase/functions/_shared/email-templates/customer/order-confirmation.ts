@@ -12,14 +12,15 @@ export interface C2OrderItem {
 }
 
 export interface C2OrderConfirmationData {
-  customerEmail:    string;
-  orderNumber:      string;
-  items:            C2OrderItem[];
-  subtotal:         number;
-  serviceFee:       number;
-  totalAmount:      number;   // Stripe 实际扣款金额
-  storeCreditUsed?: number;   // Store Credit 抵扣金额（>0 时展示）
-  orderTotal?:      number;   // 订单实际总额（subtotal + serviceFee），用于展示
+  customerEmail:      string;
+  orderNumber:        string;
+  items:              C2OrderItem[];
+  subtotal:           number;
+  serviceFee:         number;
+  totalAmount:        number;   // Stripe 实际扣款金额
+  storeCreditUsed?:   number;   // Store Credit 抵扣金额（>0 时展示）
+  orderTotal?:        number;   // 订单实际总额（subtotal + serviceFee），用于展示
+  fullyPaidByCredit?: boolean;  // true 时才显示 "Fully paid by Store Credit"
 }
 
 export function buildC2Email(data: C2OrderConfirmationData): { subject: string; html: string } {
@@ -80,10 +81,16 @@ export function buildC2Email(data: C2OrderConfirmationData): { subject: string; 
           ${formatCurrency(data.orderTotal ?? (data.subtotal + data.serviceFee))}
         </td>
       </tr>
-      ${(data.storeCreditUsed ?? 0) > 0 ? `
+      ${data.fullyPaidByCredit ? `
       <tr>
         <td style="padding:4px 0 0;font-size:12px;color:#2E7D32;font-style:italic;" colspan="2">
           Fully paid by Store Credit
+        </td>
+      </tr>` : (data.storeCreditUsed ?? 0) > 0 ? `
+      <tr>
+        <td style="padding:6px 0 0;font-size:13px;color:#757575;">Charged to card</td>
+        <td style="padding:6px 0 0;font-size:13px;font-weight:600;color:#212121;text-align:right;">
+          ${formatCurrency(data.totalAmount)}
         </td>
       </tr>` : ''}
     </table>

@@ -663,7 +663,10 @@ class MerchantOrderDetail extends MerchantOrder {
       quantity: quantity,
       unitPrice: unitPrice,
       serviceFee: (orderJson['service_fee'] as num?)?.toDouble() ?? 0.0,
-      totalAmount: (orderJson['total_amount'] as num?)?.toDouble() ?? 0.0,
+      // merchant_total：该商家自己的应收总额（新字段）；旧订单回退 total_amount
+      totalAmount: (orderJson['merchant_total'] as num?)?.toDouble()
+          ?? (orderJson['total_amount'] as num?)?.toDouble()
+          ?? 0.0,
       status: OrderStatus.fromString(rawStatus),
       merchantStatus: orderJson['merchant_status'] as String?,
       couponCode: orderJson['coupon_code'] as String?
@@ -703,8 +706,12 @@ class MerchantOrderDetail extends MerchantOrder {
           : (items.isNotEmpty ? items.first.couponExpiresAt : null),
       timeline: OrderTimeline.fromJsonList(timelineJson),
       items: items,
-      itemsAmount: (orderJson['items_amount'] as num?)?.toDouble() ?? 0.0,
-      serviceFeeTotal: (orderJson['service_fee_total'] as num?)?.toDouble() ?? 0.0,
+      itemsAmount: (orderJson['merchant_items_amount'] as num?)?.toDouble()
+          ?? (orderJson['items_amount'] as num?)?.toDouble()
+          ?? 0.0,
+      serviceFeeTotal: (orderJson['merchant_service_fee'] as num?)?.toDouble()
+          ?? (orderJson['service_fee_total'] as num?)?.toDouble()
+          ?? 0.0,
       storeCreditUsed: (orderJson['store_credit_used'] as num?)?.toDouble() ?? 0.0,
     );
   }
