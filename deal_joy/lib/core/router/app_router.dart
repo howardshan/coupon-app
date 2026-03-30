@@ -381,14 +381,22 @@ final routerProvider = Provider<GoRouter>((ref) {
             RefundRequestScreen(orderId: state.pathParameters['orderId']!),
       ),
 
-      // My Coupons list（支持 ?tab=reviews&sub=pending|submitted）
+      // My Coupons list（?tab= 与 coupons_screen _tabs 顺序一致；reviews 可配 sub=）
       GoRoute(
         path: '/coupons',
         builder: (_, state) {
           final tab = state.uri.queryParameters['tab'];
           final sub = state.uri.queryParameters['sub'];
-          var initialTab = 0;
-          if (tab == 'reviews') initialTab = 2;
+          // 与 deal_joy/.../coupons_screen.dart _tabs 下标一致
+          var initialTab = switch (tab) {
+            'unused' => 0,
+            'used' => 1,
+            'reviews' => 2,
+            'expired' => 3,
+            'refunded' => 4,
+            'gifted' => 5,
+            _ => 0,
+          };
           var initialSub = 0;
           if (sub == 'submitted') {
             initialSub = 1;

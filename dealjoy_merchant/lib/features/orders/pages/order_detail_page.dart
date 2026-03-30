@@ -100,17 +100,7 @@ class OrderDetailPage extends ConsumerWidget {
                 label: 'Subtotal',
                 value: amountFmt.format(detail.itemsAmount > 0
                     ? detail.itemsAmount
-                    : detail.totalAmount - detail.serviceFeeTotal),
-              ),
-              if (detail.serviceFeeTotal > 0)
-                _InfoRow(
-                  label: 'Service Fee',
-                  value: amountFmt.format(detail.serviceFeeTotal),
-                ),
-              _InfoRow(
-                label: 'Total',
-                value: amountFmt.format(detail.totalAmount),
-                valueBold: true,
+                    : detail.merchantTotal - detail.serviceFeeTotal),
               ),
               if (detail.serviceFeeTotal > 0)
                 _InfoRow(
