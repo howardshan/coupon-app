@@ -64,6 +64,14 @@
 			<key>CFBundleURLName</key>
 			<string>com.dealjoy.deal_joy</string>
 		</dict>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>io.supabase.dealjoy</string>
+			</array>
+			<key>CFBundleURLName</key>
+			<string>com.dealjoy.supabase_auth_callback</string>
+		</dict>
 	</array>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
