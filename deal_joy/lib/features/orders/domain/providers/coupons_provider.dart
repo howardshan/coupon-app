@@ -61,7 +61,10 @@ final couponsByStatusProvider =
   return ref.watch(userCouponsProvider).whenData((coupons) {
     switch (status) {
       case 'unused':
-        return coupons.where((c) => c.status == 'unused' && !c.isExpired).toList();
+        // 排除：已过期、已退款（refundedAt 有值）、无 order_item 的孤儿券
+        return coupons.where((c) =>
+            c.status == 'unused' && !c.isExpired &&
+            c.refundedAt == null && c.orderItemId != null).toList();
       case 'used':
         return coupons.where((c) => c.status == 'used').toList();
       case 'expired':

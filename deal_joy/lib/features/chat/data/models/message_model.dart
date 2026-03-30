@@ -103,6 +103,12 @@ class MessageModel {
         return '[Image]';
       case 'coupon':
         return '[Coupon]';
+      case 'deal_share':
+        final title = couponPayload?['deal_title'] as String? ?? 'Deal';
+        return '[Deal] $title';
+      case 'merchant_share':
+        final name = couponPayload?['merchant_name'] as String? ?? 'Store';
+        return '[Store] $name';
       case 'system':
         return content ?? '';
       default:

@@ -136,6 +136,22 @@ class MessageBubble extends StatelessWidget {
           payload: message.couponPayload ?? {},
           onViewDeal: (dealId) => context.push('/deals/$dealId'),
         );
+      case 'deal_share':
+        return _DealShareBubble(
+          payload: message.couponPayload ?? {},
+          onTap: () {
+            final dealId = message.couponPayload?['deal_id'] as String?;
+            if (dealId != null) context.push('/deals/$dealId');
+          },
+        );
+      case 'merchant_share':
+        return _MerchantShareBubble(
+          payload: message.couponPayload ?? {},
+          onTap: () {
+            final merchantId = message.couponPayload?['merchant_id'] as String?;
+            if (merchantId != null) context.push('/merchant/$merchantId');
+          },
+        );
       default:
         return _TextBubble(text: message.content ?? '', isMine: _isMine);
     }
@@ -564,6 +580,204 @@ class _DateSeparator extends StatelessWidget {
             fontSize: 12,
             color: AppColors.textSecondary,
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================
+// Deal 分享卡片气泡
+// ============================================================
+
+class _DealShareBubble extends StatelessWidget {
+  final Map<String, dynamic> payload;
+  final VoidCallback onTap;
+
+  const _DealShareBubble({required this.payload, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final title = payload['deal_title'] as String? ?? 'Deal';
+    final merchantName = payload['merchant_name'] as String? ?? '';
+    final imageUrl = payload['deal_image_url'] as String?;
+    final discountPrice = payload['discount_price'];
+    final originalPrice = payload['original_price'];
+
+    String discountText = '';
+    if (discountPrice != null) {
+      discountText = '\$${double.tryParse(discountPrice.toString())?.toStringAsFixed(2) ?? discountPrice}';
+    }
+    String originalText = '';
+    if (originalPrice != null) {
+      originalText = '\$${double.tryParse(originalPrice.toString())?.toStringAsFixed(2) ?? originalPrice}';
+    }
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 240,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.surfaceVariant),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (imageUrl != null && imageUrl.isNotEmpty)
+              ClipRRect(
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                child: CachedNetworkImage(
+                  imageUrl: imageUrl,
+                  height: 120,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  placeholder: (_, _) => Container(height: 120, color: AppColors.surfaceVariant),
+                  errorWidget: (_, _, _) => Container(
+                    height: 120,
+                    color: AppColors.surfaceVariant,
+                    child: const Icon(Icons.image, color: AppColors.textHint),
+                  ),
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+              child: Text(
+                title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+              ),
+            ),
+            if (merchantName.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Text(merchantName, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+              ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
+              child: Row(
+                children: [
+                  if (discountText.isNotEmpty)
+                    Text(discountText, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.primary)),
+                  if (originalText.isNotEmpty) ...[
+                    const SizedBox(width: 6),
+                    Text(originalText, style: const TextStyle(fontSize: 12, color: AppColors.textHint, decoration: TextDecoration.lineThrough)),
+                  ],
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 10),
+                child: Text('View Deal', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.primary)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================
+// Merchant 分享卡片气泡
+// ============================================================
+
+class _MerchantShareBubble extends StatelessWidget {
+  final Map<String, dynamic> payload;
+  final VoidCallback onTap;
+
+  const _MerchantShareBubble({required this.payload, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final name = payload['merchant_name'] as String? ?? 'Store';
+    final address = payload['merchant_address'] as String? ?? '';
+    final coverUrl = payload['merchant_cover_url'] as String?;
+    final logoUrl = payload['merchant_logo_url'] as String?;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 240,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.surfaceVariant),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (coverUrl != null && coverUrl.isNotEmpty)
+              ClipRRect(
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                child: CachedNetworkImage(
+                  imageUrl: coverUrl,
+                  height: 100,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  placeholder: (_, _) => Container(height: 100, color: AppColors.surfaceVariant),
+                  errorWidget: (_, _, _) => Container(
+                    height: 100,
+                    color: AppColors.surfaceVariant,
+                    child: const Icon(Icons.store, color: AppColors.textHint),
+                  ),
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+              child: Row(
+                children: [
+                  if (logoUrl != null && logoUrl.isNotEmpty)
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: CachedNetworkImage(imageUrl: logoUrl, width: 28, height: 28, fit: BoxFit.cover),
+                    )
+                  else
+                    Container(
+                      width: 28, height: 28,
+                      decoration: BoxDecoration(color: AppColors.surfaceVariant, borderRadius: BorderRadius.circular(6)),
+                      child: const Icon(Icons.store, size: 16, color: AppColors.textHint),
+                    ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+                  ),
+                ],
+              ),
+            ),
+            if (address.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 2, 12, 10),
+                child: Text(address, maxLines: 2, overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+              ),
+            const Divider(height: 1),
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 10),
+                child: Text('View Store', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.primary)),
+              ),
+            ),
+          ],
         ),
       ),
     );

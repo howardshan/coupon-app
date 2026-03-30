@@ -1,7 +1,9 @@
 // 门店信息服务层
 // 负责: 获取门店信息、更新基本信息、更新营业时间、上传/删除照片、重排序
 
+import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/store_info.dart';
 import '../models/store_summary.dart';
@@ -24,23 +26,73 @@ class StoreService {
   // 全局活跃门店 ID（品牌管理员切换门店时设置，所有 service 共享读取）
   static String? globalActiveMerchantId;
 
+  // SharedPreferences key
+  static const String _merchantIdKey = 'active_merchant_id';
+
   // 品牌管理员当前操作的门店 ID（非品牌管理员为 null）
   String? _activeMerchantId;
 
   /// 设置当前操作的门店 ID（品牌管理员切换门店时调用）
+  /// 同时持久化到 SharedPreferences，重启后可恢复
   void setActiveMerchantId(String? merchantId) {
     _activeMerchantId = merchantId;
     // 同步到全局静态变量，供其他 service 读取
     globalActiveMerchantId = merchantId;
+    // 持久化（fire-and-forget）
+    _persistMerchantId(merchantId);
+  }
+
+  /// 持久化门店 ID 到本地存储
+  static Future<void> _persistMerchantId(String? merchantId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (merchantId != null) {
+        await prefs.setString(_merchantIdKey, merchantId);
+      } else {
+        await prefs.remove(_merchantIdKey);
+      }
+    } catch (e) {
+      debugPrint('[StoreService] 持久化 merchantId 失败: $e');
+    }
+  }
+
+  /// App 启动时恢复上次选中的门店 ID（品牌管理员使用）
+  /// 返回 true 表示成功恢复了门店 ID
+  static Future<bool> restoreActiveMerchantId() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedId = prefs.getString(_merchantIdKey);
+      if (savedId != null && savedId.isNotEmpty) {
+        globalActiveMerchantId = savedId;
+        debugPrint('[StoreService] 恢复 activeMerchantId: $savedId');
+        return true;
+      }
+    } catch (e) {
+      debugPrint('[StoreService] 恢复 merchantId 失败: $e');
+    }
+    return false;
+  }
+
+  /// 登出时清除持久化的门店 ID
+  static Future<void> clearPersistedMerchantId() async {
+    globalActiveMerchantId = null;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_merchantIdKey);
+    } catch (e) {
+      debugPrint('[StoreService] 清除 merchantId 失败: $e');
+    }
   }
 
   /// 获取当前操作的门店 ID
   String? get activeMerchantId => _activeMerchantId;
 
   /// 构建带 X-Merchant-Id 的 headers（品牌管理员需要）
+  /// 优先用实例变量，fallback 到全局变量（恢复的持久化值）
   Map<String, String> get _merchantHeaders {
-    if (_activeMerchantId != null) {
-      return {'x-merchant-id': _activeMerchantId!};
+    final id = _activeMerchantId ?? globalActiveMerchantId;
+    if (id != null) {
+      return {'x-merchant-id': id};
     }
     return {};
   }

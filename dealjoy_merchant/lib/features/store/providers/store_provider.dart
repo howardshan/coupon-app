@@ -1,6 +1,7 @@
 // 门店信息 Riverpod Provider
 // 使用 AsyncNotifier 管理 StoreInfo 状态
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -27,7 +28,9 @@ class StoreNotifier extends AsyncNotifier<StoreInfo> {
   Future<StoreInfo> build() async {
     _service = ref.read(storeServiceProvider);
     // 加载门店完整信息
-    return await _service.fetchStoreInfo();
+    final info = await _service.fetchStoreInfo();
+    debugPrint('[StoreProvider] name=${info.name}, isBrandAdmin=${info.isBrandAdmin}, role=${info.currentRole}, brand=${info.brand?.name}');
+    return info;
   }
 
   // ----------------------------------------------------------

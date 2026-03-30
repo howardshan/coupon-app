@@ -60,6 +60,8 @@ class CheckoutRepository {
     BillingDetails? billingDetails,
     double storeCreditUsed = 0.0, // Store Credit 抵扣金额
     String? savedPaymentMethodId, // 已保存卡的 PM ID
+    String? savedCardCvc, // 已保存卡重新输入的 CVV
+    bool saveCard = false, // 是否保存新卡片供下次使用
   }) async {
     if (userId.isEmpty) {
       throw const PaymentException('User not authenticated', code: 'unauthenticated');
@@ -86,6 +88,7 @@ class CheckoutRepository {
       userId: userId,
       paymentMethod: paymentMethod,
       storeCreditUsed: storeCreditUsed,
+      saveCard: saveCard,
     );
 
     final serviceFeeTotal = (piResponse['serviceFee'] as num?)?.toDouble() ?? 0.0;
@@ -129,6 +132,7 @@ class CheckoutRepository {
       ephemeralKey: ephemeralKey,
       billingDetails: billingDetails,
       savedPaymentMethodId: savedPaymentMethodId,
+      savedCardCvc: savedCardCvc,
     );
 
     // 4. 调用 create-order-v3 Edge Function 创建订单
@@ -167,6 +171,8 @@ class CheckoutRepository {
     BillingDetails? billingDetails,
     double storeCreditUsed = 0.0, // Store Credit 抵扣金额
     String? savedPaymentMethodId, // 已保存卡的 PM ID
+    String? savedCardCvc, // 已保存卡重新输入的 CVV
+    bool saveCard = false, // 是否保存新卡片供下次使用
   }) async {
     if (userId.isEmpty) {
       throw const PaymentException('User not authenticated', code: 'unauthenticated');
@@ -186,6 +192,7 @@ class CheckoutRepository {
       userId: userId,
       paymentMethod: paymentMethod,
       storeCreditUsed: storeCreditUsed,
+      saveCard: saveCard,
     );
 
     final totalAmount = (piResponse['totalAmount'] as num?)?.toDouble() ?? unitPrice * quantity;
@@ -234,6 +241,7 @@ class CheckoutRepository {
       ephemeralKey: ephemeralKey,
       billingDetails: billingDetails,
       savedPaymentMethodId: savedPaymentMethodId,
+      savedCardCvc: savedCardCvc,
     );
 
     // 3. 调用 create-order-v3 创建订单（触发器自动创建 coupons）
@@ -345,6 +353,7 @@ class CheckoutRepository {
     required String userId,
     String paymentMethod = 'card',
     double storeCreditUsed = 0.0,
+    bool saveCard = false,
   }) async {
     try {
       final response = await _client.functions.invoke(
@@ -354,6 +363,7 @@ class CheckoutRepository {
           'userId': userId,
           'paymentMethod': paymentMethod,
           if (storeCreditUsed > 0) 'storeCreditUsed': storeCreditUsed,
+          if (saveCard) 'saveCard': true,
         },
       );
 
@@ -420,6 +430,7 @@ class CheckoutRepository {
     String label = 'DealJoy',
     BillingDetails? billingDetails,
     String? savedPaymentMethodId,
+    String? savedCardCvc,
   }) async {
     if (paymentMethod == 'google') {
       // Google Pay — Platform Pay API
@@ -452,12 +463,13 @@ class CheckoutRepository {
         ),
       );
     } else if (savedPaymentMethodId != null && savedPaymentMethodId.isNotEmpty) {
-      // 已保存卡 — 直接用 PM ID 确认支付，不走 CardField
+      // 已保存卡 — 用 PM ID + 重新输入的 CVV 确认支付
       await Stripe.instance.confirmPayment(
         paymentIntentClientSecret: clientSecret,
         data: PaymentMethodParams.cardFromMethodId(
           paymentMethodData: PaymentMethodDataCardFromMethod(
             paymentMethodId: savedPaymentMethodId,
+            cvc: savedCardCvc,
           ),
         ),
       );

@@ -62,9 +62,9 @@ class OrderTile extends StatelessWidget {
               ),
               const SizedBox(height: 8),
 
-              // 第二行：Deal 标题
+              // 第二行：Deal 摘要
               Text(
-                order.dealTitle,
+                order.dealSummary,
                 style: const TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w600,
@@ -75,7 +75,7 @@ class OrderTile extends StatelessWidget {
               ),
               const SizedBox(height: 4),
 
-              // 第三行：用户名 + 数量
+              // 第三行：用户名 + 券数量
               Row(
                 children: [
                   Icon(
@@ -84,7 +84,6 @@ class OrderTile extends StatelessWidget {
                     color: Colors.grey.shade500,
                   ),
                   const SizedBox(width: 4),
-                  // 用户名可能很长，用 Flexible 防止溢出
                   Flexible(
                     child: Text(
                       order.userName,
@@ -96,7 +95,7 @@ class OrderTile extends StatelessWidget {
                       maxLines: 1,
                     ),
                   ),
-                  if (order.quantity > 1) ...[
+                  if (order.itemCount > 1) ...[
                     const SizedBox(width: 12),
                     Icon(
                       Icons.confirmation_number_outlined,
@@ -105,7 +104,7 @@ class OrderTile extends StatelessWidget {
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      'x${order.quantity}',
+                      '${order.itemCount} vouchers',
                       style: TextStyle(
                         fontSize: 13,
                         color: Colors.grey.shade600,
@@ -137,9 +136,9 @@ class OrderTile extends StatelessWidget {
                     ),
                   ),
                   const Spacer(),
-                  // 金额（加粗橙色）
+                  // 金额（加粗橙色，商家专属）
                   Text(
-                    amountFormatter.format(order.totalAmount),
+                    amountFormatter.format(order.merchantTotal),
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
@@ -148,41 +147,6 @@ class OrderTile extends StatelessWidget {
                   ),
                 ],
               ),
-
-              // 退款原因（如有）
-              if (order.status == OrderStatus.refunded &&
-                  order.refundReason != null &&
-                  order.refundReason!.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFFBEB),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.info_outline_rounded,
-                        size: 13,
-                        color: Color(0xFFF59E0B),
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          order.refundReason!,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Color(0xFF92400E),
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
             ],
           ),
         ),
