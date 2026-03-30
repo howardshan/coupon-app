@@ -12,6 +12,7 @@ import '../../data/models/order_detail_model.dart';
 import '../../data/models/order_item_model.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../domain/providers/aggregated_deal_voucher_detail_provider.dart';
 import '../../domain/providers/orders_provider.dart';
 import '../../domain/providers/coupons_provider.dart';
 import 'order_detail_screen.dart' show showUnusedQrSheet;
@@ -22,24 +23,46 @@ import '../widgets/gift_bottom_sheet.dart';
 class VoucherDetailScreen extends ConsumerWidget {
   final String orderId;
   final String dealId;
+  final bool aggregateByDeal;
+  final Set<String> aggregatedOrderItemIds;
 
   const VoucherDetailScreen({
     super.key,
     required this.orderId,
     required this.dealId,
+    this.aggregateByDeal = false,
+    this.aggregatedOrderItemIds = const <String>{},
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final detailAsync = ref.watch(userOrderDetailProvider(orderId));
+    final useAggregate = aggregateByDeal &&
+        dealId.isNotEmpty &&
+        aggregatedOrderItemIds.isNotEmpty;
+    final aggKey = useAggregate
+        ? aggregatedDealVoucherCacheKey(dealId, aggregatedOrderItemIds)
+        : '';
+
+    final detailAsync = useAggregate
+        ? ref.watch(aggregatedDealVoucherDetailProvider(aggKey))
+        : ref.watch(userOrderDetailProvider(orderId));
+
+    void refreshDetail() {
+      if (useAggregate) {
+        ref.invalidate(aggregatedDealVoucherDetailProvider(aggKey));
+        ref.invalidate(userCouponsProvider);
+      } else {
+        ref.invalidate(userOrderDetailProvider(orderId));
+      }
+    }
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       body: detailAsync.when(
         data: (detail) => _VoucherDetailBody(
           detail: detail,
-          orderId: orderId,
           dealId: dealId,
+          onRefreshDetail: refreshDetail,
         ),
         loading: () => const Scaffold(
           body: Center(child: CircularProgressIndicator()),
@@ -47,7 +70,7 @@ class VoucherDetailScreen extends ConsumerWidget {
         error: (e, _) => Scaffold(
           appBar: AppBar(title: const Text('Voucher Detail')),
           body: _ErrorBody(
-            onRetry: () => ref.invalidate(userOrderDetailProvider(orderId)),
+            onRetry: refreshDetail,
             error: e,
           ),
         ),
@@ -101,13 +124,13 @@ class _ErrorBody extends StatelessWidget {
 
 class _VoucherDetailBody extends ConsumerStatefulWidget {
   final OrderDetailModel detail;
-  final String orderId;
   final String dealId;
+  final VoidCallback onRefreshDetail;
 
   const _VoucherDetailBody({
     required this.detail,
-    required this.orderId,
     required this.dealId,
+    required this.onRefreshDetail,
   });
 
   @override
@@ -152,7 +175,6 @@ class _VoucherDetailBodyState extends ConsumerState<_VoucherDetailBody> {
       CustomerItemStatus.used => _UsedVoucherBody(
           detail: detail,
           dealItems: dealItems,
-          orderId: widget.orderId,
           dealId: widget.dealId,
         ),
       CustomerItemStatus.refundSuccess ||
@@ -160,14 +182,14 @@ class _VoucherDetailBodyState extends ConsumerState<_VoucherDetailBody> {
       CustomerItemStatus.refundReview => _RefundedVoucherBody(
           detail: detail,
           dealItems: dealItems,
-          orderId: widget.orderId,
           dealId: widget.dealId,
+          onRefreshOrderDetail: widget.onRefreshDetail,
         ),
       CustomerItemStatus.expired => _ExpiredVoucherBody(
           detail: detail,
           dealItems: dealItems,
-          orderId: widget.orderId,
           dealId: widget.dealId,
+          onRefreshOrderDetail: widget.onRefreshDetail,
         ),
       _ => _buildUnusedBody(context, dealItems),
     };
@@ -222,8 +244,7 @@ class _VoucherDetailBodyState extends ConsumerState<_VoucherDetailBody> {
                     _isExpanded = !_isExpanded;
                   });
                 },
-                onRefreshOrder: () =>
-                    ref.invalidate(userOrderDetailProvider(widget.orderId)),
+                onRefreshOrder: widget.onRefreshDetail,
               ),
             ),
 
@@ -260,7 +281,7 @@ class _VoucherDetailBodyState extends ConsumerState<_VoucherDetailBody> {
           child: _VoucherBottomActionBar(
             detail: detail,
             dealId: widget.dealId,
-            orderId: widget.orderId,
+            onRefreshOrderDetail: widget.onRefreshDetail,
           ),
         ),
       ],
@@ -1040,12 +1061,12 @@ class _QuickActionItem extends StatelessWidget {
 class _VoucherBottomActionBar extends ConsumerWidget {
   final OrderDetailModel detail;
   final String dealId;
-  final String orderId;
+  final VoidCallback onRefreshOrderDetail;
 
   const _VoucherBottomActionBar({
     required this.detail,
     required this.dealId,
-    required this.orderId,
+    required this.onRefreshOrderDetail,
   });
 
   @override
@@ -1073,8 +1094,13 @@ class _VoucherBottomActionBar extends ConsumerWidget {
           if (hasUnused) ...[
             Expanded(
               child: OutlinedButton(
-                onPressed: () =>
-                    _showBatchCancelSheet(context, ref, cancelableItems.first, cancelableItems),
+                onPressed: () => _showBatchCancelSheet(
+                  context,
+                  ref,
+                  cancelableItems.first,
+                  cancelableItems,
+                  onRefreshOrderDetail,
+                ),
                 style: OutlinedButton.styleFrom(
                   side: const BorderSide(color: AppColors.error),
                   foregroundColor: AppColors.error,
@@ -1246,10 +1272,12 @@ class _VoucherBottomActionBar extends ConsumerWidget {
 
   // 批量取消 Bottom Sheet
   void _showBatchCancelSheet(
-      BuildContext context,
-      WidgetRef ref,
-      OrderItemModel item,
-      List<OrderItemModel> allUnused) {
+    BuildContext context,
+    WidgetRef ref,
+    OrderItemModel item,
+    List<OrderItemModel> allUnused,
+    VoidCallback onRefreshOrderDetail,
+  ) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1292,7 +1320,7 @@ class _VoucherBottomActionBar extends ConsumerWidget {
                 behavior: SnackBarBehavior.floating,
               ),
             );
-            ref.invalidate(userOrderDetailProvider(orderId));
+            onRefreshOrderDetail();
           } else {
             messenger.showSnackBar(
               const SnackBar(
@@ -1867,13 +1895,11 @@ class _StatusInfoRow extends StatelessWidget {
 class _UsedVoucherBody extends ConsumerWidget {
   final OrderDetailModel detail;
   final List<OrderItemModel> dealItems;
-  final String orderId;
   final String dealId;
 
   const _UsedVoucherBody({
     required this.detail,
     required this.dealItems,
-    required this.orderId,
     required this.dealId,
   });
 
@@ -1985,14 +2011,14 @@ class _UsedVoucherBody extends ConsumerWidget {
 class _RefundedVoucherBody extends ConsumerWidget {
   final OrderDetailModel detail;
   final List<OrderItemModel> dealItems;
-  final String orderId;
   final String dealId;
+  final VoidCallback onRefreshOrderDetail;
 
   const _RefundedVoucherBody({
     required this.detail,
     required this.dealItems,
-    required this.orderId,
     required this.dealId,
+    required this.onRefreshOrderDetail,
   });
 
   @override
@@ -2103,7 +2129,7 @@ class _RefundedVoucherBody extends ConsumerWidget {
           child: _VoucherBottomActionBar(
             detail: detail,
             dealId: dealId,
-            orderId: orderId,
+            onRefreshOrderDetail: onRefreshOrderDetail,
           ),
         ),
       ],
@@ -2116,14 +2142,14 @@ class _RefundedVoucherBody extends ConsumerWidget {
 class _ExpiredVoucherBody extends ConsumerWidget {
   final OrderDetailModel detail;
   final List<OrderItemModel> dealItems;
-  final String orderId;
   final String dealId;
+  final VoidCallback onRefreshOrderDetail;
 
   const _ExpiredVoucherBody({
     required this.detail,
     required this.dealItems,
-    required this.orderId,
     required this.dealId,
+    required this.onRefreshOrderDetail,
   });
 
   @override
@@ -2203,7 +2229,7 @@ class _ExpiredVoucherBody extends ConsumerWidget {
           child: _VoucherBottomActionBar(
             detail: detail,
             dealId: dealId,
-            orderId: orderId,
+            onRefreshOrderDetail: onRefreshOrderDetail,
           ),
         ),
       ],
