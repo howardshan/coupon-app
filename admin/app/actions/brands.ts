@@ -103,3 +103,21 @@ export async function removeStoreFromBrand(merchantId: string, brandId: string) 
   revalidatePath(`/brands/${brandId}`)
   revalidatePath('/merchants')
 }
+
+// 更新品牌佣金费率
+export async function updateBrandCommissionRate(brandId: string, commissionRate: number) {
+  await requireAdmin()
+  const supabase = getServiceRoleClient()
+
+  // commissionRate 传入为百分比（如 15），存为小数（0.15）
+  // 传入 0 则存为 null（不抽佣）
+  const rateValue = commissionRate > 0 ? commissionRate / 100 : null
+
+  const { error } = await supabase
+    .from('brands')
+    .update({ commission_rate: rateValue })
+    .eq('id', brandId)
+
+  if (error) throw new Error(error.message)
+  revalidatePath(`/brands/${brandId}`)
+}

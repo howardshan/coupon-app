@@ -251,10 +251,10 @@ async function handleGetBalance(
   let vStripeRate      = parseFloat(String(config?.stripe_processing_rate ?? 0.03));
   let vStripeFlatFee   = parseFloat(String(config?.stripe_flat_fee  ?? 0.30));
 
-  // Step 2: 读取商家专属费率及免费期
+  // Step 2: 读取商家专属费率及免费期（含 brand_id 用于查询品牌佣金率）
   const { data: merchant, error: merchantErr } = await admin
     .from("merchants")
-    .select("commission_free_until, commission_rate, commission_stripe_rate, commission_stripe_flat_fee, commission_effective_from, commission_effective_to")
+    .select("commission_free_until, commission_rate, commission_stripe_rate, commission_stripe_flat_fee, commission_effective_from, commission_effective_to, brand_id")
     .eq("id", merchantId)
     .single();
   if (merchantErr) {
@@ -284,6 +284,21 @@ async function handleGetBalance(
     vCommissionRate = 0;
   }
 
+  // Step 2.5: 查询品牌佣金率（通过 merchants.brand_id → brands.commission_rate）
+  // 品牌佣金在免费期内也要照扣，不受商家免费期影响
+  let vBrandCommRate = 0;
+  const brandId = (merchant as any)?.brand_id ?? null;
+  if (brandId) {
+    const { data: brandData } = await admin
+      .from("brands")
+      .select("commission_rate")
+      .eq("id", brandId)
+      .maybeSingle();
+    if (brandData?.commission_rate != null) {
+      vBrandCommRate = parseFloat(String(brandData.commission_rate));
+    }
+  }
+
   // Step 3: 查询已结算 order_items（T+7 已过、非退款）
   // 与 get_merchant_earnings_summary 使用相同的数据源和字段
   const { data: settledItems, error: itemsErr } = await admin
@@ -300,14 +315,16 @@ async function handleGetBalance(
   }
 
   // Step 4: 逐行计算 net_amount，汇总已结算总额
-  // 公式与 get_merchant_earnings_summary / get_merchant_transactions 完全一致
+  // 公式：net = unit_price - platform_fee - brand_fee - stripe_fee
+  // 品牌佣金不受免费期影响，始终按品牌费率扣除
   let totalSettled = 0;
   for (const item of settledItems ?? []) {
     // deno-lint-ignore no-explicit-any
     const unitPrice = parseFloat(String((item as any).unit_price ?? 0));
     const platformFee = unitPrice * vCommissionRate;
+    const brandFee    = unitPrice * vBrandCommRate;
     const stripeFee   = unitPrice * vStripeRate + vStripeFlatFee;
-    totalSettled += unitPrice - platformFee - stripeFee;
+    totalSettled += unitPrice - platformFee - brandFee - stripeFee;
   }
 
   // Step 5: 查询已提现总额
@@ -390,7 +407,7 @@ async function handleWithdraw(
     .single();
   const { data: feeM } = await admin
     .from("merchants")
-    .select("commission_free_until, commission_rate, commission_stripe_rate, commission_stripe_flat_fee, commission_effective_from, commission_effective_to")
+    .select("commission_free_until, commission_rate, commission_stripe_rate, commission_stripe_flat_fee, commission_effective_from, commission_effective_to, brand_id")
     .eq("id", merchantId)
     .single();
 
@@ -411,6 +428,20 @@ async function handleWithdraw(
   }
   if (feeM?.commission_free_until && new Date() <= new Date(feeM.commission_free_until)) {
     fifoCommRate = 0;
+  }
+
+  // 查询品牌佣金率（品牌佣金不受免费期影响，始终扣除）
+  let fifoBrandRate = 0;
+  const fifoBrandId = (feeM as any)?.brand_id ?? null;
+  if (fifoBrandId) {
+    const { data: fifoBrand } = await admin
+      .from("brands")
+      .select("commission_rate")
+      .eq("id", fifoBrandId)
+      .maybeSingle();
+    if (fifoBrand?.commission_rate != null) {
+      fifoBrandRate = parseFloat(String(fifoBrand.commission_rate));
+    }
   }
 
   // 创建提现记录（初始状态 pending，Transfer 成功后改为 processing）
@@ -474,9 +505,9 @@ async function handleWithdraw(
           let accumulated = 0;
           for (const item of eligibleItems) {
             if (accumulated >= amount - 0.01) break;
-            // 与 handleGetBalance 使用完全相同的净值公式：扣平台抽成 + Stripe 费
+            // 与 handleGetBalance 使用完全相同的净值公式：扣平台抽成 + 品牌佣金 + Stripe 费
             const unitPrice = parseFloat(String(item.unit_price ?? 0));
-            const net = unitPrice - unitPrice * fifoCommRate - (unitPrice * fifoStrRate + fifoStrFlat);
+            const net = unitPrice - unitPrice * fifoCommRate - unitPrice * fifoBrandRate - (unitPrice * fifoStrRate + fifoStrFlat);
             accumulated += net;
             itemsToMark.push(item.id);
           }

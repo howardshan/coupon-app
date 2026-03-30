@@ -22,7 +22,6 @@ class EarningsPage extends ConsumerWidget {
     final settlementAsync     = ref.watch(settlementScheduleProvider);
     final stripeAsync         = ref.watch(stripeAccountProvider);
     final transactionsAsync   = ref.watch(transactionsProvider);
-    final commissionAsync     = ref.watch(commissionConfigProvider);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
@@ -56,14 +55,6 @@ class EarningsPage extends ConsumerWidget {
               _SectionHeader(title: 'Settlement Info'),
               const SizedBox(height: 12),
               _SettlementInfoCard(settlementAsync: settlementAsync),
-              const SizedBox(height: 24),
-
-              // ------------------------------------------------
-              // 区块 3.5: 抽成费率卡片
-              // ------------------------------------------------
-              _SectionHeader(title: 'Commission Rates'),
-              const SizedBox(height: 12),
-              _CommissionRatesCard(commissionAsync: commissionAsync),
               const SizedBox(height: 24),
 
               // ------------------------------------------------
@@ -175,8 +166,24 @@ class EarningsPage extends ConsumerWidget {
           color: Color(0xFF1A1A2E),
         ),
       ),
-      // 报表入口按钮
       actions: [
+        // 费率查看按钮
+        IconButton(
+          key: const ValueKey('earnings_rates_btn'),
+          icon: const Icon(Icons.percent_outlined, size: 20, color: Color(0xFF1A1A2E)),
+          tooltip: 'Commission Rates',
+          onPressed: () {
+            final commissionAsync = ref.read(commissionConfigProvider);
+            showModalBottomSheet(
+              context: context,
+              shape: const RoundedRectangleBorder(
+                borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+              ),
+              builder: (_) => _CommissionRatesSheet(commissionAsync: commissionAsync),
+            );
+          },
+        ),
+        // 报表入口按钮
         IconButton(
           key: const ValueKey('earnings_report_btn'),
           icon: const Icon(Icons.bar_chart_outlined, color: Color(0xFF1A1A2E)),
@@ -859,34 +866,44 @@ class _SectionHeader extends StatelessWidget {
 }
 
 // =============================================================
-// _CommissionRatesCard — 平台抽成费率展示卡片
-// 免费期内显示绿色横幅，免费期后显示三档费率
+// _CommissionRatesSheet — 费率底部弹窗
 // =============================================================
-class _CommissionRatesCard extends StatelessWidget {
+class _CommissionRatesSheet extends StatelessWidget {
   final AsyncValue<CommissionConfig> commissionAsync;
 
-  const _CommissionRatesCard({required this.commissionAsync});
+  const _CommissionRatesSheet({required this.commissionAsync});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withAlpha(8),
-            blurRadius: 6,
-            offset: const Offset(0, 1),
-          ),
-        ],
-      ),
-      child: commissionAsync.when(
-        loading: () => _buildLoading(),
-        error: (err, st) => _buildFallback(),
-        data: (config) => config.isInFreePeriod
-            ? _buildFreePeriodBanner(config)
-            : _buildRatesContent(config),
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // 拖拽条
+            Container(
+              width: 36, height: 4,
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const Text(
+              'Commission Rates',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF1A1A2E)),
+            ),
+            const SizedBox(height: 16),
+            commissionAsync.when(
+              loading: () => _buildLoading(),
+              error: (err, st) => _buildFallback(),
+              data: (config) => config.isInFreePeriod
+                  ? _buildFreePeriodBanner(config)
+                  : _buildRatesContent(config),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1036,6 +1053,25 @@ class _CommissionRatesCard extends StatelessWidget {
             rate: '${config.rateLabel(config.effectiveStripeRate)} + \$${config.effectiveStripeFlatFee.toStringAsFixed(2)}',
             icon: Icons.credit_card_outlined,
           ),
+          // 品牌佣金（仅品牌佣金 > 0 时显示）
+          if (config.brandCommissionRate > 0) ...[
+            const Divider(height: 28, thickness: 1),
+            const Text(
+              'Brand Commission',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF999999),
+              ),
+            ),
+            const SizedBox(height: 8),
+            _RateRow(
+              label: 'Brand Commission',
+              hint: 'Your brand takes this percentage from each redeemed voucher.',
+              rate: config.rateLabel(config.brandCommissionRate),
+              icon: Icons.business_outlined,
+            ),
+          ],
         ],
       ),
     );
