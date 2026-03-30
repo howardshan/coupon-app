@@ -67,6 +67,17 @@ export default async function MerchantReviewPage({
     .eq('merchant_id', id)
     .order('created_at', { ascending: true })
 
+  // 获取商家本月收入数据
+  const monthStart = new Date()
+  monthStart.setDate(1)
+  const monthStartStr = monthStart.toISOString().slice(0, 10)
+
+  const { data: merchantEarnings } = await serviceClient.rpc('get_merchant_earnings_summary', {
+    p_merchant_id: id,
+    p_month_start: monthStartStr,
+  })
+  const mEarnings = merchantEarnings?.[0] ?? null
+
   // brands join 可能返回数组或单对象，统一处理
   const brandsRaw = merchant.brands as any
   const brandInfo = Array.isArray(brandsRaw) ? brandsRaw[0] ?? null : brandsRaw ?? null
@@ -161,6 +172,40 @@ export default async function MerchantReviewPage({
           defaultStripeRate={Number(globalConfig?.stripe_processing_rate ?? 0.03)}
           defaultStripeFlatFee={Number(globalConfig?.stripe_flat_fee ?? 0.30)}
         />
+
+        {/* 商家本月收入 */}
+        <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">Merchant Earnings (This Month)</h2>
+          {brandInfo && (
+            <div className="mb-4 p-3 bg-blue-50 rounded-lg text-sm">
+              <span className="text-gray-500">Brand Fee:</span>{' '}
+              <Link href={`/brands/${brandInfo.id}`} className="text-blue-600 hover:underline font-medium">{brandInfo.name}</Link>
+              {merchant.commission_rate != null && (
+                <span className="ml-2 text-gray-600">
+                  (Brand Commission: {((merchant as any).commission_rate * 100).toFixed(0)}%)
+                </span>
+              )}
+            </div>
+          )}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div className="bg-gray-50 rounded-lg p-4">
+              <p className="text-xs text-gray-500 mb-1">This Month</p>
+              <p className="text-xl font-bold text-orange-600">${(mEarnings?.total_revenue ?? 0).toFixed(2)}</p>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-4">
+              <p className="text-xs text-gray-500 mb-1">Awaiting Settlement</p>
+              <p className="text-xl font-bold text-yellow-600">${(mEarnings?.pending_settlement ?? 0).toFixed(2)}</p>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-4">
+              <p className="text-xs text-gray-500 mb-1">Settled</p>
+              <p className="text-xl font-bold text-green-600">${(mEarnings?.settled_amount ?? 0).toFixed(2)}</p>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-4">
+              <p className="text-xs text-gray-500 mb-1">Refunded</p>
+              <p className="text-xl font-bold text-red-500">${(mEarnings?.refunded_amount ?? 0).toFixed(2)}</p>
+            </div>
+          </div>
+        </div>
 
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">Staff ({staff?.length ?? 0})</h2>

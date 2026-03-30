@@ -45,6 +45,9 @@ import '../features/store/pages/brand_manage_page.dart';
 import '../features/store/pages/brand_info_page.dart';
 import '../features/store/pages/brand_stores_page.dart';
 import '../features/store/pages/brand_admins_page.dart';
+import '../features/store/pages/brand_earnings_page.dart';
+import '../features/store/pages/brand_withdrawal_page.dart';
+import '../features/store/pages/brand_stripe_connect_page.dart';
 import '../features/dashboard/pages/brand_overview_page.dart';
 
 // ── 菜品管理 ─────────────────────────────────────────────────
@@ -427,6 +430,21 @@ final appRouter = GoRouter(
         GoRoute(
           path: 'deals',
           builder: (context, state) => const DealsListPage(brandOnly: true),
+        ),
+        // 品牌财务（品牌佣金收入）
+        GoRoute(
+          path: 'earnings',
+          builder: (context, state) => const BrandEarningsPage(),
+        ),
+        // 品牌提现
+        GoRoute(
+          path: 'withdrawal',
+          builder: (context, state) => const BrandWithdrawalPage(),
+        ),
+        // 品牌 Stripe Connect 绑定
+        GoRoute(
+          path: 'stripe-connect',
+          builder: (context, state) => const BrandStripeConnectPage(),
         ),
       ],
     ),

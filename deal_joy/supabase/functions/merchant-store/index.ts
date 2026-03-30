@@ -409,7 +409,7 @@ async function handleGetStore(
   const { data: storeData, error: storeError } = await supabase
     .from("merchants")
     .select(
-      "id, name, description, phone, address, lat, lng, category, tags, is_online, status, homepage_cover_url, header_photo_style, header_photos, brand_id, brands(id, name, logo_url, description)"
+      "id, name, description, phone, address, lat, lng, category, tags, is_online, status, homepage_cover_url, header_photo_style, header_photos, brand_id, brands(id, name, logo_url, description, commission_rate, stripe_account_id, stripe_account_email, stripe_account_status)"
     )
     .eq("id", merchantId)
     .single();

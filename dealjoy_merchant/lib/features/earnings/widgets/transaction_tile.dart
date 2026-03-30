@@ -142,7 +142,7 @@ class _AmountColumn extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'Commission: \$${transaction.platformFee.toStringAsFixed(2)}',
+              'Platform: \$${transaction.platformFee.toStringAsFixed(2)}',
               style: TextStyle(
                 fontSize: 11,
                 color: Colors.grey.shade500,
@@ -171,6 +171,17 @@ class _AmountColumn extends StatelessWidget {
             ),
           ],
         ),
+        // 品牌佣金（仅 brandFee > 0 时显示）
+        if (transaction.brandFee > 0) ...[
+          const SizedBox(height: 1),
+          Text(
+            'Brand: \$${transaction.brandFee.toStringAsFixed(2)}  ${(transaction.brandFeeRate * 100).toStringAsFixed(0)}%',
+            style: TextStyle(
+              fontSize: 10,
+              color: Colors.grey.shade400,
+            ),
+          ),
+        ],
         // Stripe 手续费（免费期内不显示）
         if (transaction.stripeFee > 0) ...[
           const SizedBox(height: 1),
@@ -291,7 +302,7 @@ class TransactionTotalsRow extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Commission: \$${totalPlatformFee.toStringAsFixed(2)}',
+                  'Platform: \$${totalPlatformFee.toStringAsFixed(2)}',
                   style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
                 ),
                 if (totalStripeFee > 0)

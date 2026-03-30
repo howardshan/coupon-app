@@ -388,6 +388,94 @@ class OrderDetailPage extends ConsumerWidget {
     );
   }
 
+  // Payment Summary 区块（佣金明细分解）
+  Widget _buildPaymentSummary(MerchantOrderDetail detail, NumberFormat amountFmt) {
+    // 从第一个 item 取费率（同一订单所有 item 费率一致）
+    final firstItem = detail.items.isNotEmpty ? detail.items.first : null;
+    final platformRate = firstItem?.platformFeeRate ?? 0.0;
+    final brandRate = firstItem?.brandFeeRate ?? 0.0;
+    final platformRateLabel = platformRate > 0
+        ? ' (${(platformRate * 100).toStringAsFixed(0)}%)'
+        : '';
+    final brandRateLabel = brandRate > 0
+        ? ' (${(brandRate * 100).toStringAsFixed(0)}%)'
+        : '';
+
+    // 若 Edge Function 未返回佣金明细，退回到旧的 serviceFeeTotal 显示
+    final hasCommissionData = detail.totalPlatformFee > 0 ||
+        detail.totalNetAmount > 0;
+
+    if (!hasCommissionData) {
+      // 兼容旧格式：仅展示 itemsAmount + serviceFeeTotal + merchantTotal
+      return _SectionCard(
+        title: 'Payment Summary',
+        icon: Icons.credit_card_outlined,
+        children: [
+          _InfoRow(
+            label: 'Items Amount',
+            value: amountFmt.format(detail.itemsAmount > 0
+                ? detail.itemsAmount
+                : detail.merchantTotal),
+          ),
+          if (detail.serviceFeeTotal > 0)
+            _InfoRow(
+              label: 'Service Fee',
+              value: '-${amountFmt.format(detail.serviceFeeTotal)}',
+            ),
+          _InfoRow(
+            label: 'Your Net Amount',
+            value: amountFmt.format(detail.merchantTotal),
+            valueBold: true,
+            valueColor: const Color(0xFFFF6B35),
+          ),
+        ],
+      );
+    }
+
+    return _SectionCard(
+      title: 'Payment Summary',
+      icon: Icons.credit_card_outlined,
+      children: [
+        // 券面金额
+        _InfoRow(
+          label: 'Items Amount',
+          value: amountFmt.format(detail.itemsAmount),
+        ),
+        // 平台费
+        _InfoRow(
+          label: 'Platform Fee$platformRateLabel',
+          value: '-${amountFmt.format(detail.totalPlatformFee)}',
+        ),
+        // 品牌佣金（仅品牌 Deal 有）
+        if (detail.totalBrandFee > 0)
+          _InfoRow(
+            label: 'Brand Fee$brandRateLabel',
+            value: '-${amountFmt.format(detail.totalBrandFee)}',
+          ),
+        // Stripe 手续费
+        if (detail.totalStripeFee > 0)
+          _InfoRow(
+            label: 'Stripe Fee',
+            value: '-${amountFmt.format(detail.totalStripeFee)}',
+          ),
+        // 分隔线
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Divider(color: Colors.grey.shade200, height: 1),
+        ),
+        // 商家实收（橙色加粗）
+        _InfoRow(
+          label: 'Your Net Amount',
+          value: amountFmt.format(detail.totalNetAmount > 0
+              ? detail.totalNetAmount
+              : detail.merchantTotal),
+          valueBold: true,
+          valueColor: const Color(0xFFFF6B35),
+        ),
+      ],
+    );
+  }
+
   // 错误状态
   Widget _buildError(BuildContext context, Object error, WidgetRef ref) {
     return Center(
