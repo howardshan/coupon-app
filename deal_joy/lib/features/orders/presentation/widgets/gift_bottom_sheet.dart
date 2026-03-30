@@ -1,11 +1,17 @@
 // Gift Bottom Sheet — 发送礼品券给好友
-// 支持 email 或 phone 输入，自动识别类型
+// 支持 email / phone 输入 或 直接选择好友
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../domain/providers/coupons_provider.dart';
+import '../../../chat/data/models/friend_model.dart';
+import '../../../chat/domain/providers/friend_provider.dart';
+
+/// 赠送模式
+enum _GiftSendMode { emailPhone, friend }
 
 /// 礼品发送 Bottom Sheet
 class GiftBottomSheet extends ConsumerStatefulWidget {
@@ -18,6 +24,8 @@ class GiftBottomSheet extends ConsumerStatefulWidget {
     this.onGiftSent,
     this.prefillEmail,
     this.prefillPhone,
+    this.existingGiftId,
+    this.dealImageUrl,
   });
 
   final String dealTitle;
@@ -27,6 +35,10 @@ class GiftBottomSheet extends ConsumerStatefulWidget {
   final VoidCallback? onGiftSent;
   final String? prefillEmail;
   final String? prefillPhone;
+  /// 更换受赠方时，传入当前 gift 的 id，发送前先撤回旧 gift
+  final String? existingGiftId;
+  /// deal 图片 URL（好友模式发送 chat 消息时使用）
+  final String? dealImageUrl;
 
   /// 静态方法：弹出 bottom sheet
   static Future<void> show(
@@ -38,6 +50,8 @@ class GiftBottomSheet extends ConsumerStatefulWidget {
     VoidCallback? onGiftSent,
     String? prefillEmail,
     String? prefillPhone,
+    String? existingGiftId,
+    String? dealImageUrl,
   }) {
     return showModalBottomSheet(
       context: context,
@@ -51,6 +65,8 @@ class GiftBottomSheet extends ConsumerStatefulWidget {
         onGiftSent: onGiftSent,
         prefillEmail: prefillEmail,
         prefillPhone: prefillPhone,
+        existingGiftId: existingGiftId,
+        dealImageUrl: dealImageUrl,
       ),
     );
   }
@@ -67,6 +83,12 @@ class _GiftBottomSheetState extends ConsumerState<GiftBottomSheet> {
   /// 内联错误信息（非 SnackBar）
   String? _inlineError;
   bool _isLoading = false;
+
+  /// 当前发送模式
+  _GiftSendMode _sendMode = _GiftSendMode.emailPhone;
+
+  /// 已选中的好友
+  FriendModel? _selectedFriend;
 
   @override
   void initState() {
@@ -132,15 +154,87 @@ class _GiftBottomSheetState extends ConsumerState<GiftBottomSheet> {
   // ----------------------------------------------------------------
 
   Future<void> _handleSend() async {
-    // 清空旧错误
     setState(() => _inlineError = null);
 
+    // 好友模式：验证选择 + 调用 sendGiftToFriend
+    if (_sendMode == _GiftSendMode.friend) {
+      if (_selectedFriend == null) {
+        setState(() => _inlineError = 'Please select a friend');
+        return;
+      }
+
+      final message = _messageController.text.trim();
+      setState(() => _isLoading = true);
+
+      // 好友赠送模式：先撤回旧 gift（如果有）
+      if (widget.existingGiftId != null) {
+        final recalled = await ref
+            .read(giftNotifierProvider.notifier)
+            .recallGift(widget.existingGiftId!);
+        if (!recalled) {
+          if (!mounted) return;
+          setState(() {
+            _isLoading = false;
+            _inlineError = 'Failed to recall existing gift. Please try again.';
+          });
+          return;
+        }
+      }
+
+      final success =
+          await ref.read(giftNotifierProvider.notifier).sendGiftToFriend(
+                orderItemId: widget.orderItemId,
+                recipientUserId: _selectedFriend!.friendId,
+                giftMessage: message.isNotEmpty ? message : null,
+                dealTitle: widget.dealTitle,
+                dealImageUrl: widget.dealImageUrl,
+                merchantName: widget.merchantName,
+              );
+
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+
+      if (success) {
+        Navigator.of(context).pop();
+        widget.onGiftSent?.call();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Gift sent successfully!'),
+            backgroundColor: AppColors.success,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      } else {
+        final giftState = ref.read(giftNotifierProvider);
+        final errMsg = giftState.error?.toString() ??
+            'Failed to send gift. Please try again.';
+        setState(() => _inlineError = errMsg);
+      }
+      return;
+    }
+
+    // Email/Phone 模式：现有逻辑
     if (!_formKey.currentState!.validate()) return;
 
     final recipient = _recipientController.text.trim();
     final message = _messageController.text.trim();
 
     setState(() => _isLoading = true);
+
+    // 更换受赠方模式：先撤回旧 gift，再发送新 gift
+    if (widget.existingGiftId != null) {
+      final recalled = await ref
+          .read(giftNotifierProvider.notifier)
+          .recallGift(widget.existingGiftId!);
+      if (!recalled) {
+        if (!mounted) return;
+        setState(() {
+          _isLoading = false;
+          _inlineError = 'Failed to recall existing gift. Please try again.';
+        });
+        return;
+      }
+    }
 
     final success = await ref.read(giftNotifierProvider.notifier).sendGift(
           orderItemId: widget.orderItemId,
@@ -168,7 +262,8 @@ class _GiftBottomSheetState extends ConsumerState<GiftBottomSheet> {
     } else {
       // 读取 provider 中的错误信息，展示内联错误
       final giftState = ref.read(giftNotifierProvider);
-      final errMsg = giftState.error?.toString() ?? 'Failed to send gift. Please try again.';
+      final errMsg =
+          giftState.error?.toString() ?? 'Failed to send gift. Please try again.';
       setState(() => _inlineError = errMsg);
     }
   }
@@ -217,30 +312,90 @@ class _GiftBottomSheetState extends ConsumerState<GiftBottomSheet> {
             ),
             const SizedBox(height: 24),
 
-            // "Send to" 标签
-            const Text(
-              'Send to',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: AppColors.textPrimary,
+            // 发送模式切换
+            Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: SegmentedButton<_GiftSendMode>(
+                segments: const [
+                  ButtonSegment(
+                    value: _GiftSendMode.emailPhone,
+                    label: Text('Email / Phone'),
+                    icon: Icon(Icons.email_outlined, size: 18),
+                  ),
+                  ButtonSegment(
+                    value: _GiftSendMode.friend,
+                    label: Text('Friends'),
+                    icon: Icon(Icons.people_outline, size: 18),
+                  ),
+                ],
+                selected: {_sendMode},
+                onSelectionChanged: (v) => setState(() {
+                  _sendMode = v.first;
+                  _selectedFriend = null;
+                  _inlineError = null;
+                }),
+                style: SegmentedButton.styleFrom(
+                  selectedForegroundColor: AppColors.primary,
+                  selectedBackgroundColor:
+                      AppColors.primary.withValues(alpha: 0.1),
+                ),
               ),
             ),
-            const SizedBox(height: 8),
 
-            // 收件人输入框（email 或 phone）
-            TextFormField(
-              controller: _recipientController,
-              keyboardType: TextInputType.emailAddress,
-              textInputAction: TextInputAction.next,
-              autocorrect: false,
-              validator: _validateRecipient,
-              decoration: _inputDecoration(
-                hint: 'Email or Phone Number',
-                prefixIcon: Icons.person_outline,
+            // Email/Phone 模式：显示 "Send to" 标签 + 收件人输入框
+            if (_sendMode == _GiftSendMode.emailPhone) ...[
+              const Text(
+                'Send to',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                ),
               ),
-            ),
-            const SizedBox(height: 20),
+              const SizedBox(height: 8),
+
+              // 收件人输入框（email 或 phone）
+              TextFormField(
+                controller: _recipientController,
+                keyboardType: TextInputType.emailAddress,
+                textInputAction: TextInputAction.next,
+                autocorrect: false,
+                validator: _validateRecipient,
+                decoration: _inputDecoration(
+                  hint: 'Email or Phone Number',
+                  prefixIcon: Icons.person_outline,
+                ),
+              ),
+              const SizedBox(height: 20),
+            ],
+
+            // 好友模式：显示好友选择器
+            if (_sendMode == _GiftSendMode.friend) ...[
+              const Text(
+                'Select a friend',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 8),
+
+              // 已选好友展示
+              if (_selectedFriend != null)
+                _SelectedFriendChip(
+                  friend: _selectedFriend!,
+                  onRemove: () => setState(() => _selectedFriend = null),
+                ),
+
+              // 好友列表（未选时显示）
+              if (_selectedFriend == null)
+                _FriendPickerList(
+                  onSelect: (friend) =>
+                      setState(() => _selectedFriend = friend),
+                ),
+              const SizedBox(height: 20),
+            ],
 
             // "Add a message" 标签
             const Text(
@@ -509,6 +664,167 @@ class _SendButton extends StatelessWidget {
                 ),
         ),
       ),
+    );
+  }
+}
+
+/// 已选好友展示 Chip
+class _SelectedFriendChip extends StatelessWidget {
+  final FriendModel friend;
+  final VoidCallback onRemove;
+
+  const _SelectedFriendChip({required this.friend, required this.onRemove});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          CircleAvatar(
+            radius: 14,
+            backgroundColor: AppColors.surfaceVariant,
+            backgroundImage: friend.avatarUrl != null
+                ? CachedNetworkImageProvider(friend.avatarUrl!)
+                : null,
+            child: friend.avatarUrl == null
+                ? Text(
+                    friend.displayName[0].toUpperCase(),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  )
+                : null,
+          ),
+          const SizedBox(width: 8),
+          Text(
+            friend.displayName,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          if (friend.username != null) ...[
+            const SizedBox(width: 4),
+            Text(
+              '@${friend.username}',
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppColors.textHint,
+              ),
+            ),
+          ],
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: onRemove,
+            child: const Icon(
+              Icons.close,
+              size: 18,
+              color: AppColors.textSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 好友选择列表（单选）
+class _FriendPickerList extends ConsumerWidget {
+  final void Function(FriendModel friend) onSelect;
+
+  const _FriendPickerList({required this.onSelect});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final friendsAsync = ref.watch(friendsProvider);
+
+    return friendsAsync.when(
+      loading: () => const Padding(
+        padding: EdgeInsets.all(24),
+        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+      ),
+      error: (_, _) => const Padding(
+        padding: EdgeInsets.all(16),
+        child: Text(
+          'Failed to load friends',
+          style: TextStyle(color: AppColors.textHint),
+        ),
+      ),
+      data: (friends) {
+        if (friends.isEmpty) {
+          return const Padding(
+            padding: EdgeInsets.all(24),
+            child: Text(
+              'No friends yet. Add friends in Chat to gift them coupons.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.textHint, fontSize: 13),
+            ),
+          );
+        }
+
+        return ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 200),
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: friends.length,
+            itemBuilder: (_, i) {
+              final friend = friends[i];
+              return ListTile(
+                dense: true,
+                onTap: () => onSelect(friend),
+                leading: CircleAvatar(
+                  radius: 18,
+                  backgroundColor: AppColors.surfaceVariant,
+                  backgroundImage: friend.avatarUrl != null
+                      ? CachedNetworkImageProvider(friend.avatarUrl!)
+                      : null,
+                  child: friend.avatarUrl == null
+                      ? Text(
+                          friend.displayName[0].toUpperCase(),
+                          style: const TextStyle(
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        )
+                      : null,
+                ),
+                title: Text(
+                  friend.displayName,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w500,
+                    fontSize: 14,
+                  ),
+                ),
+                subtitle: friend.username != null
+                    ? Text(
+                        '@${friend.username}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textHint,
+                        ),
+                      )
+                    : null,
+                trailing: const Icon(
+                  Icons.card_giftcard,
+                  size: 18,
+                  color: AppColors.primary,
+                ),
+              );
+            },
+          ),
+        );
+      },
     );
   }
 }

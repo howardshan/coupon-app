@@ -1,5 +1,5 @@
 // =============================================================
-// DealJoy Edge Function: merchant-deals
+// Crunchy Plum Edge Function: merchant-deals
 // 处理商家 Deal 的完整 CRUD：列表、创建、更新、上下架、删除、图片
 //
 // 路由规则（通过 URL 路径和 HTTP Method 区分）:

@@ -102,6 +102,9 @@ class MessageModel {
       case 'image':
         return '[Image]';
       case 'coupon':
+        final giftAction = couponPayload?['gift_action'] as String?;
+        if (giftAction == 'gift_sent') return '[Gift] Sent you a coupon';
+        if (giftAction == 'gift_recalled') return '[Gift] Recalled a coupon';
         return '[Coupon]';
       case 'deal_share':
         final title = couponPayload?['deal_title'] as String? ?? 'Deal';

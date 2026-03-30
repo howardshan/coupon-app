@@ -307,6 +307,18 @@ class _CouponBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final giftAction = payload['gift_action'] as String?;
+
+    // 礼物赠送通知卡片
+    if (giftAction == 'gift_sent') {
+      return _GiftSentBubble(payload: payload, onViewDeal: onViewDeal);
+    }
+
+    // 礼物撤回通知卡片
+    if (giftAction == 'gift_recalled') {
+      return _GiftRecalledBubble(payload: payload);
+    }
+
     // 从 payload 中提取字段（null-safe）
     final dealTitle = payload['deal_title'] as String? ?? 'Deal';
     final merchantName = payload['merchant_name'] as String? ?? '';
@@ -684,6 +696,191 @@ class _DealShareBubble extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ============================================================
+// 礼物赠送通知卡片
+// ============================================================
+
+class _GiftSentBubble extends StatelessWidget {
+  final Map<String, dynamic> payload;
+  final void Function(String dealId) onViewDeal;
+
+  const _GiftSentBubble({required this.payload, required this.onViewDeal});
+
+  @override
+  Widget build(BuildContext context) {
+    final dealTitle = payload['deal_title'] as String? ?? 'A coupon';
+    final merchantName = payload['merchant_name'] as String? ?? '';
+    final giftMessage = payload['gift_message'] as String?;
+    final dealImageUrl = payload['deal_image_url'] as String?;
+
+    return Container(
+      width: 240,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFCE93D8)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 顶部图片
+          if (dealImageUrl != null && dealImageUrl.isNotEmpty)
+            ClipRRect(
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+              child: CachedNetworkImage(
+                imageUrl: dealImageUrl,
+                height: 100,
+                width: double.infinity,
+                fit: BoxFit.cover,
+                placeholder: (context, url) => Container(
+                  height: 100,
+                  color: AppColors.surfaceVariant,
+                ),
+                errorWidget: (context, url, error) => Container(
+                  height: 100,
+                  color: AppColors.surfaceVariant,
+                  child: const Icon(Icons.image, color: AppColors.textHint),
+                ),
+              ),
+            ),
+
+          // 礼物图标 + 标题
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+            child: Row(
+              children: [
+                const Icon(Icons.card_giftcard, color: Color(0xFF9C27B0), size: 16),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    dealTitle,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // 商家名
+          if (merchantName.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Text(
+                merchantName,
+                style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+              ),
+            ),
+
+          // 礼物留言
+          if (giftMessage != null && giftMessage.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF8E1),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  '"$giftMessage"',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontStyle: FontStyle.italic,
+                    color: Color(0xFF5D4037),
+                  ),
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+
+          // 底部提示
+          const Padding(
+            padding: EdgeInsets.fromLTRB(12, 8, 12, 10),
+            child: Text(
+              'Gifted you a coupon!',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF9C27B0),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ============================================================
+// 礼物撤回通知卡片
+// ============================================================
+
+class _GiftRecalledBubble extends StatelessWidget {
+  final Map<String, dynamic> payload;
+
+  const _GiftRecalledBubble({required this.payload});
+
+  @override
+  Widget build(BuildContext context) {
+    final dealTitle = payload['deal_title'] as String? ?? 'A coupon';
+
+    return Container(
+      width: 220,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5F5F5),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE0E0E0)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.undo, color: AppColors.textHint, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Gift Recalled',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  dealTitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textHint,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

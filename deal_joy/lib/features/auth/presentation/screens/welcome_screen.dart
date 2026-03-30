@@ -19,7 +19,7 @@ class WelcomeScreen extends StatelessWidget {
               const Spacer(flex: 2),
               // Logo / 标题
               Text(
-                'DealJoy',
+                'Crunchy Plum',
                 style: Theme.of(context).textTheme.headlineLarge?.copyWith(
                       color: AppColors.primary,
                       fontWeight: FontWeight.bold,

@@ -85,12 +85,12 @@ class _AfterSalesTimelinePageState extends ConsumerState<AfterSalesTimelinePage>
             _FeedbackCard(title: 'Merchant Response', body: request.merchantFeedback!, attachments: request.merchantAttachments),
           if (request.platformFeedback?.isNotEmpty == true) ...[
             const SizedBox(height: 16),
-            _FeedbackCard(title: 'DealJoy Decision', body: request.platformFeedback!, attachments: request.platformAttachments),
+            _FeedbackCard(title: 'Crunchy Plum Decision', body: request.platformFeedback!, attachments: request.platformAttachments),
           ],
           const SizedBox(height: 32),
           if (request.merchantRejected && !request.awaitingPlatform && !request.completed)
             AppButton(
-              label: 'Escalate to DealJoy',
+              label: 'Escalate to Crunchy Plum',
               icon: Icons.flag_outlined,
               isLoading: _isEscalating,
               onPressed: _isEscalating ? null : () => _escalate(request.id),
@@ -129,7 +129,7 @@ class _AfterSalesTimelinePageState extends ConsumerState<AfterSalesTimelinePage>
       ref.invalidate(afterSalesRequestProvider(widget.args.orderId));
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Escalated to DealJoy. We will review within 24 hours.')),
+          const SnackBar(content: Text('Escalated to Crunchy Plum. We will review within 24 hours.')),
         );
       }
     } catch (err) {

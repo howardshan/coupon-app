@@ -1,0 +1,76 @@
+{
+  "module": "brand-rename",
+  "reviewed_at": "2026-03-30",
+  "summary": "将 'DealJoy' 更名为 'Crunchy Plum'，'dealjoy' 更名为 'crunchyplum'，共修改 10 个文件",
+  "files_modified": [
+    {
+      "file": "deal_joy/lib/shared/services/push_notification_service.dart",
+      "changes": [
+        "'dealjoy_notifications' → 'crunchyplum_notifications' (2处：channel 定义 + show 调用)",
+        "'DealJoy Notifications' → 'Crunchy Plum Notifications' (2处)",
+        "'DealJoy push notifications' → 'Crunchy Plum push notifications' (2处)",
+        "notification.title ?? 'DealJoy' → notification.title ?? 'Crunchy Plum'"
+      ]
+    },
+    {
+      "file": "deal_joy/lib/core/widgets/splash_screen.dart",
+      "changes": ["'DealJoy' → 'Crunchy Plum'"]
+    },
+    {
+      "file": "deal_joy/lib/features/profile/presentation/screens/profile_screen.dart",
+      "changes": [
+        "'DealJoy Version 2.4.1' → 'Crunchy Plum Version 2.4.1'",
+        "'Become a DealJoy Merchant' (邮件 subject) → 'Become a Crunchy Plum Merchant'",
+        "'Welcome to DealJoy' → 'Welcome to Crunchy Plum'"
+      ]
+    },
+    {
+      "file": "deal_joy/lib/features/deals/presentation/screens/deal_detail_screen.dart",
+      "changes": ["'on DealJoy!' → 'on Crunchy Plum!' (分享文本)"]
+    },
+    {
+      "file": "deal_joy/lib/features/merchant/presentation/screens/merchant_detail_screen.dart",
+      "changes": ["'on DealJoy!' → 'on Crunchy Plum!' (分享文本)"]
+    },
+    {
+      "file": "deal_joy/lib/features/checkout/data/repositories/checkout_repository.dart",
+      "changes": [
+        "Apple Pay cartItems label 默认值 'DealJoy' → 'Crunchy Plum'",
+        "Google Pay merchantName 'DealJoy' → 'Crunchy Plum'"
+      ]
+    },
+    {
+      "file": "deal_joy/lib/features/profile/presentation/screens/payment_methods_screen.dart",
+      "changes": ["Stripe SetupPaymentSheet merchantDisplayName 'DealJoy' → 'Crunchy Plum'"]
+    },
+    {
+      "file": "deal_joy/lib/features/after_sales/presentation/pages/after_sales_timeline_page.dart",
+      "changes": [
+        "'DealJoy Decision' → 'Crunchy Plum Decision'",
+        "'Escalate to DealJoy' → 'Escalate to Crunchy Plum'",
+        "'Escalated to DealJoy. We will review within 24 hours.' → 'Escalated to Crunchy Plum...'"
+      ]
+    },
+    {
+      "file": "deal_joy/lib/features/chat/presentation/screens/chat_screen.dart",
+      "changes": ["'DealJoy Team' → 'Crunchy Plum Team'"]
+    },
+    {
+      "file": "deal_joy/lib/features/auth/data/repositories/auth_repository.dart",
+      "changes": [
+        "signInWithApple redirectTo: 'io.supabase.dealjoy://login-callback/' → 'io.supabase.crunchyplum://login-callback/'",
+        "resetPassword redirectTo: 'io.supabase.dealjoy://login-callback/' → 'io.supabase.crunchyplum://login-callback/'"
+      ],
+      "note": "此文件在 COMPLETED.md 中标记为受保护，但 redirectTo URL 属于基础设施配置（必须与 AndroidManifest scheme 一致），不影响 auth 逻辑，故按用户指示修改"
+    }
+  ],
+  "items_not_modified": [
+    "package:deal_joy/ import 路径 — 保留不动",
+    "目录名 — 保留不动",
+    "Supabase project ref / URL — 不在本次范围内"
+  ],
+  "issues": [],
+  "p0": [],
+  "p1": [],
+  "p2": []
+}

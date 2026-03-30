@@ -11,6 +11,7 @@ import '../../domain/providers/deals_provider.dart';
 import '../../domain/providers/recommendation_provider.dart';
 import '../../../merchant/data/models/merchant_model.dart';
 import '../../../merchant/domain/providers/merchant_provider.dart';
+import '../../../chat/domain/providers/notification_provider.dart';
 import '../../../welcome/presentation/widgets/home_banner.dart';
 
 // ── Location data (mirrors web app) ──────────────────────────
@@ -157,26 +158,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           ),
                         ),
                         const Spacer(),
-                        Stack(
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.notifications_outlined),
-                              onPressed: () {},
-                            ),
-                            Positioned(
-                              top: 10,
-                              right: 10,
-                              child: Container(
-                                width: 8,
-                                height: 8,
-                                decoration: const BoxDecoration(
-                                  color: AppColors.primary,
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
+                        _NotificationBell(),
                       ],
                     ),
                   ),
@@ -1524,6 +1506,37 @@ class _MerchantCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+// ── 通知铃铛图标（动态 badge）──────────────────────────────────
+class _NotificationBell extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final unreadAsync = ref.watch(unreadNotificationCountProvider);
+    final unread = unreadAsync.valueOrNull ?? 0;
+
+    return Stack(
+      children: [
+        IconButton(
+          icon: const Icon(Icons.notifications_outlined),
+          onPressed: () => context.push('/chat/notifications'),
+        ),
+        if (unread > 0)
+          Positioned(
+            top: 10,
+            right: 10,
+            child: Container(
+              width: 8,
+              height: 8,
+              decoration: const BoxDecoration(
+                color: AppColors.primary,
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

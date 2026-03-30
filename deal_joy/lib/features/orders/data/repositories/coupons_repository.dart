@@ -12,9 +12,11 @@ const _couponSelect =
     'id, order_id, user_id, deal_id, merchant_id, qr_code, status, '
     'expires_at, used_at, created_at, gifted_from, verified_by, '
     'void_reason, voided_at, '
+    'gifted_from_user_id, current_holder_user_id, '
     'order_item_id, coupon_code, '
     'deals(id, title, description, image_urls, refund_policy, '
     'merchants(name, logo_url, address, phone)), '
+    'gifter_user:users!coupons_gifted_from_user_id_fkey(full_name), '
     'orders!coupons_order_id_fkey(order_number), '
     'order_items!order_items_coupon_id_fkey('
     'applicable_store_ids, unit_price, refunded_at, refund_amount, refund_method)';
@@ -27,10 +29,11 @@ class CouponsRepository {
   /// 获取当前用户的全部团购券，按创建时间倒序
   Future<List<CouponModel>> fetchUserCoupons(String userId) async {
     try {
+      // 查询条件：user_id 或 current_holder_user_id 匹配（好友赠送的券通过后者查到）
       final data = await _client
           .from('coupons')
           .select(_couponSelect)
-          .eq('user_id', userId)
+          .or('user_id.eq.$userId,current_holder_user_id.eq.$userId')
           .order('created_at', ascending: false);
       return (data as List)
           .map((e) => CouponModel.fromJson(e as Map<String, dynamic>))
@@ -174,6 +177,7 @@ class CouponsRepository {
     required String orderItemId,
     String? recipientEmail,
     String? recipientPhone,
+    String? recipientUserId,
     String? giftMessage,
   }) async {
     try {
@@ -183,6 +187,7 @@ class CouponsRepository {
           'order_item_id': orderItemId,
           if (recipientEmail != null) 'recipient_email': recipientEmail,
           if (recipientPhone != null) 'recipient_phone': recipientPhone,
+          if (recipientUserId != null) 'recipient_user_id': recipientUserId,
           if (giftMessage != null && giftMessage.isNotEmpty)
             'gift_message': giftMessage,
         },

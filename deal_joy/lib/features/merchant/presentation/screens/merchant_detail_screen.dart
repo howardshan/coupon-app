@@ -176,7 +176,7 @@ class _MerchantDetailScreenState extends ConsumerState<MerchantDetailScreen> {
               title: const Text('Share via...'),
               onTap: () {
                 Navigator.of(ctx).pop();
-                Share.share('Check out ${merchant.name} on DealJoy!');
+                Share.share('Check out ${merchant.name} on Crunchy Plum!');
               },
             ),
             const SizedBox(height: 8),

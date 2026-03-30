@@ -69,7 +69,7 @@ serve(async (req) => {
     // 解析请求体，进行参数校验
     // ──────────────────────────────────────────────────────────
     const body = await req.json();
-    const { order_item_id, recipient_email, recipient_phone, gift_message } = body;
+    const { order_item_id, recipient_email, recipient_phone, recipient_user_id, gift_message } = body;
 
     // order_item_id 必填
     if (!order_item_id || typeof order_item_id !== 'string' || order_item_id.trim() === '') {
@@ -79,10 +79,10 @@ serve(async (req) => {
       );
     }
 
-    // recipient_email 或 recipient_phone 至少一个必填（匹配 DB 约束）
-    if (!recipient_email && !recipient_phone) {
+    // recipient_email、recipient_phone、recipient_user_id 三选一（匹配 DB 约束）
+    if (!recipient_email && !recipient_phone && !recipient_user_id) {
       return new Response(
-        JSON.stringify({ error: 'recipient_email or recipient_phone is required' }),
+        JSON.stringify({ error: 'recipient_email, recipient_phone, or recipient_user_id is required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
@@ -174,7 +174,144 @@ serve(async (req) => {
     }
 
     // ──────────────────────────────────────────────────────────
-    // 4. 创建新 coupon_gifts 记录
+    // 好友赠送（in_app）模式：recipient_user_id 存在时走此分支
+    // ──────────────────────────────────────────────────────────
+    const isInAppGift = !!recipient_user_id;
+
+    if (isInAppGift) {
+      // 3a. 防止自赠
+      if (recipient_user_id === user.id) {
+        return new Response(
+          JSON.stringify({ error: 'Cannot gift to yourself' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
+
+      // 3b. 验证受赠人存在
+      const { data: recipientUser, error: recipientErr } = await supabaseAdmin
+        .from('users')
+        .select('id, email, full_name')
+        .eq('id', recipient_user_id)
+        .single();
+      if (recipientErr || !recipientUser) {
+        return new Response(
+          JSON.stringify({ error: 'Recipient user not found' }),
+          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
+
+      // 3c. 验证双方是好友
+      const { data: friendship } = await supabaseAdmin
+        .from('friendships')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('friend_id', recipient_user_id)
+        .maybeSingle();
+      if (!friendship) {
+        return new Response(
+          JSON.stringify({ error: 'You can only gift to friends' }),
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
+
+      // 4a. 创建 coupon_gifts 记录（直接 claimed，无需 claim_token）
+      const { data: newGift, error: giftErr } = await supabaseAdmin
+        .from('coupon_gifts')
+        .insert({
+          order_item_id,
+          gifter_user_id:     user.id,
+          recipient_user_id,
+          recipient_email:    (recipientUser.email as string | null) ?? null,
+          gift_message:       gift_message ?? null,
+          status:             'claimed',
+          claimed_at:         now,
+          gift_type:          'in_app',
+        })
+        .select('id')
+        .single();
+
+      if (giftErr || !newGift) {
+        console.error('send-gift: failed to create in_app coupon_gifts record:', giftErr);
+        return new Response(
+          JSON.stringify({ error: 'Failed to create gift record' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
+
+      // 5a. 更新 order_items.customer_status = 'gifted'
+      await supabaseAdmin
+        .from('order_items')
+        .update({ customer_status: 'gifted', updated_at: now })
+        .eq('id', order_item_id);
+
+      // 6a. 更新 coupons（转移持有人至受赠方）
+      await supabaseAdmin
+        .from('coupons')
+        .update({
+          is_gifted:              true,
+          current_holder_user_id: recipient_user_id,
+          gifted_from_user_id:    user.id,
+          updated_at:             now,
+        })
+        .eq('order_item_id', order_item_id);
+
+      // 7a. 异步发送好友赠送通知邮件（C15），即发即忘
+      if (recipientUser.email) {
+        (async () => {
+          try {
+            const { data: dealInfo } = await supabaseAdmin
+              .from('deals')
+              .select('title, merchants(name)')
+              .eq('id', (item as any).deal_id)
+              .single();
+
+            const dealTitle    = (dealInfo?.title as string | undefined) ?? '';
+            const merchantName = ((dealInfo as any)?.merchants?.name as string | undefined) ?? '';
+
+            // 获取赠送人姓名（优先 display_name，其次 full_name，最后 email）
+            const { data: gifterInfo } = await supabaseAdmin
+              .from('users')
+              .select('display_name, full_name, email')
+              .eq('id', user.id)
+              .single();
+
+            const gifterName = (gifterInfo?.display_name as string | undefined)
+              || (gifterInfo?.full_name as string | undefined)
+              || (gifterInfo?.email as string | undefined)
+              || 'A friend';
+
+            const subject  = `${gifterName} gifted you a coupon!`;
+            const htmlBody = buildFriendGiftEmail({
+              gifterName,
+              dealTitle,
+              merchantName,
+              giftMessage:   gift_message ?? null,
+              recipientName: (recipientUser.full_name as string | undefined) || 'there',
+            });
+
+            await sendEmail(supabaseAdmin, {
+              to:            recipientUser.email as string,
+              subject,
+              htmlBody,
+              emailCode:     'C15',
+              referenceId:   newGift.id as string,
+              recipientType: 'customer',
+            });
+          } catch (emailErr) {
+            console.error('send-gift: friend gift email error:', emailErr);
+          }
+        })();
+      }
+
+      // 8a. 返回（in_app 模式不返回 claim_token）
+      return new Response(
+        JSON.stringify({ gift_id: newGift.id, gift_type: 'in_app' }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
+    // ──────────────────────────────────────────────────────────
+    // 4. 创建新 coupon_gifts 记录（external 赠送模式）
     // ──────────────────────────────────────────────────────────
     const { data: newGift, error: giftErr } = await supabaseAdmin
       .from('coupon_gifts')
@@ -438,4 +575,76 @@ function escapeHtml(str: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+// =============================================================
+// C15 好友赠送通知邮件模板（in_app 模式，无 claim 链接）
+// =============================================================
+
+interface FriendGiftEmailParams {
+  gifterName:   string;
+  dealTitle:    string;
+  merchantName: string;
+  giftMessage:  string | null;
+  recipientName: string;
+}
+
+function buildFriendGiftEmail(params: FriendGiftEmailParams): string {
+  const { gifterName, dealTitle, merchantName, giftMessage, recipientName } = params;
+
+  // 可选：礼物留言区块
+  const messageBlock = giftMessage
+    ? `<tr><td style="padding:12px 24px;">
+        <div style="background:#FFF8E1;border-left:4px solid #FFC107;padding:12px 16px;border-radius:4px;">
+          <p style="margin:0;font-size:13px;color:#5D4037;font-style:italic;">"${escapeHtml(giftMessage)}"</p>
+          <p style="margin:6px 0 0;font-size:12px;color:#8D6E63;">— ${escapeHtml(gifterName)}</p>
+        </div>
+      </td></tr>`
+    : '';
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><title>You received a gift!</title></head>
+<body style="margin:0;padding:0;background-color:#F5F5F5;font-family:Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#F5F5F5;padding:32px 0;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="background:#FFFFFF;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+        <tr><td style="background:#E53935;padding:20px 24px;">
+          <p style="margin:0;font-size:22px;font-weight:700;color:#FFFFFF;letter-spacing:0.5px;">CrunchyPlum</p>
+        </td></tr>
+        <tr><td style="padding:28px 24px 8px;">
+          <p style="margin:0 0 8px;font-size:22px;font-weight:700;color:#212121;">You received a gift!</p>
+          <p style="margin:0;font-size:15px;color:#424242;line-height:1.6;">
+            Hi ${escapeHtml(recipientName)}, <strong>${escapeHtml(gifterName)}</strong> gifted you a coupon on CrunchyPlum. It's already in your account — check your <strong>Unused Coupons</strong> tab!
+          </p>
+        </td></tr>
+        <tr><td style="padding:16px 24px;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="background:#FAFAFA;border:1px solid #E0E0E0;border-radius:6px;">
+            <tr>
+              <td style="padding:10px 16px;font-size:13px;color:#757575;width:35%;border-bottom:1px solid #E0E0E0;">Deal</td>
+              <td style="padding:10px 16px;font-size:13px;color:#212121;font-weight:600;border-bottom:1px solid #E0E0E0;">${escapeHtml(dealTitle)}</td>
+            </tr>
+            <tr>
+              <td style="padding:10px 16px;font-size:13px;color:#757575;">Merchant</td>
+              <td style="padding:10px 16px;font-size:13px;color:#212121;">${escapeHtml(merchantName)}</td>
+            </tr>
+          </table>
+        </td></tr>
+        ${messageBlock}
+        <tr><td style="padding:8px 24px 16px;">
+          <p style="margin:0;font-size:13px;color:#757575;text-align:center;line-height:1.6;">
+            Open the CrunchyPlum app to view and use your coupon.
+          </p>
+        </td></tr>
+        <tr><td style="padding:0 24px 24px;">
+          <hr style="border:none;border-top:1px solid #E0E0E0;margin:0 0 16px;"/>
+          <p style="margin:0;font-size:12px;color:#9E9E9E;text-align:center;line-height:1.6;">
+            Questions? Contact us at <a href="mailto:support@crunchyplum.com" style="color:#E53935;text-decoration:none;">support@crunchyplum.com</a>
+          </p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
 }

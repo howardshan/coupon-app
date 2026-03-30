@@ -30,11 +30,16 @@ class NotificationsNotifier extends AsyncNotifier<List<NotificationModel>> {
     _hasMore = true;
     final user = await ref.watch(currentUserProvider.future);
     if (user == null) return [];
-    return ref.read(notificationRepositoryProvider).fetchNotifications(
+    final results = await ref.read(notificationRepositoryProvider).fetchNotifications(
           userId: user.id,
           page: _page,
           pageSize: _kNotificationsPageSize,
         );
+    // 首页不满一页则没有更多
+    if (results.length < _kNotificationsPageSize) {
+      _hasMore = false;
+    }
+    return results;
   }
 
   /// 加载更多通知（向下分页）

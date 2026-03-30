@@ -75,7 +75,8 @@ class _AuthChangeNotifier extends ChangeNotifier {
 }
 
 // 分离 root navigator 和 shell navigator，避免 page key 冲突
-final _rootNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'root');
+// rootNavigatorKey 公开给 PushNotificationService 用于后台通知点击跳转
+final rootNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'root');
 final _shellNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'shell');
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -83,7 +84,7 @@ final routerProvider = Provider<GoRouter>((ref) {
   ref.onDispose(notifier.dispose);
 
   return GoRouter(
-    navigatorKey: _rootNavigatorKey,
+    navigatorKey: rootNavigatorKey,
     initialLocation: '/welcome',
     refreshListenable: notifier,
     redirect: (context, state) {

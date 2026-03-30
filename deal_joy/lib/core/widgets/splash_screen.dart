@@ -13,7 +13,7 @@ class SplashScreen extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'DealJoy',
+              'Crunchy Plum',
               style: Theme.of(context).textTheme.headlineLarge?.copyWith(
                     color: AppColors.primary,
                     fontWeight: FontWeight.bold,
