@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../deals/data/models/review_model.dart';
 import '../../data/models/coupon_model.dart';
 
 /// 每种状态对应的颜色映射
@@ -38,10 +39,18 @@ class CouponCard extends StatelessWidget {
   final CouponModel coupon;
   final VoidCallback onTap;
 
+  /// Used tab：已匹配到的用户评价（可选）
+  final ReviewModel? writtenReview;
+
+  /// Used tab：提示仍可写评价（列表未匹配到评价时）
+  final bool showWriteReviewHint;
+
   const CouponCard({
     super.key,
     required this.coupon,
     required this.onTap,
+    this.writtenReview,
+    this.showWriteReviewHint = false,
   });
 
   @override
@@ -205,6 +214,57 @@ class CouponCard extends StatelessWidget {
                   ),
                 ],
               ),
+
+              // Used tab：评价状态轻量提示
+              if (writtenReview != null) ...[
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    ...List.generate(
+                      5,
+                      (idx) {
+                        final stars = writtenReview!.ratingOverall > 0
+                            ? writtenReview!.ratingOverall
+                            : writtenReview!.rating;
+                        return Icon(
+                          idx < stars ? Icons.star : Icons.star_border,
+                          size: 16,
+                          color: AppColors.warning,
+                        );
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Reviewed',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.success,
+                      ),
+                    ),
+                  ],
+                ),
+              ] else if (showWriteReviewHint && coupon.status == 'used') ...[
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.rate_review_outlined,
+                      size: 16,
+                      color: AppColors.primary.withValues(alpha: 0.85),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Write a review',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.primary.withValues(alpha: 0.9),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ],
           ),
         ),

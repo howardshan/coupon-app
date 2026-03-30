@@ -9,6 +9,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../reviews/domain/providers/my_reviews_provider.dart';
 import '../../data/models/coupon_model.dart';
 import '../../data/models/coupon_gift_model.dart';
 import '../../domain/providers/coupons_provider.dart';
@@ -182,6 +183,14 @@ class _CouponDetailBodyState extends State<_CouponDetailBody> {
 
           // ── 商户信息 ──────────────────────────────────
           _MerchantInfoSection(coupon: coupon),
+
+          // ── 我的评价（仅已核销且未作废）────────────────
+          if (coupon.isUsed && !coupon.isVoided) ...[
+            const SizedBox(height: 8),
+            const Divider(indent: 16, endIndent: 16),
+            const SizedBox(height: 8),
+            _CouponReviewSection(coupon: coupon),
+          ],
 
           // ── 退款政策 ──────────────────────────────────
           if (coupon.refundPolicy != null) ...[
@@ -712,6 +721,126 @@ class _MerchantInfoSection extends ConsumerWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+// ──────────────────────────────────────────────
+// 已用券：我的评价入口（查看/编辑或去写评价）
+// ──────────────────────────────────────────────
+class _CouponReviewSection extends ConsumerWidget {
+  final CouponModel coupon;
+
+  const _CouponReviewSection({required this.coupon});
+
+  void _pushReview(BuildContext context, {String? reviewId}) {
+    final params = <String, String>{};
+    if (coupon.merchantId.isNotEmpty) {
+      params['merchantId'] = coupon.merchantId;
+    }
+    final oid = coupon.orderItemId;
+    if (oid != null && oid.isNotEmpty) {
+      params['orderItemId'] = oid;
+    }
+    if (reviewId != null) {
+      params['reviewId'] = reviewId;
+    }
+    final q = Uri(
+      path: '/review/${coupon.dealId}',
+      queryParameters: params.isEmpty ? null : params,
+    );
+    context.push(q.toString());
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(myWrittenReviewsProvider);
+
+    return async.when(
+      loading: () => const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 16),
+        child: LinearProgressIndicator(minHeight: 2),
+      ),
+      error: (_, _) => const SizedBox.shrink(),
+      data: (list) {
+        final matched = matchWrittenReviewForCoupon(coupon, list);
+        final starCount = matched != null
+            ? (matched.ratingOverall > 0 ? matched.ratingOverall : matched.rating)
+            : 0;
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Your Review',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleSmall
+                    ?.copyWith(color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 10),
+              if (matched != null) ...[
+                Row(
+                  children: List.generate(
+                    5,
+                    (i) => Icon(
+                      i < starCount ? Icons.star : Icons.star_border,
+                      size: 22,
+                      color: AppColors.warning,
+                    ),
+                  ),
+                ),
+                if (matched.comment != null &&
+                    matched.comment!.trim().isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    matched.comment!.trim(),
+                    maxLines: 5,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: AppColors.textSecondary,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: () =>
+                        _pushReview(context, reviewId: matched.id),
+                    child: const Text('View / Edit Review'),
+                  ),
+                ),
+              ] else ...[
+                const Text(
+                  'Share feedback about your visit.',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () => _pushReview(context),
+                    icon: const Icon(Icons.rate_review_outlined, size: 20),
+                    label: const Text('Write a Review'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.primary,
+                      side: const BorderSide(color: AppColors.primary),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
     );
   }
 }

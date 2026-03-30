@@ -254,9 +254,10 @@ class _ProfileBody extends StatelessWidget {
                       onTap: () => context.push('/coupons'),
                     ),
                     _IconGridItem(
-                      icon: Icons.chat_bubble_outline,
-                      label: 'To Review',
-                      onTap: () => context.push('/to-review'),
+                      icon: Icons.rate_review_outlined,
+                      label: 'Reviews',
+                      onTap: () =>
+                          context.push('/coupons?tab=reviews&sub=pending'),
                     ),
                     _IconGridItem(
                       icon: Icons.assignment_return_outlined,

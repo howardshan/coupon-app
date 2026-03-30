@@ -8,7 +8,9 @@ import '../../../../shared/widgets/app_button.dart';
 import '../../../auth/domain/providers/auth_provider.dart';
 import '../../../deals/domain/providers/deals_provider.dart';
 import '../../data/models/review_hashtag_model.dart';
-import '../../../orders/presentation/screens/to_review_screen.dart' show toReviewProvider;
+import '../../../orders/domain/providers/coupons_provider.dart';
+import '../../../orders/domain/providers/pending_reviews_provider.dart';
+import '../../domain/providers/my_reviews_provider.dart';
 
 // 评价页面 — 支持新建和编辑模式
 class WriteReviewScreen extends ConsumerStatefulWidget {
@@ -182,6 +184,8 @@ class _WriteReviewScreenState extends ConsumerState<WriteReviewScreen> {
         ref.invalidate(dealReviewsProvider(widget.dealId));
         ref.invalidate(dealDetailProvider(widget.dealId));
         ref.invalidate(toReviewProvider);
+        ref.invalidate(myWrittenReviewsProvider);
+        ref.invalidate(userCouponsProvider);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(_isEditMode
@@ -206,7 +210,11 @@ class _WriteReviewScreenState extends ConsumerState<WriteReviewScreen> {
           ),
         );
         // 重复提交时也刷新待评价列表，让页面正确移除该条目
-        if (isDuplicate) ref.invalidate(toReviewProvider);
+        if (isDuplicate) {
+          ref.invalidate(toReviewProvider);
+          ref.invalidate(myWrittenReviewsProvider);
+          ref.invalidate(userCouponsProvider);
+        }
       }
     } finally {
       if (mounted) setState(() => _submitting = false);

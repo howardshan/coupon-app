@@ -226,27 +226,6 @@ class _CardTile extends ConsumerWidget {
       ),
       builder: (_) => _CardOptionsSheet(card: card, ref: ref),
     );
-
-    if (confirmed != true) return;
-
-    try {
-      await ref.read(paymentMethodsProvider.notifier).deleteCard(c.id);
-      if (context.mounted) {
-        Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Card removed'),
-            backgroundColor: AppColors.success,
-          ),
-        );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to remove card: $e')),
-        );
-      }
-    }
   }
 }
 
