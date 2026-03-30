@@ -3,8 +3,14 @@
 // 品牌管理：品牌信息 CRUD、门店管理、管理员管理
 // =============================================================
 
+import Stripe from "https://esm.sh/stripe@14.1.0?target=deno";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { resolveAuth, requirePermission } from "../_shared/auth.ts";
+
+// Stripe 客户端（品牌 Connect 账户用）
+const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") ?? "", {
+  apiVersion: "2023-10-16",
+});
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -537,6 +543,375 @@ Deno.serve(async (req: Request) => {
         return errorResponse(`Failed to remove admin: ${error.message}`);
       }
       return jsonResponse({ success: true });
+    }
+
+    // -------------------------------------------------------
+    // POST /merchant-brand/connect — 创建品牌 Stripe Express 账户
+    // -------------------------------------------------------
+    if (req.method === "POST" && pathSegments[0] === "connect" && !pathSegments[1]) {
+      if (auth.role !== "brand_owner") {
+        return errorResponse("Only brand owner can connect Stripe account", 403);
+      }
+
+      // 检查是否已有 Stripe 账户
+      const { data: existingBrand } = await supabaseAdmin
+        .from("brands")
+        .select("stripe_account_id, stripe_account_status")
+        .eq("id", auth.brandId)
+        .single();
+
+      if (existingBrand?.stripe_account_id && existingBrand.stripe_account_status === "connected") {
+        return errorResponse("Brand already has a connected Stripe account");
+      }
+
+      // 生成 redirect URL（从环境变量获取 base URL）
+      const redirectBase = (Deno.env.get("STRIPE_CONNECT_REDIRECT_BASE_URL") ?? "").trim();
+      if (!redirectBase) {
+        return errorResponse("STRIPE_CONNECT_REDIRECT_BASE_URL is not configured", 500);
+      }
+      const returnUrl  = `${redirectBase}/brand-stripe-connect?status=success`;
+      const refreshUrl = `${redirectBase}/brand-stripe-connect?status=refresh`;
+
+      // 复用现有 Stripe 账户（若已创建但未完成 onboarding）
+      let stripeAccountId = existingBrand?.stripe_account_id ?? null;
+
+      if (!stripeAccountId) {
+        // 查询品牌信息（用于 Stripe metadata）
+        const { data: brandInfo } = await supabaseAdmin
+          .from("brands")
+          .select("name")
+          .eq("id", auth.brandId)
+          .single();
+
+        // 创建 Express 账户
+        const account = await stripe.accounts.create({
+          type: "express",
+          metadata: {
+            brand_id:   auth.brandId,
+            brand_name: brandInfo?.name ?? "",
+          },
+        });
+        stripeAccountId = account.id;
+
+        // 保存 Stripe 账户 ID 到 brands 表
+        await supabaseAdmin
+          .from("brands")
+          .update({
+            stripe_account_id:     stripeAccountId,
+            stripe_account_status: "pending",
+          })
+          .eq("id", auth.brandId);
+      }
+
+      // 生成 onboarding 链接
+      const accountLink = await stripe.accountLinks.create({
+        account:     stripeAccountId,
+        refresh_url: refreshUrl,
+        return_url:  returnUrl,
+        type:        "account_onboarding",
+      });
+
+      return jsonResponse({ url: accountLink.url, stripe_account_id: stripeAccountId });
+    }
+
+    // -------------------------------------------------------
+    // POST /merchant-brand/connect/refresh — 刷新品牌 Stripe 账户状态
+    // -------------------------------------------------------
+    if (req.method === "POST" && pathSegments[0] === "connect" && pathSegments[1] === "refresh") {
+      const { data: brandData } = await supabaseAdmin
+        .from("brands")
+        .select("stripe_account_id")
+        .eq("id", auth.brandId)
+        .single();
+
+      if (!brandData?.stripe_account_id) {
+        return errorResponse("No Stripe account found for this brand", 404);
+      }
+
+      // 从 Stripe 读取账户状态
+      const account = await stripe.accounts.retrieve(brandData.stripe_account_id);
+      const isConnected = account.charges_enabled && account.payouts_enabled;
+      const newStatus = isConnected ? "connected" : "pending";
+
+      await supabaseAdmin
+        .from("brands")
+        .update({ stripe_account_status: newStatus })
+        .eq("id", auth.brandId);
+
+      return jsonResponse({
+        stripe_account_id:     brandData.stripe_account_id,
+        stripe_account_status: newStatus,
+        charges_enabled:       account.charges_enabled,
+        payouts_enabled:       account.payouts_enabled,
+      });
+    }
+
+    // -------------------------------------------------------
+    // GET /merchant-brand/connect/dashboard — 品牌 Stripe Dashboard 链接
+    // -------------------------------------------------------
+    if (req.method === "GET" && pathSegments[0] === "connect" && pathSegments[1] === "dashboard") {
+      const { data: brandData } = await supabaseAdmin
+        .from("brands")
+        .select("stripe_account_id, stripe_account_status")
+        .eq("id", auth.brandId)
+        .single();
+
+      if (!brandData?.stripe_account_id) {
+        return errorResponse("No Stripe account found for this brand", 404);
+      }
+      if (brandData.stripe_account_status !== "connected") {
+        return errorResponse("Stripe account is not fully connected yet");
+      }
+
+      const loginLink = await stripe.accounts.createLoginLink(brandData.stripe_account_id);
+      return jsonResponse({ url: loginLink.url });
+    }
+
+    // -------------------------------------------------------
+    // GET /merchant-brand/account — 品牌 Stripe 账户信息
+    // -------------------------------------------------------
+    if (req.method === "GET" && pathSegments[0] === "account") {
+      const { data: brandData } = await supabaseAdmin
+        .from("brands")
+        .select("stripe_account_id, stripe_account_status")
+        .eq("id", auth.brandId)
+        .single();
+
+      const isConnected = brandData?.stripe_account_status === "connected";
+      return jsonResponse({
+        is_connected:          isConnected,
+        stripe_account_id:     brandData?.stripe_account_id ?? null,
+        stripe_account_status: brandData?.stripe_account_status ?? "not_connected",
+      });
+    }
+
+    // -------------------------------------------------------
+    // GET /merchant-brand/earnings/summary — 品牌收入概览
+    // -------------------------------------------------------
+    if (req.method === "GET" && pathSegments[0] === "earnings" && pathSegments[1] === "summary") {
+      const now = new Date();
+      const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+      const monthParam  = new URL(req.url).searchParams.get("month") ?? defaultMonth;
+      const monthStart  = /^\d{4}-\d{2}$/.test(monthParam) ? `${monthParam}-01` : monthParam;
+
+      const { data, error } = await supabaseAdmin.rpc("get_brand_earnings_summary", {
+        p_brand_id:    auth.brandId,
+        p_month_start: monthStart,
+      });
+
+      if (error) {
+        console.error("brand earnings summary error:", error);
+        return errorResponse(`Failed to fetch brand earnings summary: ${error.message}`, 500);
+      }
+
+      const row = Array.isArray(data) ? data[0] : data;
+      return jsonResponse({
+        month:              monthParam,
+        month_start:        monthStart,
+        total_brand_fee:    parseFloat(row?.total_brand_fee    ?? "0"),
+        pending_settlement: parseFloat(row?.pending_settlement ?? "0"),
+        settled_amount:     parseFloat(row?.settled_amount     ?? "0"),
+      });
+    }
+
+    // -------------------------------------------------------
+    // GET /merchant-brand/earnings/transactions — 品牌交易明细
+    // -------------------------------------------------------
+    if (req.method === "GET" && pathSegments[0] === "earnings" && pathSegments[1] === "transactions") {
+      const sp       = new URL(req.url).searchParams;
+      const dateFrom = sp.get("date_from") || null;
+      const dateTo   = sp.get("date_to")   || null;
+      const page     = Math.max(1, parseInt(sp.get("page") ?? "1"));
+      const perPage  = Math.min(100, Math.max(1, parseInt(sp.get("per_page") ?? "20")));
+
+      const { data, error } = await supabaseAdmin.rpc("get_brand_transactions", {
+        p_brand_id:  auth.brandId,
+        p_date_from: dateFrom,
+        p_date_to:   dateTo,
+        p_page:      page,
+        p_per_page:  perPage,
+      });
+
+      if (error) {
+        console.error("brand transactions error:", error);
+        return errorResponse(`Failed to fetch brand transactions: ${error.message}`, 500);
+      }
+
+      const rows = Array.isArray(data) ? data : [];
+      const totalCount = rows.length > 0 ? parseInt(rows[0].total_count ?? "0") : 0;
+
+      return jsonResponse({
+        data: rows.map((row: Record<string, string>) => ({
+          order_id:    row.order_id,
+          store_name:  row.store_name   ?? "",
+          deal_title:  row.deal_title   ?? "",
+          amount:      parseFloat(row.amount      ?? "0"),
+          brand_fee:   parseFloat(row.brand_fee   ?? "0"),
+          status:      row.status,
+          created_at:  row.created_at,
+        })),
+        pagination: {
+          page,
+          per_page: perPage,
+          total:    totalCount,
+          has_more: page * perPage < totalCount,
+        },
+      });
+    }
+
+    // -------------------------------------------------------
+    // GET /merchant-brand/earnings/balance — 品牌可提现余额
+    // -------------------------------------------------------
+    if (req.method === "GET" && pathSegments[0] === "earnings" && pathSegments[1] === "balance") {
+      const { data, error } = await supabaseAdmin.rpc("get_brand_balance", {
+        p_brand_id: auth.brandId,
+      });
+
+      if (error) {
+        console.error("brand balance error:", error);
+        return errorResponse(`Failed to fetch brand balance: ${error.message}`, 500);
+      }
+
+      const row = Array.isArray(data) ? data[0] : data;
+      return jsonResponse({
+        available_balance: parseFloat(row?.available_balance ?? "0"),
+        total_earned:      parseFloat(row?.total_earned      ?? "0"),
+        total_withdrawn:   parseFloat(row?.total_withdrawn   ?? "0"),
+        currency:          "usd",
+      });
+    }
+
+    // -------------------------------------------------------
+    // POST /merchant-brand/withdraw — 品牌提现
+    // -------------------------------------------------------
+    if (req.method === "POST" && pathSegments[0] === "withdraw" && !pathSegments[1]) {
+      if (auth.role !== "brand_owner") {
+        return errorResponse("Only brand owner can initiate withdrawal", 403);
+      }
+
+      const body = await req.json();
+      const amount = Number(body.amount);
+      if (!amount || amount < 10) {
+        return errorResponse("Minimum withdrawal amount is $10.00");
+      }
+
+      // 验证品牌 Stripe 账户状态
+      const { data: brandData } = await supabaseAdmin
+        .from("brands")
+        .select("stripe_account_id, stripe_account_status, name")
+        .eq("id", auth.brandId)
+        .single();
+
+      if (!brandData?.stripe_account_id || brandData.stripe_account_status !== "connected") {
+        return errorResponse("Brand Stripe account is not connected. Please complete Stripe onboarding first.");
+      }
+
+      // 检查是否有未完成的提现
+      const { data: pendingW } = await supabaseAdmin
+        .from("brand_withdrawals")
+        .select("id")
+        .eq("brand_id", auth.brandId)
+        .in("status", ["pending", "processing"])
+        .maybeSingle();
+
+      if (pendingW) {
+        return errorResponse("There is already a pending withdrawal. Please wait for it to complete.");
+      }
+
+      // 验证余额是否充足
+      const { data: balanceData, error: balanceErr } = await supabaseAdmin.rpc("get_brand_balance", {
+        p_brand_id: auth.brandId,
+      });
+      if (balanceErr) {
+        return errorResponse(`Failed to check balance: ${balanceErr.message}`, 500);
+      }
+      const balRow = Array.isArray(balanceData) ? balanceData[0] : balanceData;
+      const availableBalance = parseFloat(String(balRow?.available_balance ?? "0"));
+      if (amount > availableBalance + 0.01) {
+        return errorResponse(`Insufficient balance. Available: $${availableBalance.toFixed(2)}`);
+      }
+
+      // 创建 brand_withdrawals 记录（初始 pending）
+      const { data: withdrawal, error: wInsertErr } = await supabaseAdmin
+        .from("brand_withdrawals")
+        .insert({
+          brand_id:     auth.brandId,
+          amount,
+          status:       "pending",
+          requested_by: user.id,
+          requested_at: new Date().toISOString(),
+        })
+        .select()
+        .single();
+
+      if (wInsertErr) {
+        return errorResponse(`Failed to create withdrawal: ${wInsertErr.message}`, 500);
+      }
+
+      // 调用 Stripe Transfer API
+      try {
+        const transfer = await stripe.transfers.create(
+          {
+            amount:      Math.round(amount * 100),
+            currency:    "usd",
+            destination: brandData.stripe_account_id,
+            metadata:    { brand_withdrawal_id: withdrawal.id, brand_id: auth.brandId },
+          },
+          { idempotencyKey: withdrawal.id }
+        );
+
+        // 成功：更新为 completed
+        await supabaseAdmin
+          .from("brand_withdrawals")
+          .update({
+            stripe_transfer_id: transfer.id,
+            status:             "completed",
+            completed_at:       new Date().toISOString(),
+          })
+          .eq("id", withdrawal.id);
+
+        return jsonResponse({
+          withdrawal: { ...withdrawal, status: "completed", stripe_transfer_id: transfer.id },
+        }, 201);
+      } catch (stripeErr) {
+        const reason = stripeErr instanceof Error ? stripeErr.message : "Stripe transfer failed";
+        await supabaseAdmin
+          .from("brand_withdrawals")
+          .update({ status: "failed", failure_reason: reason })
+          .eq("id", withdrawal.id);
+        return errorResponse(`Withdrawal failed: ${reason}`, 502);
+      }
+    }
+
+    // -------------------------------------------------------
+    // GET /merchant-brand/withdraw/history — 品牌提现记录
+    // -------------------------------------------------------
+    if (req.method === "GET" && pathSegments[0] === "withdraw" && pathSegments[1] === "history") {
+      const sp      = new URL(req.url).searchParams;
+      const page    = Math.max(1, parseInt(sp.get("page") ?? "1"));
+      const perPage = Math.min(50, Math.max(1, parseInt(sp.get("per_page") ?? "20")));
+      const offset  = (page - 1) * perPage;
+
+      const { data, error, count } = await supabaseAdmin
+        .from("brand_withdrawals")
+        .select("*", { count: "exact" })
+        .eq("brand_id", auth.brandId)
+        .order("requested_at", { ascending: false })
+        .range(offset, offset + perPage - 1);
+
+      if (error) {
+        return errorResponse(`Failed to fetch withdrawal history: ${error.message}`, 500);
+      }
+
+      return jsonResponse({
+        data: data ?? [],
+        pagination: {
+          page,
+          per_page: perPage,
+          total:    count ?? 0,
+          has_more: offset + perPage < (count ?? 0),
+        },
+      });
     }
 
     return errorResponse("Not found", 404);

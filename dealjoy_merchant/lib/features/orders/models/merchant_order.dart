@@ -315,6 +315,24 @@ class MerchantOrderItem {
   /// 退款金额
   final double? refundAmount;
 
+  /// 平台费费率（如 0.15 = 15%）
+  final double platformFeeRate;
+
+  /// 平台费金额
+  final double platformFee;
+
+  /// 品牌佣金费率（如 0.15 = 15%，非品牌 Deal 时为 0）
+  final double brandFeeRate;
+
+  /// 品牌佣金金额
+  final double brandFee;
+
+  /// Stripe 手续费
+  final double stripeFee;
+
+  /// 商家实收净额
+  final double netAmount;
+
   const MerchantOrderItem({
     required this.orderItemId,
     required this.orderId,
@@ -333,6 +351,12 @@ class MerchantOrderItem {
     this.refundedAt,
     this.refundReason,
     this.refundAmount,
+    this.platformFeeRate = 0.0,
+    this.platformFee = 0.0,
+    this.brandFeeRate = 0.0,
+    this.brandFee = 0.0,
+    this.stripeFee = 0.0,
+    this.netAmount = 0.0,
   });
 
   /// 从 Edge Function 返回的 JSON 构造（null-safe）
@@ -361,6 +385,12 @@ class MerchantOrderItem {
           : null,
       refundReason: json['refund_reason'] as String?,
       refundAmount: (json['refund_amount'] as num?)?.toDouble(),
+      platformFeeRate: (json['platform_fee_rate'] as num?)?.toDouble() ?? 0.0,
+      platformFee: (json['platform_fee'] as num?)?.toDouble() ?? 0.0,
+      brandFeeRate: (json['brand_fee_rate'] as num?)?.toDouble() ?? 0.0,
+      brandFee: (json['brand_fee'] as num?)?.toDouble() ?? 0.0,
+      stripeFee: (json['stripe_fee'] as num?)?.toDouble() ?? 0.0,
+      netAmount: (json['net_amount'] as num?)?.toDouble() ?? 0.0,
     );
   }
 
@@ -501,6 +531,18 @@ class MerchantOrderDetail {
   /// 平台手续费合计
   final double serviceFeeTotal;
 
+  /// 平台费合计（从 items 汇总）
+  final double totalPlatformFee;
+
+  /// 品牌佣金合计（从 items 汇总，仅品牌 Deal 时 > 0）
+  final double totalBrandFee;
+
+  /// Stripe 手续费合计（从 items 汇总）
+  final double totalStripeFee;
+
+  /// 商家实收净额合计（从 items 汇总）
+  final double totalNetAmount;
+
   /// 订单子项列表（每行=一张券，仅属于本商家）
   final List<MerchantOrderItem> items;
 
@@ -521,6 +563,10 @@ class MerchantOrderDetail {
     required this.merchantTotal,
     this.itemsAmount = 0.0,
     this.serviceFeeTotal = 0.0,
+    this.totalPlatformFee = 0.0,
+    this.totalBrandFee = 0.0,
+    this.totalStripeFee = 0.0,
+    this.totalNetAmount = 0.0,
     this.items = const [],
     required this.timeline,
     required this.createdAt,
@@ -579,6 +625,12 @@ class MerchantOrderDetail {
     final merchantTotal = (orderJson['total_amount'] as num?)?.toDouble()
         ?? (itemsAmount + serviceFeeTotal);
 
+    // 佣金明细汇总字段（Edge Function 返回，若无则默认 0）
+    final totalPlatformFee = (orderJson['total_platform_fee'] as num?)?.toDouble() ?? 0.0;
+    final totalBrandFee = (orderJson['total_brand_fee'] as num?)?.toDouble() ?? 0.0;
+    final totalStripeFee = (orderJson['total_stripe_fee'] as num?)?.toDouble() ?? 0.0;
+    final totalNetAmount = (orderJson['total_net_amount'] as num?)?.toDouble() ?? 0.0;
+
     return MerchantOrderDetail(
       id: orderJson['id'] as String? ?? '',
       orderNumber: orderJson['order_number'] as String? ?? 'DJ-????????',
@@ -587,6 +639,10 @@ class MerchantOrderDetail {
       merchantTotal: merchantTotal,
       itemsAmount: itemsAmount,
       serviceFeeTotal: serviceFeeTotal,
+      totalPlatformFee: totalPlatformFee,
+      totalBrandFee: totalBrandFee,
+      totalStripeFee: totalStripeFee,
+      totalNetAmount: totalNetAmount,
       items: items,
       timeline: OrderTimeline.fromJsonList(timelineJson),
       createdAt: DateTime.parse(

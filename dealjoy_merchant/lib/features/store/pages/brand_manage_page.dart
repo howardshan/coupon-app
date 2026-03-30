@@ -30,8 +30,8 @@ class BrandManagePage extends ConsumerWidget {
 
   static const _primaryOrange = Color(0xFFFF6B35);
 
-  // 品牌管理功能入口
-  static const List<_BrandMenuItem> _menuItems = [
+  // 固定功能入口（始终显示）
+  static const List<_BrandMenuItem> _baseMenuItems = [
     _BrandMenuItem(
       icon: Icons.info_outline,
       label: 'Brand Info',
@@ -66,6 +66,24 @@ class BrandManagePage extends ConsumerWidget {
       subtitle: 'Stats & trends',
       color: Color(0xFFFF9800),
       route: '/brand-overview',
+    ),
+  ];
+
+  // 品牌佣金功能入口（仅 commissionRate > 0 时显示）
+  static const List<_BrandMenuItem> _commissionMenuItems = [
+    _BrandMenuItem(
+      icon: Icons.account_balance_wallet_outlined,
+      label: 'Earnings',
+      subtitle: 'Brand commission',
+      color: Color(0xFF4CAF50),
+      route: '/brand-manage/earnings',
+    ),
+    _BrandMenuItem(
+      icon: Icons.payment_outlined,
+      label: 'Stripe Connect',
+      subtitle: 'Payout account',
+      color: Color(0xFF635BFF),
+      route: '/brand-manage/stripe-connect',
     ),
   ];
 
@@ -116,6 +134,12 @@ class BrandManagePage extends ConsumerWidget {
             );
           }
 
+          // 动态构建菜单列表：基础入口 + 佣金入口（commissionRate > 0 时追加）
+          final menuItems = [
+            ..._baseMenuItems,
+            if (brand.commissionRate > 0) ..._commissionMenuItems,
+          ];
+
           return SingleChildScrollView(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -132,7 +156,7 @@ class BrandManagePage extends ConsumerWidget {
                   mainAxisSpacing: 12,
                   crossAxisSpacing: 12,
                   childAspectRatio: 1.2,
-                  children: _menuItems.map((item) => _MenuCard(
+                  children: menuItems.map((item) => _MenuCard(
                     item: item,
                     onTap: () => context.push(item.route),
                   )).toList(),

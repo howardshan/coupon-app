@@ -12,6 +12,10 @@ class BrandInfo {
     this.companyName,
     this.ein,
     this.storeCount = 0,
+    this.commissionRate = 0.0,
+    this.stripeAccountId,
+    this.stripeAccountEmail,
+    this.stripeAccountStatus = 'not_connected',
   });
 
   /// 品牌 ID
@@ -41,6 +45,18 @@ class BrandInfo {
   /// 旗下门店数量（由查询动态返回）
   final int storeCount;
 
+  /// 品牌佣金率（如 0.15 = 15%，默认 0 表示无品牌佣金）
+  final double commissionRate;
+
+  /// 品牌 Stripe 账户 ID
+  final String? stripeAccountId;
+
+  /// 品牌 Stripe 账户邮箱
+  final String? stripeAccountEmail;
+
+  /// 品牌 Stripe 账户状态（not_connected / connected / restricted）
+  final String stripeAccountStatus;
+
   /// 从 Edge Function 返回的 JSON 构造
   factory BrandInfo.fromJson(Map<String, dynamic> json) {
     return BrandInfo(
@@ -53,6 +69,10 @@ class BrandInfo {
       companyName: json['company_name'] as String?,
       ein: json['ein'] as String?,
       storeCount: json['store_count'] as int? ?? 0,
+      commissionRate: (json['commission_rate'] as num?)?.toDouble() ?? 0.0,
+      stripeAccountId: json['stripe_account_id'] as String?,
+      stripeAccountEmail: json['stripe_account_email'] as String?,
+      stripeAccountStatus: json['stripe_account_status'] as String? ?? 'not_connected',
     );
   }
 
@@ -78,6 +98,10 @@ class BrandInfo {
     String? companyName,
     String? ein,
     int? storeCount,
+    double? commissionRate,
+    String? stripeAccountId,
+    String? stripeAccountEmail,
+    String? stripeAccountStatus,
   }) {
     return BrandInfo(
       id: id ?? this.id,
@@ -89,6 +113,10 @@ class BrandInfo {
       companyName: companyName ?? this.companyName,
       ein: ein ?? this.ein,
       storeCount: storeCount ?? this.storeCount,
+      commissionRate: commissionRate ?? this.commissionRate,
+      stripeAccountId: stripeAccountId ?? this.stripeAccountId,
+      stripeAccountEmail: stripeAccountEmail ?? this.stripeAccountEmail,
+      stripeAccountStatus: stripeAccountStatus ?? this.stripeAccountStatus,
     );
   }
 }

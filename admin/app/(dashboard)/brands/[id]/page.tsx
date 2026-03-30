@@ -4,6 +4,7 @@ import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import AddBrandAdminForm from '@/components/add-brand-admin-form'
 import AddStoreToBrand from '@/components/add-store-to-brand'
+import BrandCommissionForm from '@/components/brand-commission-form'
 import RemoveBrandAdminButton from './remove-brand-admin-button'
 import RemoveStoreButton from './remove-store-button'
 
@@ -25,7 +26,7 @@ export default async function BrandDetailPage({
   // 品牌基本信息
   const { data: brand } = await adminDb
     .from('brands')
-    .select('id, name, logo_url, created_at')
+    .select('id, name, logo_url, commission_rate, stripe_account_id, stripe_account_status, created_at')
     .eq('id', id)
     .single()
 
@@ -98,6 +99,17 @@ export default async function BrandDetailPage({
     }))
   }
 
+  // 获取品牌本月收入数据
+  const monthStart = new Date()
+  monthStart.setDate(1)
+  const monthStartStr = monthStart.toISOString().slice(0, 10)
+
+  const { data: brandEarnings } = await adminDb.rpc('get_brand_earnings_summary', {
+    p_brand_id: id,
+    p_month_start: monthStartStr,
+  })
+  const earnings = brandEarnings?.[0] ?? null
+
   // 未关联品牌的已通过门店（给 AddStoreToBrand 下拉用）
   const { data: unlinkedStores } = await adminDb
     .from('merchants')
@@ -137,6 +149,50 @@ export default async function BrandDetailPage({
             <div><dt className="text-gray-500">Total Stores</dt><dd className="font-medium text-gray-900">{stores?.length ?? 0}</dd></div>
             <div><dt className="text-gray-500">Total Staff</dt><dd className="font-medium text-gray-900">{allStaff.length}</dd></div>
           </dl>
+        </div>
+
+        {/* 品牌佣金设置 */}
+        <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Brand Commission</h2>
+            {brand.stripe_account_id && (
+              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                brand.stripe_account_status === 'connected' ? 'bg-green-100 text-green-700' :
+                brand.stripe_account_status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                'bg-gray-100 text-gray-500'
+              }`}>
+                Stripe: {brand.stripe_account_status ?? 'not_connected'}
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-gray-400 mb-4">
+            Set the commission rate that this brand earns from each redeemed voucher across all member stores.
+            The brand commission is deducted from the merchant&apos;s net amount (in addition to platform fee and Stripe fee).
+          </p>
+          <BrandCommissionForm brandId={id} currentRate={brand.commission_rate} />
+        </div>
+
+        {/* 品牌本月收入 */}
+        <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">Brand Earnings (This Month)</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div className="bg-gray-50 rounded-lg p-4">
+              <p className="text-xs text-gray-500 mb-1">This Month</p>
+              <p className="text-xl font-bold text-orange-600">${(earnings?.total_brand_revenue ?? 0).toFixed(2)}</p>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-4">
+              <p className="text-xs text-gray-500 mb-1">Awaiting Settlement</p>
+              <p className="text-xl font-bold text-yellow-600">${(earnings?.pending_settlement ?? 0).toFixed(2)}</p>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-4">
+              <p className="text-xs text-gray-500 mb-1">Paid Out</p>
+              <p className="text-xl font-bold text-green-600">${(earnings?.settled_amount ?? 0).toFixed(2)}</p>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-4">
+              <p className="text-xs text-gray-500 mb-1">Refunded</p>
+              <p className="text-xl font-bold text-red-500">${(earnings?.refunded_amount ?? 0).toFixed(2)}</p>
+            </div>
+          </div>
         </div>
 
         {/* 门店列表 */}

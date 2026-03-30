@@ -424,8 +424,8 @@ function computePrimaryStatus(items: Record<string, unknown>[]): string {
 // handleDetail — V3: 订单详情
 // 入参 orderId 为 order UUID
 // 返回:
-//   order  — 订单基本信息（金额、单号、时间）
-//   items  — 属于当前商家的 order_items 列表
+//   order  — 订单基本信息（金额、单号、时间）+ 费用汇总
+//   items  — 属于当前商家的 order_items 列表（含品牌佣金分解）
 //   customer — 用户信息（脱敏）
 // =============================================================
 async function handleDetail(
@@ -434,6 +434,63 @@ async function handleDetail(
   orderId: string,
 ): Promise<Response> {
   console.log('[merchant-orders] handleDetail V3', { orderId, merchantId });
+
+  // 同时查询：全局费率配置 + 商家专属费率（含品牌 brand_id）
+  const [configRes, merchantRes] = await Promise.all([
+    client
+      .from('platform_commission_config')
+      .select('commission_rate, stripe_processing_rate, stripe_flat_fee')
+      .single(),
+    client
+      .from('merchants')
+      .select('commission_free_until, commission_rate, commission_stripe_rate, commission_stripe_flat_fee, commission_effective_from, commission_effective_to, brand_id')
+      .eq('id', merchantId)
+      .single(),
+  ]);
+
+  // 解析全局费率
+  const globalConfig = configRes.data;
+  let vCommissionRate = parseFloat(String(globalConfig?.commission_rate ?? 0.15));
+  let vStripeRate     = parseFloat(String(globalConfig?.stripe_processing_rate ?? 0.03));
+  let vStripeFlatFee  = parseFloat(String(globalConfig?.stripe_flat_fee ?? 0.30));
+
+  // 判断商家专属费率是否在生效期内，若是则覆盖全局
+  const merchantData = merchantRes.data;
+  if (merchantData?.commission_rate != null || merchantData?.commission_stripe_rate != null) {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const ef = merchantData.commission_effective_from ? new Date(merchantData.commission_effective_from) : null;
+    const et = merchantData.commission_effective_to   ? new Date(merchantData.commission_effective_to)   : null;
+    const active = (!ef && !et)
+      || (ef && !et && today >= ef)
+      || (!ef && et && today <= et)
+      || (ef && et && today >= ef && today <= et);
+    if (active) {
+      if (merchantData.commission_rate        != null) vCommissionRate = parseFloat(String(merchantData.commission_rate));
+      if (merchantData.commission_stripe_rate != null) vStripeRate     = parseFloat(String(merchantData.commission_stripe_rate));
+      if (merchantData.commission_stripe_flat_fee != null) vStripeFlatFee = parseFloat(String(merchantData.commission_stripe_flat_fee));
+    }
+  }
+
+  // 免费期内平台佣金为 0（品牌佣金不受免费期影响）
+  const freeUntil = merchantData?.commission_free_until ? new Date(merchantData.commission_free_until) : null;
+  const isInFreePeriod = freeUntil ? new Date() <= freeUntil : false;
+  if (isInFreePeriod) {
+    vCommissionRate = 0;
+  }
+
+  // 查询品牌佣金率（通过 merchants.brand_id → brands.commission_rate）
+  let brandCommissionRate = 0;
+  const brandId = merchantData?.brand_id ?? null;
+  if (brandId) {
+    const { data: brandData } = await client
+      .from('brands')
+      .select('commission_rate')
+      .eq('id', brandId)
+      .maybeSingle();
+    if (brandData?.commission_rate != null) {
+      brandCommissionRate = parseFloat(String(brandData.commission_rate));
+    }
+  }
 
   // 查询 order 基本信息 + 用户信息（含退款申请时间用于 timeline）
   const { data: order, error: orderError } = await client
@@ -538,11 +595,18 @@ async function handleDetail(
   }
   const merchantTotal = merchantItemsAmount + merchantServiceFeeTotal;
 
-  // 格式化 items 列表
+  // 格式化 items 列表（含品牌佣金分解）
   const formattedItems = items.map((row) => {
     const deal = row.deals as Record<string, unknown> | null;
     const couponArr = row.coupons as Record<string, unknown>[] | Record<string, unknown> | null;
     const coupon = Array.isArray(couponArr) ? (couponArr[0] ?? null) : couponArr;
+
+    // 计算每个 item 的费用明细
+    const unitPrice  = parseFloat(String((row.unit_price as number) ?? 0));
+    const platformFee = Math.round(unitPrice * vCommissionRate * 100) / 100;
+    const brandFee    = Math.round(unitPrice * brandCommissionRate * 100) / 100;
+    const stripeFee   = Math.round((unitPrice * vStripeRate + vStripeFlatFee) * 100) / 100;
+    const netAmount   = Math.round((unitPrice - platformFee - brandFee - stripeFee) * 100) / 100;
 
     return {
       id: row.id,
@@ -552,6 +616,13 @@ async function handleDetail(
       deal_discount_price: deal?.discount_price ?? null,
       unit_price: row.unit_price,
       service_fee: row.service_fee,
+      // 费用分解
+      platform_fee_rate: vCommissionRate,
+      platform_fee:      platformFee,
+      brand_fee_rate:    brandCommissionRate,
+      brand_fee:         brandFee,
+      stripe_fee:        stripeFee,
+      net_amount:        netAmount,
       // V3 双状态
       customer_status: row.customer_status,
       merchant_status: row.merchant_status,
@@ -582,6 +653,12 @@ async function handleDetail(
     (sum, item) => sum + ((item.service_fee as number) || 0), 0
   );
   const merchantTotal = merchantItemsAmount + merchantServiceFee;
+
+  // 汇总订单级别的费用
+  const totalPlatformFee = Math.round(formattedItems.reduce((s, i) => s + i.platform_fee, 0) * 100) / 100;
+  const totalBrandFee    = Math.round(formattedItems.reduce((s, i) => s + i.brand_fee, 0) * 100) / 100;
+  const totalStripeFee   = Math.round(formattedItems.reduce((s, i) => s + i.stripe_fee, 0) * 100) / 100;
+  const totalNetAmount   = Math.round(formattedItems.reduce((s, i) => s + i.net_amount, 0) * 100) / 100;
 
   // 构造 timeline（从 order 和 items 数据推算各阶段时间）
   const timeline: Array<{ event: string; timestamp: string | null; completed: boolean }> = [];
@@ -637,6 +714,11 @@ async function handleDetail(
       paid_at: order.paid_at,
       created_at: order.created_at,
       timeline,
+      // 订单级别费用汇总（品牌佣金分解）
+      total_platform_fee: totalPlatformFee,
+      total_brand_fee:    totalBrandFee,
+      total_stripe_fee:   totalStripeFee,
+      total_net_amount:   totalNetAmount,
     },
     items: formattedItems,
     customer: {
