@@ -138,7 +138,8 @@ merchant_photos, merchant_hours, merchant_documents, deal_images
 - `deal_joy/lib/features/merchant/domain/providers/merchant_provider.dart` — merchantListProvider 中 Near Me / 城市分支逻辑
 - `deal_joy/lib/features/merchant/data/repositories/merchant_repository.dart` — fetchMerchants() 的 city 过滤、fetchMerchantsNearby() RPC 调用
 - `deal_joy/lib/features/deals/data/repositories/deals_repository.dart` — searchDealsNearby()、searchDealsByCity() RPC 调用
-- DB RPC 函数 `search_deals_nearby`、`search_deals_by_city`、`search_merchants_nearby`
+- `deal_joy/lib/features/deals/domain/providers/deals_provider.dart` — featuredDealsProvider、userLocationProvider 逻辑
+- DB RPC 函数 `search_deals_nearby`、`search_deals_by_city`、`search_merchants_nearby`（含返回字段、排序、Haversine 距离计算）
 
 ## 开发命令
 ```bash
