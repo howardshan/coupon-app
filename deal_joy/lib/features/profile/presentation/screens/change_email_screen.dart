@@ -1,7 +1,9 @@
-// 修改邮箱页面 — 两步流程：输入新邮箱 → 填写验证码
+// 修改邮箱页面 — 两步：输入新邮箱 → 邮件内确认链接（与 Supabase 默认换绑邮件一致）
+// 深度链接须与 Authentication → URL Configuration 中的 Redirect URLs 白名单一致
+
+import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -9,6 +11,9 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../../shared/widgets/app_text_field.dart';
 import '../../../auth/domain/providers/auth_provider.dart';
+
+/// 与 auth_repository 中 OAuth / 密码重置一致，便于 Supabase 回调打开 App
+const _emailChangeRedirectTo = 'io.supabase.dealjoy://login-callback/';
 
 class ChangeEmailScreen extends ConsumerStatefulWidget {
   const ChangeEmailScreen({super.key});
@@ -20,7 +25,6 @@ class ChangeEmailScreen extends ConsumerStatefulWidget {
 class _ChangeEmailScreenState extends ConsumerState<ChangeEmailScreen> {
   final _formKey = GlobalKey<FormState>();
   final _newEmailCtrl = TextEditingController();
-  final _otpCtrl = TextEditingController();
 
   late final String _currentEmail;
   late final TextEditingController _currentEmailCtrl;
@@ -28,8 +32,11 @@ class _ChangeEmailScreenState extends ConsumerState<ChangeEmailScreen> {
   bool _isLoading = false;
   String? _errorMessage;
 
-  // 两步状态：false = 输入邮箱，true = 输入验证码
-  bool _otpSent = false;
+  /// false = 输入邮箱；true = 已发送确认邮件，等待用户点击邮件内链接
+  bool _confirmationEmailSent = false;
+  bool _emailChangeCompleted = false;
+
+  StreamSubscription<AuthState>? _authSub;
 
   static final _emailRegex = RegExp(
     r'^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$',
@@ -42,7 +49,6 @@ class _ChangeEmailScreenState extends ConsumerState<ChangeEmailScreen> {
         Supabase.instance.client.auth.currentUser?.email ?? '';
     _currentEmailCtrl = TextEditingController(text: _currentEmail);
     _newEmailCtrl.addListener(_clearError);
-    _otpCtrl.addListener(_clearError);
   }
 
   void _clearError() {
@@ -53,16 +59,34 @@ class _ChangeEmailScreenState extends ConsumerState<ChangeEmailScreen> {
 
   @override
   void dispose() {
+    _authSub?.cancel();
     _newEmailCtrl.removeListener(_clearError);
-    _otpCtrl.removeListener(_clearError);
     _newEmailCtrl.dispose();
-    _otpCtrl.dispose();
     _currentEmailCtrl.dispose();
     super.dispose();
   }
 
-  /// 第一步：发送验证码到新邮箱
-  Future<void> _sendOtp() async {
+  /// 监听会话：用户在新邮箱点击确认链接后，Supabase 会通过深度链接刷新 session，email 即变为新地址
+  void _startListeningForConfirmedEmail() {
+    _authSub?.cancel();
+    _authSub =
+        Supabase.instance.client.auth.onAuthStateChange.listen((data) {
+      final user = data.session?.user;
+      if (!mounted || !_confirmationEmailSent || _emailChangeCompleted) {
+        return;
+      }
+      final target = _newEmailCtrl.text.trim().toLowerCase();
+      if (target.isEmpty) return;
+      final got = user?.email?.toLowerCase();
+      if (got == target) {
+        _emailChangeCompleted = true;
+        unawaited(_persistNewEmailAndFinish(newEmail: target));
+      }
+    });
+  }
+
+  /// 第一步：请求换绑，服务端向新邮箱发送「确认链接」邮件（非数字验证码）
+  Future<void> _sendConfirmationEmail() async {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() {
@@ -71,16 +95,18 @@ class _ChangeEmailScreenState extends ConsumerState<ChangeEmailScreen> {
     });
 
     try {
-      // 调用 updateUser 触发 Supabase 向新邮箱发送验证码
       await Supabase.instance.client.auth.updateUser(
         UserAttributes(email: _newEmailCtrl.text.trim()),
+        emailRedirectTo: _emailChangeRedirectTo,
       );
 
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _otpSent = true;
+          _confirmationEmailSent = true;
+          _emailChangeCompleted = false;
         });
+        _startListeningForConfirmedEmail();
       }
     } on AuthException catch (e) {
       if (mounted) {
@@ -99,30 +125,18 @@ class _ChangeEmailScreenState extends ConsumerState<ChangeEmailScreen> {
     }
   }
 
-  /// 第二步：验证 OTP 并完成邮箱更换
-  Future<void> _verifyOtp() async {
-    final code = _otpCtrl.text.trim();
-    if (code.isEmpty) {
-      setState(() => _errorMessage = 'Please enter the verification code');
-      return;
-    }
+  /// 将 auth 侧已生效的新邮箱写入 public.users，与 currentUserProvider 一致
+  Future<void> _persistNewEmailAndFinish({required String newEmail}) async {
+    _authSub?.cancel();
+    _authSub = null;
 
+    if (!mounted) return;
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
 
     try {
-      final newEmail = _newEmailCtrl.text.trim();
-
-      // 验证 OTP（email_change 类型）
-      await Supabase.instance.client.auth.verifyOTP(
-        email: newEmail,
-        token: code,
-        type: OtpType.emailChange,
-      );
-
-      // 同步更新 users 表
       final userId = Supabase.instance.client.auth.currentUser?.id;
       if (userId != null) {
         await Supabase.instance.client.from('users').update({
@@ -134,6 +148,7 @@ class _ChangeEmailScreenState extends ConsumerState<ChangeEmailScreen> {
       ref.invalidate(currentUserProvider);
 
       if (mounted) {
+        setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Email updated successfully!'),
@@ -142,18 +157,12 @@ class _ChangeEmailScreenState extends ConsumerState<ChangeEmailScreen> {
         );
         context.pop();
       }
-    } on AuthException catch (e) {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _errorMessage = _friendlyOtpError(e.message);
-        });
-      }
     } catch (e) {
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _errorMessage = 'Verification failed. Please try again.';
+          _errorMessage =
+              'Email was confirmed but profile sync failed. Pull to refresh or contact support.';
         });
       }
     }
@@ -161,7 +170,8 @@ class _ChangeEmailScreenState extends ConsumerState<ChangeEmailScreen> {
 
   String _friendlyEmailError(String raw) {
     final lower = raw.toLowerCase();
-    if (lower.contains('already registered') || lower.contains('already been registered')) {
+    if (lower.contains('already registered') ||
+        lower.contains('already been registered')) {
       return 'This email address is already registered.';
     }
     if (lower.contains('rate limit') || lower.contains('too many')) {
@@ -170,18 +180,7 @@ class _ChangeEmailScreenState extends ConsumerState<ChangeEmailScreen> {
     if (lower.contains('invalid') && lower.contains('email')) {
       return 'Please enter a valid email address.';
     }
-    return 'Failed to send verification code. Please try again.';
-  }
-
-  String _friendlyOtpError(String raw) {
-    final lower = raw.toLowerCase();
-    if (lower.contains('expired') || lower.contains('invalid')) {
-      return 'Invalid or expired code. Please try again.';
-    }
-    if (lower.contains('rate limit') || lower.contains('too many')) {
-      return 'Too many attempts. Please wait and try again.';
-    }
-    return 'Verification failed. Please try again.';
+    return 'Failed to send confirmation email. Please try again.';
   }
 
   @override
@@ -197,7 +196,9 @@ class _ChangeEmailScreenState extends ConsumerState<ChangeEmailScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
         child: Form(
           key: _formKey,
-          child: _otpSent ? _buildOtpStep() : _buildEmailStep(),
+          child: _confirmationEmailSent
+              ? _buildConfirmLinkStep()
+              : _buildEmailStep(),
         ),
       ),
     );
@@ -208,7 +209,6 @@ class _ChangeEmailScreenState extends ConsumerState<ChangeEmailScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 当前邮箱（只读）
         const Text('Current Email',
             style: TextStyle(fontWeight: FontWeight.w500, fontSize: 14)),
         const SizedBox(height: 6),
@@ -220,17 +220,18 @@ class _ChangeEmailScreenState extends ConsumerState<ChangeEmailScreen> {
             fillColor: AppColors.surfaceVariant,
             border: const OutlineInputBorder(),
             enabledBorder: OutlineInputBorder(
-              borderSide: BorderSide(color: AppColors.textHint.withValues(alpha: 0.5)),
+              borderSide:
+                  BorderSide(color: AppColors.textHint.withValues(alpha: 0.5)),
             ),
             focusedBorder: OutlineInputBorder(
-              borderSide: BorderSide(color: AppColors.textHint.withValues(alpha: 0.5)),
+              borderSide:
+                  BorderSide(color: AppColors.textHint.withValues(alpha: 0.5)),
             ),
           ),
           style: const TextStyle(color: AppColors.textSecondary),
         ),
         const SizedBox(height: 20),
 
-        // 新邮箱输入
         AppTextField(
           controller: _newEmailCtrl,
           label: 'New Email',
@@ -250,7 +251,6 @@ class _ChangeEmailScreenState extends ConsumerState<ChangeEmailScreen> {
           },
         ),
 
-        // 内联错误
         if (_errorMessage != null) ...[
           const SizedBox(height: 8),
           Row(
@@ -259,23 +259,24 @@ class _ChangeEmailScreenState extends ConsumerState<ChangeEmailScreen> {
               const SizedBox(width: 6),
               Expanded(
                 child: Text(_errorMessage!,
-                    style: const TextStyle(fontSize: 13, color: AppColors.error)),
+                    style:
+                        const TextStyle(fontSize: 13, color: AppColors.error)),
               ),
             ],
           ),
         ],
         const SizedBox(height: 32),
 
-        // 发送验证码按钮
         AppButton(
-          label: 'Send Verification Code',
+          label: 'Send Confirmation Email',
           isLoading: _isLoading,
-          onPressed: _isLoading ? null : _sendOtp,
+          onPressed: _isLoading ? null : _sendConfirmationEmail,
         ),
 
         const SizedBox(height: 16),
         Text(
-          'A verification code will be sent to your new email address.',
+          'We will email a confirmation link to your new address. '
+          'Tap the link in that email to finish (it opens this app).',
           style: TextStyle(
             fontSize: 13,
             color: AppColors.textSecondary.withValues(alpha: 0.8),
@@ -286,13 +287,11 @@ class _ChangeEmailScreenState extends ConsumerState<ChangeEmailScreen> {
     );
   }
 
-  /// 第二步 UI：输入验证码
-  Widget _buildOtpStep() {
+  /// 第二步 UI：说明使用邮件链接，而非输入验证码
+  Widget _buildConfirmLinkStep() {
     return Column(
       children: [
         const SizedBox(height: 20),
-
-        // 邮件图标
         Container(
           width: 64,
           height: 64,
@@ -304,55 +303,23 @@ class _ChangeEmailScreenState extends ConsumerState<ChangeEmailScreen> {
               size: 32, color: AppColors.primary),
         ),
         const SizedBox(height: 20),
-
-        const Text('Enter Verification Code',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold,
-                color: AppColors.textPrimary)),
+        const Text(
+          'Confirm in your inbox',
+          style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: AppColors.textPrimary),
+        ),
         const SizedBox(height: 8),
         Text(
-          'We sent a code to\n${_newEmailCtrl.text.trim()}',
+          'We sent a link to\n${_newEmailCtrl.text.trim()}\n\n'
+          'Open the email and tap the confirmation link (e.g. "Change Email"). '
+          'It should open DealJoy and complete the update.',
           textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 14, color: AppColors.textSecondary, height: 1.5),
-        ),
-        const SizedBox(height: 28),
-
-        // 验证码输入框
-        TextField(
-          controller: _otpCtrl,
-          textAlign: TextAlign.center,
-          keyboardType: TextInputType.number,
-          autofocus: true,
           style: const TextStyle(
-            fontSize: 28,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 6,
-            color: AppColors.textPrimary,
-          ),
-          inputFormatters: [
-            FilteringTextInputFormatter.digitsOnly,
-            LengthLimitingTextInputFormatter(10),
-          ],
-          decoration: InputDecoration(
-            hintText: 'Enter code',
-            hintStyle: TextStyle(
-              fontSize: 18, fontWeight: FontWeight.normal,
-              letterSpacing: 0, color: AppColors.textHint,
-            ),
-            filled: true,
-            fillColor: AppColors.surfaceVariant,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide.none,
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: const BorderSide(color: AppColors.primary, width: 2),
-            ),
-          ),
+              fontSize: 14, color: AppColors.textSecondary, height: 1.5),
         ),
 
-        // 错误提示
         if (_errorMessage != null) ...[
           const SizedBox(height: 12),
           Row(
@@ -362,40 +329,52 @@ class _ChangeEmailScreenState extends ConsumerState<ChangeEmailScreen> {
               const SizedBox(width: 6),
               Flexible(
                 child: Text(_errorMessage!,
-                    style: const TextStyle(fontSize: 13, color: AppColors.error)),
+                    style:
+                        const TextStyle(fontSize: 13, color: AppColors.error)),
               ),
             ],
           ),
         ],
 
         const SizedBox(height: 28),
-
-        // 验证按钮
         AppButton(
-          label: 'Verify & Update Email',
+          label: "I've tapped the link",
           isLoading: _isLoading,
-          onPressed: _isLoading ? null : _verifyOtp,
+          onPressed: _isLoading
+              ? null
+              : () {
+                  final user = Supabase.instance.client.auth.currentUser;
+                  final target = _newEmailCtrl.text.trim().toLowerCase();
+                  if (user?.email?.toLowerCase() == target) {
+                    unawaited(_persistNewEmailAndFinish(newEmail: target));
+                  } else {
+                    setState(() => _errorMessage =
+                        'Not updated yet. Tap the link in the email, then return here.');
+                  }
+                },
         ),
 
         const SizedBox(height: 12),
-
-        // 重发 + 返回修改
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             TextButton(
-              onPressed: _isLoading ? null : _sendOtp,
-              child: const Text('Resend Code',
+              onPressed: _isLoading ? null : _sendConfirmationEmail,
+              child: const Text('Resend email',
                   style: TextStyle(color: AppColors.primary, fontSize: 14)),
             ),
             const Text('·', style: TextStyle(color: AppColors.textHint)),
             TextButton(
-              onPressed: () => setState(() {
-                _otpSent = false;
-                _otpCtrl.clear();
-                _errorMessage = null;
-              }),
-              child: const Text('Change Email',
+              onPressed: () {
+                _authSub?.cancel();
+                _authSub = null;
+                setState(() {
+                  _confirmationEmailSent = false;
+                  _emailChangeCompleted = false;
+                  _errorMessage = null;
+                });
+              },
+              child: const Text('Change email address',
                   style: TextStyle(color: AppColors.textSecondary, fontSize: 14)),
             ),
           ],
