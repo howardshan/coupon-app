@@ -10,6 +10,7 @@ export const STATUS_STYLES: Record<string, string> = {
   used: 'bg-gray-100 text-gray-600',
   refunded: 'bg-purple-100 text-purple-700',
   refund_requested: 'bg-orange-100 text-orange-700',
+  refund_processing: 'bg-amber-100 text-amber-800',
   refund_failed: 'bg-red-100 text-red-700',
   refund_rejected: 'bg-amber-100 text-amber-700',
   expired: 'bg-red-100 text-red-700',
@@ -22,6 +23,7 @@ export const STATUS_LABELS: Record<string, string> = {
   used: 'Used',
   refunded: 'Refunded',
   refund_requested: 'Refund Requested',
+  refund_processing: 'Refund Processing',
   refund_failed: 'Refund Failed',
   refund_rejected: 'Refund Rejected',
   expired: 'Expired',
@@ -75,6 +77,9 @@ export function getOrderDetailStatusTags(order: OrderForDisplayStatus): string[]
     return tags
   } else if (order.status === 'refund_requested') {
     tags.push('refund_requested')
+    return tags
+  } else if (order.status === 'refund_processing') {
+    tags.push('refund_processing')
     return tags
   } else if (order.status === 'refund_failed') {
     tags.push('refund_failed')

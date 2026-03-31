@@ -324,7 +324,11 @@ export default function OrdersPageClient({
                   if (!items || items.length === 0) return null
                   const statuses = items.map(i => i.customer_status ?? 'unused')
                   if (statuses.every(s => s === 'refund_success')) return 'refunded'
-                  if (statuses.some(s => s === 'refund_pending')) return 'refund_requested'
+                  // 仅 refund_review 视为需人工 Approve；refund_processing / refund_pending 为等 Stripe webhook
+                  if (statuses.some(s => s === 'refund_review')) return 'refund_requested'
+                  if (statuses.some(s => s === 'refund_processing' || s === 'refund_pending')) {
+                    return 'refund_processing'
+                  }
                   if (statuses.every(s => s === 'used')) return 'used'
                   if (statuses.some(s => s === 'used')) return 'used'
                   return null
@@ -341,8 +345,9 @@ export default function OrdersPageClient({
                 const showTags = statusTags.slice(0, 2)
                 const extraCount = statusTags.length - 2
 
+                const highlightRefundAttention = effectiveStatus === 'refund_requested'
                 return (
-                  <tr key={o.id} className={effectiveStatus === 'refund_requested' ? 'bg-orange-50/60' : 'hover:bg-gray-50'}>
+                  <tr key={o.id} className={highlightRefundAttention ? 'bg-orange-50/60' : 'hover:bg-gray-50'}>
                     <td className="px-4 py-3 font-mono text-gray-700">
                       <Link href={`/orders/${o.id}`} className="text-blue-600 hover:underline">
                         {o.order_number ?? `DJ-${String(o.id).slice(0, 8).toUpperCase()}`}
@@ -399,8 +404,8 @@ export default function OrdersPageClient({
                             +{extraCount}
                           </Link>
                         )}
-                        {effectiveStatus === 'refund_requested' && (
-                          <OrderRefundButtons orderId={o.id} initialStatus={effectiveStatus} />
+                        {highlightRefundAttention && (
+                          <OrderRefundButtons orderId={o.id} initialStatus="refund_requested" />
                         )}
                       </div>
                     </td>
