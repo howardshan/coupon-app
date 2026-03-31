@@ -91,9 +91,23 @@ Deno.serve(async (req: Request) => {
   // 路由分发
   try {
     // --- GET /merchant-store ---
-    // 获取完整门店信息：基本信息 + 照片列表 + 营业时间 + 品牌信息
+    // 获取完整门店信息：基本信息 + 照片列表 + 营业时间 + 品牌信息 + 全局分类
     if (req.method === "GET" && pathSegments.length === 0) {
       return await handleGetStore(supabaseAdmin, merchantId, auth);
+    }
+
+    // --- GET /merchant-store/categories ---
+    // 获取所有全局分类列表（供商家选择）
+    if (req.method === "GET" && pathSegments[0] === "categories" && pathSegments.length === 1) {
+      return await handleGetCategories(supabaseAdmin, merchantId);
+    }
+
+    // --- PUT /merchant-store/categories ---
+    // 设置商家的全局分类（整体替换）
+    if (req.method === "PUT" && pathSegments[0] === "categories" && pathSegments.length === 1) {
+      requirePermission(auth, "store");
+      const body = await req.json();
+      return await handlePutCategories(supabaseAdmin, merchantId, body);
     }
 
     // --- GET /merchant-store/stores-list ---
@@ -450,10 +464,21 @@ async function handleGetStore(
     storeData.brands.store_count = count ?? 0;
   }
 
+  // 获取商家关联的全局分类
+  const { data: merchantCategories } = await supabase
+    .from("merchant_categories")
+    .select("category_id, categories(id, name, icon)")
+    .eq("merchant_id", merchantId);
+
+  const globalCategories = (merchantCategories ?? []).map(
+    (mc: { categories: { id: number; name: string; icon: string | null } }) => mc.categories
+  );
+
   return jsonResponse({
     store: storeData,
     photos: photos ?? [],
     hours: hours ?? [],
+    global_categories: globalCategories,
     // 权限信息：前端据此控制 UI 显隐
     role: auth.role,
     is_brand_admin: auth.isBrandAdmin,
@@ -726,4 +751,96 @@ async function handleReorderPhotos(
   }
 
   return jsonResponse({ success: true, count: ordered_ids.length });
+}
+
+// =============================================================
+// Handler: GET /merchant-store/categories
+// 返回所有全局分类 + 当前商家已选分类 ID 列表
+// =============================================================
+async function handleGetCategories(
+  supabase: ReturnType<typeof createClient>,
+  merchantId: string
+): Promise<Response> {
+  // 获取所有全局分类
+  const { data: allCategories, error: catErr } = await supabase
+    .from("categories")
+    .select("id, name, icon, order")
+    .order("order");
+
+  if (catErr) {
+    return errorResponse(`Failed to fetch categories: ${catErr.message}`, 500);
+  }
+
+  // 获取商家已选的分类 ID
+  const { data: selected, error: selErr } = await supabase
+    .from("merchant_categories")
+    .select("category_id")
+    .eq("merchant_id", merchantId);
+
+  if (selErr) {
+    return errorResponse(`Failed to fetch merchant categories: ${selErr.message}`, 500);
+  }
+
+  const selectedIds = (selected ?? []).map((s: { category_id: number }) => s.category_id);
+
+  return jsonResponse({
+    categories: allCategories ?? [],
+    selected_ids: selectedIds,
+  });
+}
+
+// =============================================================
+// Handler: PUT /merchant-store/categories
+// 设置商家的全局分类（整体替换：先删后插）
+// =============================================================
+async function handlePutCategories(
+  supabase: ReturnType<typeof createClient>,
+  merchantId: string,
+  body: Record<string, unknown>
+): Promise<Response> {
+  const { category_ids } = body;
+
+  if (!Array.isArray(category_ids)) {
+    return errorResponse("category_ids must be an array", 400);
+  }
+
+  // 最多选 5 个分类
+  if (category_ids.length > 5) {
+    return errorResponse("Maximum 5 categories allowed", 400);
+  }
+
+  // 校验所有 ID 为整数
+  for (const id of category_ids) {
+    if (typeof id !== "number" || !Number.isInteger(id)) {
+      return errorResponse("All category_ids must be integers", 400);
+    }
+  }
+
+  // 先删除旧的关联
+  const { error: delErr } = await supabase
+    .from("merchant_categories")
+    .delete()
+    .eq("merchant_id", merchantId);
+
+  if (delErr) {
+    return errorResponse(`Failed to clear categories: ${delErr.message}`, 500);
+  }
+
+  // 插入新的关联
+  if (category_ids.length > 0) {
+    const rows = category_ids.map((cid: number) => ({
+      merchant_id: merchantId,
+      category_id: cid,
+    }));
+
+    const { error: insErr } = await supabase
+      .from("merchant_categories")
+      .insert(rows);
+
+    if (insErr) {
+      return errorResponse(`Failed to set categories: ${insErr.message}`, 500);
+    }
+  }
+
+  return jsonResponse({ success: true, category_ids });
 }

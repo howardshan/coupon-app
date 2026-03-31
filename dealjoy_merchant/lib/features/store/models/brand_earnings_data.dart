@@ -244,6 +244,71 @@ class BrandWithdrawalRecord {
 }
 
 // =============================================================
+// BrandWithdrawalSettings — 品牌自动提现设置
+// =============================================================
+
+/// 品牌自动提现配置
+class BrandWithdrawalSettings {
+  /// 是否启用自动提现
+  final bool autoWithdrawalEnabled;
+
+  /// 提现频率（daily / weekly / biweekly / monthly）
+  final String autoWithdrawalFrequency;
+
+  /// 提现触发日（周几 1-7 或月几号 1-28）
+  final int autoWithdrawalDay;
+
+  /// 最低提现金额
+  final double minWithdrawalAmount;
+
+  const BrandWithdrawalSettings({
+    required this.autoWithdrawalEnabled,
+    required this.autoWithdrawalFrequency,
+    required this.autoWithdrawalDay,
+    required this.minWithdrawalAmount,
+  });
+
+  /// 默认值（未设置时）
+  factory BrandWithdrawalSettings.defaults() {
+    return const BrandWithdrawalSettings(
+      autoWithdrawalEnabled: false,
+      autoWithdrawalFrequency: 'weekly',
+      autoWithdrawalDay: 1,
+      minWithdrawalAmount: 50.00,
+    );
+  }
+
+  /// 从 JSON 构造（null-safe）
+  factory BrandWithdrawalSettings.fromJson(Map<String, dynamic> json) {
+    return BrandWithdrawalSettings(
+      autoWithdrawalEnabled: json['auto_withdrawal_enabled'] as bool? ?? false,
+      autoWithdrawalFrequency:
+          json['auto_withdrawal_frequency'] as String? ?? 'weekly',
+      autoWithdrawalDay:
+          (json['auto_withdrawal_day'] as num?)?.toInt() ?? 1,
+      minWithdrawalAmount:
+          (json['min_withdrawal_amount'] as num?)?.toDouble() ?? 50.00,
+    );
+  }
+
+  /// 频率展示文本
+  String get frequencyLabel {
+    switch (autoWithdrawalFrequency) {
+      case 'daily':
+        return 'Daily';
+      case 'weekly':
+        return 'Weekly';
+      case 'biweekly':
+        return 'Bi-weekly';
+      case 'monthly':
+        return 'Monthly';
+      default:
+        return autoWithdrawalFrequency;
+    }
+  }
+}
+
+// =============================================================
 // BrandStripeAccount — 品牌 Stripe Connect 账户信息
 // =============================================================
 

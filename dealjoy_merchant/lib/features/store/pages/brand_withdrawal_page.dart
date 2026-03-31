@@ -19,6 +19,7 @@ class BrandWithdrawalPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final balanceAsync = ref.watch(brandBalanceProvider);
     final historyAsync = ref.watch(brandWithdrawalHistoryProvider);
+    final settingsAsync = ref.watch(brandWithdrawalSettingsProvider);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
@@ -45,9 +46,11 @@ class BrandWithdrawalPage extends ConsumerWidget {
         onRefresh: () async {
           ref.invalidate(brandBalanceProvider);
           ref.invalidate(brandWithdrawalHistoryProvider);
+          ref.invalidate(brandWithdrawalSettingsProvider);
           await Future.wait([
             ref.read(brandBalanceProvider.future),
             ref.read(brandWithdrawalHistoryProvider.future),
+            ref.read(brandWithdrawalSettingsProvider.future),
           ]);
         },
         child: ListView(
@@ -59,6 +62,10 @@ class BrandWithdrawalPage extends ConsumerWidget {
 
             // 提现按钮
             _WithdrawButton(balanceAsync: balanceAsync),
+            const SizedBox(height: 16),
+
+            // 自动提现设置
+            _AutoWithdrawalCard(settingsAsync: settingsAsync),
             const SizedBox(height: 24),
 
             // 提现记录标题
@@ -468,6 +475,100 @@ class _WithdrawalTile extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// =============================================================
+// 自动提现设置卡片
+// =============================================================
+class _AutoWithdrawalCard extends ConsumerWidget {
+  const _AutoWithdrawalCard({required this.settingsAsync});
+  final AsyncValue<BrandWithdrawalSettings> settingsAsync;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE0E0E0)),
+      ),
+      child: settingsAsync.when(
+        loading: () => const Center(
+          child: Padding(
+            padding: EdgeInsets.all(12),
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+        error: (_, __) => const Text('Failed to load settings'),
+        data: (settings) => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Auto Withdrawal',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF1A1A1A),
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Automatically withdraw available funds',
+                      style: TextStyle(fontSize: 12, color: Color(0xFF999999)),
+                    ),
+                  ],
+                ),
+                Switch(
+                  value: settings.autoWithdrawalEnabled,
+                  activeColor: BrandWithdrawalPage._orange,
+                  onChanged: (v) async {
+                    try {
+                      final service = ref.read(brandEarningsServiceProvider);
+                      await service.updateWithdrawalSettings(autoEnabled: v);
+                      ref.invalidate(brandWithdrawalSettingsProvider);
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Failed to update: $e'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
+                    }
+                  },
+                ),
+              ],
+            ),
+            if (settings.autoWithdrawalEnabled) ...[
+              const Divider(height: 24),
+              Text(
+                'Frequency: ${settings.frequencyLabel}',
+                style: const TextStyle(fontSize: 13, color: Color(0xFF555555)),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Day: ${settings.autoWithdrawalDay}',
+                style: const TextStyle(fontSize: 13, color: Color(0xFF555555)),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Min Amount: \$${settings.minWithdrawalAmount.toStringAsFixed(2)}',
+                style: const TextStyle(fontSize: 13, color: Color(0xFF555555)),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }

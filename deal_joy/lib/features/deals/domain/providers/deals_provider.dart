@@ -94,6 +94,13 @@ final dealsListProvider = FutureProvider.family<List<DealModel>, int>((
   );
 });
 
+// 搜索无结果时的相似推荐 deal
+final similarDealsProvider = FutureProvider<List<DealModel>>((ref) async {
+  final repo = ref.watch(dealsRepositoryProvider);
+  final city = ref.watch(selectedLocationProvider).city;
+  return repo.fetchSimilarDeals(city: city);
+});
+
 // 单个 Deal 详情
 final dealDetailProvider = FutureProvider.family<DealModel, String>((
   ref,
@@ -149,19 +156,45 @@ final userLocationProvider = FutureProvider<({double lat, double lng})>((
     }
     // 权限已授予，清除拒绝标记
     ref.read(locationPermissionDeniedProvider.notifier).state = false;
+    // 先尝试获取上次已知位置（毫秒级返回），避免 GPS 冷启动等待
+    final lastKnown = await Geolocator.getLastKnownPosition();
+    if (lastKnown != null) {
+      debugPrint('[DEBUG] userLocationProvider → 使用缓存 GPS=(${lastKnown.latitude}, ${lastKnown.longitude})');
+      // 后台异步获取 medium 精度位置，存入缓存，用户下拉刷新时生效
+      _refreshPreciseLocation(ref);
+      return (lat: lastKnown.latitude, lng: lastKnown.longitude);
+    }
+    // 没有缓存位置，用 low 精度快速获取
     final position = await Geolocator.getCurrentPosition(
       locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.medium,
+        accuracy: LocationAccuracy.low,
         distanceFilter: 100,
       ),
     );
-    debugPrint('[DEBUG] userLocationProvider → 真实 GPS=(${position.latitude}, ${position.longitude})');
+    debugPrint('[DEBUG] userLocationProvider → low 精度 GPS=(${position.latitude}, ${position.longitude})');
+    // 后台异步获取 medium 精度位置，用户下拉刷新时生效
+    _refreshPreciseLocation(ref);
     return (lat: position.latitude, lng: position.longitude);
   } catch (e) {
     debugPrint('[DEBUG] userLocationProvider → 异常: $e，使用 Dallas 默认坐标');
     return (lat: AppConstants.dallasLat, lng: AppConstants.dallasLng);
   }
 });
+
+// 后台异步获取 medium 精度 GPS，完成后缓存到 Geolocator 内部，
+// 用户下拉刷新 invalidate userLocationProvider 时会通过 getLastKnownPosition 拿到更精确的值
+void _refreshPreciseLocation(Ref ref) {
+  Geolocator.getCurrentPosition(
+    locationSettings: const LocationSettings(
+      accuracy: LocationAccuracy.medium,
+      distanceFilter: 100,
+    ),
+  ).then((pos) {
+    debugPrint('[DEBUG] _refreshPreciseLocation → medium GPS=(${pos.latitude}, ${pos.longitude})');
+  }).catchError((e) {
+    debugPrint('[DEBUG] _refreshPreciseLocation → 失败: $e');
+  });
+}
 
 // Haversine 距离计算已提取到 core/utils/location_utils.dart
 // 使用 haversineDistanceMiles() 替代原 distanceMiles()

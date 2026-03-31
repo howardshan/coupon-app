@@ -40,6 +40,7 @@ import '../features/store/pages/store_edit_page.dart';
 import '../features/store/pages/business_hours_page.dart';
 import '../features/store/pages/store_photos_page.dart';
 import '../features/store/pages/store_tags_page.dart';
+import '../features/store/pages/store_categories_page.dart';
 import '../features/store/pages/store_selector_page.dart';
 import '../features/store/pages/brand_manage_page.dart';
 import '../features/store/pages/brand_info_page.dart';
@@ -475,6 +476,10 @@ final appRouter = GoRouter(
         GoRoute(
           path: 'tags',
           builder: (context, state) => const StoreTagsPage(),
+        ),
+        GoRoute(
+          path: 'categories',
+          builder: (context, state) => const StoreCategoriesPage(),
         ),
         // 菜品管理
         GoRoute(

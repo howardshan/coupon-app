@@ -88,6 +88,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final merchantResults =
         isSearching ? ref.watch(merchantSearchProvider) : null;
     final merchantList = ref.watch(merchantListProvider);
+    // 搜索无结果时的相似推荐
+    final similarDeals = isSearching ? ref.watch(similarDealsProvider) : null;
+    final similarMerchants = isSearching ? ref.watch(similarMerchantsProvider) : null;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -235,19 +238,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   if (_searchMode == 'store')
                     merchantResults!.when(
                       data: (merchants) => merchants.isEmpty
-                          ? const SliverFillRemaining(
-                              child: Center(
-                                child: Column(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.center,
-                                  children: [
-                                    Icon(Icons.search_off,
-                                        size: 64,
-                                        color: AppColors.textHint),
-                                    SizedBox(height: 12),
-                                    Text('No restaurants found'),
-                                  ],
-                                ),
+                          ? _NoResultWithSimilar<MerchantModel>(
+                              similarAsync: similarMerchants,
+                              emptyLabel: 'No restaurants found',
+                              itemBuilder: (merchant) => Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: _MerchantCard(merchant: merchant),
                               ),
                             )
                           : SliverPadding(
@@ -281,19 +277,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   if (_searchMode == 'deal')
                     deals.when(
                       data: (list) => list.isEmpty
-                          ? const SliverFillRemaining(
-                              child: Center(
-                                child: Column(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.center,
-                                  children: [
-                                    Icon(Icons.search_off,
-                                        size: 64,
-                                        color: AppColors.textHint),
-                                    SizedBox(height: 12),
-                                    Text('No deals found'),
-                                  ],
-                                ),
+                          ? _NoResultWithSimilar<DealModel>(
+                              similarAsync: similarDeals,
+                              emptyLabel: 'No deals found',
+                              itemBuilder: (deal) => Padding(
+                                padding: const EdgeInsets.only(bottom: 20),
+                                child: _LargeDealCard(deal: deal),
                               ),
                             )
                           : SliverPadding(
@@ -335,14 +324,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     SliverToBoxAdapter(
                       child: GestureDetector(
                         onTap: () async {
-                          // 检查是否被永久拒绝
-                          final permission = await Geolocator.checkPermission();
-                          if (permission == LocationPermission.deniedForever) {
-                            // 永久拒绝，引导用户去系统设置
+                          // 检查当前权限状态
+                          final current = await Geolocator.checkPermission();
+                          if (current == LocationPermission.deniedForever) {
+                            // 永久拒绝，直接去系统设置
                             await Geolocator.openAppSettings();
-                          } else {
-                            // 重新请求权限
-                            await Geolocator.requestPermission();
+                          } else if (current == LocationPermission.denied) {
+                            // 尝试再次请求（iOS 只弹一次对话框）
+                            final result = await Geolocator.requestPermission();
+                            if (result == LocationPermission.denied ||
+                                result == LocationPermission.deniedForever) {
+                              // 系统没弹对话框或再次被拒，引导去设置
+                              await Geolocator.openAppSettings();
+                            }
                           }
                           // 刷新位置 provider 以更新状态
                           ref.invalidate(userLocationProvider);
@@ -1582,6 +1576,74 @@ class _ErrorRetry extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// 搜索无结果时显示 "No Result" + 相似推荐列表
+class _NoResultWithSimilar<T> extends StatelessWidget {
+  final AsyncValue<List<T>>? similarAsync;
+  final String emptyLabel;
+  final Widget Function(T item) itemBuilder;
+
+  const _NoResultWithSimilar({
+    super.key,
+    required this.similarAsync,
+    required this.emptyLabel,
+    required this.itemBuilder,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final similarItems = similarAsync?.valueOrNull ?? [];
+
+    return SliverPadding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
+      sliver: SliverList(
+        delegate: SliverChildListDelegate([
+          // No Result 提示
+          const SizedBox(height: 48),
+          const Center(
+            child: Icon(Icons.search_off, size: 64, color: AppColors.textHint),
+          ),
+          const SizedBox(height: 12),
+          Center(
+            child: Text(
+              emptyLabel,
+              style: const TextStyle(
+                fontSize: 16,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ),
+          // Similar 推荐区域
+          if (similarItems.isNotEmpty) ...[
+            const SizedBox(height: 32),
+            const Center(
+              child: Text(
+                'You might also like',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Center(
+              child: Text(
+                'Popular picks near you',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: AppColors.textHint,
+                ),
+              ),
+            ),
+            const Divider(height: 32),
+            ...similarItems.map(itemBuilder),
+          ],
+        ]),
       ),
     );
   }

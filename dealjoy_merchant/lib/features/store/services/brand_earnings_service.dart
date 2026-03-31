@@ -153,6 +153,56 @@ class BrandEarningsService {
   }
 
   // =============================================================
+  // fetchWithdrawalSettings — 获取品牌自动提现设置
+  // =============================================================
+  Future<BrandWithdrawalSettings> fetchWithdrawalSettings() async {
+    try {
+      final response = await _supabase.functions.invoke(
+        '$_fn/withdrawal/settings',
+        method: HttpMethod.get,
+        headers: StoreService.merchantIdHeaders,
+      );
+
+      final data = _parseResponse(response);
+      _checkError(data);
+
+      final settingsJson = data['settings'] as Map<String, dynamic>? ?? data;
+      return BrandWithdrawalSettings.fromJson(settingsJson);
+    } catch (e) {
+      return BrandWithdrawalSettings.defaults();
+    }
+  }
+
+  // =============================================================
+  // updateWithdrawalSettings — 更新品牌自动提现设置
+  // =============================================================
+  Future<BrandWithdrawalSettings> updateWithdrawalSettings({
+    bool? autoEnabled,
+    String? frequency,
+    int? day,
+    double? minAmount,
+  }) async {
+    final body = <String, dynamic>{};
+    if (autoEnabled != null) body['auto_withdrawal_enabled'] = autoEnabled;
+    if (frequency != null) body['auto_withdrawal_frequency'] = frequency;
+    if (day != null) body['auto_withdrawal_day'] = day;
+    if (minAmount != null) body['min_withdrawal_amount'] = minAmount;
+
+    final response = await _supabase.functions.invoke(
+      '$_fn/withdrawal/settings',
+      method: HttpMethod.patch,
+      headers: StoreService.merchantIdHeaders,
+      body: body,
+    );
+
+    final data = _parseResponse(response);
+    _checkError(data);
+
+    final settingsJson = data['settings'] as Map<String, dynamic>? ?? data;
+    return BrandWithdrawalSettings.fromJson(settingsJson);
+  }
+
+  // =============================================================
   // fetchStripeConnectUrl — 获取品牌 Stripe Connect onboarding URL
   // =============================================================
   Future<String> fetchStripeConnectUrl() async {

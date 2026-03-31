@@ -73,4 +73,7 @@ class AppConstants {
   /// 成为商家 / 商户合作联系方式（方案 A：用户致电或邮件后后台手动开通）
   static const String merchantPartnerPhone = '1-800-XXX-XXXX';
   static const String merchantPartnerEmail = 'merchant@crunchyplum.com';
+
+  /// 客服联系邮箱
+  static const String supportEmail = 'support@dealjoy.com';
 }

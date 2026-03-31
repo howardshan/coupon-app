@@ -914,6 +914,79 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    // -------------------------------------------------------
+    // GET /merchant-brand/withdrawal/settings — 获取品牌自动提现设置
+    // -------------------------------------------------------
+    if (req.method === "GET" && pathSegments[0] === "withdrawal" && pathSegments[1] === "settings") {
+      const { data, error } = await supabaseAdmin
+        .from("brand_withdrawal_settings")
+        .select("*")
+        .eq("brand_id", auth.brandId)
+        .maybeSingle();
+
+      if (error) {
+        return errorResponse(`Failed to fetch settings: ${error.message}`, 500);
+      }
+
+      // 没有设置记录则返回默认值
+      const settings = data ?? {
+        auto_withdrawal_enabled: false,
+        auto_withdrawal_frequency: "weekly",
+        auto_withdrawal_day: 1,
+        min_withdrawal_amount: 50.00,
+      };
+
+      return jsonResponse({ settings });
+    }
+
+    // -------------------------------------------------------
+    // PATCH /merchant-brand/withdrawal/settings — 更新品牌自动提现设置
+    // -------------------------------------------------------
+    if (req.method === "PATCH" && pathSegments[0] === "withdrawal" && pathSegments[1] === "settings") {
+      if (auth.role !== "brand_owner" && auth.role !== "brand_admin") {
+        return errorResponse("Only brand owner/admin can manage withdrawal settings", 403);
+      }
+
+      const body = await req.json();
+      const settingsData: Record<string, unknown> = {
+        brand_id: auth.brandId,
+        updated_at: new Date().toISOString(),
+      };
+
+      if (body.auto_withdrawal_enabled !== undefined) {
+        settingsData.auto_withdrawal_enabled = Boolean(body.auto_withdrawal_enabled);
+      }
+      if (body.auto_withdrawal_frequency !== undefined) {
+        const validFreqs = ["daily", "weekly", "biweekly", "monthly"];
+        if (!validFreqs.includes(body.auto_withdrawal_frequency as string)) {
+          return errorResponse(`Invalid frequency. Must be one of: ${validFreqs.join(", ")}`);
+        }
+        settingsData.auto_withdrawal_frequency = body.auto_withdrawal_frequency;
+      }
+      if (body.auto_withdrawal_day !== undefined) {
+        settingsData.auto_withdrawal_day = Number(body.auto_withdrawal_day);
+      }
+      if (body.min_withdrawal_amount !== undefined) {
+        const minAmount = Number(body.min_withdrawal_amount);
+        if (minAmount < 10) {
+          return errorResponse("Minimum withdrawal amount cannot be less than $10.00");
+        }
+        settingsData.min_withdrawal_amount = minAmount;
+      }
+
+      const { data, error } = await supabaseAdmin
+        .from("brand_withdrawal_settings")
+        .upsert(settingsData, { onConflict: "brand_id" })
+        .select()
+        .single();
+
+      if (error) {
+        return errorResponse(`Failed to update settings: ${error.message}`, 500);
+      }
+
+      return jsonResponse({ settings: data });
+    }
+
     return errorResponse("Not found", 404);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Internal server error";
