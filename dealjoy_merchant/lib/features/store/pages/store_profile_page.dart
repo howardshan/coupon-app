@@ -93,7 +93,15 @@ class StoreProfilePage extends ConsumerWidget {
                     ),
                     const SizedBox(height: 12),
 
-                    // 区块 5: 类别和标签
+                    // 区块 5: 全局分类（用户端首页筛选用）
+                    _SectionCard(
+                      title: 'Global Categories',
+                      onEdit: () => context.push('/store/categories'),
+                      child: _GlobalCategoriesContent(store: store),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // 区块 6: 商家类别和标签
                     _SectionCard(
                       title: 'Category & Tags',
                       onEdit: () => context.push('/store/tags'),
@@ -827,6 +835,50 @@ class _HoursContent extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+}
+
+// ============================================================
+// 全局分类内容区（用户端首页筛选用的分类）
+// ============================================================
+class _GlobalCategoriesContent extends StatelessWidget {
+  const _GlobalCategoriesContent({required this.store});
+
+  final StoreInfo store;
+
+  @override
+  Widget build(BuildContext context) {
+    final categories = store.globalCategories;
+
+    if (categories.isEmpty) {
+      return const Text(
+        'No categories selected. Add categories so customers can find your deals.',
+        style: TextStyle(fontSize: 13, color: Color(0xFFBBBBBB)),
+      );
+    }
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: categories.map((cat) {
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFF3EE),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: const Color(0xFFFFCCB3)),
+          ),
+          child: Text(
+            cat.name,
+            style: const TextStyle(
+              fontSize: 13,
+              color: Color(0xFFFF6B35),
+              fontWeight: FontWeight.w500,
+            ),
           ),
         );
       }).toList(),

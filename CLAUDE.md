@@ -120,9 +120,9 @@ merchant_photos, merchant_hours, merchant_documents, deal_images
 - `deal_joy/supabase/functions/merchant-deals/index.ts` — deal_category_id, deal_type, badge_text 相关逻辑
 - DB 表 `deal_categories`
 
-### 客户端 Deal 详情页图片画廊
-以下文件的图片画廊滑动相关逻辑**禁止修改**，除非用户明确命令要求：
-- `deal_joy/lib/features/deals/presentation/screens/deal_detail_screen.dart` — `_ImageGallery` widget、`SliverToBoxAdapter` 图片画廊布局结构（图片画廊必须在 `SliverToBoxAdapter` 中，不能放回 `SliverAppBar`/`FlexibleSpaceBar` 内，否则 `PageView` 水平滑动会被拦截）
+### 客户端 Deal 详情页
+以下文件**禁止修改**，除非用户明确命令要求：
+- `deal_joy/lib/features/deals/presentation/screens/deal_detail_screen.dart` — 整个文件（图片画廊、套餐吸顶选择器、价格区、详情区、底部栏等所有布局逻辑）
 
 ### 客户端认证页面（登录、注册、验证）
 以下文件**禁止修改**，除非用户明确命令要求：
@@ -131,6 +131,14 @@ merchant_photos, merchant_hours, merchant_documents, deal_images
 - `deal_joy/lib/features/auth/presentation/screens/verify_otp_screen.dart`
 - `deal_joy/lib/features/auth/presentation/screens/welcome_screen.dart`
 - `deal_joy/lib/features/auth/data/repositories/auth_repository.dart` — signUp/signIn/isUsernameTaken/isEmailTaken 逻辑
+
+### 客户端 Near Me / 城市切换功能
+以下文件的地区切换、Near Me GPS 搜索、城市模式搜索相关逻辑**禁止修改**，除非用户明确命令要求：
+- `deal_joy/lib/features/deals/domain/providers/deals_provider.dart` — selectedLocationProvider, isNearMeProvider, dealsListProvider 中 Near Me / 城市分支逻辑
+- `deal_joy/lib/features/merchant/domain/providers/merchant_provider.dart` — merchantListProvider 中 Near Me / 城市分支逻辑
+- `deal_joy/lib/features/merchant/data/repositories/merchant_repository.dart` — fetchMerchants() 的 city 过滤、fetchMerchantsNearby() RPC 调用
+- `deal_joy/lib/features/deals/data/repositories/deals_repository.dart` — searchDealsNearby()、searchDealsByCity() RPC 调用
+- DB RPC 函数 `search_deals_nearby`、`search_deals_by_city`、`search_merchants_nearby`
 
 ## 开发命令
 ```bash

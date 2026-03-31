@@ -213,6 +213,33 @@ class MerchantDoc {
   }
 }
 
+/// 全局分类（来自 categories 表）
+class GlobalCategory {
+  const GlobalCategory({
+    required this.id,
+    required this.name,
+    this.icon,
+  });
+
+  final int id;
+  final String name;
+  final String? icon;
+
+  factory GlobalCategory.fromJson(Map<String, dynamic> json) {
+    return GlobalCategory(
+      id: json['id'] as int,
+      name: json['name'] as String? ?? '',
+      icon: json['icon'] as String?,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    'icon': icon,
+  };
+}
+
 /// 完整门店信息
 /// 聚合了基本信息、照片列表、营业时间和专业资料
 class StoreInfo {
@@ -247,6 +274,8 @@ class StoreInfo {
     this.registrationStorefrontUrl,
     // 注册时上传的所有证件（来自 merchant_documents 表）
     this.documents = const [],
+    // 商家关联的全局分类（如 BBQ, Korean 等）
+    this.globalCategories = const [],
     // 品牌信息（连锁店才有，独立门店为 null）
     this.brand,
     // 当前用户在此门店的角色
@@ -293,6 +322,9 @@ class StoreInfo {
 
   // 注册时上传的所有证件
   final List<MerchantDoc> documents;
+
+  // 商家关联的全局分类（如 BBQ, Korean 等）
+  final List<GlobalCategory> globalCategories;
 
   // 品牌信息（连锁店才有，独立门店为 null）
   final BrandInfo? brand;
@@ -347,6 +379,10 @@ class StoreInfo {
       ein: storeJson['ein'] as String?,
       city: storeJson['city'] as String?,
       website: storeJson['website'] as String?,
+      // 商家关联的全局分类
+      globalCategories: (json['global_categories'] as List<dynamic>? ?? [])
+          .map((e) => GlobalCategory.fromJson(e as Map<String, dynamic>))
+          .toList(),
       // 品牌/角色/权限（从 Edge Function 顶层返回）
       brand: brand,
       currentRole: json['role'] as String? ?? 'store_owner',
@@ -462,6 +498,7 @@ class StoreInfo {
     String? website,
     String? registrationStorefrontUrl,
     List<MerchantDoc>? documents,
+    List<GlobalCategory>? globalCategories,
     BrandInfo? brand,
     String? currentRole,
     bool? isBrandAdmin,
@@ -492,6 +529,7 @@ class StoreInfo {
       website: website ?? this.website,
       registrationStorefrontUrl: registrationStorefrontUrl ?? this.registrationStorefrontUrl,
       documents: documents ?? this.documents,
+      globalCategories: globalCategories ?? this.globalCategories,
       brand: brand ?? this.brand,
       currentRole: currentRole ?? this.currentRole,
       isBrandAdmin: isBrandAdmin ?? this.isBrandAdmin,

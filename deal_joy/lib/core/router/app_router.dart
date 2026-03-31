@@ -48,6 +48,8 @@ import '../../features/chat/presentation/screens/friend_list_screen.dart';
 import '../../features/chat/presentation/screens/friend_requests_screen.dart';
 import '../../features/chat/presentation/screens/notification_screen.dart';
 import '../../features/chat/presentation/screens/chat_search_screen.dart';
+import '../../features/support/presentation/screens/customer_support_screen.dart';
+import '../../features/support/presentation/screens/support_chat_screen.dart';
 import '../../features/cart/data/models/cart_item_model.dart';
 import '../../features/cart/presentation/screens/cart_screen.dart';
 import '../../features/welcome/presentation/screens/welcome_splash_screen.dart';
@@ -418,6 +420,16 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (_, state) => GiftClaimScreen(
           claimToken: state.uri.queryParameters['token'] ?? '',
         ),
+      ),
+
+      // Customer Support
+      GoRoute(
+        path: '/support',
+        builder: (_, _) => const CustomerSupportScreen(),
+      ),
+      GoRoute(
+        path: '/support/chat',
+        builder: (_, _) => const SupportChatScreen(),
       ),
 
       // 搜索用户页

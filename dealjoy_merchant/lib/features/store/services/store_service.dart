@@ -455,6 +455,50 @@ class StoreService {
     }
   }
 
+  // ----------------------------------------------------------
+  // 2e. 获取全局分类列表 + 商家已选分类 ID
+  // ----------------------------------------------------------
+  Future<({List<Map<String, dynamic>> categories, List<int> selectedIds})>
+      fetchCategories() async {
+    await _ensureFreshSession();
+    final response = await _supabase.functions.invoke(
+      '$_functionName/categories',
+      method: HttpMethod.get,
+      headers: _merchantHeaders,
+    );
+
+    if (response.status != 200) {
+      throw _handleError(response);
+    }
+
+    final data = response.data as Map<String, dynamic>;
+    final categories = (data['categories'] as List<dynamic>? ?? [])
+        .map((e) => e as Map<String, dynamic>)
+        .toList();
+    final selectedIds = (data['selected_ids'] as List<dynamic>? ?? [])
+        .map((e) => e as int)
+        .toList();
+
+    return (categories: categories, selectedIds: selectedIds);
+  }
+
+  // ----------------------------------------------------------
+  // 2f. 设置商家的全局分类（整体替换）
+  // ----------------------------------------------------------
+  Future<void> updateCategories(List<int> categoryIds) async {
+    await _ensureFreshSession();
+    final response = await _supabase.functions.invoke(
+      '$_functionName/categories',
+      method: HttpMethod.put,
+      body: {'category_ids': categoryIds},
+      headers: _merchantHeaders,
+    );
+
+    if (response.status != 200) {
+      throw _handleError(response);
+    }
+  }
+
   // ==========================================================
   // 闭店 + 解除品牌
   // ==========================================================

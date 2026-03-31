@@ -23,7 +23,7 @@ class MerchantRepository {
           .eq('status', 'approved');
 
       if (city != null && city.isNotEmpty) {
-        query = query.ilike('address', '%$city%');
+        query = query.ilike('city', '%$city%');
       }
 
       if (hasCategory) {
@@ -224,7 +224,7 @@ class MerchantRepository {
           .toList();
       final foundIds = merchants.map((m) => m.id).toSet();
 
-      // 2. 搜 deals 的标题/描述（覆盖菜名场景），找到对应的 merchant_id
+      // 2. 搜 deals 的标题/描述，找到对应的 merchant_id
       final dealData = await _client
           .from('deals')
           .select('merchant_id')
@@ -236,7 +236,21 @@ class MerchantRepository {
           .toSet()
           .difference(foundIds);
 
-      // 3. 拉取额外的商家信息
+      // 3. 搜 menu_items 的菜品名，找到对应的 merchant_id
+      final menuData = await _client
+          .from('menu_items')
+          .select('merchant_id')
+          .ilike('name', pattern)
+          .limit(30);
+
+      final menuMerchantIds = (menuData as List)
+          .map((e) => e['merchant_id'] as String)
+          .toSet()
+          .difference(foundIds)
+          .difference(extraIds);
+      extraIds.addAll(menuMerchantIds);
+
+      // 4. 拉取额外的商家信息
       if (extraIds.isNotEmpty) {
         final extraData = await _client
             .from('merchants')
@@ -252,6 +266,36 @@ class MerchantRepository {
     } on PostgrestException catch (e) {
       throw AppException(
         'Failed to search merchants: ${e.message}',
+        code: e.code,
+      );
+    }
+  }
+
+  /// 获取相似/推荐商家（搜索无结果时展示）
+  /// 逻辑：返回有 active deal 的热门商家，按评分排序
+  Future<List<MerchantModel>> fetchSimilarMerchants({String? city}) async {
+    try {
+      var query = _client
+          .from('merchants')
+          .select('*, deals(rating, review_count, discount_price, is_active)')
+          .eq('status', 'approved');
+
+      if (city != null && city.isNotEmpty) {
+        query = query.ilike('city', '%$city%');
+      }
+
+      final data = await query.order('name').limit(10);
+      final merchants = (data as List)
+          .map((e) => MerchantModel.fromJson(e))
+          .where((m) => (m.activeDealCount ?? 0) > 0)
+          .toList();
+      // 按评分降序
+      merchants.sort((a, b) =>
+          (b.avgRating ?? 0).compareTo(a.avgRating ?? 0));
+      return merchants;
+    } on PostgrestException catch (e) {
+      throw AppException(
+        'Failed to fetch similar merchants: ${e.message}',
         code: e.code,
       );
     }

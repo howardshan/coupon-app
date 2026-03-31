@@ -42,6 +42,12 @@ final merchantSearchProvider = FutureProvider<List<MerchantModel>>((ref) async {
   return ref.watch(merchantRepositoryProvider).searchMerchants(query);
 });
 
+/// 搜索无结果时的相似推荐商家
+final similarMerchantsProvider = FutureProvider<List<MerchantModel>>((ref) async {
+  final city = ref.watch(selectedLocationProvider).city;
+  return ref.watch(merchantRepositoryProvider).fetchSimilarMerchants(city: city);
+});
+
 /// 收藏商家 ID 集合（用于快速判断是否已收藏）
 final savedMerchantIdsProvider = FutureProvider<Set<String>>((ref) async {
   final client = ref.watch(supabaseClientProvider);
