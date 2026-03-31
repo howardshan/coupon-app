@@ -12,7 +12,7 @@ export interface C15VerifyOtpData {
 }
 
 export function buildC15Email(data: C15VerifyOtpData): { subject: string; html: string } {
-  const subject = `${data.otpCode} is your DealJoy verification code`;
+  const subject = `${data.otpCode} is your Crunchy Plum verification code`;
   const name = data.fullName ? escapeHtml(data.fullName) : 'there';
 
   const body = `
@@ -23,7 +23,7 @@ export function buildC15Email(data: C15VerifyOtpData): { subject: string; html: 
     </tr>
     <tr>
       <td style="padding:0 0 16px;font-size:14px;color:#424242;line-height:1.6;">
-        Thanks for signing up for DealJoy! Please use the verification code below to complete your registration:
+        Thanks for signing up for Crunchy Plum! Please use the verification code below to complete your registration:
       </td>
     </tr>
     <tr>

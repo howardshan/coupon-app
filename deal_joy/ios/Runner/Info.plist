@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Deal Joy</string>
+	<string>Crunchy Plum</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -15,7 +15,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>deal_joy</string>
+	<string>crunchy_plum</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -62,7 +62,7 @@
 				<string>crunchyplum</string>
 			</array>
 			<key>CFBundleURLName</key>
-			<string>com.dealjoy.deal_joy</string>
+			<string>com.crunchyplum.crunchy_plum</string>
 		</dict>
 		<dict>
 			<key>CFBundleURLSchemes</key>
@@ -72,6 +72,11 @@
 			<key>CFBundleURLName</key>
 			<string>com.dealjoy.supabase_auth_callback</string>
 		</dict>
+	</array>
+	<!-- FCM 推送通知：后台远程通知 -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
 	</array>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>

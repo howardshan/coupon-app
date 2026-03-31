@@ -40,7 +40,7 @@ function errorResponse(message: string, status = 400): Response {
   return jsonResponse({ error: message }, status);
 }
 
-const PARSE_SYSTEM_PROMPT = `You are an algorithm configuration assistant for DealJoy, a local deals platform in Dallas.
+const PARSE_SYSTEM_PROMPT = `You are an algorithm configuration assistant for Crunchy Plum, a local deals platform in Dallas.
 
 Your job is to translate natural language algorithm descriptions into a JSON weight configuration.
 

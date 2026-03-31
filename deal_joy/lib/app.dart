@@ -8,6 +8,7 @@ import 'features/merchant/domain/providers/merchant_provider.dart';
 import 'features/orders/domain/providers/pending_reviews_provider.dart';
 import 'features/profile/domain/providers/payment_methods_provider.dart';
 import 'features/reviews/domain/providers/my_reviews_provider.dart';
+import 'shared/services/push_notification_service.dart';
 import 'shared/services/realtime_service.dart';
 
 /// 禁用 Android Material 3 "stretch" 过度滚动效果，避免图片和文字变形
@@ -19,23 +20,26 @@ class _NoStretchScrollBehavior extends MaterialScrollBehavior {
   }
 }
 
-class DealJoyApp extends ConsumerWidget {
-  const DealJoyApp({super.key});
+class CrunchyPlumApp extends ConsumerWidget {
+  const CrunchyPlumApp({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(routerProvider);
 
-    // 监听用户登录/登出状态，自动启停 Realtime 订阅
+    // 监听用户登录/登出状态，自动启停 Realtime 订阅和推送通知
     ref.listen(currentUserProvider, (previous, next) {
       final user = next.valueOrNull;
       final realtime = ref.read(realtimeServiceProvider);
+      final push = ref.read(pushNotificationServiceProvider);
       if (user != null) {
-        // 用户登录 → 开始监听该用户的订单/券变化
+        // 用户登录 → 开始监听该用户的订单/券变化 + 注册推送
         realtime.startListening(user.id);
+        push.init(user.id);
       } else {
-        // 用户登出 → 停止监听，释放 channel
+        // 用户登出 → 停止监听，释放 channel + 注销推送 token
         realtime.stopListening();
+        push.removeToken();
       }
     });
 
@@ -53,7 +57,7 @@ class DealJoyApp extends ConsumerWidget {
     });
 
     return MaterialApp.router(
-      title: 'DealJoy',
+      title: 'Crunchy Plum',
       theme: AppTheme.light,
       routerConfig: router,
       scrollBehavior: _NoStretchScrollBehavior(),

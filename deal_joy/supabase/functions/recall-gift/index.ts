@@ -67,7 +67,7 @@ serve(async (req) => {
     // ----------------------------------------------------------------
     const { data: gift, error: giftError } = await supabase
       .from('coupon_gifts')
-      .select('id, gifter_user_id, status, order_item_id, recipient_email, recipient_phone')
+      .select('id, gifter_user_id, status, order_item_id, recipient_email, recipient_phone, gift_type, recipient_user_id')
       .eq('id', gift_id)
       .single();
 
@@ -86,16 +86,8 @@ serve(async (req) => {
       );
     }
 
-    // 只有 pending 状态的礼品才可撤回（已领取的无法撤回）
-    if (gift.status !== 'pending') {
-      return new Response(
-        JSON.stringify({ error: `Cannot recall gift with status: ${gift.status}` }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 422 },
-      );
-    }
-
     // ----------------------------------------------------------------
-    // 4. 查询关联的 order_item 和 coupon，用于后续恢复
+    // 4. 查询关联的 order_item 和 coupon，用于后续状态校验和恢复
     // ----------------------------------------------------------------
     const { data: orderItem, error: itemError } = await supabase
       .from('order_items')
@@ -108,6 +100,38 @@ serve(async (req) => {
         JSON.stringify({ error: 'Associated order item not found' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 404 },
       );
+    }
+
+    // ----------------------------------------------------------------
+    // 4b. 扩展状态校验：
+    //   - 外部赠送：只有 pending 状态可撤回
+    //   - 好友赠送（in_app）：pending 或 claimed 状态均可撤回（但券必须未使用）
+    // ----------------------------------------------------------------
+    const isInAppGift = gift.gift_type === 'in_app';
+
+    if (gift.status !== 'pending') {
+      if (!(isInAppGift && gift.status === 'claimed')) {
+        return new Response(
+          JSON.stringify({ error: `Cannot recall gift with status: ${gift.status}` }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 422 },
+        );
+      }
+
+      // 好友赠送 claimed 状态：检查券是否已使用，已使用则不允许撤回
+      if (orderItem.coupon_id) {
+        const { data: couponStatus } = await supabase
+          .from('coupons')
+          .select('status')
+          .eq('id', orderItem.coupon_id)
+          .single();
+
+        if (couponStatus && couponStatus.status !== 'unused') {
+          return new Response(
+            JSON.stringify({ error: 'Cannot recall: coupon has already been used' }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 422 },
+          );
+        }
+      }
     }
 
     // ----------------------------------------------------------------
@@ -137,7 +161,7 @@ serve(async (req) => {
       throw new Error(`Failed to restore order item status: ${itemUpdateError.message}`);
     }
 
-    // 5c. 恢复 coupons: status='unused', 清除 void_reason, is_gifted=false
+    // 5c. 恢复 coupons: status='unused', 清除 void_reason, is_gifted=false, gifted_from_user_id=null
     if (orderItem.coupon_id) {
       const { error: couponUpdateError } = await supabase
         .from('coupons')
@@ -147,6 +171,7 @@ serve(async (req) => {
           voided_at: null,
           is_gifted: false,
           current_holder_user_id: currentUserId,
+          gifted_from_user_id: null,   // 清除赠送者信息
         })
         .eq('id', orderItem.coupon_id);
 
@@ -157,8 +182,24 @@ serve(async (req) => {
 
     // ----------------------------------------------------------------
     // 6. 异步发送撤回通知邮件给受赠方（即发即忘）
+    //    - 外部赠送：直接使用 gift.recipient_email
+    //    - 好友赠送（in_app）：通过 recipient_user_id 查询受赠人邮箱
     // ----------------------------------------------------------------
-    if (gift.recipient_email) {
+    // 先确定受赠人邮箱
+    const recipientEmail = gift.recipient_email as string | null;
+    let recipientEmailForNotify: string | null = recipientEmail;
+
+    // 好友赠送且没有 recipient_email 时，通过 recipient_user_id 查询邮箱
+    if (!recipientEmailForNotify && isInAppGift && gift.recipient_user_id) {
+      const { data: recipientInfo } = await supabase
+        .from('users')
+        .select('email')
+        .eq('id', gift.recipient_user_id)
+        .single();
+      recipientEmailForNotify = (recipientInfo?.email as string | undefined) ?? null;
+    }
+
+    if (recipientEmailForNotify) {
       (async () => {
         try {
           // 查询 deal 信息
@@ -189,11 +230,14 @@ serve(async (req) => {
             merchantName,
           });
 
+          // 好友赠送使用 C16，外部赠送使用 C14
+          const emailCode = isInAppGift ? 'C16' : 'C14';
+
           await sendEmail(supabase, {
-            to: gift.recipient_email,
+            to: recipientEmailForNotify,
             subject,
             htmlBody,
-            emailCode: 'C14',
+            emailCode,
             referenceId: gift_id,
             recipientType: 'customer',
           });

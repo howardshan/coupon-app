@@ -1116,45 +1116,45 @@ class _GiftInfoSection extends ConsumerWidget {
     );
   }
 
-  // 更换受赠方：撤回后重新打开 Gift Bottom Sheet
+  // 更换受赠方：打开 Gift Bottom Sheet，用户确认发送后才撤回旧 gift
   Future<void> _editRecipient(
       BuildContext context, WidgetRef ref, CouponGiftModel gift) async {
-    final ok =
-        await ref.read(giftNotifierProvider.notifier).recallGift(gift.id);
-    if (!ok || !context.mounted) return;
+    if (!context.mounted) return;
 
-    // 刷新数据
-    ref.invalidate(activeGiftProvider(orderItemId));
-    ref.invalidate(couponDetailProvider(coupon.id));
-
-    // 弹出 Gift Bottom Sheet（预填之前的收件人）
-    if (context.mounted) {
-      GiftBottomSheet.show(
-        context,
-        dealTitle: coupon.dealTitle ?? '',
-        orderItemId: orderItemId,
-        merchantName: coupon.merchantName,
-        expiresAt: coupon.expiresAt,
-        prefillEmail: gift.recipientEmail,
-        prefillPhone: gift.recipientPhone,
-        onGiftSent: () {
-          ref.invalidate(activeGiftProvider(orderItemId));
-          ref.invalidate(couponDetailProvider(coupon.id));
-        },
-      );
-    }
+    // 弹出 Gift Bottom Sheet（预填之前的收件人，传入旧 gift id）
+    // 撤回逻辑在 bottom sheet 内部发送时才执行，取消不会影响旧 gift
+    GiftBottomSheet.show(
+      context,
+      dealTitle: coupon.dealTitle ?? '',
+      orderItemId: orderItemId,
+      merchantName: coupon.merchantName,
+      expiresAt: coupon.expiresAt,
+      prefillEmail: gift.recipientEmail,
+      prefillPhone: gift.recipientPhone,
+      existingGiftId: gift.id,
+      dealImageUrl: coupon.dealImageUrl,
+      onGiftSent: () {
+        ref.invalidate(activeGiftProvider(orderItemId));
+        ref.invalidate(couponDetailProvider(coupon.id));
+      },
+    );
   }
 
   // 撤回赠送
   Future<void> _recallGift(
       BuildContext context, WidgetRef ref, CouponGiftModel gift) async {
+    // 好友赠送的确认文案不同
+    final isInApp = gift.isInApp;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Recall Gift'),
-        content: const Text(
-          'Are you sure you want to recall this gift? '
-          'The recipient will no longer be able to claim it.',
+        content: Text(
+          isInApp
+              ? 'Are you sure you want to recall this gift? '
+                'The coupon will be removed from your friend\'s account.'
+              : 'Are you sure you want to recall this gift? '
+                'The recipient will no longer be able to claim it.',
         ),
         actions: [
           TextButton(
@@ -1171,8 +1171,18 @@ class _GiftInfoSection extends ConsumerWidget {
     );
     if (confirmed != true || !context.mounted) return;
 
-    final ok =
-        await ref.read(giftNotifierProvider.notifier).recallGift(gift.id);
+    // 好友赠送：使用 recallFriendGift（会同时发 chat 消息）
+    final bool ok;
+    if (isInApp && gift.recipientUserId != null) {
+      ok = await ref.read(giftNotifierProvider.notifier).recallFriendGift(
+            giftId: gift.id,
+            recipientUserId: gift.recipientUserId!,
+            dealTitle: coupon.dealTitle ?? '',
+          );
+    } else {
+      ok = await ref.read(giftNotifierProvider.notifier).recallGift(gift.id);
+    }
+
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

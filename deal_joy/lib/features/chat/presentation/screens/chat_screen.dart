@@ -6,7 +6,7 @@ class ChatScreen extends StatelessWidget {
 
   static const _conversations = [
     ('Customer Support', 'Hello! How can we help you today with your order?', '12:45 PM'),
-    ('DealJoy Team', 'Your refund has been processed successfully.', '11:20 AM'),
+    ('Crunchy Plum Team', 'Your refund has been processed successfully.', '11:20 AM'),
     ('Order #1042', 'Your coupon is ready to use. Enjoy your meal!', 'Yesterday'),
   ];
 

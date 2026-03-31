@@ -67,7 +67,7 @@ class _VerifyOtpScreenState extends ConsumerState<VerifyOtpScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Email verified! Welcome to DealJoy!'),
+            content: Text('Email verified! Welcome to Crunchy Plum!'),
             backgroundColor: AppColors.success,
           ),
         );

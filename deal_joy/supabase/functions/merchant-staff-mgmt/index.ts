@@ -1,5 +1,5 @@
 // =============================================================
-// DealJoy Edge Function: merchant-staff-mgmt
+// Crunchy Plum Edge Function: merchant-staff-mgmt
 // 门店员工管理：列表、邀请、修改角色、移除、接受邀请
 // 注意：函数名用 merchant-staff-mgmt 避免和表名 merchant_staff 冲突
 // =============================================================

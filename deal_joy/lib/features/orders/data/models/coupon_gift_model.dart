@@ -38,6 +38,9 @@ class CouponGiftModel {
   final DateTime? tokenExpiresAt;
   final DateTime createdAt;
 
+  /// 赠送渠道：'external'（email/phone）| 'in_app'（好友赠送）
+  final String giftType;
+
   const CouponGiftModel({
     required this.id,
     required this.orderItemId,
@@ -52,13 +55,19 @@ class CouponGiftModel {
     this.recalledAt,
     this.tokenExpiresAt,
     required this.createdAt,
+    this.giftType = 'external',
   });
+
+  /// 是否为好友赠送
+  bool get isInApp => giftType == 'in_app';
 
   /// 展示用：优先显示邮箱，其次电话
   String get recipientDisplay => recipientEmail ?? recipientPhone ?? 'Unknown';
 
-  /// 可撤回：仅 pending 状态
-  bool get canRecall => status == GiftStatus.pending;
+  /// 可撤回：pending 状态，或好友赠送的 claimed 状态（后端会检查券是否已使用）
+  bool get canRecall =>
+      status == GiftStatus.pending ||
+      (isInApp && status == GiftStatus.claimed);
 
   /// 可修改受赠方：仅 pending 状态
   bool get canEdit => status == GiftStatus.pending;
@@ -73,6 +82,7 @@ class CouponGiftModel {
       recipientUserId: json['recipient_user_id'] as String?,
       giftMessage: json['gift_message'] as String?,
       claimToken: json['claim_token'] as String? ?? '',
+      giftType: json['gift_type'] as String? ?? 'external',
       status: GiftStatus.fromString(json['status'] as String? ?? 'pending'),
       claimedAt: json['claimed_at'] != null
           ? DateTime.tryParse(json['claimed_at'] as String)

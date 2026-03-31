@@ -270,7 +270,7 @@ async function getCampaignApplications(
  * 审批通过申请，自动生成专属推广链接
  * TODO: V2 — 实现完整业务逻辑
  *
- * 生成推广链接格式: https://dealjoy.app/ref/{short_code}
+ * 生成推广链接格式: https://crunchyplum.app/ref/{short_code}
  * short_code 使用 UUID 前 8 位（唯一性由 DB unique index 保证）
  */
 async function approveApplication(
@@ -283,7 +283,7 @@ async function approveApplication(
   // 1. 查询申请记录，验证 status = 'pending'
   // 2. 验证关联 Campaign 属于当前商家
   // 3. 生成唯一 short_code（UUID 前 8 位或 nanoid）
-  // 4. 构造 promo_link: `https://dealjoy.app/ref/${short_code}`
+  // 4. 构造 promo_link: `https://crunchyplum.app/ref/${short_code}`
   // 5. UPDATE influencer_applications
   //      SET status = 'approved', promo_link = ?, reviewed_at = now()
   //      WHERE id = ?
@@ -295,7 +295,7 @@ async function approveApplication(
     data: {
       id: applicationId,
       status: "approved",
-      promo_link: `https://dealjoy.app/ref/TODO_V2`,
+      promo_link: `https://crunchyplum.app/ref/TODO_V2`,
     },
     message: "TODO: V2 — implement approve application with promo link generation",
   });

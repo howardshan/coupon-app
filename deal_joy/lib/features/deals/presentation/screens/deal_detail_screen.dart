@@ -302,7 +302,7 @@ void _showShareOptions(BuildContext context, DealModel deal) {
               Navigator.of(ctx).pop();
               Share.share(
                 '${deal.title} - \$${deal.discountPrice.toStringAsFixed(2)} '
-                '(${deal.effectiveDiscountLabel}) on DealJoy!',
+                '(${deal.effectiveDiscountLabel}) on Crunchy Plum!',
               );
             },
           ),

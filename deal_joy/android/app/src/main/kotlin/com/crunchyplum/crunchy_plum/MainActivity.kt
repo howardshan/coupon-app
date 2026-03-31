@@ -1,4 +1,4 @@
-package com.dealjoy.deal_joy
+package com.crunchyplum.crunchy_plum
 
 import io.flutter.embedding.android.FlutterFragmentActivity
 

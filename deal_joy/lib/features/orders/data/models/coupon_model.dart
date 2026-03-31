@@ -16,6 +16,14 @@ class CouponModel {
   final String? giftedFrom;
   final String? verifiedBy;
 
+  // 好友赠送相关
+  /// 赠送者 user ID（好友赠送时由 send-gift 写入）
+  final String? giftedFromUserId;
+  /// 当前持有者 user ID（赠送后 = 受赠人）
+  final String? currentHolderUserId;
+  /// 赠送者姓名（join users 表获取）
+  final String? giftedFromUserName;
+
   // V3 新增字段 — 关联 order_items
   /// 关联的 order_item ID（V3 系统新增）
   final String? orderItemId;
@@ -65,6 +73,9 @@ class CouponModel {
     required this.createdAt,
     this.giftedFrom,
     this.verifiedBy,
+    this.giftedFromUserId,
+    this.currentHolderUserId,
+    this.giftedFromUserName,
     this.orderItemId,
     this.couponCode,
     this.dealTitle,
@@ -131,6 +142,9 @@ class CouponModel {
       createdAt: DateTime.parse(json['created_at'] as String),
       giftedFrom: json['gifted_from'] as String?,
       verifiedBy: json['verified_by'] as String?,
+      giftedFromUserId: json['gifted_from_user_id'] as String?,
+      currentHolderUserId: json['current_holder_user_id'] as String?,
+      giftedFromUserName: (json['gifter_user'] as Map<String, dynamic>?)?['full_name'] as String?,
       orderItemId: json['order_item_id'] as String?,
       couponCode: json['coupon_code'] as String?,
       dealTitle: deals?['title'] as String?,

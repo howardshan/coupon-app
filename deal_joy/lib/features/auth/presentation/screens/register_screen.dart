@@ -247,7 +247,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
               children: [
                 // 页面标题区
                 Text(
-                  'Join DealJoy',
+                  'Join Crunchy Plum',
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                         fontWeight: FontWeight.bold,
                         color: AppColors.textPrimary,
