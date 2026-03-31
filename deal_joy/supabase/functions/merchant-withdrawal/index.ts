@@ -306,7 +306,7 @@ async function handleGetBalance(
     .select("id, unit_price, redeemed_merchant_id, purchased_merchant_id")
     .not("redeemed_at", "is", null)
     .lt("redeemed_at", settledCutoff)
-    .not("customer_status", "in", '("refund_success","refund_pending")')
+    .not("customer_status", "in", '("refund_success","refund_pending","refund_processing")')
     .or(`redeemed_merchant_id.eq.${merchantId},and(redeemed_merchant_id.is.null,purchased_merchant_id.eq.${merchantId})`);
 
   if (itemsErr) {

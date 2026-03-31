@@ -411,6 +411,7 @@ class _DealSummaryCard extends ConsumerWidget {
         .where((i) =>
             i.customerStatus == CustomerItemStatus.refundSuccess ||
             i.customerStatus == CustomerItemStatus.refundPending ||
+            i.customerStatus == CustomerItemStatus.refundProcessing ||
             i.customerStatus == CustomerItemStatus.refundReview)
         .toList();
     final otherItems = dealItems
@@ -420,6 +421,7 @@ class _DealSummaryCard extends ConsumerWidget {
             i.customerStatus != CustomerItemStatus.gifted &&
             i.customerStatus != CustomerItemStatus.refundSuccess &&
             i.customerStatus != CustomerItemStatus.refundPending &&
+            i.customerStatus != CustomerItemStatus.refundProcessing &&
             i.customerStatus != CustomerItemStatus.refundReview)
         .toList();
 
@@ -561,7 +563,9 @@ class _DealSummaryCard extends ConsumerWidget {
             ),
           if (refundedItems.isNotEmpty)
             _CouponStatusRow(
-              label: refundedItems.first.customerStatus == CustomerItemStatus.refundPending
+              label: (refundedItems.first.customerStatus == CustomerItemStatus.refundPending ||
+                      refundedItems.first.customerStatus == CustomerItemStatus.refundProcessing ||
+                      refundedItems.first.customerStatus == CustomerItemStatus.refundReview)
                   ? 'Refund Processing'
                   : 'Refunded',
               count: refundedItems.length,
@@ -1140,14 +1144,27 @@ class _OrderInfoSection extends StatelessWidget {
           ...(() {
             final refundedItems = detail.items
                 .where((i) => i.customerStatus == CustomerItemStatus.refundSuccess ||
-                    i.customerStatus == CustomerItemStatus.refundPending)
+                    i.customerStatus == CustomerItemStatus.refundPending ||
+                    i.customerStatus == CustomerItemStatus.refundProcessing)
                 .toList();
             if (refundedItems.isEmpty) return <Widget>[];
 
             final totalRefund = refundedItems.fold<double>(0, (s, i) => s + (i.refundAmount ?? i.unitPrice));
-            final storeCreditRefunds = refundedItems.where((i) => i.refundMethod == 'store_credit').toList();
-            final originalRefunds = refundedItems.where((i) => i.refundMethod == 'original_payment').toList();
-            final pendingRefunds = refundedItems.where((i) => i.customerStatus == CustomerItemStatus.refundPending).toList();
+            final storeCreditRefunds = refundedItems
+                .where((i) =>
+                    i.refundMethod == 'store_credit' &&
+                    i.customerStatus == CustomerItemStatus.refundSuccess)
+                .toList();
+            final originalRefunds = refundedItems
+                .where((i) =>
+                    i.refundMethod == 'original_payment' &&
+                    i.customerStatus == CustomerItemStatus.refundSuccess)
+                .toList();
+            final pendingRefunds = refundedItems
+                .where((i) =>
+                    i.customerStatus == CustomerItemStatus.refundPending ||
+                    i.customerStatus == CustomerItemStatus.refundProcessing)
+                .toList();
 
             return <Widget>[
               const Divider(height: 20, color: Color(0xFFF0F0F0)),

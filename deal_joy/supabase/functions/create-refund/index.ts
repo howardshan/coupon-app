@@ -139,7 +139,7 @@ Deno.serve(async (req) => {
     // 退款资格校验
     // - unused: 允许两种退款方式
     // - used: 核销后仅允许 store_credit（售后走线下）
-    // - 其他状态（refund_success / refund_pending / expired 等）：拒绝
+    // - 其他状态（refund_success / refund_processing / expired 等）：拒绝
     if (customerStatus === 'used' && refundMethod === 'original_payment') {
       return new Response(
         JSON.stringify({ error: 'Used coupons can only be refunded via store credit' }),
@@ -291,7 +291,7 @@ Deno.serve(async (req) => {
           .from('order_items')
           .select('refund_credit_amount')
           .eq('order_id', order.id)
-          .in('customer_status', ['refund_success', 'refund_pending']);
+          .in('customer_status', ['refund_success', 'refund_pending', 'refund_processing']);
 
         const alreadyRefundedCredit = (refundedItems ?? [])
           .reduce((sum: number, r: { refund_credit_amount: number | null }) =>
@@ -352,8 +352,8 @@ Deno.serve(async (req) => {
       }
 
       // 标记退款状态
-      // 有 Stripe 退款则 refund_pending（等 webhook），纯 store credit 退回则直接 refund_success
-      const refundStatus = stripeRefundId ? 'refund_pending' : 'refund_success';
+      // 有 Stripe 退款则 refund_processing（等 webhook），纯 store credit 退回则直接 refund_success
+      const refundStatus = stripeRefundId ? 'refund_processing' : 'refund_success';
       const totalRefundAmount = cardRefundAmount + creditRefundAmount;
 
       await supabaseAdmin

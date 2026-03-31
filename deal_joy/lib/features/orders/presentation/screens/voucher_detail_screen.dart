@@ -179,6 +179,7 @@ class _VoucherDetailBodyState extends ConsumerState<_VoucherDetailBody> {
         ),
       CustomerItemStatus.refundSuccess ||
       CustomerItemStatus.refundPending ||
+      CustomerItemStatus.refundProcessing ||
       CustomerItemStatus.refundReview => _RefundedVoucherBody(
           detail: detail,
           dealItems: dealItems,
@@ -204,6 +205,7 @@ class _VoucherDetailBodyState extends ConsumerState<_VoucherDetailBody> {
     if (items.every((i) =>
         i.customerStatus == CustomerItemStatus.refundSuccess ||
         i.customerStatus == CustomerItemStatus.refundPending ||
+        i.customerStatus == CustomerItemStatus.refundProcessing ||
         i.customerStatus == CustomerItemStatus.refundReview)) {
       return CustomerItemStatus.refundSuccess;
     }
@@ -331,6 +333,7 @@ class _VoucherDealCard extends ConsumerWidget {
         .where((i) =>
             i.customerStatus == CustomerItemStatus.refundSuccess ||
             i.customerStatus == CustomerItemStatus.refundPending ||
+            i.customerStatus == CustomerItemStatus.refundProcessing ||
             i.customerStatus == CustomerItemStatus.refundReview)
         .toList();
     final otherItems = dealItems
@@ -339,6 +342,7 @@ class _VoucherDealCard extends ConsumerWidget {
             i.customerStatus != CustomerItemStatus.used &&
             i.customerStatus != CustomerItemStatus.refundSuccess &&
             i.customerStatus != CustomerItemStatus.refundPending &&
+            i.customerStatus != CustomerItemStatus.refundProcessing &&
             i.customerStatus != CustomerItemStatus.refundReview)
         .toList();
 
@@ -465,8 +469,12 @@ class _VoucherDealCard extends ConsumerWidget {
             ),
           if (refundedItems.isNotEmpty)
             _CouponStatusRow(
-              label: refundedItems.first.customerStatus ==
-                      CustomerItemStatus.refundPending
+              label: (refundedItems.first.customerStatus ==
+                          CustomerItemStatus.refundPending ||
+                      refundedItems.first.customerStatus ==
+                          CustomerItemStatus.refundProcessing ||
+                      refundedItems.first.customerStatus ==
+                          CustomerItemStatus.refundReview)
                   ? 'Refund Processing'
                   : 'Refunded',
               count: refundedItems.length,
@@ -721,6 +729,7 @@ class _CouponDetailRow extends ConsumerWidget {
       CustomerItemStatus.used => const Color(0xFF2979FF),
       CustomerItemStatus.refundSuccess => const Color(0xFF9E9E9E),
       CustomerItemStatus.refundPending => const Color(0xFFFF9800),
+      CustomerItemStatus.refundProcessing => const Color(0xFFFF9800),
       CustomerItemStatus.refundReview => const Color(0xFFFF9800),
       _ => AppColors.textHint,
     };
@@ -2035,7 +2044,8 @@ class _RefundedVoucherBody extends ConsumerWidget {
 
     // 状态文案
     final statusLabel =
-        first.customerStatus == CustomerItemStatus.refundPending
+        first.customerStatus == CustomerItemStatus.refundPending ||
+                first.customerStatus == CustomerItemStatus.refundProcessing
             ? 'Refund Processing'
             : first.customerStatus == CustomerItemStatus.refundReview
                 ? 'Under Review'

@@ -10,6 +10,7 @@ const ITEM_STATUS_STYLES: Record<string, string> = {
   used: 'bg-green-100 text-green-700',
   expired: 'bg-red-100 text-red-700',
   refund_pending: 'bg-amber-100 text-amber-700',
+  refund_processing: 'bg-sky-100 text-sky-800',
   refund_review: 'bg-orange-100 text-orange-700',
   refund_reject: 'bg-amber-100 text-amber-700',
   refund_success: 'bg-purple-100 text-purple-700',
@@ -21,6 +22,7 @@ const ITEM_STATUS_LABELS: Record<string, string> = {
   used: 'Redeemed',
   expired: 'Expired',
   refund_pending: 'Refund Pending',
+  refund_processing: 'Refund Processing',
   refund_review: 'Refund Review',
   refund_reject: 'Refund Rejected',
   refund_success: 'Refunded',
@@ -443,7 +445,21 @@ export default async function OrderDetailPage({
                             </div>
                           )}
 
-                          {/* 退款审核中 */}
+                          {/* 等 Stripe / 支付渠道 webhook */}
+                          {item.customer_status === 'refund_processing' && (
+                            <div className="mt-2 pt-2 border-t border-gray-200 text-xs space-y-1">
+                              <div className="flex items-center gap-1 text-sky-800">
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                <span className="font-medium">{ITEM_STATUS_LABELS.refund_processing}</span>
+                              </div>
+                              <div className="text-gray-600 pl-4">Awaiting card refund confirmation (webhook).</div>
+                              {item.refund_reason && (
+                                <div className="text-gray-600 pl-4">Reason: <span className="text-gray-900">{item.refund_reason}</span></div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* 待人工审核（legacy refund_pending 可能仍有） */}
                           {(item.customer_status === 'refund_pending' || item.customer_status === 'refund_review') && (
                             <div className="mt-2 pt-2 border-t border-gray-200 text-xs space-y-1">
                               <div className="flex items-center gap-1 text-amber-700">

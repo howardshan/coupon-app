@@ -44,6 +44,7 @@ class _MerchantGroup {
     if (allItems.isEmpty) return 'Active';
     if (allItems.any((i) =>
         i.customerStatus == CustomerItemStatus.refundPending ||
+        i.customerStatus == CustomerItemStatus.refundProcessing ||
         i.customerStatus == CustomerItemStatus.refundReview)) {
       return 'Refund Processing';
     }
