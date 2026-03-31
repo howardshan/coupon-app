@@ -401,8 +401,9 @@ function computePrimaryMerchantStatus(items: Record<string, unknown>[]): string 
 // 计算 order 下 items 的主状态（最需关注的状态优先）
 function computePrimaryStatus(items: Record<string, unknown>[]): string {
   const priority: Record<string, number> = {
-    'refund_review': 7,
-    'refund_pending': 6,
+    'refund_review': 8,
+    'refund_pending': 7,
+    'refund_processing': 6,
     'refund_reject': 5,
     'unused': 4,
     'paid': 4,      // paid = 已付款未使用，与 unused 同级

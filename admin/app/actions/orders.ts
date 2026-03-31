@@ -240,22 +240,21 @@ export async function getOrdersList(filters: OrdersListFilters = {}): Promise<Or
   }
 }
 
-/** 管理员通过退款：将该订单下 refund_pending 的 items 标记为 refund_success */
+/** 管理员通过退款：仅处理需人工审的 refund_review（不含等 webhook 的 refund_processing） */
 export async function approveRefund(orderId: string) {
   await requireAdmin()
 
   const supabase = getServiceRoleClient()
   const now = new Date().toISOString()
 
-  // 查出该订单下状态为 refund_pending / refund_review 的 items
   const { data: items } = await supabase
     .from('order_items')
     .select('id, customer_status')
     .eq('order_id', orderId)
-    .in('customer_status', ['refund_pending', 'refund_review'])
+    .eq('customer_status', 'refund_review')
 
   if (items && items.length > 0) {
-    // V3 订单：直接将 refund_pending items 标记为 refund_success
+    // V3：将待人工审的 items 标为完成（不改变 Stripe 已在途的 refund_processing）
     const itemIds = items.map(i => i.id)
     const { error } = await supabase
       .from('order_items')
@@ -279,19 +278,18 @@ export async function approveRefund(orderId: string) {
   revalidatePath(`/orders/${orderId}`)
 }
 
-/** 管理员拒绝退款：将 refund_pending 的 items 标记为 refund_reject */
+/** 管理员拒绝退款：仅 refund_review */
 export async function rejectRefund(orderId: string) {
   await requireAdmin()
 
   const supabase = getServiceRoleClient()
   const now = new Date().toISOString()
 
-  // V3 订单：将 refund_pending / refund_review items 标记为 refund_reject
   const { data: items } = await supabase
     .from('order_items')
     .select('id')
     .eq('order_id', orderId)
-    .in('customer_status', ['refund_pending', 'refund_review'])
+    .eq('customer_status', 'refund_review')
 
   if (items && items.length > 0) {
     const { error } = await supabase
