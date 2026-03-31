@@ -367,10 +367,24 @@ final routerProvider = Provider<GoRouter>((ref) {
       // Voucher detail（从 Coupons/Orders 列表点击单个 deal 进入）
       GoRoute(
         path: '/voucher/:orderId',
-        builder: (_, state) => VoucherDetailScreen(
-          orderId: state.pathParameters['orderId']!,
-          dealId: state.uri.queryParameters['dealId'] ?? '',
-        ),
+        builder: (_, state) {
+          final itemIdsRaw = state.uri.queryParameters['itemIds'];
+          final aggregate = state.uri.queryParameters['aggregate'] == '1';
+          final aggregatedIds = itemIdsRaw == null || itemIdsRaw.isEmpty
+              ? const <String>{}
+              : itemIdsRaw
+                  .split(',')
+                  .map((e) => e.trim())
+                  .where((e) => e.isNotEmpty)
+                  .toSet();
+          final useAggregate = aggregate && aggregatedIds.isNotEmpty;
+          return VoucherDetailScreen(
+            orderId: state.pathParameters['orderId']!,
+            dealId: state.uri.queryParameters['dealId'] ?? '',
+            aggregateByDeal: useAggregate,
+            aggregatedOrderItemIds: aggregatedIds,
+          );
+        },
       ),
 
       // Saved deals (collection)

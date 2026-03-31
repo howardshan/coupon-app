@@ -12,6 +12,25 @@ import '../../domain/providers/coupons_provider.dart';
 import '../widgets/coupon_card.dart';
 import '../widgets/pending_reviews_list.dart';
 
+/// 多笔订单合并行进入券详情：携带 order_item id，避免只加载单笔订单
+void _pushVoucherForMergedDealRow(
+    BuildContext context, List<CouponModel> dealCoupons) {
+  if (dealCoupons.isEmpty) return;
+  final first = dealCoupons.first;
+  final orderIds = dealCoupons.map((c) => c.orderId).toSet();
+  final itemIds =
+      dealCoupons.map((c) => c.orderItemId).whereType<String>().toList();
+  if (orderIds.length > 1 &&
+      itemIds.length == dealCoupons.length &&
+      itemIds.isNotEmpty) {
+    context.push(
+      '/voucher/${first.orderId}?dealId=${first.dealId}&aggregate=1&itemIds=${itemIds.join(',')}',
+    );
+  } else {
+    context.push('/voucher/${first.orderId}?dealId=${first.dealId}');
+  }
+}
+
 /// Tab 配置
 const _tabs = [
   (label: 'Unused', status: 'unused'),
@@ -432,7 +451,7 @@ class _MerchantCouponGroup extends StatelessWidget {
               imageUrl: first.dealImageUrl,
               quantity: dealCoupons.length,
               expiresAt: first.expiresAt,
-              onTap: () => context.push('/voucher/${first.orderId}?dealId=${first.dealId}'),
+              onTap: () => _pushVoucherForMergedDealRow(context, dealCoupons),
             );
           }),
           const SizedBox(height: 8),
@@ -672,7 +691,7 @@ class _ExpiringSoonSection extends StatelessWidget {
               quantity: dealCoupons.length,
               expiresAt: first.expiresAt,
               showUrgent: true,
-              onTap: () => context.push('/voucher/${first.orderId}?dealId=${first.dealId}'),
+              onTap: () => _pushVoucherForMergedDealRow(context, dealCoupons),
             );
           }),
           const SizedBox(height: 4),
