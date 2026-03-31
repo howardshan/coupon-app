@@ -475,8 +475,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           ),
                     loading: () => const SliverToBoxAdapter(
                         child: SizedBox.shrink()),
-                    error: (_, _) => const SliverToBoxAdapter(
-                        child: SizedBox.shrink()),
+                    error: (e, st) {
+                      debugPrint('[ERROR] featuredDeals: $e\n$st');
+                      return const SliverToBoxAdapter(
+                          child: SizedBox.shrink());
+                    },
                   ),
 
                   // 分隔线
@@ -551,8 +554,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       // 加载中静默不显示占位
                       loading: () =>
                           const SliverToBoxAdapter(child: SizedBox.shrink()),
-                      error: (_, _) =>
-                          const SliverToBoxAdapter(child: SizedBox.shrink()),
+                      error: (e, st) {
+                        debugPrint('[ERROR] recommendedDeals: $e\n$st');
+                        return const SliverToBoxAdapter(child: SizedBox.shrink());
+                      },
                     ),
 
                   // 商家双列网格
