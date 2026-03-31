@@ -586,16 +586,7 @@ async function handleDetail(
   const fullName = (usersData?.full_name as string | null) ?? 'Customer';
   const customerName = fullName.split(' ')[0];
 
-  // 计算商家专属金额（只统计属于当前商家的 items）
-  let merchantItemsAmount = 0;
-  let merchantServiceFeeTotal = 0;
-  for (const item of items) {
-    merchantItemsAmount += (item.unit_price as number) ?? 0;
-    merchantServiceFeeTotal += (item.service_fee as number) ?? 0;
-  }
-  const merchantTotal = merchantItemsAmount + merchantServiceFeeTotal;
-
-  // 格式化 items 列表（含品牌佣金分解）
+  // 格式化 items 列表（含品牌佣金分解）；金额汇总在下方基于 formattedItems 的 reduce（避免重复声明 merchantItemsAmount）
   const formattedItems = items.map((row) => {
     const deal = row.deals as Record<string, unknown> | null;
     const couponArr = row.coupons as Record<string, unknown>[] | Record<string, unknown> | null;
