@@ -36,6 +36,7 @@ const adminNav: NavEntry[] = [
   {
     kind: 'group', label: 'Settings', icon: '⚙️',
     children: [
+      { href: '/settings/categories', label: 'Categories' },
       { href: '/settings/email-types', label: 'Email Types' },
       { href: '/settings/email-logs', label: 'Email Logs' },
       { href: '/settings/algorithm', label: 'Algorithm' },

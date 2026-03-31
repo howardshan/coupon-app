@@ -126,6 +126,16 @@ final brandStripeAccountProvider =
 });
 
 // =============================================================
+// brandWithdrawalSettingsProvider — 品牌自动提现设置
+// =============================================================
+/// 品牌自动提现设置（FutureProvider）
+final brandWithdrawalSettingsProvider =
+    FutureProvider<BrandWithdrawalSettings>((ref) async {
+  final service = ref.read(brandEarningsServiceProvider);
+  return service.fetchWithdrawalSettings();
+});
+
+// =============================================================
 // brandWithdrawalHistoryProvider — 品牌提现记录
 // =============================================================
 /// 品牌提现历史记录（FutureProvider）

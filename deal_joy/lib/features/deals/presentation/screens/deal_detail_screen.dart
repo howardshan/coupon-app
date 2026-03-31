@@ -68,6 +68,9 @@ class _DealDetailBodyState extends ConsumerState<_DealDetailBody> {
   // 滚动进度 0.0 ~ 1.0（0=顶部，1=图片完全滚出）
   double _scrollProgress = 0.0;
   final ScrollController _scrollController = ScrollController();
+  // 套餐选择器吸顶：跟踪原始位置，决定是否显示浮动 overlay
+  final GlobalKey _variantKey = GlobalKey();
+  bool _showStickyVariant = false;
 
   DealModel get deal => widget.deal;
 
@@ -89,8 +92,25 @@ class _DealDetailBodyState extends ConsumerState<_DealDetailBody> {
     // 渐变区间：从图片底部往上 toolbar + statusBar 的距离
     final threshold = _imageHeight - kToolbarHeight - statusBarHeight;
     final progress = (_scrollController.offset / threshold).clamp(0.0, 1.0);
-    if ((progress - _scrollProgress).abs() > 0.01) {
-      setState(() => _scrollProgress = progress);
+
+    // 检查套餐选择器是否滚到导航栏后面，需要吸顶
+    final navBarBottom = statusBarHeight + 56; // statusBar + padding(8) + icon(40) + padding(8)
+    bool shouldShowSticky = false;
+    final variantContext = _variantKey.currentContext;
+    if (variantContext != null) {
+      final box = variantContext.findRenderObject() as RenderBox?;
+      if (box != null && box.hasSize) {
+        final variantTop = box.localToGlobal(Offset.zero).dy;
+        shouldShowSticky = variantTop < navBarBottom;
+      }
+    }
+
+    if ((progress - _scrollProgress).abs() > 0.01 ||
+        shouldShowSticky != _showStickyVariant) {
+      setState(() {
+        _scrollProgress = progress;
+        _showStickyVariant = shouldShowSticky;
+      });
     }
   }
 
@@ -119,8 +139,8 @@ class _DealDetailBodyState extends ConsumerState<_DealDetailBody> {
           // Gray divider
           const SliverToBoxAdapter(child: _SectionDivider()),
 
-          // 套餐横向选择器（吸顶，类似 store detail 的 tab 栏）
-          _StickyVariantSliver(deal: deal),
+          // 套餐横向选择器（滚动时吸顶在导航栏下方）
+          _StickyVariantSliver(deal: deal, variantKey: _variantKey),
 
           // Deal details (products + note)
           SliverToBoxAdapter(child: _ProductsSection(deal: deal)),
@@ -242,6 +262,14 @@ class _DealDetailBodyState extends ConsumerState<_DealDetailBody> {
               ),
             ),
           ),
+          // 套餐选择器吸顶 overlay（导航栏下方）
+          if (_showStickyVariant)
+            Positioned(
+              top: statusBarHeight + 56,
+              left: 0,
+              right: 0,
+              child: _VariantOverlay(deal: deal),
+            ),
         ],
       ),
       bottomNavigationBar: _BottomBar(deal: deal),
@@ -1264,14 +1292,14 @@ class _InfoSection extends StatelessWidget {
 
 }
 
-// ── 套餐横向选择器（吸顶 Sliver）─────────────────────────────
-// 观察 merchantDealsProvider，有多个 deal 时渲染吸顶 header，否则渲染空 sliver
-const _kVariantHeight = 72.0; // 56 内容 + 8*2 上下 padding
+// ── 套餐横向选择器（滚动时吸顶在导航栏下方）─────────────────────
 
+// 套餐选择器 Sliver（正常滚动，不再使用 SliverPersistentHeader）
 class _StickyVariantSliver extends ConsumerWidget {
   final DealModel deal;
+  final GlobalKey variantKey;
 
-  const _StickyVariantSliver({required this.deal});
+  const _StickyVariantSliver({required this.deal, required this.variantKey});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1284,11 +1312,10 @@ class _StickyVariantSliver extends ConsumerWidget {
         if (deals.length <= 1) {
           return const SliverToBoxAdapter(child: SizedBox.shrink());
         }
-        return SliverPersistentHeader(
-          pinned: true,
-          delegate: _VariantSelectorDelegate(
-            deal: deal,
-            deals: deals,
+        return SliverToBoxAdapter(
+          child: Container(
+            key: variantKey,
+            child: _VariantListContent(deal: deal, deals: deals),
           ),
         );
       },
@@ -1298,21 +1325,50 @@ class _StickyVariantSliver extends ConsumerWidget {
   }
 }
 
-// ── 套餐吸顶 Delegate ────────────────────────────────────────
-class _VariantSelectorDelegate extends SliverPersistentHeaderDelegate {
+// 套餐选择器浮动 overlay（吸顶时显示在导航栏下方）
+class _VariantOverlay extends ConsumerWidget {
+  final DealModel deal;
+
+  const _VariantOverlay({required this.deal});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final dealsAsync = ref.watch(merchantDealsProvider(
+      (merchantId: deal.merchantId, excludeDealId: ''),
+    ));
+
+    return dealsAsync.when(
+      data: (deals) {
+        if (deals.length <= 1) return const SizedBox.shrink();
+        return DecoratedBox(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.06),
+                blurRadius: 4,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: _VariantListContent(deal: deal, deals: deals),
+        );
+      },
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+    );
+  }
+}
+
+// 套餐卡片列表（共享内容，用于滚动内和吸顶 overlay）
+class _VariantListContent extends StatelessWidget {
   final DealModel deal;
   final List<DealModel> deals;
 
-  _VariantSelectorDelegate({required this.deal, required this.deals});
+  const _VariantListContent({required this.deal, required this.deals});
 
   @override
-  double get minExtent => _kVariantHeight;
-
-  @override
-  double get maxExtent => _kVariantHeight;
-
-  @override
-  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+  Widget build(BuildContext context) {
     final sorted = [...deals]..sort((a, b) {
         if (a.sortOrder == null && b.sortOrder == null) return 0;
         if (a.sortOrder == null) return 1;
@@ -1331,7 +1387,6 @@ class _VariantSelectorDelegate extends SliverPersistentHeaderDelegate {
         : 0.0;
 
     return Container(
-      key: const ValueKey('deal_variant_selector'),
       color: Colors.white,
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       child: SizedBox(
@@ -1438,10 +1493,6 @@ class _VariantSelectorDelegate extends SliverPersistentHeaderDelegate {
       ),
     );
   }
-
-  @override
-  bool shouldRebuild(_VariantSelectorDelegate oldDelegate) =>
-      oldDelegate.deal.id != deal.id || oldDelegate.deals.length != deals.length;
 }
 
 // ── Products section + Note ────────────────────────────────────

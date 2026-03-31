@@ -26,8 +26,19 @@ class DealsRepository {
         query = query.ilike('address', '%$city%');
       }
 
+      // 分类筛选：通过 merchant_categories 关联表
+      // 先查出属于该分类的商家 ID 列表，再过滤 deals
       if (category != null && category != 'All') {
-        query = query.eq('category', category);
+        final catData = await _client
+            .from('merchant_categories')
+            .select('merchant_id, categories!inner(name)')
+            .eq('categories.name', category);
+        final merchantIds = (catData as List)
+            .map((e) => e['merchant_id'] as String)
+            .toSet()
+            .toList();
+        if (merchantIds.isEmpty) return [];
+        query = query.inFilter('merchant_id', merchantIds);
       }
 
       if (search != null && search.isNotEmpty) {
@@ -53,7 +64,7 @@ class DealsRepository {
       // 过滤 brand_multi_store deal：必须至少有一个 active 门店才展示
       results = await _filterBrandDealsWithActiveStores(results);
 
-      // 搜索品牌名/商家名：补充匹配品牌名或商家名的 deals
+      // 搜索品牌名/商家名/菜品名：补充匹配的 deals
       if (search != null && search.isNotEmpty && page == 0) {
         try {
           // 查询商家名或品牌名匹配的商家 ID
@@ -88,6 +99,16 @@ class DealsRepository {
             }
           }
 
+          // 通过 menu_items 菜品名匹配商家
+          final menuData = await _client
+              .from('menu_items')
+              .select('merchant_id')
+              .ilike('name', '%$search%')
+              .limit(30);
+          for (final m in (menuData as List)) {
+            merchantIds.add(m['merchant_id'] as String);
+          }
+
           if (merchantIds.isNotEmpty) {
             final existingIds = results.map((d) => d.id).toSet();
             final extraData = await _client
@@ -106,7 +127,7 @@ class DealsRepository {
             }
           }
         } catch (_) {
-          // 品牌搜索失败不影响主结果
+          // 品牌/菜品搜索失败不影响主结果
         }
 
         // 额外添加的 deal 也需要过滤 brand deal
@@ -339,6 +360,34 @@ class DealsRepository {
           .toList();
     } on PostgrestException catch (e) {
       throw AppException('Failed to search deals by city: ${e.message}',
+          code: e.code);
+    }
+  }
+
+  /// 获取相似/推荐 deal（搜索无结果时展示）
+  /// 逻辑：返回当前城市下热门的 active deal，按销量+评分排序
+  Future<List<DealModel>> fetchSimilarDeals({String? city}) async {
+    try {
+      var query = _client
+          .from('deals')
+          .select('*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, brands(name, logo_url))')
+          .eq('is_active', true)
+          .gt('expires_at', DateTime.now().toIso8601String());
+
+      if (city != null && city.isNotEmpty) {
+        query = query.ilike('address', '%$city%');
+      }
+
+      final data = await query
+          .order('total_sold', ascending: false)
+          .order('rating', ascending: false)
+          .limit(10);
+
+      var results = (data as List).map((e) => DealModel.fromJson(e)).toList();
+      results = await _filterBrandDealsWithActiveStores(results);
+      return results;
+    } on PostgrestException catch (e) {
+      throw AppException('Failed to fetch similar deals: ${e.message}',
           code: e.code);
     }
   }

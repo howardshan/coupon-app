@@ -362,6 +362,40 @@ class _ProfileBody extends StatelessWidget {
 
           const SizedBox(height: 12),
 
+          // ── Customer Support ─────────────────────────────────
+          _SectionCard(
+            child: ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceVariant,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.support_agent_outlined,
+                  color: AppColors.textSecondary,
+                  size: 20,
+                ),
+              ),
+              title: const Text(
+                'Customer Support',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+              ),
+              subtitle: const Text(
+                'Email, call back, or chat with us',
+                style: TextStyle(fontSize: 12, color: AppColors.textHint),
+              ),
+              trailing: const Icon(
+                Icons.chevron_right,
+                color: AppColors.textHint,
+              ),
+              onTap: () => context.push('/support'),
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
           // ── Sign Out ─────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),

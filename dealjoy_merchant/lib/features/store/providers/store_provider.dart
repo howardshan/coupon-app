@@ -338,6 +338,25 @@ class StoreNotifier extends AsyncNotifier<StoreInfo> {
   }
 
   // ----------------------------------------------------------
+  // 更新商家全局分类
+  // ----------------------------------------------------------
+  Future<void> updateGlobalCategories(List<GlobalCategory> categories) async {
+    final current = state.valueOrNull;
+    if (current == null) return;
+
+    // 乐观更新
+    state = AsyncValue.data(current.copyWith(globalCategories: categories));
+
+    try {
+      final ids = categories.map((c) => c.id).toList();
+      await _service.updateCategories(ids);
+    } catch (e, st) {
+      state = AsyncValue.data(current);
+      state = AsyncValue.error(e, st);
+    }
+  }
+
+  // ----------------------------------------------------------
   // 切换当前操作的门店（品牌管理员专用）
   // ----------------------------------------------------------
   Future<void> switchStore(String merchantId) async {
