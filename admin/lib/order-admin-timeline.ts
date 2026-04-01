@@ -66,6 +66,12 @@ function dealTitleFromItem(item: OrderItemLike): string {
   return (one?.title as string)?.trim() ?? ''
 }
 
+/** 时间线券事件标题前缀：有 deal 名用 deal 名，否则沿用 Voucher */
+function timelineDealLabel(title: string | null | undefined): string {
+  const t = title == null ? '' : String(title).trim()
+  return t || 'Voucher'
+}
+
 function giftCreatedAt(item: OrderItemLike): string | null {
   const g = item.coupon_gifts
   if (!g) return null
@@ -124,9 +130,10 @@ export function buildOrderTimelineV3(order: OrderLike, orderItems: OrderItemLike
   sorted.forEach((item, idx) => {
     const n = idx + 1
     const deal = dealTitleFromItem(item)
+    const dealLabel = timelineDealLabel(deal)
     const cc = couponCodeFromItem(item)
     const suffix = cc ? ` · ${displayCouponCode(cc)}` : ''
-    const prefix = `Voucher #${n}${suffix}`
+    const prefix = `${dealLabel} #${n}${suffix}`
 
     push(out, item.redeemed_at, `${prefix} redeemed`, deal || undefined)
 
@@ -144,10 +151,19 @@ export function buildOrderTimelineV3(order: OrderLike, orderItems: OrderItemLike
   return sortTimelineAscending(out)
 }
 
+export type BuildOrderTimelineV2Options = {
+  /** 旧单订单级 deal 标题，用于券事件前缀 */
+  dealTitle?: string | null
+}
+
 /**
  * V2：订单级 + 每张 coupon 的核销/作废（used_at / voided_at）；退款以订单级为准
  */
-export function buildOrderTimelineV2(order: OrderLike, v2Coupons: V2CouponLike[]): OrderTimelineEntry[] {
+export function buildOrderTimelineV2(
+  order: OrderLike,
+  v2Coupons: V2CouponLike[],
+  options?: BuildOrderTimelineV2Options
+): OrderTimelineEntry[] {
   const out: OrderTimelineEntry[] = []
 
   const placedAt = order.paid_at ?? order.created_at
@@ -156,6 +172,8 @@ export function buildOrderTimelineV2(order: OrderLike, v2Coupons: V2CouponLike[]
   push(out, order.refund_requested_at, 'Refund requested', order.refund_reason ?? undefined)
   push(out, order.refund_rejected_at, 'Refund rejected', order.refund_reason ?? undefined)
   push(out, order.refunded_at, 'Order refunded', order.refund_reason ?? undefined)
+
+  const dealLabel = timelineDealLabel(options?.dealTitle)
 
   const sorted = [...v2Coupons].sort(
     (a, b) => new Date(a.created_at ?? 0).getTime() - new Date(b.created_at ?? 0).getTime()
@@ -166,7 +184,7 @@ export function buildOrderTimelineV2(order: OrderLike, v2Coupons: V2CouponLike[]
     const raw = c.coupon_code
     const cc = raw != null && String(raw).trim() !== '' ? String(raw).trim() : null
     const suffix = cc ? ` · ${displayCouponCode(cc)}` : ''
-    const prefix = `Voucher #${n}${suffix}`
+    const prefix = `${dealLabel} #${n}${suffix}`
 
     if (c.used_at && c.status === 'used') {
       push(out, c.used_at, `${prefix} redeemed`)

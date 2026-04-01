@@ -365,9 +365,10 @@ export default async function OrderDetailPage({
     updated_at: (order.updated_at as string | null) ?? null,
   }
 
+  const v2DealTitle = (deal?.title as string | null | undefined) ?? null
   const timelineEvents = hasV3Items && orderItems
     ? buildOrderTimelineV3(orderForTimeline, orderItems as OrderItemLike[])
-    : buildOrderTimelineV2(orderForTimeline, v2Coupons as V2CouponLike[])
+    : buildOrderTimelineV2(orderForTimeline, v2Coupons as V2CouponLike[], { dealTitle: v2DealTitle })
 
   return (
     <div>
