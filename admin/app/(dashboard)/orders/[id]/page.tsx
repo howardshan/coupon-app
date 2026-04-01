@@ -3,6 +3,9 @@ import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import OrderRefundButtons from '@/components/order-refund-buttons'
 import OrderDetailPricingCard from '@/components/order-detail-pricing-card'
+import OrderDetailCustomerSidebar, {
+  type OrderCustomerSummary,
+} from '@/components/order-detail-customer-sidebar'
 import { getOrderDetailStatusTags, STATUS_STYLES, STATUS_LABELS } from '@/lib/order-display-status'
 import {
   buildDealPriceLines,
@@ -68,6 +71,7 @@ export default async function OrderDetailPage({
     .from('orders')
     .select(`
       id,
+      user_id,
       order_number,
       quantity,
       unit_price,
@@ -84,7 +88,7 @@ export default async function OrderDetailPage({
       refund_rejected_at,
       store_credit_used,
       paid_at,
-      users ( id, email ),
+      users ( id, email, full_name, username, role, avatar_url, phone, created_at ),
       deals ( id, title, discount_price, applicable_merchant_ids, merchants ( id, name ) ),
       coupons!fk_orders_coupon_id ( redeemed_at_merchant_id, expires_at ),
       order_items (
@@ -102,7 +106,22 @@ export default async function OrderDetailPage({
 
   if (!order) notFound()
 
-  const customer = order.users as any
+  const customerSummary: OrderCustomerSummary | null = (() => {
+    const raw = order.users as unknown
+    const u = Array.isArray(raw) ? raw[0] : raw
+    if (!u || typeof u !== 'object' || !('id' in u) || !(u as { id: unknown }).id) return null
+    const o = u as Record<string, unknown>
+    return {
+      id: String(o.id),
+      email: (o.email as string | null) ?? null,
+      full_name: (o.full_name as string | null) ?? null,
+      username: (o.username as string | null) ?? null,
+      role: (o.role as string | null) ?? null,
+      avatar_url: (o.avatar_url as string | null) ?? null,
+      phone: (o.phone as string | null) ?? null,
+      created_at: (o.created_at as string | null) ?? null,
+    }
+  })()
   const orderItems = (order as any).order_items as any[] | null
   const hasV3Items = orderItems && orderItems.length > 0
 
@@ -319,7 +338,8 @@ export default async function OrderDetailPage({
         <h1 className="text-2xl font-bold text-gray-900 mt-2">Order {orderNumberDisplay}</h1>
       </div>
 
-      <div className="space-y-6">
+      <div className="flex flex-col gap-5 md:flex-row md:items-start md:gap-6">
+        <div className="order-1 min-w-0 flex-1 space-y-6">
         {/* 状态区块 */}
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Status</h2>
@@ -752,11 +772,6 @@ export default async function OrderDetailPage({
           </>
         )}
 
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Customer</h2>
-          <p className="text-sm text-gray-900">{customer?.email ?? '—'}</p>
-        </div>
-
         {/* Refund info (if any) — 仅 V2 */}
         {!hasV3Items && (order.refund_reason != null || order.refund_requested_at != null || order.refunded_at != null || (order as { refund_rejected_at?: string | null }).refund_rejected_at != null) && (
           <div className="bg-white rounded-xl border border-gray-200 p-6">
@@ -780,6 +795,11 @@ export default async function OrderDetailPage({
             </dl>
           </div>
         )}
+        </div>
+
+        <aside className="order-2 flex w-full shrink-0 flex-col gap-4 md:sticky md:top-4 md:w-72 md:max-w-[22rem] lg:w-80">
+          <OrderDetailCustomerSidebar customer={customerSummary} returnToPath={`/orders/${order.id}`} />
+        </aside>
       </div>
     </div>
   )
