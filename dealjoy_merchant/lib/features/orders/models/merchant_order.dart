@@ -619,11 +619,42 @@ class MerchantOrderDetail {
         ?? orderJson['user_display_name'] as String?
         ?? 'Customer';
 
-    // 商家专属金额
-    final itemsAmount = (orderJson['items_amount'] as num?)?.toDouble() ?? 0.0;
-    final serviceFeeTotal = (orderJson['service_fee_total'] as num?)?.toDouble() ?? 0.0;
-    final merchantTotal = (orderJson['total_amount'] as num?)?.toDouble()
-        ?? (itemsAmount + serviceFeeTotal);
+    // 商家专属金额（混合订单：Edge Function 返回 merchant_*；旧接口则从本页 items 汇总）
+    final fromItemsSubtotal =
+        items.fold<double>(0, (s, i) => s + i.unitPrice);
+    final fromItemsServiceFee =
+        items.fold<double>(0, (s, i) => s + i.serviceFee);
+
+    final double itemsAmount;
+    if (orderJson.containsKey('merchant_items_amount') &&
+        orderJson['merchant_items_amount'] != null) {
+      itemsAmount = (orderJson['merchant_items_amount'] as num).toDouble();
+    } else if (items.isNotEmpty) {
+      itemsAmount = fromItemsSubtotal;
+    } else {
+      itemsAmount = (orderJson['items_amount'] as num?)?.toDouble() ?? 0.0;
+    }
+
+    final double serviceFeeTotal;
+    if (orderJson.containsKey('merchant_service_fee') &&
+        orderJson['merchant_service_fee'] != null) {
+      serviceFeeTotal = (orderJson['merchant_service_fee'] as num).toDouble();
+    } else if (items.isNotEmpty) {
+      serviceFeeTotal = fromItemsServiceFee;
+    } else {
+      serviceFeeTotal = (orderJson['service_fee_total'] as num?)?.toDouble() ?? 0.0;
+    }
+
+    final double merchantTotal;
+    if (orderJson.containsKey('merchant_total') &&
+        orderJson['merchant_total'] != null) {
+      merchantTotal = (orderJson['merchant_total'] as num).toDouble();
+    } else if (items.isNotEmpty) {
+      merchantTotal = fromItemsSubtotal + fromItemsServiceFee;
+    } else {
+      merchantTotal = (orderJson['total_amount'] as num?)?.toDouble() ??
+          (itemsAmount + serviceFeeTotal);
+    }
 
     // 佣金明细汇总字段（Edge Function 返回，若无则默认 0）
     final totalPlatformFee = (orderJson['total_platform_fee'] as num?)?.toDouble() ?? 0.0;
