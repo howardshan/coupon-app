@@ -6,6 +6,7 @@ import OrderDetailPricingCard from '@/components/order-detail-pricing-card'
 import OrderDetailCustomerSidebar, {
   type OrderCustomerSummary,
 } from '@/components/order-detail-customer-sidebar'
+import OrderDetailTimelineCard from '@/components/order-detail-timeline-card'
 import { getOrderDetailStatusTags, STATUS_STYLES, STATUS_LABELS } from '@/lib/order-display-status'
 import {
   buildDealPriceLines,
@@ -14,6 +15,18 @@ import {
   computeV2RefundSummaryFromCoupons,
   serviceFeeLineLabel,
 } from '@/lib/order-detail-display'
+import {
+  buildOrderTimelineV2,
+  buildOrderTimelineV3,
+  type OrderItemLike,
+  type V2CouponLike,
+} from '@/lib/order-admin-timeline'
+import {
+  couponCodeForClipboard,
+  displayCouponCode,
+  qrPayloadPreview,
+} from '@/lib/coupon-admin-display'
+import CopyTextButton from '@/components/copy-text-button'
 
 // V3 order_item 的 customer_status 状态样式
 const ITEM_STATUS_STYLES: Record<string, string> = {
@@ -93,6 +106,7 @@ export default async function OrderDetailPage({
       coupons!fk_orders_coupon_id ( redeemed_at_merchant_id, expires_at ),
       order_items (
         id, deal_id, unit_price, service_fee,
+        created_at,
         customer_status, merchant_status,
         redeemed_merchant_id, redeemed_at, redeemed_by,
         refunded_at, refund_reason, refund_amount, refund_method,
@@ -156,6 +170,17 @@ export default async function OrderDetailPage({
     dealGroups = Array.from(groupMap.values())
   }
 
+  // V3：与时间线一致的「Voucher #n」全局序号（按 order_item.created_at 升序）
+  const voucherIndexByItemId = new Map<string, number>()
+  if (hasV3Items && orderItems) {
+    const sortedForVoucherN = [...orderItems].sort(
+      (a, b) => new Date(a.created_at ?? 0).getTime() - new Date(b.created_at ?? 0).getTime()
+    )
+    sortedForVoucherN.forEach((it, i) => {
+      if (it?.id != null) voucherIndexByItemId.set(String(it.id), i + 1)
+    })
+  }
+
   // V2 兼容：旧订单
   const deal = order.deals as any
   const merchant = Array.isArray(deal?.merchants) ? deal.merchants[0] : deal?.merchants
@@ -184,7 +209,7 @@ export default async function OrderDetailPage({
   if (!hasV3Items) {
     const { data: couponsData } = await supabase
       .from('coupons')
-      .select('id, qr_code, coupon_code, status, expires_at, used_at, verified_by, redeemed_at_merchant_id, gifted_from, is_gifted, current_holder_user_id, void_reason, voided_at')
+      .select('id, qr_code, coupon_code, status, expires_at, used_at, created_at, verified_by, redeemed_at_merchant_id, gifted_from, is_gifted, current_holder_user_id, void_reason, voided_at')
       .eq('order_id', id)
       .order('created_at', { ascending: true })
     v2Coupons = couponsData ?? []
@@ -329,6 +354,22 @@ export default async function OrderDetailPage({
     total: Number((order as { service_fee_total?: number | string | null }).service_fee_total ?? 0),
   }
 
+  const orderForTimeline = {
+    created_at: order.created_at as string | null,
+    paid_at: paidAt,
+    refund_requested_at: (order.refund_requested_at as string | null) ?? null,
+    refunded_at: (order.refunded_at as string | null) ?? null,
+    refund_rejected_at: (order as { refund_rejected_at?: string | null }).refund_rejected_at ?? null,
+    refund_reason: (order.refund_reason as string | null) ?? null,
+    status: order.status as string | null,
+    updated_at: (order.updated_at as string | null) ?? null,
+  }
+
+  const v2DealTitle = (deal?.title as string | null | undefined) ?? null
+  const timelineEvents = hasV3Items && orderItems
+    ? buildOrderTimelineV3(orderForTimeline, orderItems as OrderItemLike[])
+    : buildOrderTimelineV2(orderForTimeline, v2Coupons as V2CouponLike[], { dealTitle: v2DealTitle })
+
   return (
     <div>
       <div className="mb-6">
@@ -444,35 +485,68 @@ export default async function OrderDetailPage({
                   <div className="space-y-3">
                     {group.items.map((item: any, idx: number) => {
                       const coupon = Array.isArray(item.coupons) ? item.coupons[0] : item.coupons
-                      const couponCode = coupon?.coupon_code
-                      const formattedCode = couponCode && couponCode.length === 16
-                        ? `${couponCode.slice(0, 4)}-${couponCode.slice(4, 8)}-${couponCode.slice(8, 12)}-${couponCode.slice(12)}`
-                        : couponCode ?? '—'
+                      const couponCodeRaw = coupon?.coupon_code as string | null | undefined
+                      const codeClipboard = couponCodeForClipboard(couponCodeRaw)
+                      const codeDisplay = displayCouponCode(couponCodeRaw)
+                      const qrInfo = qrPayloadPreview(coupon?.qr_code as string | null | undefined)
+                      const voucherN = voucherIndexByItemId.get(String(item.id)) ?? idx + 1
                       const redeemedName = item.redeemed_merchant_id
                         ? redeemedMerchantNames[item.redeemed_merchant_id] ?? item.redeemed_merchant_id.slice(0, 8)
                         : null
                       const gift = Array.isArray(item.coupon_gifts) ? item.coupon_gifts[0] : item.coupon_gifts
                       const recipientCoupon = coupon?.id ? giftRecipientCouponStatus[coupon.id] : null
-                      // 只有已核销的券才在头部显示券码
-                      const showCodeInHeader = item.customer_status === 'used'
 
                       return (
                         <div key={item.id} className="border border-gray-100 rounded-lg bg-gray-50/50 p-3">
-                          {/* 券头部：code + 状态 */}
-                          <div className="flex items-center justify-between mb-2">
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs text-gray-400">#{idx + 1}</span>
-                              {showCodeInHeader && <span className="font-mono text-sm text-gray-800">{formattedCode}</span>}
+                          {/* 券头部：全局序号 + 展示券码 + 复制原始券码 */}
+                          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                            <div className="flex flex-wrap items-center gap-2 min-w-0">
+                              <span className="text-xs text-gray-400 shrink-0">#{voucherN}</span>
+                              {codeClipboard ? (
+                                <>
+                                  <span className="font-mono text-sm text-gray-800 break-all" title={codeClipboard}>
+                                    {codeDisplay}
+                                  </span>
+                                  <CopyTextButton text={codeClipboard} label="Copy code" copiedLabel="Copied" className="shrink-0" />
+                                </>
+                              ) : (
+                                <span className="text-xs text-gray-400">No coupon code</span>
+                              )}
                             </div>
-                            <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${ITEM_STATUS_STYLES[item.customer_status] ?? 'bg-gray-100 text-gray-600'}`}>
+                            <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium shrink-0 ${ITEM_STATUS_STYLES[item.customer_status] ?? 'bg-gray-100 text-gray-600'}`}>
                               {ITEM_STATUS_LABELS[item.customer_status] ?? item.customer_status}
                             </span>
                           </div>
 
-                          {/* 基础信息行 */}
-                          <div className="flex items-center gap-4 text-xs text-gray-500 mb-1">
-                            <span>Expires: {coupon?.expires_at ? new Date(coupon.expires_at).toLocaleDateString('en-US') : '—'}</span>
-                            <span>Price: ${Number(item.unit_price).toFixed(2)}</span>
+                          {/* 基础信息行：过期、价格、QR */}
+                          <div className="flex flex-wrap items-start justify-between gap-3 text-xs text-gray-500 mb-1">
+                            <div className="flex flex-wrap items-center gap-4">
+                              <span>Expires: {coupon?.expires_at ? new Date(coupon.expires_at).toLocaleDateString('en-US') : '—'}</span>
+                              <span>Price: ${Number(item.unit_price).toFixed(2)}</span>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2 min-w-0 max-w-full md:max-w-[min(100%,28rem)]">
+                              {qrInfo.full ? (
+                                <>
+                                  <span className="text-gray-500 shrink-0">QR:</span>
+                                  <span className="font-mono text-gray-700 break-all" title={qrInfo.full}>
+                                    {qrInfo.preview}
+                                  </span>
+                                  <CopyTextButton text={qrInfo.full} label="Copy QR" copiedLabel="Copied" className="shrink-0" />
+                                  {qrInfo.isHttpUrl && (
+                                    <Link
+                                      href={qrInfo.full}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-blue-600 hover:underline shrink-0 font-medium"
+                                    >
+                                      Open
+                                    </Link>
+                                  )}
+                                </>
+                              ) : (
+                                <span>QR: —</span>
+                              )}
+                            </div>
                           </div>
 
                           {/* 已核销 (Redeemed) */}
@@ -484,7 +558,7 @@ export default async function OrderDetailPage({
                               </div>
                               <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-gray-600 pl-4">
                                 <div>Time: <span className="text-gray-900">{item.redeemed_at ? new Date(item.redeemed_at).toLocaleString() : '—'}</span></div>
-                                <div>Code: <span className="font-mono text-gray-900">{formattedCode}</span></div>
+                                <div>Code: <span className="font-mono text-gray-900">{codeDisplay}</span></div>
                                 <div>Store: {redeemedName ? (
                                   <Link href={`/merchants/${item.redeemed_merchant_id}`} className="text-blue-600 hover:underline">{redeemedName}</Link>
                                 ) : <span className="text-gray-400">—</span>}</div>
@@ -659,26 +733,32 @@ export default async function OrderDetailPage({
                   </h3>
                   <div className="space-y-3">
                     {v2Coupons.map((c: any, idx: number) => {
-                      const cCode = c.coupon_code
-                      const fmtCode = cCode && cCode.length === 16
-                        ? `${cCode.slice(0, 4)}-${cCode.slice(4, 8)}-${cCode.slice(8, 12)}-${cCode.slice(12)}`
-                        : cCode ?? null
+                      const codeClipboard = couponCodeForClipboard(c.coupon_code)
+                      const codeDisplay = displayCouponCode(c.coupon_code)
+                      const qrInfo = qrPayloadPreview(c.qr_code as string | null | undefined)
                       const rmName = c.redeemed_at_merchant_id
                         ? v2RedeemedMerchantNames[c.redeemed_at_merchant_id] ?? c.redeemed_at_merchant_id.slice(0, 8)
                         : null
                       const couponStatus = c.status as string
-                      // 只有已核销的券才显示券码
-                      const showCode = couponStatus === 'used'
 
                       return (
                         <div key={c.id} className="border border-gray-100 rounded-lg bg-gray-50/50 p-3">
-                          {/* 券头部 */}
-                          <div className="flex items-center justify-between mb-2">
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs text-gray-400">#{idx + 1}</span>
-                              {showCode && fmtCode && <span className="font-mono text-sm text-gray-800">{fmtCode}</span>}
+                          {/* 券头部：序号 + 展示券码 + 复制 */}
+                          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                            <div className="flex flex-wrap items-center gap-2 min-w-0">
+                              <span className="text-xs text-gray-400 shrink-0">#{idx + 1}</span>
+                              {codeClipboard ? (
+                                <>
+                                  <span className="font-mono text-sm text-gray-800 break-all" title={codeClipboard}>
+                                    {codeDisplay}
+                                  </span>
+                                  <CopyTextButton text={codeClipboard} label="Copy code" copiedLabel="Copied" className="shrink-0" />
+                                </>
+                              ) : (
+                                <span className="text-xs text-gray-400">No coupon code</span>
+                              )}
                             </div>
-                            <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                            <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium shrink-0 ${
                               couponStatus === 'used' ? 'bg-green-100 text-green-700'
                               : couponStatus === 'unused' ? 'bg-blue-100 text-blue-700'
                               : couponStatus === 'expired' ? 'bg-red-100 text-red-700'
@@ -690,9 +770,35 @@ export default async function OrderDetailPage({
                             </span>
                           </div>
 
-                          {/* 基础信息 */}
-                          <div className="flex items-center gap-4 text-xs text-gray-500 mb-1">
-                            <span>Expires: {c.expires_at ? new Date(c.expires_at).toLocaleDateString('en-US') : '—'}</span>
+                          {/* 基础信息：过期、单价、QR */}
+                          <div className="flex flex-wrap items-start justify-between gap-3 text-xs text-gray-500 mb-1">
+                            <div className="flex flex-wrap items-center gap-4">
+                              <span>Expires: {c.expires_at ? new Date(c.expires_at).toLocaleDateString('en-US') : '—'}</span>
+                              <span>Price: ${Number(order.unit_price).toFixed(2)}</span>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2 min-w-0 max-w-full md:max-w-[min(100%,28rem)]">
+                              {qrInfo.full ? (
+                                <>
+                                  <span className="text-gray-500 shrink-0">QR:</span>
+                                  <span className="font-mono text-gray-700 break-all" title={qrInfo.full}>
+                                    {qrInfo.preview}
+                                  </span>
+                                  <CopyTextButton text={qrInfo.full} label="Copy QR" copiedLabel="Copied" className="shrink-0" />
+                                  {qrInfo.isHttpUrl && (
+                                    <Link
+                                      href={qrInfo.full}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-blue-600 hover:underline shrink-0 font-medium"
+                                    >
+                                      Open
+                                    </Link>
+                                  )}
+                                </>
+                              ) : (
+                                <span>QR: —</span>
+                              )}
+                            </div>
                           </div>
 
                           {/* 已核销 */}
@@ -704,7 +810,7 @@ export default async function OrderDetailPage({
                               </div>
                               <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-gray-600 pl-4">
                                 <div>Time: <span className="text-gray-900">{c.used_at ? new Date(c.used_at).toLocaleString() : '—'}</span></div>
-                                <div>Code: <span className="font-mono text-gray-900">{fmtCode}</span></div>
+                                <div>Code: <span className="font-mono text-gray-900">{codeDisplay}</span></div>
                                 {rmName && (
                                   <div>Store: <Link href={`/merchants/${c.redeemed_at_merchant_id}`} className="text-blue-600 hover:underline">{rmName}</Link></div>
                                 )}
@@ -799,6 +905,7 @@ export default async function OrderDetailPage({
 
         <aside className="order-2 flex w-full shrink-0 flex-col gap-4 md:sticky md:top-4 md:w-72 md:max-w-[22rem] lg:w-80">
           <OrderDetailCustomerSidebar customer={customerSummary} returnToPath={`/orders/${order.id}`} />
+          <OrderDetailTimelineCard events={timelineEvents} />
         </aside>
       </div>
     </div>
