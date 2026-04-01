@@ -3,6 +3,8 @@
  * 注释中文；展示文案英文。
  */
 
+import { displayCouponCode } from '@/lib/coupon-admin-display'
+
 export type OrderTimelineEntry = {
   /** ISO 时间字符串，用于排序与展示 */
   at: string
@@ -36,6 +38,10 @@ export type OrderItemLike = {
     | { created_at?: string | null }[]
     | { created_at?: string | null }
     | null
+  coupons?:
+    | { coupon_code?: string | null }
+    | { coupon_code?: string | null }[]
+    | null
 }
 
 export type V2CouponLike = {
@@ -44,6 +50,7 @@ export type V2CouponLike = {
   used_at?: string | null
   voided_at?: string | null
   status?: string | null
+  coupon_code?: string | null
 }
 
 function fmtMethod(m: string | null | undefined): string {
@@ -64,6 +71,16 @@ function giftCreatedAt(item: OrderItemLike): string | null {
   if (!g) return null
   const row = Array.isArray(g) ? g[0] : g
   return row?.created_at ?? null
+}
+
+/** 从 order_item 嵌套 coupons 取券码（用于时间线与列表一致） */
+function couponCodeFromItem(item: OrderItemLike): string | null {
+  const c = item.coupons
+  if (!c) return null
+  const one = Array.isArray(c) ? c[0] : c
+  const raw = one?.coupon_code
+  if (raw == null || String(raw).trim() === '') return null
+  return String(raw).trim()
 }
 
 function push(
@@ -107,7 +124,9 @@ export function buildOrderTimelineV3(order: OrderLike, orderItems: OrderItemLike
   sorted.forEach((item, idx) => {
     const n = idx + 1
     const deal = dealTitleFromItem(item)
-    const prefix = `Voucher #${n}`
+    const cc = couponCodeFromItem(item)
+    const suffix = cc ? ` · ${displayCouponCode(cc)}` : ''
+    const prefix = `Voucher #${n}${suffix}`
 
     push(out, item.redeemed_at, `${prefix} redeemed`, deal || undefined)
 
@@ -144,7 +163,10 @@ export function buildOrderTimelineV2(order: OrderLike, v2Coupons: V2CouponLike[]
 
   sorted.forEach((c, idx) => {
     const n = idx + 1
-    const prefix = `Voucher #${n}`
+    const raw = c.coupon_code
+    const cc = raw != null && String(raw).trim() !== '' ? String(raw).trim() : null
+    const suffix = cc ? ` · ${displayCouponCode(cc)}` : ''
+    const prefix = `Voucher #${n}${suffix}`
 
     if (c.used_at && c.status === 'used') {
       push(out, c.used_at, `${prefix} redeemed`)
