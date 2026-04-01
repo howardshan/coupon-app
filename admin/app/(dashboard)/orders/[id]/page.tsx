@@ -6,6 +6,7 @@ import OrderDetailPricingCard from '@/components/order-detail-pricing-card'
 import OrderDetailCustomerSidebar, {
   type OrderCustomerSummary,
 } from '@/components/order-detail-customer-sidebar'
+import OrderDetailTimelineCard from '@/components/order-detail-timeline-card'
 import { getOrderDetailStatusTags, STATUS_STYLES, STATUS_LABELS } from '@/lib/order-display-status'
 import {
   buildDealPriceLines,
@@ -14,6 +15,12 @@ import {
   computeV2RefundSummaryFromCoupons,
   serviceFeeLineLabel,
 } from '@/lib/order-detail-display'
+import {
+  buildOrderTimelineV2,
+  buildOrderTimelineV3,
+  type OrderItemLike,
+  type V2CouponLike,
+} from '@/lib/order-admin-timeline'
 
 // V3 order_item 的 customer_status 状态样式
 const ITEM_STATUS_STYLES: Record<string, string> = {
@@ -93,6 +100,7 @@ export default async function OrderDetailPage({
       coupons!fk_orders_coupon_id ( redeemed_at_merchant_id, expires_at ),
       order_items (
         id, deal_id, unit_price, service_fee,
+        created_at,
         customer_status, merchant_status,
         redeemed_merchant_id, redeemed_at, redeemed_by,
         refunded_at, refund_reason, refund_amount, refund_method,
@@ -184,7 +192,7 @@ export default async function OrderDetailPage({
   if (!hasV3Items) {
     const { data: couponsData } = await supabase
       .from('coupons')
-      .select('id, qr_code, coupon_code, status, expires_at, used_at, verified_by, redeemed_at_merchant_id, gifted_from, is_gifted, current_holder_user_id, void_reason, voided_at')
+      .select('id, qr_code, coupon_code, status, expires_at, used_at, created_at, verified_by, redeemed_at_merchant_id, gifted_from, is_gifted, current_holder_user_id, void_reason, voided_at')
       .eq('order_id', id)
       .order('created_at', { ascending: true })
     v2Coupons = couponsData ?? []
@@ -328,6 +336,21 @@ export default async function OrderDetailPage({
     title: 'Service fee',
     total: Number((order as { service_fee_total?: number | string | null }).service_fee_total ?? 0),
   }
+
+  const orderForTimeline = {
+    created_at: order.created_at as string | null,
+    paid_at: paidAt,
+    refund_requested_at: (order.refund_requested_at as string | null) ?? null,
+    refunded_at: (order.refunded_at as string | null) ?? null,
+    refund_rejected_at: (order as { refund_rejected_at?: string | null }).refund_rejected_at ?? null,
+    refund_reason: (order.refund_reason as string | null) ?? null,
+    status: order.status as string | null,
+    updated_at: (order.updated_at as string | null) ?? null,
+  }
+
+  const timelineEvents = hasV3Items && orderItems
+    ? buildOrderTimelineV3(orderForTimeline, orderItems as OrderItemLike[])
+    : buildOrderTimelineV2(orderForTimeline, v2Coupons as V2CouponLike[])
 
   return (
     <div>
@@ -799,6 +822,7 @@ export default async function OrderDetailPage({
 
         <aside className="order-2 flex w-full shrink-0 flex-col gap-4 md:sticky md:top-4 md:w-72 md:max-w-[22rem] lg:w-80">
           <OrderDetailCustomerSidebar customer={customerSummary} returnToPath={`/orders/${order.id}`} />
+          <OrderDetailTimelineCard events={timelineEvents} />
         </aside>
       </div>
     </div>
