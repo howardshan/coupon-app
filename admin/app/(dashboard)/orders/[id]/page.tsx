@@ -2,7 +2,15 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import OrderRefundButtons from '@/components/order-refund-buttons'
+import OrderDetailPricingCard from '@/components/order-detail-pricing-card'
 import { getOrderDetailStatusTags, STATUS_STYLES, STATUS_LABELS } from '@/lib/order-display-status'
+import {
+  buildDealPriceLines,
+  computePaymentSplit,
+  computeRefundSummary,
+  computeV2RefundSummaryFromCoupons,
+  serviceFeeLineLabel,
+} from '@/lib/order-detail-display'
 
 // V3 order_item 的 customer_status 状态样式
 const ITEM_STATUS_STYLES: Record<string, string> = {
@@ -74,6 +82,8 @@ export default async function OrderDetailPage({
       refund_requested_at,
       refunded_at,
       refund_rejected_at,
+      store_credit_used,
+      paid_at,
       users ( id, email ),
       deals ( id, title, discount_price, applicable_merchant_ids, merchants ( id, name ) ),
       coupons!fk_orders_coupon_id ( redeemed_at_merchant_id, expires_at ),
@@ -270,15 +280,43 @@ export default async function OrderDetailPage({
       })()
     : null
 
+  const orderNumberDisplay = (order.order_number as string | null) ?? id.slice(0, 8)
+  const storeCreditUsed = Number((order as { store_credit_used?: number | string | null }).store_credit_used ?? 0)
+  const paidAt = (order as { paid_at?: string | null }).paid_at ?? null
+  const totalAmt = Number(order.total_amount ?? 0)
+  const paymentSplit = computePaymentSplit(totalAmt, storeCreditUsed)
+
+  const pricingRefundSummary =
+    hasV3Items && orderItems
+      ? computeRefundSummary(
+          orderItems.map((i) => ({
+            customer_status: String(i.customer_status ?? ''),
+            refund_method: i.refund_method ?? null,
+            refund_amount: i.refund_amount ?? null,
+            unit_price: i.unit_price ?? null,
+            service_fee: i.service_fee,
+          }))
+        )
+      : computeV2RefundSummaryFromCoupons(v2Coupons, Number(order.unit_price ?? 0))
+
+  const v2PriceLines = [
+    {
+      label: `${(deal?.title as string | undefined) ?? 'Deal'} × ${Number(order.quantity ?? 1)}`,
+      amount: Number(order.unit_price ?? 0) * Number(order.quantity ?? 1),
+    },
+  ]
+  const v2ServiceFeeLine = {
+    title: 'Service fee',
+    total: Number((order as { service_fee_total?: number | string | null }).service_fee_total ?? 0),
+  }
+
   return (
     <div>
       <div className="mb-6">
         <Link href="/orders" className="mb-3 inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 bg-white text-gray-700 shadow-sm hover:bg-gray-50 transition-colors">
           ← Back to Orders
         </Link>
-        <h1 className="text-2xl font-bold text-gray-900 mt-2">
-          Order {order.order_number ?? id.slice(0, 8)}
-        </h1>
+        <h1 className="text-2xl font-bold text-gray-900 mt-2">Order {orderNumberDisplay}</h1>
       </div>
 
       <div className="space-y-6">
@@ -322,32 +360,39 @@ export default async function OrderDetailPage({
           )}
         </div>
 
+        {/* 订单信息、价格明细、支付拆分、退款汇总（与用户端对齐） */}
+        {hasV3Items ? (
+          <OrderDetailPricingCard
+            orderNumber={orderNumberDisplay}
+            createdAt={order.created_at as string}
+            paidAt={paidAt}
+            priceLines={buildDealPriceLines(dealGroups)}
+            serviceFeeLine={serviceFeeLineLabel(orderItems)}
+            totalAmount={totalAmt}
+            payment={paymentSplit}
+            paymentIntentId={(order.payment_intent_id as string | null) ?? null}
+            refundSummary={pricingRefundSummary}
+          />
+        ) : (
+          <OrderDetailPricingCard
+            orderNumber={orderNumberDisplay}
+            createdAt={order.created_at as string}
+            paidAt={paidAt}
+            priceLines={v2PriceLines}
+            serviceFeeLine={v2ServiceFeeLine}
+            totalAmount={totalAmt}
+            payment={paymentSplit}
+            paymentIntentId={(order.payment_intent_id as string | null) ?? null}
+            refundSummary={pricingRefundSummary}
+          />
+        )}
+
         {/* V3: Order Items 按 deal 分组 */}
         {hasV3Items ? (
           <div className="bg-white rounded-xl border border-gray-200 p-6">
             <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">
               Order Items ({orderItems.length} coupon{orderItems.length > 1 ? 's' : ''})
             </h2>
-
-            {/* 汇总 */}
-            <dl className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm mb-6 pb-4 border-b border-gray-100">
-              <div>
-                <dt className="text-gray-500">Items Amount</dt>
-                <dd className="font-medium text-gray-900 mt-0.5">${Number((order as any).items_amount ?? 0).toFixed(2)}</dd>
-              </div>
-              <div>
-                <dt className="text-gray-500">Service Fee</dt>
-                <dd className="font-medium text-gray-900 mt-0.5">${Number((order as any).service_fee_total ?? 0).toFixed(2)}</dd>
-              </div>
-              <div>
-                <dt className="text-gray-500">Total Amount</dt>
-                <dd className="font-semibold text-gray-900 mt-0.5">${Number(order.total_amount).toFixed(2)}</dd>
-              </div>
-              <div>
-                <dt className="text-gray-500">Created</dt>
-                <dd className="font-medium text-gray-900 mt-0.5">{new Date(order.created_at).toLocaleString()}</dd>
-              </div>
-            </dl>
 
             {/* 按 deal 分组展示 */}
             <div className="space-y-5">
@@ -735,12 +780,6 @@ export default async function OrderDetailPage({
             </dl>
           </div>
         )}
-
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Payment</h2>
-          <p className="text-xs text-gray-500 font-mono break-all">{order.payment_intent_id ?? '—'}</p>
-          <p className="text-xs text-gray-400 mt-1">Use this ID to look up the charge in Stripe Dashboard.</p>
-        </div>
       </div>
     </div>
   )
