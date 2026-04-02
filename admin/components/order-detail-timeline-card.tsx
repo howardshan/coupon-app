@@ -6,7 +6,7 @@ export default function OrderDetailTimelineCard({ events }: { events: OrderTimel
   return (
     <AdminActivityTimelineCard
       title="Activity timeline"
-      footnote="Derived from payment, refund, and voucher timestamps. Intermediate approval steps may not appear if not stored separately."
+      footnote="Derived from payment, refund, gift, and voucher timestamps. Intermediate approval steps may not appear if not stored separately."
       events={events}
     />
   )

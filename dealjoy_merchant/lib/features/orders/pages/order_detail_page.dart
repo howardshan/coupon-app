@@ -382,6 +382,55 @@ class OrderDetailPage extends ConsumerWidget {
                 ),
               ),
             ],
+
+            // 赠礼 / 收回（coupon_gifts 多段历史）
+            if (item.giftEvents.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              ...item.giftEvents.map((ev) {
+                final isRecalled = ev.isRecalled;
+                final bg = isRecalled
+                    ? const Color(0xFFF3F4F6)
+                    : const Color(0xFFFDF2F8);
+                final fg = isRecalled
+                    ? const Color(0xFF4B5563)
+                    : const Color(0xFF9D174D);
+                final icon = isRecalled
+                    ? Icons.undo_rounded
+                    : Icons.card_giftcard_rounded;
+                final line = isRecalled
+                    ? 'Gift recalled — ${DateFormat('MMM d, yyyy · h:mm a').format(ev.at.toLocal())}'
+                    : 'Gifted on ${DateFormat('MMM d, yyyy · h:mm a').format(ev.at.toLocal())}${ev.toHint != null && ev.toHint!.isNotEmpty ? ' · ${ev.toHint}' : ''}';
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: bg,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(icon, size: 13, color: fg),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            line,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: fg,
+                            ),
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }),
+            ],
           ],
         ),
       ),

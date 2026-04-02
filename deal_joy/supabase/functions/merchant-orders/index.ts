@@ -407,6 +407,7 @@ function computePrimaryStatus(items: Record<string, unknown>[]): string {
     'refund_reject': 5,
     'unused': 4,
     'paid': 4,      // paid = 已付款未使用，与 unused 同级
+    'gifted': 3,    // 已赠出，仍优先于已退款展示
     'used': 3,
     'refund_success': 1,
     'expired': 0,
@@ -419,6 +420,51 @@ function computePrimaryStatus(items: Record<string, unknown>[]): string {
     if (p > maxP) { maxP = p; primary = s; }
   }
   return primary;
+}
+
+// 商家端脱敏：赠礼受赠邮箱
+function maskRecipientEmail(email: string): string {
+  const at = email.indexOf('@');
+  if (at <= 0) return '***';
+  const local = email.slice(0, at);
+  const domain = email.slice(at + 1);
+  const head = local.length > 0 ? local[0] : '?';
+  return `${head}***@${domain}`;
+}
+
+/** 从 coupon_gifts 行构造时间线式事件（送出 / 收回） */
+function buildMerchantGiftEvents(rows: unknown): Array<{
+  kind: 'sent' | 'recalled';
+  at: string;
+  to_hint?: string | null;
+}> {
+  if (!Array.isArray(rows) || rows.length === 0) return [];
+  const sorted = [...rows].sort(
+    (a, b) =>
+      new Date(String((a as Record<string, unknown>).created_at ?? 0)).getTime() -
+      new Date(String((b as Record<string, unknown>).created_at ?? 0)).getTime(),
+  );
+  const out: Array<{ kind: 'sent' | 'recalled'; at: string; to_hint?: string | null }> = [];
+  for (const raw of sorted) {
+    const g = raw as Record<string, unknown>;
+    const ca = g.created_at as string | null;
+    if (ca) {
+      const email = (g.recipient_email as string | null)?.trim();
+      const uid = (g.recipient_user_id as string | null)?.trim();
+      const giftType = (g.gift_type as string | null) ?? null;
+      let hint: string | null = null;
+      if (email && email.includes('@')) hint = maskRecipientEmail(email);
+      else if (uid && uid.length > 8) hint = `User ${uid.slice(0, 8)}…`;
+      else if (giftType === 'in_app') hint = 'Friend (in-app)';
+      out.push({ kind: 'sent', at: ca, to_hint: hint });
+    }
+    const status = g.status as string | null;
+    const ra = g.recalled_at as string | null;
+    if (status === 'recalled' && ra) {
+      out.push({ kind: 'recalled', at: ra });
+    }
+  }
+  return out;
 }
 
 // =============================================================
@@ -564,6 +610,15 @@ async function handleDetail(
         expires_at,
         redeemed_at,
         used_at
+      ),
+      coupon_gifts (
+        id,
+        status,
+        gift_type,
+        created_at,
+        recalled_at,
+        recipient_email,
+        recipient_user_id
       )
     `)
     .eq('order_id', orderId)
@@ -631,6 +686,8 @@ async function handleDetail(
       refund_method: row.refund_method,
       refund_amount: row.refund_amount,
       refund_reason: row.refund_reason,
+      // 赠礼 / 收回（coupon_gifts 多段历史，邮箱脱敏）
+      gift_events: buildMerchantGiftEvents(row.coupon_gifts),
       // 时间戳
       created_at: row.created_at,
       updated_at: row.updated_at,

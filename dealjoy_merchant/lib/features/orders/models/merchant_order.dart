@@ -35,6 +35,7 @@ enum OrderStatus {
       case 'refunded':
         return OrderStatus.refunded;
       case 'gifted':
+        return OrderStatus.gifted;
       case 'unused':
       default:
         return OrderStatus.unused;
@@ -44,8 +45,9 @@ enum OrderStatus {
   /// 向后兼容：从单个状态字符串映射
   factory OrderStatus.fromString(String value) {
     switch (value.toLowerCase()) {
-      case 'unused':
       case 'gifted':
+        return OrderStatus.gifted;
+      case 'unused':
         return OrderStatus.unused;
       case 'used':
       case 'redeemed':
@@ -259,6 +261,33 @@ class OrderTimeline {
 }
 
 // =============================================================
+// MerchantGiftEvent — 商家端订单详情赠礼时间线（脱敏）
+// =============================================================
+
+/// 单条赠礼事件（来自 merchant-orders gift_events）
+class MerchantGiftEvent {
+  final String kind;
+  final DateTime at;
+  final String? toHint;
+
+  const MerchantGiftEvent({
+    required this.kind,
+    required this.at,
+    this.toHint,
+  });
+
+  factory MerchantGiftEvent.fromJson(Map<String, dynamic> json) {
+    return MerchantGiftEvent(
+      kind: json['kind'] as String? ?? 'sent',
+      at: DateTime.parse(json['at'] as String),
+      toHint: json['to_hint'] as String?,
+    );
+  }
+
+  bool get isRecalled => kind == 'recalled';
+}
+
+// =============================================================
 // MerchantOrderItem — order_items 子项数据模型（V3）
 // =============================================================
 
@@ -333,6 +362,9 @@ class MerchantOrderItem {
   /// 商家实收净额
   final double netAmount;
 
+  /// 赠礼 / 收回事件（与退款块类似的多段展示）
+  final List<MerchantGiftEvent> giftEvents;
+
   const MerchantOrderItem({
     required this.orderItemId,
     required this.orderId,
@@ -357,10 +389,18 @@ class MerchantOrderItem {
     this.brandFee = 0.0,
     this.stripeFee = 0.0,
     this.netAmount = 0.0,
+    this.giftEvents = const [],
   });
 
   /// 从 Edge Function 返回的 JSON 构造（null-safe）
   factory MerchantOrderItem.fromJson(Map<String, dynamic> json) {
+    final ge = json['gift_events'] as List<dynamic>?;
+    final giftEvents = ge == null || ge.isEmpty
+        ? const <MerchantGiftEvent>[]
+        : ge
+            .map((e) => MerchantGiftEvent.fromJson(e as Map<String, dynamic>))
+            .toList();
+
     return MerchantOrderItem(
       orderItemId: json['order_item_id'] as String? ?? json['id'] as String? ?? '',
       orderId: json['order_id'] as String? ?? '',
@@ -391,6 +431,7 @@ class MerchantOrderItem {
       brandFee: (json['brand_fee'] as num?)?.toDouble() ?? 0.0,
       stripeFee: (json['stripe_fee'] as num?)?.toDouble() ?? 0.0,
       netAmount: (json['net_amount'] as num?)?.toDouble() ?? 0.0,
+      giftEvents: giftEvents,
     );
   }
 
@@ -576,13 +617,13 @@ class MerchantOrderDetail {
   /// 计算主状态（从 items 中推导，取优先级最高的状态）
   OrderStatus get primaryStatus {
     if (items.isEmpty) return OrderStatus.unused;
-    // 优先级：redeemed(待结算) > unused > refunded > settled > gifted
+    // 优先级：redeemed(待结算) > unused / gifted > refunded > settled
     const priority = {
       OrderStatus.redeemed: 5,
       OrderStatus.unused: 4,
+      OrderStatus.gifted: 4,
       OrderStatus.refunded: 3,
       OrderStatus.settled: 2,
-      OrderStatus.gifted: 1,
     };
     int maxP = -1;
     OrderStatus primary = OrderStatus.unused;
