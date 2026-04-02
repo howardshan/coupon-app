@@ -33,10 +33,12 @@ class CampaignCard extends StatelessWidget {
       secondaryBackground: _buildDeleteBackground(),
       confirmDismiss: (direction) async {
         if (direction == DismissDirection.startToEnd) {
-          // 右滑：Pause / Resume
-          if (campaign.status == 'active' && onPause != null) {
+          // 右滑：Pause / Resume（与 Edge pause/resume 规则对齐）
+          final s = campaign.status;
+          if ((s == CampaignStatus.active || s == CampaignStatus.exhausted) &&
+              onPause != null) {
             onPause!();
-          } else if (campaign.status == 'paused' && onResume != null) {
+          } else if (s == CampaignStatus.paused && onResume != null) {
             onResume!();
           }
           return false; // 不真正移除
@@ -79,7 +81,7 @@ class CampaignCard extends StatelessWidget {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      _placementLabel(campaign.placement),
+                      campaign.placementDisplayName,
                       style: const TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
@@ -98,7 +100,7 @@ class CampaignCard extends StatelessWidget {
               Row(
                 children: [
                   Icon(
-                    campaign.targetType == 'deal'
+                    campaign.targetType == TargetType.deal
                         ? Icons.local_offer_outlined
                         : Icons.store_outlined,
                     size: 14,
@@ -107,7 +109,7 @@ class CampaignCard extends StatelessWidget {
                   const SizedBox(width: 4),
                   Expanded(
                     child: Text(
-                      'Target: ${campaign.targetName}',
+                      'Target: ${campaign.targetId}',
                       style: TextStyle(
                         fontSize: 13,
                         color: Colors.grey.shade600,
@@ -157,7 +159,7 @@ class CampaignCard extends StatelessWidget {
               ),
 
               // admin 暂停提示
-              if (campaign.adminPaused) ...[
+              if (campaign.status == CampaignStatus.adminPaused) ...[
                 const SizedBox(height: 8),
                 Container(
                   padding:
@@ -195,7 +197,7 @@ class CampaignCard extends StatelessWidget {
   // 右滑背景（Pause / Resume）
   // ----------------------------------------------------------
   Widget _buildSwipeBackground() {
-    final isPaused = campaign.status == 'paused';
+    final isPaused = campaign.status == CampaignStatus.paused;
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
@@ -283,23 +285,6 @@ class CampaignCard extends StatelessWidget {
     return result ?? false;
   }
 
-  // ----------------------------------------------------------
-  // 广告位标签文案
-  // ----------------------------------------------------------
-  String _placementLabel(String placement) {
-    switch (placement) {
-      case 'home_featured':
-        return 'Home Featured';
-      case 'search_top':
-        return 'Search Top';
-      case 'category_banner':
-        return 'Category Banner';
-      case 'deal_related':
-        return 'Deal Related';
-      default:
-        return placement;
-    }
-  }
 }
 
 // =============================================================
@@ -350,7 +335,7 @@ class _IconData {
 // _StatusBadge — 状态徽章（私有组件）
 // =============================================================
 class _StatusBadge extends StatelessWidget {
-  final String status;
+  final CampaignStatus status;
 
   const _StatusBadge({required this.status});
 
@@ -376,33 +361,33 @@ class _StatusBadge extends StatelessWidget {
     );
   }
 
-  Color _color(String status) {
+  Color _color(CampaignStatus status) {
     switch (status) {
-      case 'active':
+      case CampaignStatus.active:
         return const Color(0xFF4CAF50);
-      case 'paused':
+      case CampaignStatus.paused:
         return const Color(0xFFFF9800);
-      case 'completed':
+      case CampaignStatus.exhausted:
+        return const Color(0xFFFF7043);
+      case CampaignStatus.ended:
         return const Color(0xFF2196F3);
-      case 'draft':
-        return const Color(0xFF9E9E9E);
-      default:
-        return const Color(0xFF9E9E9E);
+      case CampaignStatus.adminPaused:
+        return const Color(0xFFE53935);
     }
   }
 
-  String _label(String status) {
+  String _label(CampaignStatus status) {
     switch (status) {
-      case 'active':
+      case CampaignStatus.active:
         return 'Active';
-      case 'paused':
+      case CampaignStatus.paused:
         return 'Paused';
-      case 'completed':
-        return 'Completed';
-      case 'draft':
-        return 'Draft';
-      default:
-        return status;
+      case CampaignStatus.exhausted:
+        return 'Exhausted';
+      case CampaignStatus.ended:
+        return 'Ended';
+      case CampaignStatus.adminPaused:
+        return 'Admin';
     }
   }
 }

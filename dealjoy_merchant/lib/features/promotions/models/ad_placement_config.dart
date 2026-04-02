@@ -46,11 +46,17 @@ class AdPlacementConfig {
     }
   }
 
+  /// 建议出价下限（与 minBid 一致）
+  double get suggestedBidLow => minBid;
+
+  /// 建议出价上限（展示用，非服务端硬限制）
+  double get suggestedBidHigh =>
+      (minBid * 6).clamp(minBid + 0.1, 9.99).toDouble();
+
   /// 建议价格范围文本，如 "\$0.50 – \$3.00"
   String get suggestedPriceRange {
-    // 建议范围：最低出价 ~ 最低出价 × 6（仅作显示参考）
-    final low = minBid;
-    final high = (minBid * 6).clamp(minBid + 0.1, 9.99);
+    final low = suggestedBidLow;
+    final high = suggestedBidHigh;
     return '\$${low.toStringAsFixed(2)} – \$${high.toStringAsFixed(2)}';
   }
 
