@@ -115,36 +115,74 @@ class _CampaignCreatePageState extends ConsumerState<CampaignCreatePage> {
   // ----------------------------------------------------------
   // 提交创建
   // ----------------------------------------------------------
+  /// UI 预设时段 → Edge Function 所需的 schedule_hours（null 表示全天）
+  List<int>? _schedulePresetToHours(String preset) {
+    switch (preset) {
+      case 'lunch':
+        return [11, 12, 13];
+      case 'dinner':
+        return [17, 18, 19, 20, 21];
+      default:
+        return null;
+    }
+  }
+
+  /// 组装创建请求用的草稿（仅 toCreateJson 字段有效，其余为占位）
+  AdCampaign _buildDraftCampaign() {
+    final tt =
+        _targetType == 'store' ? TargetType.store : TargetType.deal;
+    final hours = _schedulePresetToHours(_scheduleHours);
+    final start = _startDate != null
+        ? DateTime(_startDate!.year, _startDate!.month, _startDate!.day)
+        : DateTime.now();
+    final end = _endDate != null
+        ? DateTime(
+            _endDate!.year,
+            _endDate!.month,
+            _endDate!.day,
+            23,
+            59,
+            59,
+          )
+        : null;
+    return AdCampaign(
+      id: '',
+      merchantId: '',
+      adAccountId: '',
+      targetType: tt,
+      targetId: _targetId!,
+      placement: _placement!,
+      categoryId: null,
+      bidPrice: _bidPrice,
+      dailyBudget: _dailyBudget,
+      scheduleHours: hours,
+      startAt: start,
+      endAt: end,
+      status: CampaignStatus.active,
+      adminNote: null,
+      todaySpend: 0,
+      todayImpressions: 0,
+      todayClicks: 0,
+      totalSpend: 0,
+      totalImpressions: 0,
+      totalClicks: 0,
+      qualityScore: 0.7,
+      adScore: 0,
+      createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
+    );
+  }
+
   Future<void> _submit() async {
     if (_targetId == null || _placement == null) return;
 
     setState(() => _isSubmitting = true);
     try {
-      final supabase = Supabase.instance.client;
-      final user = supabase.auth.currentUser;
+      final user = Supabase.instance.client.auth.currentUser;
       if (user == null) throw Exception('Not logged in');
 
-      final merchantRow = await supabase
-          .from('merchants')
-          .select('id')
-          .eq('user_id', user.id)
-          .maybeSingle();
-      final merchantId = merchantRow?['id'] as String? ?? '';
-
-      final params = <String, dynamic>{
-        'target_type':    _targetType,
-        'target_id':      _targetId,
-        'placement':      _placement,
-        'bid_price':      _bidPrice,
-        'daily_budget':   _dailyBudget,
-        'schedule_hours': _scheduleHours,
-        if (_startDate != null) 'start_date': _startDate!.toIso8601String(),
-        if (_endDate != null)   'end_date':   _endDate!.toIso8601String(),
-      };
-
-      await ref
-          .read(campaignsProvider.notifier)
-          .createCampaign(merchantId, params);
+      final draft = _buildDraftCampaign();
+      await ref.read(campaignsProvider.notifier).createCampaign(draft);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -360,7 +398,7 @@ class _CampaignCreatePageState extends ConsumerState<CampaignCreatePage> {
           loading: () => const Center(child: CircularProgressIndicator(
             color: Color(0xFFFF6B35),
           )),
-          error: (_, __) => const Text('Failed to load placements'),
+          error: (_, _) => const Text('Failed to load placements'),
           data: (configs) => ListView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
@@ -446,7 +484,7 @@ class _CampaignCreatePageState extends ConsumerState<CampaignCreatePage> {
               borderSide: const BorderSide(color: Color(0xFFFF6B35)),
             ),
             helperText: config != null
-                ? 'Minimum: \$${config!.minBid.toStringAsFixed(2)}'
+                ? 'Minimum: \$${config.minBid.toStringAsFixed(2)}'
                 : null,
           ),
           onChanged: (val) {

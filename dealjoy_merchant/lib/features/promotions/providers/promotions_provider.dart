@@ -50,7 +50,7 @@ class AdAccountNotifier extends AsyncNotifier<AdAccount> {
     if (merchantId.isEmpty) return AdAccount.empty();
 
     final service = ref.read(promotionsServiceProvider);
-    return service.fetchAdAccount(merchantId);
+    return service.fetchAccount();
   }
 
   /// 手动刷新（充值成功后调用）
@@ -75,7 +75,7 @@ class CampaignsNotifier extends AsyncNotifier<List<AdCampaign>> {
     if (merchantId.isEmpty) return [];
 
     final service = ref.read(promotionsServiceProvider);
-    return service.fetchCampaigns(merchantId);
+    return service.fetchCampaigns();
   }
 
   /// 手动刷新
@@ -90,7 +90,7 @@ class CampaignsNotifier extends AsyncNotifier<List<AdCampaign>> {
     if (merchantId.isEmpty) return;
 
     final service = ref.read(promotionsServiceProvider);
-    await service.updateCampaignStatus(merchantId, campaignId, 'paused');
+    await service.pauseCampaign(campaignId);
     await refresh();
   }
 
@@ -100,7 +100,7 @@ class CampaignsNotifier extends AsyncNotifier<List<AdCampaign>> {
     if (merchantId.isEmpty) return;
 
     final service = ref.read(promotionsServiceProvider);
-    await service.updateCampaignStatus(merchantId, campaignId, 'active');
+    await service.resumeCampaign(campaignId);
     await refresh();
   }
 
@@ -110,24 +110,40 @@ class CampaignsNotifier extends AsyncNotifier<List<AdCampaign>> {
     if (merchantId.isEmpty) return;
 
     final service = ref.read(promotionsServiceProvider);
-    await service.deleteCampaign(merchantId, campaignId);
+    await service.deleteCampaign(campaignId);
     await refresh();
   }
 
-  /// 创建新 Campaign
-  Future<AdCampaign> createCampaign(
-      String merchantId, Map<String, dynamic> params) async {
+  /// 创建新 Campaign（草稿仅用于 toCreateJson，统计字段可为占位）
+  Future<AdCampaign> createCampaign(AdCampaign draft) async {
     final service = ref.read(promotionsServiceProvider);
-    final campaign = await service.createCampaign(merchantId, params);
+    final campaign = await service.createCampaign(draft);
     await refresh();
     return campaign;
   }
 
-  /// 更新 Campaign
-  Future<void> updateCampaign(
-      String merchantId, String campaignId, Map<String, dynamic> params) async {
+  /// 更新 Campaign（与 PromotionsService.updateCampaign 对齐）
+  Future<void> updateCampaignOnServer({
+    required String campaignId,
+    required double dailyBudget,
+    required bool applyScheduleHours,
+    List<int>? scheduleHours,
+    double? bidPrice,
+    DateTime? startAt,
+    bool applyEndAt = false,
+    DateTime? endAt,
+  }) async {
     final service = ref.read(promotionsServiceProvider);
-    await service.updateCampaign(merchantId, campaignId, params);
+    await service.updateCampaign(
+      campaignId,
+      dailyBudget: dailyBudget,
+      applyScheduleHours: applyScheduleHours,
+      scheduleHours: scheduleHours,
+      bidPrice: bidPrice,
+      startAt: startAt,
+      applyEndAt: applyEndAt,
+      endAt: endAt,
+    );
     await refresh();
   }
 }
@@ -158,7 +174,7 @@ class RechargesNotifier extends AsyncNotifier<List<AdRecharge>> {
     if (merchantId.isEmpty) return [];
 
     final service = ref.read(promotionsServiceProvider);
-    return service.fetchRecharges(merchantId);
+    return service.fetchRecharges();
   }
 
   /// 手动刷新
@@ -194,7 +210,6 @@ final campaignReportProvider =
 
   final service = ref.read(promotionsServiceProvider);
 
-  // 根据选择的时间段计算 startDate
   final now = DateTime.now();
   DateTime? startDate;
   switch (period) {
@@ -209,6 +224,10 @@ final campaignReportProvider =
       break;
   }
 
-  return service.fetchCampaignReport(merchantId, campaignId,
-      startDate: startDate);
+  final stats = await service.fetchCampaignStats(
+    campaignId,
+    startDate: startDate,
+    endDate: null,
+  );
+  return AdCampaignReport.fromDailyStats(campaignId, stats);
 });
