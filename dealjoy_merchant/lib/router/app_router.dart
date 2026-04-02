@@ -75,6 +75,13 @@ import '../features/earnings/pages/payment_account_page.dart';
 import '../features/earnings/pages/withdrawal_page.dart';
 import '../features/notifications/pages/notifications_page.dart';
 
+// ── 广告投放 ──────────────────────────────────────────────────
+import '../features/promotions/pages/promotions_page.dart';
+import '../features/promotions/pages/campaign_create_page.dart';
+import '../features/promotions/pages/campaign_edit_page.dart';
+import '../features/promotions/pages/campaign_report_page.dart';
+import '../features/promotions/pages/recharge_page.dart';
+
 // ─────────────────────────────────────────────────────────────
 // Auth 状态变化通知器：让 GoRouter 在 signIn/signOut 时自动重跑 redirect
 // ─────────────────────────────────────────────────────────────
@@ -588,6 +595,38 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/notifications',
       builder: (context, state) => const NotificationsPage(),
+    ),
+
+    // 广告投放
+    GoRoute(
+      path: '/promotions',
+      builder: (context, state) => const PromotionsPage(),
+      routes: [
+        GoRoute(
+          path: 'create',
+          builder: (context, state) => const CampaignCreatePage(),
+        ),
+        GoRoute(
+          path: 'recharge',
+          builder: (context, state) => const RechargePage(),
+        ),
+        GoRoute(
+          path: ':id',
+          builder: (context, state) {
+            final id = state.pathParameters['id']!;
+            return CampaignReportPage(campaignId: id);
+          },
+          routes: [
+            GoRoute(
+              path: 'edit',
+              builder: (context, state) {
+                final id = state.pathParameters['id']!;
+                return CampaignEditPage(campaignId: id);
+              },
+            ),
+          ],
+        ),
+      ],
     ),
 
   ],

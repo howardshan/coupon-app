@@ -34,10 +34,70 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-// ─── 事件处理：payment_intent.succeeded ─────────────────────────────────────
+// ─── 事件处理：payment_intent.succeeded（广告充值分支）──────────────────────
+// 广告充值成功：调用 add_ad_balance RPC 原子更新余额
+// 幂等性完全由 RPC 内部保证
+async function handleAdRechargeSucceeded(paymentIntent: Stripe.PaymentIntent): Promise<void> {
+  const paymentIntentId = paymentIntent.id;
+  const merchantId = paymentIntent.metadata.merchant_id;
+  const amount = paymentIntent.amount / 100;
+
+  console.log(`[ad_recharge.succeeded] pi=${paymentIntentId} merchant=${merchantId} amount=${amount}`);
+
+  // 调用 RPC：内部完成 recharge 状态更新 + 余额增加，同一事务
+  const { data: result, error: rpcErr } = await supabase.rpc('add_ad_balance', {
+    p_merchant_id: merchantId,
+    p_amount: amount,
+    p_payment_intent_id: paymentIntentId,
+  });
+
+  if (rpcErr) {
+    console.error('[ad_recharge.succeeded] add_ad_balance RPC 失败:', rpcErr);
+    throw new Error(`add_ad_balance 失败: ${rpcErr.message}`);
+  }
+
+  console.log(`[ad_recharge.succeeded] 结果: ${result}`);
+
+  // 发送通知给商家
+  if (result === 'ok') {
+    try {
+      const { data: merchant } = await supabase
+        .from('merchants')
+        .select('user_id, name')
+        .eq('id', merchantId)
+        .single();
+
+      if (merchant?.user_id) {
+        fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/send-push-notification`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+          },
+          body: JSON.stringify({
+            user_id: merchant.user_id,
+            type: 'transaction',
+            title: 'Ad Credit Added',
+            body: `$${amount.toFixed(2)} has been added to your ad account.`,
+            data: { type: 'ad_recharge', merchant_id: merchantId },
+          }),
+        });
+      }
+    } catch (notifyErr) {
+      console.error('[ad_recharge.succeeded] 通知发送失败:', notifyErr);
+    }
+  }
+}
+
+// ─── 事件处理：payment_intent.succeeded（订单支付分支）────────────────────────
 // 支付成功：写入 payments 审计记录，同时更新 orders.paid_at（如为 null）
 // 幂等：payments 表 payment_intent_id 有 UNIQUE 约束
 async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent): Promise<void> {
+  // 广告充值走独立逻辑
+  if (paymentIntent.metadata?.type === 'ad_recharge') {
+    return handleAdRechargeSucceeded(paymentIntent);
+  }
+
   const paymentIntentId = paymentIntent.id;
   const chargeId = typeof paymentIntent.latest_charge === 'string'
     ? paymentIntent.latest_charge
@@ -139,6 +199,21 @@ async function handlePaymentFailed(paymentIntent: Stripe.PaymentIntent): Promise
   console.warn(
     `[payment_intent.payment_failed] pi=${paymentIntentId} code=${failureCode} msg=${failureMessage}`,
   );
+
+  // 广告充值失败：更新 ad_recharges 状态为 failed
+  if (paymentIntent.metadata?.type === 'ad_recharge') {
+    console.log(`[ad_recharge.failed] pi=${paymentIntentId}`);
+    const { error: updateErr } = await supabase
+      .from('ad_recharges')
+      .update({ status: 'failed' })
+      .eq('stripe_payment_intent_id', paymentIntentId)
+      .eq('status', 'pending');  // 只更新 pending 状态的记录
+
+    if (updateErr) {
+      console.error('[ad_recharge.failed] 更新 ad_recharges 失败:', updateErr);
+    }
+    return;  // 广告充值失败不需要继续处理订单逻辑
+  }
 
   // 查找关联订单
   const { data: order, error: orderErr } = await supabase
