@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import StaffToggleButton from '@/components/staff-toggle-button'
 import MerchantCommissionForm from '@/components/merchant-commission-form'
+import MerchantOperationalActions from '@/components/merchant-operational-actions'
 
 const DOCUMENT_TYPE_LABELS: Record<string, string> = {
   business_license: 'Business License',
@@ -174,16 +175,31 @@ export default async function MerchantReviewPage({
   const brandsRaw = merchant.brands as any
   const brandInfo = Array.isArray(brandsRaw) ? brandsRaw[0] ?? null : brandsRaw ?? null
 
+  const showMerchantOperations =
+    merchant.status === 'approved' || merchant.status === 'rejected'
+
   return (
     <div>
       <div className="mb-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <Link href="/merchants" className="mb-3 inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 bg-white text-gray-700 shadow-sm hover:bg-gray-50 transition-colors">
               ← Back to Merchants
             </Link>
             <h1 className="text-2xl font-bold text-gray-900">Merchant Profile</h1>
           </div>
+          {showMerchantOperations && (
+            <div className="shrink-0">
+              <p className="mb-2 text-xs font-medium text-gray-500 uppercase tracking-wide sm:text-right">
+                Operations
+              </p>
+              <MerchantOperationalActions
+                merchantId={merchant.id}
+                merchantUserId={merchant.user_id}
+                status={merchant.status}
+              />
+            </div>
+          )}
         </div>
         {/* 审批操作已移至统一审批中心 */}
         {merchant.status === 'pending' && (
