@@ -2,9 +2,9 @@ import { createClient } from '@/lib/supabase/server'
 import { getServiceRoleClient } from '@/lib/supabase/service'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import MerchantReviewActions from '@/components/merchant-review-actions'
 import StaffToggleButton from '@/components/staff-toggle-button'
 import MerchantCommissionForm from '@/components/merchant-commission-form'
+import MerchantOperationalActions from '@/components/merchant-operational-actions'
 
 const DOCUMENT_TYPE_LABELS: Record<string, string> = {
   business_license: 'Business License',
@@ -175,16 +175,46 @@ export default async function MerchantReviewPage({
   const brandsRaw = merchant.brands as any
   const brandInfo = Array.isArray(brandsRaw) ? brandsRaw[0] ?? null : brandsRaw ?? null
 
+  const showMerchantOperations =
+    merchant.status === 'approved' || merchant.status === 'rejected'
+
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <Link href="/merchants" className="mb-3 inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 bg-white text-gray-700 shadow-sm hover:bg-gray-50 transition-colors">
-            ← Back to Merchants
-          </Link>
-          <h1 className="text-2xl font-bold text-gray-900">Merchant Review</h1>
+      <div className="mb-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <Link href="/merchants" className="mb-3 inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 bg-white text-gray-700 shadow-sm hover:bg-gray-50 transition-colors">
+              ← Back to Merchants
+            </Link>
+            <h1 className="text-2xl font-bold text-gray-900">Merchant Profile</h1>
+          </div>
+          {showMerchantOperations && (
+            <div className="shrink-0">
+              <p className="mb-2 text-xs font-medium text-gray-500 uppercase tracking-wide sm:text-right">
+                Operations
+              </p>
+              <MerchantOperationalActions
+                merchantId={merchant.id}
+                merchantUserId={merchant.user_id}
+                status={merchant.status}
+              />
+            </div>
+          )}
         </div>
-        <MerchantReviewActions merchantId={merchant.id} merchantUserId={merchant.user_id} status={merchant.status} rejectionReason={merchant.rejection_reason} />
+        {/* 审批操作已移至统一审批中心 */}
+        {merchant.status === 'pending' && (
+          <div className="mt-3 flex items-center gap-3 rounded-lg border border-yellow-200 bg-yellow-50 px-4 py-3">
+            <span className="text-sm text-yellow-800">
+              This merchant is pending review.
+            </span>
+            <Link
+              href={`/approvals?tab=merchants`}
+              className="text-sm font-semibold text-yellow-700 underline hover:text-yellow-900"
+            >
+              Review in Approvals Center →
+            </Link>
+          </div>
+        )}
       </div>
 
       <div className="space-y-6">

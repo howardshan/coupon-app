@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/client'
 interface SidebarProps {
   role: string
   email: string
+  pendingCount?: number
 }
 
 type NavLink = { kind: 'link'; href: string; label: string; icon: string }
@@ -21,6 +22,7 @@ const adminNav: NavEntry[] = [
   { kind: 'link', href: '/brands', label: 'Brands', icon: '🏢' },
   { kind: 'link', href: '/deals', label: 'Deals', icon: '🏷️' },
   { kind: 'link', href: '/orders', label: 'Orders', icon: '📦' },
+  { kind: 'link', href: '/approvals', label: 'Approvals', icon: '✅' },
   { kind: 'link', href: '/finance', label: 'Finance', icon: '💰' },
   {
     kind: 'group', label: 'Ads', icon: '📣',
@@ -61,7 +63,7 @@ function isGroupActive(children: { href: string }[], pathname: string) {
   return children.some(c => pathname === c.href || pathname.startsWith(`${c.href}/`))
 }
 
-export default function Sidebar({ role, email }: SidebarProps) {
+export default function Sidebar({ role, email, pendingCount = 0 }: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
   const nav = role === 'admin' ? adminNav : null
@@ -120,7 +122,13 @@ export default function Sidebar({ role, email }: SidebarProps) {
                     }`}
                   >
                     <span>{entry.icon}</span>
-                    {entry.label}
+                    <span className="flex-1">{entry.label}</span>
+                    {/* Approvals 专属待审批角标 */}
+                    {entry.href === '/approvals' && pendingCount > 0 && (
+                      <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center leading-none">
+                        {pendingCount > 99 ? '99+' : pendingCount}
+                      </span>
+                    )}
                   </Link>
                 )
               }

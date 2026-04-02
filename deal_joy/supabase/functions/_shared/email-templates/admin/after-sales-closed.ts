@@ -18,7 +18,7 @@ export interface A6AfterSalesClosedData {
 export function buildA6Email(data: A6AfterSalesClosedData): { subject: string; html: string } {
   const isApproved = data.decision === "approved";
   const subject = `[Closed] After-sales case ${data.requestId} — ${isApproved ? "Refund approved" : "Rejected"}`;
-  const dashboardUrl = data.dashboardUrl ?? `https://admin.crunchyplum.com/after-sales/${data.requestId}`;
+  const dashboardUrl = data.dashboardUrl ?? `https://admin.crunchyplum.com/approvals?tab=after-sales`;
 
   const body = `
     <p style="margin:0 0 16px;font-size:22px;font-weight:700;color:#212121;">
