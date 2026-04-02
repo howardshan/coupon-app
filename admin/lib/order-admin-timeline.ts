@@ -4,15 +4,10 @@
  */
 
 import { displayCouponCode } from '@/lib/coupon-admin-display'
+import type { AdminActivityTimelineEntry } from '@/lib/admin-activity-timeline-types'
 
-export type OrderTimelineEntry = {
-  /** ISO 时间字符串，用于排序与展示 */
-  at: string
-  /** 主标题（英文） */
-  title: string
-  /** 副标题（券序号、deal、原因等） */
-  subtitle?: string
-}
+/** 与通用时间线条目结构一致，保留别名便于订单模块内阅读 */
+export type OrderTimelineEntry = AdminActivityTimelineEntry
 
 type OrderLike = {
   created_at?: string | null
