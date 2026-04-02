@@ -238,21 +238,30 @@ serve(async (req) => {
         );
       }
 
-      // 5a. 更新 order_items.customer_status = 'gifted'
-      await supabaseAdmin
-        .from('order_items')
-        .update({ customer_status: 'gifted', updated_at: now })
-        .eq('id', order_item_id);
-
-      // 6a. 更新 coupons（转移持有人至受赠方）
+      // 5a. 先更新 coupons（转移持有人至受赠方）
+      // 注意：必须在更新 order_items 之前执行，因为 order_items 上的
+      // trg_sync_coupon_status 触发器会把券设为 voided
       await supabaseAdmin
         .from('coupons')
         .update({
           is_gifted:              true,
           current_holder_user_id: recipient_user_id,
           gifted_from_user_id:    user.id,
-          updated_at:             now,
+          status:                 'unused',
         })
+        .eq('order_item_id', order_item_id);
+
+      // 6a. 更新 order_items.customer_status = 'gifted'
+      // 触发器会把 coupon status 设为 voided，之后再修正回 unused
+      await supabaseAdmin
+        .from('order_items')
+        .update({ customer_status: 'gifted', updated_at: now })
+        .eq('id', order_item_id);
+
+      // 6b. 修正触发器副作用：好友赠送的券应保持 unused（可被受赠方使用）
+      await supabaseAdmin
+        .from('coupons')
+        .update({ status: 'unused', void_reason: null, voided_at: null })
         .eq('order_item_id', order_item_id);
 
       // 7a. 异步发送好友赠送通知邮件（C15），即发即忘
@@ -350,7 +359,7 @@ serve(async (req) => {
     // ──────────────────────────────────────────────────────────
     await supabaseAdmin
       .from('coupons')
-      .update({ is_gifted: true, updated_at: now })
+      .update({ is_gifted: true })
       .eq('order_item_id', order_item_id);
 
     // ──────────────────────────────────────────────────────────

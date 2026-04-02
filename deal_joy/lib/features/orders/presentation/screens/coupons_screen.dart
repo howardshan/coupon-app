@@ -17,12 +17,10 @@ void _pushVoucherForMergedDealRow(
     BuildContext context, List<CouponModel> dealCoupons) {
   if (dealCoupons.isEmpty) return;
   final first = dealCoupons.first;
-  final orderIds = dealCoupons.map((c) => c.orderId).toSet();
   final itemIds =
       dealCoupons.map((c) => c.orderItemId).whereType<String>().toList();
-  if (orderIds.length > 1 &&
-      itemIds.length == dealCoupons.length &&
-      itemIds.isNotEmpty) {
+  // 多张券且有 orderItemId 时走聚合模式（无论是否来自同一订单）
+  if (dealCoupons.length > 1 && itemIds.isNotEmpty) {
     context.push(
       '/voucher/${first.orderId}?dealId=${first.dealId}&aggregate=1&itemIds=${itemIds.join(',')}',
     );
@@ -446,11 +444,15 @@ class _MerchantCouponGroup extends StatelessWidget {
           ...dealMap.entries.map((entry) {
             final dealCoupons = entry.value;
             final first = dealCoupons.first;
+            // 取最早过期日期，让用户看到最紧急的时限
+            final earliestExpiry = dealCoupons
+                .map((c) => c.expiresAt)
+                .reduce((a, b) => a.isBefore(b) ? a : b);
             return _CouponRow(
               dealTitle: entry.key,
               imageUrl: first.dealImageUrl,
               quantity: dealCoupons.length,
-              expiresAt: first.expiresAt,
+              expiresAt: earliestExpiry,
               onTap: () => _pushVoucherForMergedDealRow(context, dealCoupons),
             );
           }),
@@ -630,8 +632,6 @@ class _ExpiringSoonSection extends StatelessWidget {
       dealMap.putIfAbsent(title, () => []).add(c);
     }
 
-    final now = DateTime.now();
-
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -680,16 +680,16 @@ class _ExpiringSoonSection extends StatelessWidget {
           ...dealMap.entries.map((entry) {
             final dealCoupons = entry.value;
             final first = dealCoupons.first;
-            // 计算剩余天数
-            final daysLeft = first.expiresAt != null
-                ? first.expiresAt!.difference(now).inDays
-                : 0;
+            // 取最早过期日期
+            final earliestExpiry = dealCoupons
+                .map((c) => c.expiresAt)
+                .reduce((a, b) => a.isBefore(b) ? a : b);
 
             return _CouponRow(
               dealTitle: entry.key,
               imageUrl: first.dealImageUrl,
               quantity: dealCoupons.length,
-              expiresAt: first.expiresAt,
+              expiresAt: earliestExpiry,
               showUrgent: true,
               onTap: () => _pushVoucherForMergedDealRow(context, dealCoupons),
             );

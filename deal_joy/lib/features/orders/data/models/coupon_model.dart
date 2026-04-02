@@ -58,6 +58,9 @@ class CouponModel {
   final double? refundAmount;
   final String? refundMethod; // 'original_payment' | 'store_credit'
 
+  // order_items 级别的客户状态（V3 新增，用于精确过滤）
+  final String? customerStatus;
+
   const CouponModel({
     required this.id,
     required this.orderId,
@@ -93,6 +96,7 @@ class CouponModel {
     this.refundedAt,
     this.refundAmount,
     this.refundMethod,
+    this.customerStatus,
   });
 
   factory CouponModel.fromJson(Map<String, dynamic> json) {
@@ -174,6 +178,7 @@ class CouponModel {
           : null,
       refundAmount: (orderItems?['refund_amount'] as num?)?.toDouble(),
       refundMethod: orderItems?['refund_method'] as String?,
+      customerStatus: orderItems?['customer_status'] as String?,
     );
   }
 

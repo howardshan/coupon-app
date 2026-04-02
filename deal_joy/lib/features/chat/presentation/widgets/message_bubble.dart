@@ -812,16 +812,33 @@ class _GiftSentBubble extends StatelessWidget {
               ),
             ),
 
-          // 底部提示
-          const Padding(
-            padding: EdgeInsets.fromLTRB(12, 8, 12, 10),
-            child: Text(
-              'Gifted you a coupon!',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF9C27B0),
-              ),
+          // 底部提示 + 查看券按钮
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+            child: Row(
+              children: [
+                const Text(
+                  'Gifted you a coupon!',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF9C27B0),
+                  ),
+                ),
+                const Spacer(),
+                GestureDetector(
+                  onTap: () => GoRouter.of(context).push('/coupons'),
+                  child: const Text(
+                    'View',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.primary,
+                      decoration: TextDecoration.underline,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
