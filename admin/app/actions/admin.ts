@@ -1,8 +1,9 @@
 'use server'
 
-import { revalidatePath } from 'next/cache'
+import { revalidatePath, revalidateTag } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { getServiceRoleClient } from '@/lib/supabase/service'
+import { APPROVALS_PENDING_COUNT_TAG } from '@/lib/approvals-cache-tag'
 import { sendAdminEmail } from '@/lib/email'
 import { buildM3Email } from '@/lib/email-templates/merchant/verification-approved'
 import { buildM4Email } from '@/lib/email-templates/merchant/verification-rejected'
@@ -96,7 +97,9 @@ export async function approveMerchant(merchantId: string, merchantUserId: string
     })
   }
 
+  revalidateTag(APPROVALS_PENDING_COUNT_TAG)
   revalidatePath('/merchants')
+  revalidatePath('/approvals')
 }
 
 // 审核商家：拒绝（使用 service_role 写库，避免 merchant_staff RLS 无限递归）
@@ -146,8 +149,10 @@ export async function rejectMerchant(merchantId: string, rejectionReason?: strin
     }
   }
 
+  revalidateTag(APPROVALS_PENDING_COUNT_TAG)
   revalidatePath('/merchants')
   revalidatePath(`/merchants/${merchantId}`)
+  revalidatePath('/approvals')
 }
 
 // 撤销审批：将已通过的商家改回待审核（使用 service_role 写库，避免 RLS 递归）
@@ -164,8 +169,10 @@ export async function revokeMerchantApproval(merchantId: string) {
     .eq('id', merchantId)
 
   if (error) throw new Error(error.message)
+  revalidateTag(APPROVALS_PENDING_COUNT_TAG)
   revalidatePath('/merchants')
   revalidatePath(`/merchants/${merchantId}`)
+  revalidatePath('/approvals')
 }
 
 // 更新全局抽成配置（唯一一行，先查 id 再 update）
@@ -346,8 +353,10 @@ export async function setDealActive(dealId: string, active: boolean) {
     }
   }
 
+  revalidateTag(APPROVALS_PENDING_COUNT_TAG)
   revalidatePath('/deals')
   revalidatePath(`/deals/${dealId}`)
+  revalidatePath('/approvals')
 }
 
 // Deal 审核：驳回（设置 deal_status = rejected，保存 deal 快照 + 驳回历史记录）
@@ -442,8 +451,10 @@ export async function rejectDeal(dealId: string, rejectionReason?: string | null
     }
   }
 
+  revalidateTag(APPROVALS_PENDING_COUNT_TAG)
   revalidatePath('/deals')
   revalidatePath(`/deals/${dealId}`)
+  revalidatePath('/approvals')
 }
 
 // 封禁用户（设置 ban_duration）
@@ -534,4 +545,53 @@ export async function adminSetUserPassword(userId: string, newPassword: string) 
   const { error } = await supabase.auth.admin.updateUserById(userId, { password: pw })
   if (error) throw new Error(error.message)
   revalidatePath(`/users/${userId}`)
+}
+
+// 批量上架多个 deal（审批中心批量操作，串行执行避免数据库连接数过高）
+export async function batchApproveDeal(dealIds: string[]): Promise<{ success: string[]; failed: string[] }> {
+  await requireAdmin()
+
+  const success: string[] = []
+  const failed: string[] = []
+
+  for (const dealId of dealIds) {
+    try {
+      await setDealActive(dealId, true)
+      success.push(dealId)
+    } catch {
+      failed.push(dealId)
+    }
+  }
+
+  revalidateTag(APPROVALS_PENDING_COUNT_TAG)
+  revalidatePath('/approvals')
+  revalidatePath('/deals')
+  return { success, failed }
+}
+
+// 批量拒绝多个 deal（所有 deal 使用同一条拒绝原因）
+export async function batchRejectDeal(dealIds: string[], reason: string): Promise<{ success: string[]; failed: string[] }> {
+  await requireAdmin()
+
+  const trimmedReason = reason.trim()
+  if (trimmedReason.length < 10) {
+    throw new Error('Rejection reason must be at least 10 characters')
+  }
+
+  const success: string[] = []
+  const failed: string[] = []
+
+  for (const dealId of dealIds) {
+    try {
+      await rejectDeal(dealId, trimmedReason)
+      success.push(dealId)
+    } catch {
+      failed.push(dealId)
+    }
+  }
+
+  revalidateTag(APPROVALS_PENDING_COUNT_TAG)
+  revalidatePath('/approvals')
+  revalidatePath('/deals')
+  return { success, failed }
 }
