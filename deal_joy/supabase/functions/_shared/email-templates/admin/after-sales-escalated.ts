@@ -27,7 +27,7 @@ function formatReasonCode(code: string): string {
 
 export function buildA5Email(data: A5AfterSalesEscalatedData): { subject: string; html: string } {
   const subject = `[Action Required] After-sales case escalated — ${data.requestId}`;
-  const dashboardUrl = data.dashboardUrl ?? `https://admin.crunchyplum.com/after-sales/${data.requestId}`;
+  const dashboardUrl = data.dashboardUrl ?? `https://admin.crunchyplum.com/approvals?tab=after-sales`;
 
   const body = `
     <p style="margin:0 0 16px;font-size:22px;font-weight:700;color:#212121;">

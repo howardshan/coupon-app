@@ -1,7 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import DealReviewActions from '@/components/deal-review-actions'
 import RejectionHistory from '@/components/rejection-history'
 
 /** 只允许回到订单相关页，避免开放重定向 */
@@ -159,14 +158,29 @@ export default async function DealReviewPage({
 
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <Link href={backHref} className="mb-3 inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 bg-white text-gray-700 shadow-sm hover:bg-gray-50 transition-colors">
-            ← Back
-          </Link>
-          <h1 className="text-2xl font-bold text-gray-900">Deal Review</h1>
+      <div className="mb-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <Link href={backHref} className="mb-3 inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 bg-white text-gray-700 shadow-sm hover:bg-gray-50 transition-colors">
+              ← Back
+            </Link>
+            <h1 className="text-2xl font-bold text-gray-900">Deal Detail</h1>
+          </div>
         </div>
-        <DealReviewActions dealId={deal.id} isActive={deal.is_active} dealStatus={deal.deal_status ?? 'pending'} />
+        {/* 审批操作已移至统一审批中心 */}
+        {deal.deal_status === 'pending' && (
+          <div className="mt-3 flex items-center gap-3 rounded-lg border border-yellow-200 bg-yellow-50 px-4 py-3">
+            <span className="text-sm text-yellow-800">
+              This deal is pending review.
+            </span>
+            <Link
+              href={`/approvals?tab=deals`}
+              className="text-sm font-semibold text-yellow-700 underline hover:text-yellow-900"
+            >
+              Review in Approvals Center →
+            </Link>
+          </div>
+        )}
       </div>
 
       <div className="space-y-6">
