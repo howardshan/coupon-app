@@ -175,7 +175,7 @@ serve(async (req: Request) => {
         .select(`
           id, title, description, original_price, discount_price, discount_percent,
           image_urls, category, merchant_id, is_featured, rating, review_count,
-          total_sold, created_at, expires_at, meal_type, is_sponsored,
+          total_sold, created_at, expires_at, meal_type,
           merchants!inner(id, name, logo_url, phone, lat, lng, avg_rating, category)
         `)
         .eq('is_active', true)
@@ -198,7 +198,7 @@ serve(async (req: Request) => {
       .select(`
         id, title, description, original_price, discount_price, discount_percent,
         image_urls, category, merchant_id, is_featured, rating, review_count,
-        total_sold, created_at, expires_at, meal_type, is_sponsored, tags,
+        total_sold, created_at, expires_at, meal_type, tags,
         discount_label, dishes, merchant_hours, lat, lng, address,
         deal_type, badge_text, sort_order,
         merchants!inner(id, name, logo_url, phone, lat, lng, avg_rating, review_count, category,
@@ -240,21 +240,65 @@ serve(async (req: Request) => {
       return { ...deal, _finalScore: score };
     });
 
-    // 7. Sponsor 强制置顶
-    const sponsors = reranked
-      .filter(d => d.is_sponsored)
-      .sort((a, b) => b._finalScore - a._finalScore);
-    const nonSponsors = reranked
-      .filter(d => !d.is_sponsored)
-      .sort((a, b) => b._finalScore - a._finalScore);
+    // 7. 动态广告注入（实时查询活跃广告，替代旧的 is_sponsored 固定置顶）
+    const maxSponsorBoost = (config?.weights as Record<string, number>)?.max_sponsor_boost ?? 200;
 
-    // Sponsor 最多占前3位
-    const sponsorSlots = sponsors.slice(0, 3);
-    const regularSlots = nonSponsors.slice(0, limit - sponsorSlots.length);
-    const result = [...sponsorSlots, ...regularSlots];
+    // 查询首页 Deal 广告位的活跃广告
+    const { data: activeAds } = await supabase.rpc('get_active_ads', {
+      p_placement: 'home_deal_top',
+      p_category_id: null,
+      p_limit: 3,
+    });
 
-    // 移除内部评分字段
+    // 构建广告 deal 映射：target_id → campaign 信息
+    const adMap = new Map<string, { campaignId: string; adScore: number }>();
+    if (activeAds) {
+      for (const ad of activeAds) {
+        if (ad.target_type === 'deal') {
+          adMap.set(ad.target_id, {
+            campaignId: ad.campaign_id,
+            adScore: Math.min(ad.ad_score, maxSponsorBoost),
+          });
+        }
+      }
+    }
+
+    // 按分数排序，广告 deal 加上 ad_score boost
+    const finalRanked = reranked.map(deal => {
+      const adInfo = adMap.get(deal.id);
+      return {
+        ...deal,
+        _finalScore: deal._finalScore + (adInfo?.adScore ?? 0),
+        isSponsored: !!adInfo,
+        campaignId: adInfo?.campaignId ?? null,
+      };
+    }).sort((a, b) => b._finalScore - a._finalScore);
+
+    // 取 top N
+    const result = finalRanked.slice(0, limit);
+
+    // 移除内部评分字段，保留 isSponsored 和 campaignId
     const cleanResult = result.map(({ _finalScore, ...rest }) => rest);
+
+    // 异步记录广告 impression（不阻塞响应）
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const svcKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    for (const deal of cleanResult) {
+      if (deal.isSponsored && deal.campaignId) {
+        fetch(`${supabaseUrl}/functions/v1/record-ad-event`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${svcKey}`,
+          },
+          body: JSON.stringify({
+            campaign_id: deal.campaignId,
+            event_type: 'impression',
+            user_id: userId,
+          }),
+        }).catch(err => console.error('记录 impression 失败:', err));
+      }
+    }
 
     return jsonResponse({
       deals: cleanResult,

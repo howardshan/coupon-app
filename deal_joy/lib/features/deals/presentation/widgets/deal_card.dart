@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shimmer/shimmer.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../data/models/deal_model.dart';
 
@@ -55,8 +56,33 @@ class _DealCardBrandBadge extends StatelessWidget {
 
 class DealCard extends StatelessWidget {
   final DealModel deal;
+  // 广告相关（由推荐系统返回时设置）
+  final bool isSponsored;
+  final String? campaignId;
 
-  const DealCard({super.key, required this.deal});
+  const DealCard({
+    super.key,
+    required this.deal,
+    this.isSponsored = false,
+    this.campaignId,
+  });
+
+  // 异步记录广告点击（不阻塞 UI）
+  Future<void> _recordAdClick(String campaignId) async {
+    try {
+      final userId = Supabase.instance.client.auth.currentUser?.id;
+      await Supabase.instance.client.functions.invoke(
+        'record-ad-event',
+        body: {
+          'campaign_id': campaignId,
+          'event_type': 'click',
+          'user_id': userId,
+        },
+      );
+    } catch (e) {
+      debugPrint('记录广告点击失败: $e');
+    }
+  }
 
   // 优先显示距离（Near Me），其次城市名，最后 sold 数量
   String _locationLabel() {
@@ -73,7 +99,13 @@ class DealCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => context.push('/deals/${deal.id}'),
+      onTap: () {
+        // 广告 click 记录（异步不阻塞导航）
+        if (isSponsored && campaignId != null) {
+          _recordAdClick(campaignId!);
+        }
+        context.push('/deals/${deal.id}');
+      },
       child: Card(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -271,6 +303,18 @@ class DealCard extends StatelessWidget {
                             fontSize: 12, color: AppColors.textSecondary),
                       ),
                       const Spacer(),
+                      // Sponsored 标签（FTC 合规要求）
+                      if (isSponsored) ...[
+                        const Text(
+                          'Sponsored',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: AppColors.textHint,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                      ],
                       Text(
                         _locationLabel(),
                         style: const TextStyle(

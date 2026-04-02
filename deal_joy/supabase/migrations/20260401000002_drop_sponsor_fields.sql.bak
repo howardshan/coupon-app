@@ -1,0 +1,9 @@
+-- ============================================================
+-- 删除旧的 sponsor 字段
+-- ⚠️ 此 migration 必须在 Edge Functions 部署之后执行
+-- 先部署移除了 is_sponsored 引用的 get-recommendations 和 compute-recommendations
+-- 再执行此 DROP COLUMN，避免窗口期报错
+-- ============================================================
+
+ALTER TABLE deals DROP COLUMN IF EXISTS is_sponsored;
+ALTER TABLE deals DROP COLUMN IF EXISTS sponsor_priority;
