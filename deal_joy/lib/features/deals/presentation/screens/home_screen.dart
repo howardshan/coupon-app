@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../data/models/deal_model.dart';
@@ -13,6 +14,23 @@ import '../../../merchant/data/models/merchant_model.dart';
 import '../../../merchant/domain/providers/merchant_provider.dart';
 import '../../../chat/domain/providers/notification_provider.dart';
 import '../../../welcome/presentation/widgets/home_banner.dart';
+
+// 异步记录广告点击（不阻塞 UI，文件级辅助函数）
+Future<void> _recordAdClick(String campaignId) async {
+  try {
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    await Supabase.instance.client.functions.invoke(
+      'record-ad-event',
+      body: {
+        'campaign_id': campaignId,
+        'event_type': 'click',
+        'user_id': userId,
+      },
+    );
+  } catch (e) {
+    debugPrint('记录广告点击失败: $e');
+  }
+}
 
 // ── Location data (mirrors web app) ──────────────────────────
 const _locationData = {
@@ -878,7 +896,13 @@ class _LargeDealCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return GestureDetector(
-      onTap: () => context.push('/deals/${deal.id}'),
+      onTap: () {
+        // 广告 click 记录（异步不阻塞导航）
+        if (deal.isSponsored && deal.campaignId != null) {
+          _recordAdClick(deal.campaignId!);
+        }
+        context.push('/deals/${deal.id}');
+      },
       child: Container(
         decoration: BoxDecoration(
           color: Colors.white,
@@ -1088,6 +1112,17 @@ class _LargeDealCard extends ConsumerWidget {
                           decoration: TextDecoration.lineThrough,
                         ),
                       ),
+                      const Spacer(),
+                      // Sponsored 标签（FTC 合规）
+                      if (deal.isSponsored)
+                        const Text(
+                          'Sponsored',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: AppColors.textHint,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
                     ],
                   ),
                 ],
@@ -1134,7 +1169,12 @@ class _SmallDealCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => context.push('/deals/${deal.id}'),
+      onTap: () {
+        if (deal.isSponsored && deal.campaignId != null) {
+          _recordAdClick(deal.campaignId!);
+        }
+        context.push('/deals/${deal.id}');
+      },
       child: Card(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

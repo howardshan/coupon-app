@@ -24,6 +24,14 @@ const adminNav: NavEntry[] = [
   { kind: 'link', href: '/orders', label: 'Orders', icon: '📦' },
   { kind: 'link', href: '/approvals', label: 'Approvals', icon: '✅' },
   { kind: 'link', href: '/finance', label: 'Finance', icon: '💰' },
+  {
+    kind: 'group', label: 'Ads', icon: '📣',
+    children: [
+      { href: '/ads', label: 'Campaigns' },
+      { href: '/ads/accounts', label: 'Accounts' },
+      { href: '/ads/revenue', label: 'Revenue' },
+    ],
+  },
   { kind: 'link', href: '/closures', label: 'Closures', icon: '🔒' },
   { kind: 'link', href: '/support', label: 'Support', icon: '💬' },
   { kind: 'link', href: '/tax-rates', label: 'Tax Rates', icon: '🧾' },

@@ -117,6 +117,9 @@ class DealModel {
   final List<String> usageRules;
   // 每账号限购数量，-1 表示无限制
   final int maxPerAccount;
+  // 广告相关（由推荐系统 get-recommendations 返回）
+  final bool isSponsored;
+  final String? campaignId;
 
   const DealModel({
     required this.id,
@@ -158,6 +161,8 @@ class DealModel {
     this.validityDays,
     this.usageRules = const [],
     this.maxPerAccount = -1,
+    this.isSponsored = false,
+    this.campaignId,
   });
 
   factory DealModel.fromJson(Map<String, dynamic> json) => DealModel(
@@ -206,6 +211,8 @@ class DealModel {
         validityDays: json['validity_days'] as int?,
         usageRules: (json['usage_rules'] as List?)?.cast<String>() ?? [],
         maxPerAccount: json['max_per_account'] as int? ?? -1,
+        isSponsored: json['isSponsored'] as bool? ?? false,
+        campaignId: json['campaignId'] as String?,
       );
 
   // RPC 搜索结果（search_deals_nearby / search_deals_by_city）解析

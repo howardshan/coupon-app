@@ -33,7 +33,8 @@ interface RecommendationConfig {
     w_freshness: number;
     w_time_slot: number;
   };
-  sponsor_boost: number;
+  // sponsor_boost 已迁移为 max_sponsor_boost，预计算不再使用
+  // 广告排名完全由 get-recommendations 实时处理
   diversity_penalty: number;
   max_same_merchant: number;
   cache_ttl_minutes: number;
@@ -60,7 +61,6 @@ interface DealData {
   merchant_id: string;
   tags: string[];
   created_at: string;
-  is_sponsored: boolean;
   total_sold: number | null;
   review_count: number | null;
   rating: number | null;
@@ -267,7 +267,7 @@ serve(async (req: Request) => {
       .from('deals')
       .select(`
         id, title, discount_price, category, meal_type, price_tier,
-        merchant_id, tags, created_at, is_sponsored, total_sold, review_count, rating,
+        merchant_id, tags, created_at, total_sold, review_count, rating,
         merchants(id, name, avg_rating, review_count, lat, lng,
                  avg_redemption_rate, refund_rate)
       `)
@@ -298,8 +298,8 @@ serve(async (req: Request) => {
       const freshness = computeFreshness(d.created_at);
       const timeScore = computeTimeSlotScore(d.meal_type, timeSlot, d.category);
 
-      let score = 0.35 * popularity + 0.30 * quality + 0.20 * freshness + 0.15 * timeScore;
-      if (d.is_sponsored) score += config.sponsor_boost;
+      // 预计算只做自然排名，不集成广告（广告由 get-recommendations 实时处理）
+      const score = 0.35 * popularity + 0.30 * quality + 0.20 * freshness + 0.15 * timeScore;
 
       return { dealId: d.id, score };
     }).sort((a, b) => b.score - a.score).slice(0, 100);
@@ -361,8 +361,7 @@ serve(async (req: Request) => {
               w.w_freshness * freshness +
               w.w_time_slot * timeScore;
 
-            if (d.is_sponsored) score += config.sponsor_boost;
-
+            // 预计算只做自然排名，不集成广告
             return { dealId: d.id, merchantId: d.merchant_id, score };
           });
 
