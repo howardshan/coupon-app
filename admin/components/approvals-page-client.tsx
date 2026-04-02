@@ -193,8 +193,8 @@ export default function ApprovalsPageClient({
         </p>
       </div>
 
-      {/* ── Tabs ── */}
-      <div className="flex gap-1 border-b border-gray-200">
+      {/* ── Tabs（横向可滚动 + 禁止收缩，避免角标被 flex 挤没） ── */}
+      <div className="flex flex-nowrap gap-1 overflow-x-auto border-b border-gray-200">
         {TABS.map(t => {
           const countMap: Record<string, number> = {
             all: counts.merchants + counts.deals + counts.refundDisputes + counts.afterSales,
@@ -210,7 +210,7 @@ export default function ApprovalsPageClient({
               key={t.key}
               type="button"
               onClick={() => onTabChange(t.key)}
-              className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 -mb-px ${
+              className={`shrink-0 whitespace-nowrap px-4 py-2.5 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 -mb-px ${
                 active
                   ? 'border-blue-600 text-blue-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
@@ -218,9 +218,11 @@ export default function ApprovalsPageClient({
             >
               {t.label}
               {cnt > 0 && (
-                <span className={`min-w-[20px] h-5 px-1.5 rounded-full text-xs font-bold flex items-center justify-center ${
-                  active ? 'bg-blue-600 text-white' : 'bg-red-500 text-white'
-                }`}>
+                <span
+                  className={`shrink-0 min-w-[20px] h-5 px-1.5 rounded-full text-xs font-bold flex items-center justify-center ${
+                    active ? 'bg-blue-600 text-white' : 'bg-red-500 text-white'
+                  }`}
+                >
                   {cnt > 99 ? '99+' : cnt}
                 </span>
               )}

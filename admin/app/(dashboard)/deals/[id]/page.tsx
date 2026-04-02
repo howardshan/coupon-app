@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import RejectionHistory from '@/components/rejection-history'
+import DealOperationalActions from '@/components/deal-operational-actions'
 
 /** 只允许回到订单相关页，避免开放重定向 */
 function isValidReturnTo(returnTo: string | null | undefined): boolean {
@@ -92,6 +93,11 @@ export default async function DealReviewPage({
   const merchantName = (deal.merchants as any)?.name ?? '—'
   const brandName = (deal.merchants as any)?.brands?.name
   const isExpired = deal.expires_at ? new Date(deal.expires_at) < new Date() : false
+  const dealStatusStr = deal.deal_status ?? 'inactive'
+  // 待审仅走审批中心；有下架或驳回入口时才显示运营区
+  const showDealOperations =
+    dealStatusStr !== 'pending' &&
+    (Boolean(deal.is_active) || dealStatusStr !== 'rejected')
 
   // 菜品解析
   const dishesRaw = deal.dishes
@@ -159,13 +165,25 @@ export default async function DealReviewPage({
   return (
     <div>
       <div className="mb-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <Link href={backHref} className="mb-3 inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 bg-white text-gray-700 shadow-sm hover:bg-gray-50 transition-colors">
               ← Back
             </Link>
             <h1 className="text-2xl font-bold text-gray-900">Deal Detail</h1>
           </div>
+          {showDealOperations && (
+            <div className="shrink-0">
+              <p className="mb-2 text-xs font-medium text-gray-500 uppercase tracking-wide sm:text-right">
+                Operations
+              </p>
+              <DealOperationalActions
+                dealId={deal.id}
+                isActive={Boolean(deal.is_active)}
+                dealStatus={dealStatusStr}
+              />
+            </div>
+          )}
         </div>
         {/* 审批操作已移至统一审批中心 */}
         {deal.deal_status === 'pending' && (
