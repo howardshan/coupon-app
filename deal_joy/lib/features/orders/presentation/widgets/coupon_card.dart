@@ -55,9 +55,11 @@ class CouponCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 状态判断：gifted > voided > 过期(全部自动退款=Expired Return) > 原始状态
+    // 状态判断：gifted(含 customerStatus) > voided > 过期(全部自动退款=Expired Return) > 原始状态
     final String displayStatus;
-    if (coupon.isVoided && coupon.voidReason == 'gifted') {
+    if (coupon.customerStatus == 'gifted') {
+      displayStatus = 'gifted';
+    } else if (coupon.isVoided && coupon.voidReason == 'gifted') {
       displayStatus = 'gifted';
     } else if (coupon.isVoided) {
       displayStatus = 'voided';
@@ -136,7 +138,7 @@ class CouponCard extends StatelessWidget {
                           ),
                         ),
                       ),
-                      if (coupon.isUnused && !coupon.isExpired) ...[
+                      if (coupon.isUnused && !coupon.isExpired && coupon.customerStatus != 'gifted') ...[
                         const SizedBox(height: 6),
                         const Icon(
                           Icons.qr_code_2,
