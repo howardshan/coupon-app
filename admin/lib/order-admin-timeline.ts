@@ -20,6 +20,26 @@ type OrderLike = {
   updated_at?: string | null
 }
 
+/** 嵌套 users 行（PostgREST 可能返回对象或单元素数组） */
+type RecipientUserRow = {
+  email?: string | null
+  full_name?: string | null
+  username?: string | null
+}
+
+/** coupon_gifts 单行（订单详情 select 嵌套） */
+export type CouponGiftLike = {
+  created_at?: string | null
+  recalled_at?: string | null
+  status?: string | null
+  recipient_email?: string | null
+  recipient_phone?: string | null
+  recipient_user_id?: string | null
+  gift_type?: string | null
+  /** 嵌套查询别名 recipient_user:users!fk(...) */
+  recipient_user?: RecipientUserRow | RecipientUserRow[] | null
+}
+
 export type OrderItemLike = {
   id: string
   created_at?: string | null
@@ -29,10 +49,7 @@ export type OrderItemLike = {
   refund_reason?: string | null
   customer_status?: string | null
   deals?: { title?: string | null } | { title?: string | null }[] | null
-  coupon_gifts?:
-    | { created_at?: string | null }[]
-    | { created_at?: string | null }
-    | null
+  coupon_gifts?: CouponGiftLike[] | CouponGiftLike | null
   coupons?:
     | { coupon_code?: string | null }
     | { coupon_code?: string | null }[]
@@ -67,11 +84,47 @@ function timelineDealLabel(title: string | null | undefined): string {
   return t || 'Voucher'
 }
 
-function giftCreatedAt(item: OrderItemLike): string | null {
+function oneRecipientUser(
+  raw: CouponGiftLike['recipient_user']
+): RecipientUserRow | null {
+  if (!raw) return null
+  const u = Array.isArray(raw) ? raw[0] : raw
+  return u && typeof u === 'object' ? u : null
+}
+
+/** 赠礼条目副标题：受赠方联系方式 / 昵称 */
+function giftRecipientSubtitle(gift: CouponGiftLike): string {
+  const parts: string[] = []
+  const email = gift.recipient_email?.trim()
+  if (email) parts.push(`To: ${email}`)
+
+  const ru = oneRecipientUser(gift.recipient_user)
+  if (ru) {
+    const name = (ru.full_name ?? ru.username ?? '').trim()
+    if (name) parts.push(name)
+    const em = (ru.email ?? '').trim()
+    if (em && em !== email) parts.push(em)
+  }
+
+  const phone = gift.recipient_phone?.trim()
+  if (phone) parts.push(phone)
+
+  if (parts.length === 0 && gift.recipient_user_id?.trim()) {
+    const id = gift.recipient_user_id.trim()
+    parts.push(`Recipient ${id.slice(0, 8)}…`)
+  }
+
+  if (gift.gift_type === 'in_app' && parts.length === 0) {
+    parts.push('In-app friend gift')
+  }
+
+  return parts.join(' · ') || 'Gift sent'
+}
+
+function normalizeGiftRows(item: OrderItemLike): CouponGiftLike[] {
   const g = item.coupon_gifts
-  if (!g) return null
-  const row = Array.isArray(g) ? g[0] : g
-  return row?.created_at ?? null
+  if (!g) return []
+  return (Array.isArray(g) ? g : [g]).filter(Boolean) as CouponGiftLike[]
 }
 
 /** 从 order_item 嵌套 coupons 取券码（用于时间线与列表一致） */
@@ -96,13 +149,39 @@ function push(
   out.push({ at: t, title, subtitle: subtitle?.trim() || undefined })
 }
 
+/** 同一 order_item 下多条 coupon_gifts：按创建时间展示「送出 / 收回」 */
+function pushGiftEventsForItem(
+  out: OrderTimelineEntry[],
+  prefix: string,
+  item: OrderItemLike
+): void {
+  const rows = normalizeGiftRows(item).sort(
+    (a, b) =>
+      new Date(a.created_at ?? 0).getTime() - new Date(b.created_at ?? 0).getTime()
+  )
+
+  for (const gift of rows) {
+    push(out, gift.created_at, `${prefix} gifted`, giftRecipientSubtitle(gift))
+
+    const recalledAt = gift.recalled_at?.trim()
+    if (recalledAt && gift.status === 'recalled') {
+      push(
+        out,
+        recalledAt,
+        `${prefix} gift recalled`,
+        'Coupon returned to buyer'
+      )
+    }
+  }
+}
+
 /** 按时间升序（最早在上，适合纵向时间线阅读） */
 export function sortTimelineAscending(entries: OrderTimelineEntry[]): OrderTimelineEntry[] {
   return [...entries].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())
 }
 
 /**
- * V3：订单级事件 + 每张券的核销/退款/转赠发起（若有时间）
+ * V3：订单级事件 + 每张券的核销/退款/赠礼与收回（coupon_gifts 全历史）
  */
 export function buildOrderTimelineV3(order: OrderLike, orderItems: OrderItemLike[]): OrderTimelineEntry[] {
   const out: OrderTimelineEntry[] = []
@@ -132,10 +211,7 @@ export function buildOrderTimelineV3(order: OrderLike, orderItems: OrderItemLike
 
     push(out, item.redeemed_at, `${prefix} redeemed`, deal || undefined)
 
-    const giftAt = giftCreatedAt(item)
-    if (giftAt && item.customer_status === 'gifted') {
-      push(out, giftAt, `${prefix} gift sent`, deal || undefined)
-    }
+    pushGiftEventsForItem(out, prefix, item)
 
     if (item.refunded_at) {
       const parts = [fmtMethod(item.refund_method ?? undefined), item.refund_reason].filter(Boolean)
