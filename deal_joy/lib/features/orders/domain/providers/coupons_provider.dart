@@ -35,22 +35,26 @@ final couponsByStatusProvider =
   return ref.watch(userCouponsProvider).whenData((coupons) {
     switch (status) {
       case 'unused':
-        // 排除：已过期、已退款（refundedAt 有值）、无 order_item 的孤儿券
+        // 排除：已过期、已退款（refundedAt 有值或 customerStatus 为退款相关）、无 order_item 的孤儿券
         return coupons.where((c) =>
             c.status == 'unused' && !c.isExpired &&
-            c.refundedAt == null && c.orderItemId != null).toList();
+            c.refundedAt == null && c.orderItemId != null &&
+            (c.customerStatus == null || c.customerStatus == 'unused')).toList();
       case 'used':
         return coupons.where((c) => c.status == 'used').toList();
       case 'expired':
-        // 已过期的（不含 voided），全部都是 Expired Return（过期自动退款）
+        // 已过期的：全部都是 Expired Return（过期自动退款）
+        // 包含赠送出去但已过期的券（voided + gifted + 已过期）
         return coupons.where((c) =>
-            c.isExpired && c.status != 'voided').toList();
+            c.isExpired && (c.status != 'voided' ||
+            (c.status == 'voided' && c.voidReason == 'gifted'))).toList();
       case 'refunded':
         // 未过期就主动退款的
         return coupons.where((c) =>
             c.status == 'refunded' && !c.isExpired).toList();
       case 'gifted':
-        return coupons.where((c) => c.status == 'voided' && c.voidReason == 'gifted').toList();
+        // 赠送出去的券：order_items.customer_status == 'gifted'
+        return coupons.where((c) => c.customerStatus == 'gifted').toList();
       default:
         return coupons.where((c) => c.status == status).toList();
     }

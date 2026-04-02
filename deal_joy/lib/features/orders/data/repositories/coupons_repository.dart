@@ -19,7 +19,7 @@ const _couponSelect =
     'gifter_user:users!coupons_gifted_from_user_id_fkey(full_name), '
     'orders!coupons_order_id_fkey(order_number), '
     'order_items!order_items_coupon_id_fkey('
-    'applicable_store_ids, unit_price, refunded_at, refund_amount, refund_method)';
+    'applicable_store_ids, unit_price, refunded_at, refund_amount, refund_method, customer_status)';
 
 class CouponsRepository {
   final SupabaseClient _client;
