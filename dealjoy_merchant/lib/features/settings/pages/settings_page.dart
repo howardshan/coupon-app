@@ -67,6 +67,22 @@ class SettingsPage extends ConsumerWidget {
           ),
 
           // --------------------------------------------------
+          // Promotions 分组：广告推广
+          // --------------------------------------------------
+          SettingsSection(
+            title: 'Marketing',
+            children: [
+              SettingsTile(
+                icon: Icons.campaign_outlined,
+                title: 'Promotions',
+                subtitle: 'Ad campaigns & splash ads',
+                showDivider: false,
+                onTap: () => context.push('/promotions'),
+              ),
+            ],
+          ),
+
+          // --------------------------------------------------
           // Store & Brand 分组（根据角色动态显示）
           // --------------------------------------------------
           if (isChainStore && hasBrandPermission)

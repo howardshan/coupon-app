@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import MerchantActionButtons from '@/components/merchant-action-buttons'
+import { CopyableId } from '@/components/copyable-id'
 
 export default async function MerchantsPage({
   searchParams,
@@ -57,6 +58,7 @@ export default async function MerchantsPage({
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
+              <th className="text-left px-4 py-3 font-medium text-gray-600">Merchant ID</th>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Name</th>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Brand</th>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Category</th>
@@ -68,6 +70,9 @@ export default async function MerchantsPage({
           <tbody className="divide-y divide-gray-100">
             {merchants?.map((m: any) => (
               <tr key={m.id} className={`hover:bg-gray-50 ${m.status === 'pending' ? 'bg-yellow-50/50' : ''}`}>
+                <td className="px-4 py-3">
+                  <CopyableId id={m.id} />
+                </td>
                 <td className="px-4 py-3 font-medium text-gray-900">
                   <Link
                     href={`/merchants/${m.id}`}

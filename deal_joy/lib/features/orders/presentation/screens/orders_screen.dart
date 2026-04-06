@@ -18,6 +18,7 @@ class _DealGroup {
   final String? dealImageUrl;
   final double unitPrice;
   final List<OrderItemModel> items;
+  final bool isRefunded;
 
   _DealGroup({
     required this.dealId,
@@ -25,6 +26,7 @@ class _DealGroup {
     this.dealImageUrl,
     required this.unitPrice,
     required this.items,
+    this.isRefunded = false,
   });
 
   int get quantity => items.isEmpty ? 1 : items.length;
@@ -115,22 +117,49 @@ class OrdersScreen extends ConsumerWidget {
       }
 
       final merchantGroups = merchantMap.entries.map((entry) {
-        // 按 deal 分组
+        // 按 deal 分组，再按状态（活跃 vs 退款）拆分
         final dealMap = <String, List<OrderItemModel>>{};
         for (final item in entry.value) {
           dealMap.putIfAbsent(item.dealId, () => []).add(item);
         }
-        final dealGroups = dealMap.entries.map((de) {
+        final dealGroups = <_DealGroup>[];
+        for (final de in dealMap.entries) {
           final items = de.value;
           final first = items.first;
-          return _DealGroup(
-            dealId: first.dealId,
-            dealTitle: first.dealTitle.isNotEmpty ? first.dealTitle : 'Deal',
-            dealImageUrl: first.dealImageUrl,
-            unitPrice: first.unitPrice,
-            items: items,
-          );
-        }).toList();
+          final title = first.dealTitle.isNotEmpty ? first.dealTitle : 'Deal';
+          // 分离退款和活跃 items
+          final refundedItems = items.where((i) =>
+              i.customerStatus == CustomerItemStatus.refundSuccess ||
+              i.customerStatus == CustomerItemStatus.refundPending ||
+              i.customerStatus == CustomerItemStatus.refundProcessing ||
+              i.customerStatus == CustomerItemStatus.refundReview).toList();
+          final activeItems = items.where((i) =>
+              i.customerStatus != CustomerItemStatus.refundSuccess &&
+              i.customerStatus != CustomerItemStatus.refundPending &&
+              i.customerStatus != CustomerItemStatus.refundProcessing &&
+              i.customerStatus != CustomerItemStatus.refundReview).toList();
+          // 活跃的先显示
+          if (activeItems.isNotEmpty) {
+            dealGroups.add(_DealGroup(
+              dealId: first.dealId,
+              dealTitle: title,
+              dealImageUrl: first.dealImageUrl,
+              unitPrice: first.unitPrice,
+              items: activeItems,
+            ));
+          }
+          // 退款的单独一组
+          if (refundedItems.isNotEmpty) {
+            dealGroups.add(_DealGroup(
+              dealId: first.dealId,
+              dealTitle: title,
+              dealImageUrl: first.dealImageUrl,
+              unitPrice: first.unitPrice,
+              items: refundedItems,
+              isRefunded: true,
+            ));
+          }
+        }
 
         return _MerchantGroup(merchantName: entry.key, dealGroups: dealGroups);
       }).toList();
@@ -369,7 +398,16 @@ class _DealRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      onTap: () => context.push('/voucher/$orderId?dealId=${group.dealId}'),
+      onTap: () {
+        // 赠送出去的券跳转到 coupon 详情页（显示 gift 信息）
+        final allGifted = group.items.isNotEmpty &&
+            group.items.every((i) => i.customerStatus == CustomerItemStatus.gifted);
+        if (allGifted && group.items.first.couponId != null) {
+          context.push('/coupon/${group.items.first.couponId}');
+        } else {
+          context.push('/voucher/$orderId?dealId=${group.dealId}');
+        }
+      },
       child: Padding(
         padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
         child: Row(
@@ -418,15 +456,31 @@ class _DealRow extends StatelessWidget {
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Text(
-                '\$${group.subtotal.toStringAsFixed(2)}',
-                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-              ),
-              if (group.quantity > 1)
+              if (group.isRefunded) ...[
                 Text(
-                  '\$${group.unitPrice.toStringAsFixed(2)} ea',
-                  style: const TextStyle(fontSize: 11, color: AppColors.textHint),
+                  '\$${group.subtotal.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textHint,
+                    decoration: TextDecoration.lineThrough,
+                  ),
                 ),
+                const Text(
+                  'Refunded',
+                  style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                ),
+              ] else ...[
+                Text(
+                  '\$${group.subtotal.toStringAsFixed(2)}',
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                ),
+                if (group.quantity > 1)
+                  Text(
+                    '\$${group.unitPrice.toStringAsFixed(2)} ea',
+                    style: const TextStyle(fontSize: 11, color: AppColors.textHint),
+                  ),
+              ],
             ],
           ),
           ],

@@ -5,9 +5,7 @@ import Link from 'next/link'
 import StaffToggleButton from '@/components/staff-toggle-button'
 import MerchantCommissionForm from '@/components/merchant-commission-form'
 import MerchantOperationalActions from '@/components/merchant-operational-actions'
-import MerchantAdminVisibilityActions from '@/components/merchant-admin-visibility-actions'
-import AdminActivityTimelineCard from '@/components/admin-activity-timeline-card'
-import { buildMerchantTimeline } from '@/lib/merchant-admin-timeline'
+import { CopyableId } from '@/components/copyable-id'
 
 const DOCUMENT_TYPE_LABELS: Record<string, string> = {
   business_license: 'Business License',
@@ -219,6 +217,7 @@ export default async function MerchantReviewPage({
               ← Back to Merchants
             </Link>
             <h1 className="text-2xl font-bold text-gray-900">Merchant Profile</h1>
+            <p className="text-xs text-gray-400 mt-1">ID: <CopyableId id={merchant.id} showFull /></p>
           </div>
           {showMerchantOperations && (
             <div className="shrink-0">
