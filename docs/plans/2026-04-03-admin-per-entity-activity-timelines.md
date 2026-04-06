@@ -1,6 +1,6 @@
 # 后台管理 — 分模块活动时间线（追溯）开发计划
 
-**文档版本**: v1.2  
+**文档版本**: v1.3  
 **创建日期**: 2026-04-03  
 **影响范围**: Admin Portal (Next.js)  
 **相关文档**: [统一审批中心](./2026-04-01-unified-approvals-page.md)
@@ -239,5 +239,6 @@ export type AdminActivityTimelineEntry = {
 | v1.0 | 2026-04-03 | 初稿：分模块时间线方案、阶段划分、文件清单与验收标准                                                                                           |
 | v1.1 | 2026-04-03 | Phase 0 落地：`admin-activity-timeline-types`、`AdminActivityTimelineCard`、订单时间线改为薄封装复用                                  |
 | v1.2 | 2026-04-03 | Phase 1：`deal-admin-timeline.ts`、`/deals/[id]` 接入 Activity timeline；`sortActivityTimelineAscending` 抽取至 types，订单排序复用 |
+| v1.3 | 2026-03-30 | Phase 2：`merchant-admin-timeline.ts`、`/merchants/[id]` 接入 Activity timeline；仅 merchants 行内时间戳推导，footnote 说明无独立审批时刻   |
 
 

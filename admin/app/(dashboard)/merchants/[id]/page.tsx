@@ -5,6 +5,8 @@ import Link from 'next/link'
 import StaffToggleButton from '@/components/staff-toggle-button'
 import MerchantCommissionForm from '@/components/merchant-commission-form'
 import MerchantOperationalActions from '@/components/merchant-operational-actions'
+import AdminActivityTimelineCard from '@/components/admin-activity-timeline-card'
+import { buildMerchantTimeline } from '@/lib/merchant-admin-timeline'
 
 const DOCUMENT_TYPE_LABELS: Record<string, string> = {
   business_license: 'Business License',
@@ -178,6 +180,8 @@ export default async function MerchantReviewPage({
   const showMerchantOperations =
     merchant.status === 'approved' || merchant.status === 'rejected'
 
+  const merchantTimelineEvents = buildMerchantTimeline(merchant)
+
   return (
     <div>
       <div className="mb-6">
@@ -227,6 +231,12 @@ export default async function MerchantReviewPage({
             <p className="mt-2 text-sm text-red-600 bg-red-50 p-3 rounded-lg">Rejection reason: {merchant.rejection_reason}</p>
           )}
         </div>
+
+        <AdminActivityTimelineCard
+          title="Activity timeline"
+          footnote="Derived from merchant row timestamps only. Approval or rejection times are not stored separately; see Status above and Email Log for operational context."
+          events={merchantTimelineEvents}
+        />
 
         {brandInfo && (
           <div className="bg-white rounded-xl border border-gray-200 p-6">
