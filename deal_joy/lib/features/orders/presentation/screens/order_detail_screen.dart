@@ -730,8 +730,13 @@ class _CouponDetailRow extends ConsumerWidget {
 
     return GestureDetector(
       onTap: () {
-        // 点击券码行，跳转到 voucher detail 页面
-        context.push('/voucher/$orderId?dealId=${item.dealId}');
+        // 赠送出去的券跳转到 coupon 详情页（显示 gift 信息）
+        if (item.customerStatus == CustomerItemStatus.gifted && item.couponId != null) {
+          context.push('/coupon/${item.couponId}');
+        } else {
+          // 其他状态跳转到 voucher detail 页面
+          context.push('/voucher/$orderId?dealId=${item.dealId}');
+        }
       },
       child: Container(
         color: const Color(0xFFFAFAFA),

@@ -1,6 +1,6 @@
 // =============================================================
 // Edge Function: record-ad-event
-// 记录广告事件（impression / click），并调用 charge_ad_account RPC 扣费
+// 记录广告事件（impression / click / skip），并调用 charge_ad_account RPC 扣费
 //
 // POST /record-ad-event
 // Body: { campaign_id, event_type, user_id? }
@@ -105,13 +105,12 @@ Deno.serve(async (req: Request) => {
   if (!campaignId) {
     return errorResponse('missing_param', 'campaign_id is required');
   }
-  if (!eventType || !['impression', 'click'].includes(eventType)) {
-    return errorResponse('invalid_param', 'event_type must be "impression" or "click"');
+  // skip 是新增事件类型，用于记录用户跳过开屏广告的行为（不扣费）
+  if (!eventType || !['impression', 'click', 'skip'].includes(eventType)) {
+    return errorResponse('invalid_param', 'event_type must be "impression", "click", or "skip"');
   }
-  // click 事件需要提供 user_id（用于去重）
-  if (eventType === 'click' && !userId) {
-    return errorResponse('missing_param', 'user_id is required for click events');
-  }
+  // click 事件需要提供 user_id（已登录用户用于去重；未登录用户也允许，跳过去重）
+  // impression / skip 事件无需 user_id
 
   // -------------------------------------------------------
   // 2. 查询 ad_campaigns 获取 campaign 基本信息
@@ -154,14 +153,39 @@ Deno.serve(async (req: Request) => {
   let cost: number;
 
   if (billingType === 'cpc') {
-    // CPC 模式：只有点击才扣费，展示不扣费
-    if (eventType === 'impression') {
-      return jsonResponse({ success: true, charged: false, reason: 'cpc_no_impression_charge' });
+    if (eventType === 'impression' || eventType === 'skip') {
+      // CPC 模式下 impression / skip 不扣费，但仍需写库以更新今日展示计数器
+      // p_cost = 0 表示不扣余额，charge_ad_account 内部 CASE WHEN 会根据 event_type 更新对应计数器
+      const { data: recordResult, error: recordError } = await supabase.rpc(
+        'charge_ad_account',
+        {
+          p_campaign_id: campaignId,
+          p_merchant_id: campaign.merchant_id,
+          p_cost: 0,
+          p_event_type: eventType,
+          p_user_id: userId ?? null,
+        },
+      );
+
+      if (recordError) {
+        console.error('[record-ad-event] charge_ad_account RPC error (cpc impression/skip):', recordError.message);
+        return errorResponse('record_failed', 'Failed to record ad event', 500);
+      }
+
+      const recordStatus = recordResult as string;
+      // impression/skip 写库不做余额判断，RPC 返回任意状态都视为成功
+      console.log(`[record-ad-event] cpc ${eventType} recorded, rpc status: ${recordStatus}`);
+      return jsonResponse({
+        success: true,
+        charged: false,
+        reason: eventType === 'impression' ? 'cpc_impression_recorded' : 'cpc_skip_recorded',
+      });
     }
+    // CPC 模式下点击扣费
     cost = Number(campaign.bid_price);
   } else {
-    // CPM 模式：只有展示才扣费，点击不扣费
-    if (eventType === 'click') {
+    // CPM 模式：只有展示才扣费，点击 / skip 不扣费
+    if (eventType === 'click' || eventType === 'skip') {
       return jsonResponse({ success: true, charged: false, reason: 'cpm_no_click_charge' });
     }
     cost = Number(campaign.bid_price) / 1000;
@@ -170,6 +194,8 @@ Deno.serve(async (req: Request) => {
   // -------------------------------------------------------
   // 5. CPC 点击去重：30 秒内同 user_id + campaign_id 防重复
   // -------------------------------------------------------
+  // CPC 点击去重：仅在 userId 存在时检查 30 秒内是否重复点击
+  // 未登录用户（userId 为空）跳过去重，直接走扣费流程
   if (billingType === 'cpc' && eventType === 'click' && userId) {
     const { data: recentClick } = await supabase
       .from('ad_events')

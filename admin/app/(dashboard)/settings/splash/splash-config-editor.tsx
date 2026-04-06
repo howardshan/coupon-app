@@ -46,6 +46,8 @@ export default function SplashConfigEditor({ config }: SplashConfigEditorProps) 
       durationSeconds={duration}
       onDurationChange={setDuration}
       durationLabel="Duration per slide"
+      imageHint="Recommended: 1080×1920 (9:16 portrait). Max 5MB."
+      uploadFolder="splash"
     />
   )
 }

@@ -2,10 +2,13 @@
 // 多步骤表单：Target → 具体对象 → 广告位 → 出价 → 日预算 → 时间段 → 日期范围
 // 完成后调用 service 创建并返回主页刷新
 
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/promotions_models.dart';
 import '../providers/promotions_provider.dart';
@@ -36,6 +39,14 @@ class _CampaignCreatePageState extends ConsumerState<CampaignCreatePage> {
   String _scheduleHours = 'all_day'; // 'lunch' | 'dinner' | 'all_day'
   DateTime? _startDate;
   DateTime? _endDate;
+
+  // splash 广告位专属字段
+  File? _splashCreativeFile;       // 本地选取的素材图片文件
+  String? _splashCreativeUrl;      // 上传后的 Storage URL
+  String _splashLinkType = 'none'; // 'none' | 'deal' | 'merchant' | 'external'
+  String? _splashLinkValue;        // 跳转目标值
+  int _splashRadiusMeters = 16093; // 投放半径（米），默认 10mi
+  bool _isUploadingCreative = false; // 是否正在上传图片
 
   bool _isSubmitting = false;
 
@@ -127,10 +138,79 @@ class _CampaignCreatePageState extends ConsumerState<CampaignCreatePage> {
     }
   }
 
+  // ----------------------------------------------------------
+  // 上传 splash 素材图片到 Supabase Storage
+  // ----------------------------------------------------------
+
+  /// 调起图片选择器，选择后上传到 Storage，更新 _splashCreativeUrl
+  Future<void> _pickAndUploadCreative() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 90,
+    );
+    if (picked == null) return;
+
+    setState(() {
+      _splashCreativeFile = File(picked.path);
+      _isUploadingCreative = true;
+    });
+
+    try {
+      final supabase = Supabase.instance.client;
+      final user = supabase.auth.currentUser;
+      if (user == null) throw Exception('Not logged in');
+
+      // 查当前商家 ID
+      final merchantRow = await supabase
+          .from('merchants')
+          .select('id')
+          .eq('user_id', user.id)
+          .maybeSingle();
+      final merchantId = merchantRow?['id'] as String? ?? '';
+
+      // 生成唯一文件名并上传
+      final ext = picked.path.split('.').last;
+      final fileName =
+          'ad-creatives/splash/$merchantId/${DateTime.now().millisecondsSinceEpoch}.$ext';
+      await supabase.storage
+          .from('ad-creatives')
+          .upload(
+            'splash/$merchantId/${DateTime.now().millisecondsSinceEpoch}.$ext',
+            File(picked.path),
+            fileOptions: const FileOptions(upsert: true),
+          );
+
+      // 获取公开 URL
+      final url = supabase.storage
+          .from('ad-creatives')
+          .getPublicUrl(
+            'splash/$merchantId/${fileName.split('/').last}',
+          );
+
+      setState(() => _splashCreativeUrl = url);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to upload image: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isUploadingCreative = false);
+    }
+  }
+
   /// 组装创建请求用的草稿（仅 toCreateJson 字段有效，其余为占位）
   AdCampaign _buildDraftCampaign() {
-    final tt =
-        _targetType == 'store' ? TargetType.store : TargetType.deal;
+    // splash 广告位强制 target_type = store，target_id = merchantId
+    final isSplash = _placement == 'splash';
+    final tt = (isSplash || _targetType == 'store')
+        ? TargetType.store
+        : TargetType.deal;
     final hours = _schedulePresetToHours(_scheduleHours);
     final start = _startDate != null
         ? DateTime(_startDate!.year, _startDate!.month, _startDate!.day)
@@ -168,6 +248,11 @@ class _CampaignCreatePageState extends ConsumerState<CampaignCreatePage> {
       totalClicks: 0,
       qualityScore: 0.7,
       adScore: 0,
+      // splash 专属字段
+      creativeUrl: _splashCreativeUrl,
+      splashLinkType: _splashLinkType == 'none' ? null : _splashLinkType,
+      splashLinkValue: _splashLinkValue,
+      splashRadiusMeters: _splashRadiusMeters,
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
     );
@@ -210,16 +295,32 @@ class _CampaignCreatePageState extends ConsumerState<CampaignCreatePage> {
   }
 
   // ----------------------------------------------------------
+  // splash 广告位辅助属性
+  // ----------------------------------------------------------
+
+  /// 当前选中的是否为 splash 广告位
+  bool get _isSplash => _placement == 'splash';
+
+  /// splash 模式下总步骤数（跳过 target type / target 选择，新增 splash 配置）
+  /// 非 splash: 7 步（0-6），splash: 6 步（0,2,2.5=splash,3,4,5,6）
+  /// 实现上统一用 0-6 共 7 个 case，splash 时 step1 自动跳过
+  int get _totalSteps => 7;
+
+  // ----------------------------------------------------------
   // 步骤是否可进入下一步
   // ----------------------------------------------------------
   bool get _canProceed {
     switch (_currentStep) {
-      case 0: return true; // 选 target type 始终可继续
-      case 1: return _targetId != null;
+      case 0: return true; // 选 target type 始终可继续（splash 时也直接继续）
+      case 1: return _targetId != null; // splash 时自动填充，始终满足
       case 2: return _placement != null;
-      case 3: return _bidPrice > 0;
-      case 4: return _dailyBudget >= 10;
-      case 5: return true; // 时间段可选
+      case 3:
+        // splash 时：必须已上传素材图片
+        if (_isSplash) return _splashCreativeUrl != null;
+        // 非 splash：出价有效
+        return _bidPrice > 0;
+      case 4: return _isSplash ? _bidPrice > 0 : _dailyBudget >= 10;
+      case 5: return _isSplash ? _dailyBudget >= 10 : true;
       case 6: return true; // 日期范围可选
       default: return false;
     }
@@ -235,7 +336,7 @@ class _CampaignCreatePageState extends ConsumerState<CampaignCreatePage> {
       body: Column(
         children: [
           // 步骤进度条
-          _StepProgressBar(currentStep: _currentStep, totalSteps: 7),
+          _StepProgressBar(currentStep: _currentStep, totalSteps: _totalSteps),
 
           // 步骤内容
           Expanded(
@@ -266,7 +367,7 @@ class _CampaignCreatePageState extends ConsumerState<CampaignCreatePage> {
         onPressed: () => Navigator.of(context).pop(),
       ),
       title: Text(
-        'New Campaign — Step ${_currentStep + 1} of 7',
+        'New Campaign — Step ${_currentStep + 1} of $_totalSteps',
         style: const TextStyle(
           fontSize: 16,
           fontWeight: FontWeight.w700,
@@ -278,15 +379,27 @@ class _CampaignCreatePageState extends ConsumerState<CampaignCreatePage> {
 
   // ----------------------------------------------------------
   // 步骤内容路由
+  // splash 模式步骤顺序：0(target type) → 1(target, 自动填充) → 2(placement)
+  //   → 3(splash 配置) → 4(出价) → 5(日预算) → 6(日期范围)
+  // 非 splash 步骤顺序：0 → 1 → 2 → 3(出价) → 4(日预算) → 5(时间段) → 6(日期范围)
   // ----------------------------------------------------------
   Widget _buildStepContent(AsyncValue<List<AdPlacementConfig>> placementsAsync) {
     switch (_currentStep) {
       case 0: return _buildStep0TargetType();
       case 1: return _buildStep1SelectTarget();
       case 2: return _buildStep2SelectPlacement(placementsAsync);
-      case 3: return _buildStep3BidPrice(placementsAsync);
-      case 4: return _buildStep4DailyBudget();
-      case 5: return _buildStep5ScheduleHours();
+      case 3:
+        // splash 广告位：显示 splash 专属配置步骤
+        if (_isSplash) return _buildStep3SplashConfig();
+        return _buildStep3BidPrice(placementsAsync);
+      case 4:
+        // splash 广告位：step4 是出价
+        if (_isSplash) return _buildStep3BidPrice(placementsAsync);
+        return _buildStep4DailyBudget();
+      case 5:
+        // splash 广告位：step5 是日预算
+        if (_isSplash) return _buildStep4DailyBudget();
+        return _buildStep5ScheduleHours();
       case 6: return _buildStep6DateRange();
       default: return const SizedBox.shrink();
     }
@@ -408,10 +521,297 @@ class _CampaignCreatePageState extends ConsumerState<CampaignCreatePage> {
               return _PlacementOptionCard(
                 config: config,
                 isSelected: _placement == config.placement,
-                onTap: () => setState(() => _placement = config.placement),
+                onTap: () async {
+                  // 选择广告位，若为 splash 则自动填充 target_id 为当前门店
+                  if (config.placement == 'splash') {
+                    final supabase = Supabase.instance.client;
+                    final user = supabase.auth.currentUser;
+                    if (user != null) {
+                      final row = await supabase
+                          .from('merchants')
+                          .select('id, name')
+                          .eq('user_id', user.id)
+                          .maybeSingle();
+                      if (mounted && row != null) {
+                        setState(() {
+                          _placement = config.placement;
+                          _targetId = row['id'] as String? ?? '';
+                          _targetName = row['name'] as String? ?? 'My Store';
+                          _targetType = 'store';
+                        });
+                        return;
+                      }
+                    }
+                  }
+                  setState(() => _placement = config.placement);
+                },
               );
             },
           ),
+        ),
+      ],
+    );
+  }
+
+  // ----------------------------------------------------------
+  // Step 3 (splash 专属): splash 广告配置
+  // ----------------------------------------------------------
+  Widget _buildStep3SplashConfig() {
+    // 投放半径选项（米 → 英里显示）
+    const radiusOptions = [
+      (8047,  '5 miles'),
+      (16093, '10 miles'),
+      (24140, '15 miles'),
+      (40234, '25 miles'),
+    ];
+
+    // Link Type 选项
+    const linkTypes = [
+      ('none',     'None',         Icons.block_outlined),
+      ('deal',     'Deal',         Icons.local_offer_outlined),
+      ('merchant', 'Merchant',     Icons.store_outlined),
+      ('external', 'External URL', Icons.link_outlined),
+    ];
+
+    final splashLinkController = TextEditingController(text: _splashLinkValue);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _StepTitle(
+          title: 'Splash Ad Settings',
+          subtitle: 'Configure your app splash screen ad.',
+        ),
+        const SizedBox(height: 24),
+
+        // ------------------------------------------------
+        // 提示说明
+        // ------------------------------------------------
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF3F0FF),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: const Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.info_outline, size: 16, color: Color(0xFF7C4DFF)),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Your ad will be shown to users when they open the app, '
+                  'once per day per user. CPC billing — you\'re only charged '
+                  'when users tap your ad.',
+                  style: TextStyle(fontSize: 13, color: Color(0xFF5E35B1), height: 1.4),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 24),
+
+        // ------------------------------------------------
+        // 素材图片上传区
+        // ------------------------------------------------
+        const Text(
+          'Ad Creative',
+          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF1A1A2E)),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Recommended: 1080×1920 (9:16 portrait)',
+          style: TextStyle(fontSize: 12, color: Color(0xFF9E9E9E)),
+        ),
+        const SizedBox(height: 10),
+        GestureDetector(
+          onTap: _isUploadingCreative ? null : _pickAndUploadCreative,
+          child: Container(
+            width: double.infinity,
+            height: 160,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: _splashCreativeUrl != null
+                    ? const Color(0xFF4CAF50)
+                    : const Color(0xFFE0E0E0),
+                width: _splashCreativeUrl != null ? 2 : 1,
+              ),
+            ),
+            child: _isUploadingCreative
+                ? const Center(
+                    child: CircularProgressIndicator(color: Color(0xFFFF6B35)),
+                  )
+                : _splashCreativeFile != null
+                    ? ClipRRect(
+                        borderRadius: BorderRadius.circular(11),
+                        child: Image.file(
+                          _splashCreativeFile!,
+                          fit: BoxFit.cover,
+                          width: double.infinity,
+                        ),
+                      )
+                    : Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.add_photo_alternate_outlined,
+                              size: 40, color: Colors.grey.shade400),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Tap to upload image',
+                            style: TextStyle(
+                                fontSize: 14, color: Colors.grey.shade500),
+                          ),
+                        ],
+                      ),
+          ),
+        ),
+        if (_splashCreativeUrl != null) ...[
+          const SizedBox(height: 6),
+          const Row(
+            children: [
+              Icon(Icons.check_circle, size: 14, color: Color(0xFF4CAF50)),
+              SizedBox(width: 4),
+              Text('Image uploaded', style: TextStyle(fontSize: 12, color: Color(0xFF4CAF50))),
+            ],
+          ),
+        ],
+        const SizedBox(height: 24),
+
+        // ------------------------------------------------
+        // Link Type 下拉选择
+        // ------------------------------------------------
+        const Text(
+          'Link Type',
+          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF1A1A2E)),
+        ),
+        const SizedBox(height: 10),
+        ...linkTypes.map((lt) {
+          final isSelected = _splashLinkType == lt.$1;
+          return GestureDetector(
+            onTap: () => setState(() {
+              _splashLinkType = lt.$1;
+              // 切换类型时清空 value
+              if (_splashLinkType == 'none') _splashLinkValue = null;
+            }),
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? const Color(0xFFFF6B35).withAlpha(13)
+                    : Colors.white,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: isSelected
+                      ? const Color(0xFFFF6B35)
+                      : const Color(0xFFE0E0E0),
+                  width: isSelected ? 2 : 1,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(lt.$3,
+                      size: 18,
+                      color: isSelected
+                          ? const Color(0xFFFF6B35)
+                          : Colors.grey.shade500),
+                  const SizedBox(width: 10),
+                  Text(
+                    lt.$2,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: isSelected
+                          ? const Color(0xFFFF6B35)
+                          : const Color(0xFF1A1A2E),
+                    ),
+                  ),
+                  const Spacer(),
+                  if (isSelected)
+                    const Icon(Icons.check_circle,
+                        size: 18, color: Color(0xFFFF6B35)),
+                ],
+              ),
+            ),
+          );
+        }),
+
+        // ------------------------------------------------
+        // Link Value 输入框（Link Type 非 none 时显示）
+        // ------------------------------------------------
+        if (_splashLinkType != 'none') ...[
+          const SizedBox(height: 16),
+          Text(
+            _splashLinkType == 'external' ? 'URL' : 'ID',
+            style: const TextStyle(
+                fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF1A1A2E)),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: splashLinkController,
+            decoration: InputDecoration(
+              hintText: _splashLinkType == 'external'
+                  ? 'https://example.com'
+                  : _splashLinkType == 'deal'
+                      ? 'Deal ID'
+                      : 'Merchant ID',
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: Color(0xFFFF6B35)),
+              ),
+              filled: true,
+              fillColor: Colors.white,
+            ),
+            onChanged: (val) => setState(() => _splashLinkValue = val.isEmpty ? null : val),
+          ),
+        ],
+        const SizedBox(height: 24),
+
+        // ------------------------------------------------
+        // 投放半径选择
+        // ------------------------------------------------
+        const Text(
+          'Delivery Radius',
+          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF1A1A2E)),
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: radiusOptions.map((opt) {
+            final isSelected = _splashRadiusMeters == opt.$1;
+            return GestureDetector(
+              onTap: () => setState(() => _splashRadiusMeters = opt.$1),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                decoration: BoxDecoration(
+                  color: isSelected ? const Color(0xFFFF6B35) : Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: isSelected
+                        ? const Color(0xFFFF6B35)
+                        : const Color(0xFFE0E0E0),
+                  ),
+                ),
+                child: Text(
+                  opt.$2,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: isSelected ? Colors.white : const Color(0xFF1A1A2E),
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Your ad will be shown to users within this distance.',
+          style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
         ),
       ],
     );

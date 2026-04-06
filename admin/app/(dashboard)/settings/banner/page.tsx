@@ -2,6 +2,8 @@ import { createClient } from '@/lib/supabase/server'
 import { getServiceRoleClient } from '@/lib/supabase/service'
 import { redirect } from 'next/navigation'
 import BannerConfigEditor from './banner-config-editor'
+import { StatusToggle } from '@/components/status-toggle'
+import { activateBannerConfig, deactivateBannerConfig } from '@/app/actions/welcome-config'
 
 export default async function BannerConfigPage() {
   const supabase = await createClient()
@@ -20,7 +22,8 @@ export default async function BannerConfigPage() {
     .select('*')
     .order('created_at', { ascending: false })
 
-  const activeConfig = configs?.find(c => c.is_active) ?? null
+  // 优先取 active 配置，没有则取最新一条
+  const activeConfig = configs?.find(c => c.is_active) ?? configs?.[0] ?? null
 
   return (
     <div>
@@ -34,10 +37,17 @@ export default async function BannerConfigPage() {
 
       <div className="grid grid-cols-3 gap-4 mb-8">
         <div className="bg-white rounded-xl border border-gray-200 px-5 py-4">
-          <p className="text-xs text-gray-500 uppercase tracking-wide">Status</p>
-          <p className="text-lg font-bold text-gray-900 mt-1">
-            {activeConfig && (activeConfig.slides as unknown[]).length > 0 ? '🟢 Active' : '⚪ Inactive'}
-          </p>
+          <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Status</p>
+          {activeConfig ? (
+            <StatusToggle
+              configId={activeConfig.id}
+              initialActive={activeConfig.is_active}
+              onActivate={activateBannerConfig}
+              onDeactivate={deactivateBannerConfig}
+            />
+          ) : (
+            <p className="text-sm text-gray-400">No config</p>
+          )}
         </div>
         <div className="bg-white rounded-xl border border-gray-200 px-5 py-4">
           <p className="text-xs text-gray-500 uppercase tracking-wide">Slides</p>
