@@ -320,11 +320,15 @@ class _VoucherDealCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final first = dealItems.first;
-    final count = dealItems.length;
     final amountFmt = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
 
-    // 计算已付总价
-    final totalPaid = dealItems.fold<double>(0, (s, i) => s + i.unitPrice);
+    // 计算实际有效金额（排除已退款的 items）
+    final activeItems = dealItems.where((i) =>
+        i.customerStatus != CustomerItemStatus.refundSuccess &&
+        i.customerStatus != CustomerItemStatus.refundPending &&
+        i.customerStatus != CustomerItemStatus.refundProcessing &&
+        i.customerStatus != CustomerItemStatus.refundReview).toList();
+    final totalPaid = activeItems.fold<double>(0, (s, i) => s + i.unitPrice);
     final merchantName = first.merchantName ?? first.purchasedMerchantName;
 
     // 按状态分组
@@ -420,7 +424,7 @@ class _VoucherDealCard extends ConsumerWidget {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(
-                            '${amountFmt.format(first.unitPrice)} × $count',
+                            '${amountFmt.format(first.unitPrice)} × ${activeItems.length}',
                             style: const TextStyle(
                               fontSize: 13,
                               color: AppColors.textSecondary,
@@ -1773,9 +1777,14 @@ class _SimpleDealCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final first = dealItems.first;
-    final count = dealItems.length;
     final amountFmt = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
-    final totalPaid = dealItems.fold<double>(0, (s, i) => s + i.unitPrice);
+    // 计算实际有效金额（排除已退款的 items）
+    final activeItems = dealItems.where((i) =>
+        i.customerStatus != CustomerItemStatus.refundSuccess &&
+        i.customerStatus != CustomerItemStatus.refundPending &&
+        i.customerStatus != CustomerItemStatus.refundProcessing &&
+        i.customerStatus != CustomerItemStatus.refundReview).toList();
+    final totalPaid = activeItems.fold<double>(0, (s, i) => s + i.unitPrice);
     final merchantName = first.merchantName ?? first.purchasedMerchantName;
 
     return Container(
@@ -1828,7 +1837,7 @@ class _SimpleDealCard extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      '${amountFmt.format(first.unitPrice)} × $count',
+                      '${amountFmt.format(first.unitPrice)} × ${activeItems.length}',
                       style: const TextStyle(
                         fontSize: 13,
                         color: AppColors.textSecondary,

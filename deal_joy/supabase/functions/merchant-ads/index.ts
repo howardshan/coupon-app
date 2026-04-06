@@ -4,16 +4,17 @@
 // 功能: Campaign CRUD + 广告账户余额 + 充值记录 + 广告位配置
 //
 // 支持的 action:
-//   get_account         — 获取广告账户信息（余额 + 活跃 campaign 数）
-//   list_campaigns      — 获取 Campaign 列表（支持分页和状态过滤）
-//   get_campaign        — 获取单个 Campaign 详情
-//   create_campaign     — 创建 Campaign（含出价/余额/目标对象校验）
-//   update_campaign     — 更新 Campaign（已消费则只能改日预算和时段）
-//   pause_campaign      — 暂停 Campaign
-//   resume_campaign     — 恢复 Campaign（仅 paused 状态可恢复）
-//   delete_campaign     — 删除 Campaign（仅 paused/ended 状态可删除）
-//   list_recharges      — 充值记录（支持分页）
-//   get_placement_config — 获取广告位配置（min_bid 等）
+//   get_account          — 获取广告账户信息（余额 + 活跃 campaign 数）
+//   list_campaigns       — 获取 Campaign 列表（支持分页和状态过滤）
+//   get_campaign         — 获取单个 Campaign 详情
+//   create_campaign      — 创建 Campaign（含出价/余额/目标对象校验）
+//   update_campaign      — 更新 Campaign（已消费则只能改日预算和时段；splash 字段始终可改）
+//   pause_campaign       — 暂停 Campaign
+//   resume_campaign      — 恢复 Campaign（仅 paused 状态可恢复）
+//   delete_campaign      — 删除 Campaign（仅 paused/ended 状态可删除）
+//   list_recharges       — 充值记录（支持分页）
+//   get_placement_config — 获取广告位配置（min_bid / is_enabled 等）
+//   get_splash_estimate  — 获取 splash 广告预估覆盖用户数
 // ============================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2?target=deno';
@@ -165,18 +166,22 @@ async function handleGetCampaign(
   return jsonResponse({ campaign });
 }
 
+// splash 广告位合法半径列表（单位：米）
+const SPLASH_VALID_RADII = [8047, 16093, 24140, 40234];
+
 // ============================================================
 // action: create_campaign — 创建 Campaign
-// 参数: { target_type, target_id, placement, category_id?, bid_price,
-//         daily_budget, schedule_hours?, start_at?, end_at? }
+// 参数（通用）: { target_type, target_id, placement, category_id?, bid_price,
+//               daily_budget, schedule_hours?, start_at?, end_at? }
+// 参数（splash 专属）: { creative_url, splash_link_type,
+//               splash_link_value?, splash_radius_meters? }
+// splash 广告位会自动填充 target_type='store', target_id=merchantId
 // ============================================================
 async function handleCreateCampaign(
   merchantId: string,
   params: Record<string, unknown>
 ): Promise<Response> {
   const {
-    target_type,
-    target_id,
     placement,
     category_id,
     bid_price,
@@ -184,11 +189,49 @@ async function handleCreateCampaign(
     schedule_hours,
     start_at,
     end_at,
+    // splash 专属字段
+    creative_url,
+    splash_link_type,
+    splash_link_value,
+    splash_radius_meters,
   } = params;
 
-  // 参数完整性校验
-  if (!target_type || !target_id || !placement || bid_price == null || daily_budget == null) {
-    return errorResponse('Missing required fields: target_type, target_id, placement, bid_price, daily_budget');
+  // splash 广告位特殊处理：自动填充 target_type / target_id，无需前端传入
+  const isSplash = placement === 'splash';
+  let target_type = params.target_type;
+  let target_id = params.target_id;
+
+  if (isSplash) {
+    // splash 广告自动绑定到当前商家门店，绕过 NOT NULL 约束
+    target_type = 'store';
+    target_id = merchantId;
+  }
+
+  // 参数完整性校验（splash 时 target_type / target_id 由服务端填充，不强制要求前端传入）
+  if (!placement || bid_price == null || daily_budget == null) {
+    return errorResponse('Missing required fields: placement, bid_price, daily_budget');
+  }
+  if (!isSplash && (!target_type || !target_id)) {
+    return errorResponse('Missing required fields: target_type, target_id');
+  }
+
+  // splash 专属必填校验
+  if (isSplash) {
+    if (!creative_url || String(creative_url).trim() === '') {
+      return errorResponse('creative_url is required for splash placement');
+    }
+    const validLinkTypes = ['deal', 'merchant', 'external', 'none'];
+    if (!splash_link_type || !validLinkTypes.includes(String(splash_link_type))) {
+      return errorResponse(
+        `splash_link_type is required and must be one of: ${validLinkTypes.join(', ')}`
+      );
+    }
+    // 校验半径合法性（不传则使用默认值 16093）
+    if (splash_radius_meters != null && !SPLASH_VALID_RADII.includes(Number(splash_radius_meters))) {
+      return errorResponse(
+        `splash_radius_meters must be one of: ${SPLASH_VALID_RADII.join(', ')}`
+      );
+    }
   }
 
   const bidPriceNum = Number(bid_price);
@@ -282,25 +325,39 @@ async function handleCreateCampaign(
   // 5. 计算初始 ad_score = bid_price × 0.7（默认 quality_score）
   const initialAdScore = bidPriceNum * 0.7;
 
-  // 6. 插入 ad_campaigns
+  // 6. 构建插入对象（splash 广告额外写入专属字段）
+  const insertPayload: Record<string, unknown> = {
+    merchant_id:    merchantId,
+    ad_account_id:  account.id,
+    target_type:    target_type as string,
+    target_id:      target_id as string,
+    placement:      placement as string,
+    category_id:    category_id != null ? Number(category_id) : null,
+    bid_price:      bidPriceNum,
+    daily_budget:   dailyBudgetNum,
+    schedule_hours: schedule_hours ?? null,
+    start_at:       start_at ?? new Date().toISOString(),
+    end_at:         end_at ?? null,
+    status:         'active',
+    quality_score:  0.700,
+    ad_score:       initialAdScore,
+  };
+
+  if (isSplash) {
+    // 写入 splash 专属字段
+    insertPayload.creative_url = String(creative_url).trim();
+    insertPayload.splash_link_type = String(splash_link_type);
+    insertPayload.splash_link_value = splash_link_value ?? null;
+    // 未传时使用默认半径 16093 米（约 10 英里）
+    insertPayload.splash_radius_meters = splash_radius_meters != null
+      ? Number(splash_radius_meters)
+      : 16093;
+  }
+
+  // 7. 插入 ad_campaigns
   const { data: newCampaign, error: insertError } = await supabase
     .from('ad_campaigns')
-    .insert({
-      merchant_id:    merchantId,
-      ad_account_id:  account.id,
-      target_type:    target_type as string,
-      target_id:      target_id as string,
-      placement:      placement as string,
-      category_id:    category_id != null ? Number(category_id) : null,
-      bid_price:      bidPriceNum,
-      daily_budget:   dailyBudgetNum,
-      schedule_hours: schedule_hours ?? null,
-      start_at:       start_at ?? new Date().toISOString(),
-      end_at:         end_at ?? null,
-      status:         'active',
-      quality_score:  0.700,
-      ad_score:       initialAdScore,
-    })
+    .insert(insertPayload)
     .select()
     .single();
 
@@ -361,12 +418,60 @@ async function handleUpdateCampaign(
   }
 
   const hasSpend = Number(campaign.total_spend) > 0;
+  const isSplash = campaign.placement === 'splash';
 
   // 构建更新字段
   const updates: Record<string, unknown> = {};
 
+  // ---- splash 专属字段：无论是否有消费记录，始终允许编辑 ----
+  // creative_url：不可设为 null 或空字符串
+  if (params.creative_url !== undefined) {
+    if (!isSplash) {
+      return errorResponse('creative_url is only applicable to splash placement');
+    }
+    if (!params.creative_url || String(params.creative_url).trim() === '') {
+      return errorResponse('creative_url cannot be set to null or empty');
+    }
+    updates.creative_url = String(params.creative_url).trim();
+  }
+
+  // splash_link_type：合法值校验
+  if (params.splash_link_type !== undefined) {
+    if (!isSplash) {
+      return errorResponse('splash_link_type is only applicable to splash placement');
+    }
+    const validLinkTypes = ['deal', 'merchant', 'external', 'none'];
+    if (!validLinkTypes.includes(String(params.splash_link_type))) {
+      return errorResponse(
+        `splash_link_type must be one of: ${validLinkTypes.join(', ')}`
+      );
+    }
+    updates.splash_link_type = String(params.splash_link_type);
+  }
+
+  // splash_link_value：可为 null
+  if (params.splash_link_value !== undefined) {
+    if (!isSplash) {
+      return errorResponse('splash_link_value is only applicable to splash placement');
+    }
+    updates.splash_link_value = params.splash_link_value ?? null;
+  }
+
+  // splash_radius_meters：只允许合法值
+  if (params.splash_radius_meters !== undefined) {
+    if (!isSplash) {
+      return errorResponse('splash_radius_meters is only applicable to splash placement');
+    }
+    if (!SPLASH_VALID_RADII.includes(Number(params.splash_radius_meters))) {
+      return errorResponse(
+        `splash_radius_meters must be one of: ${SPLASH_VALID_RADII.join(', ')}`
+      );
+    }
+    updates.splash_radius_meters = Number(params.splash_radius_meters);
+  }
+
   if (hasSpend) {
-    // 已有消费：只允许修改 daily_budget 和 schedule_hours
+    // 已有消费：只允许修改 daily_budget、schedule_hours 和 splash 专属字段
     if (params.daily_budget != null) {
       const dailyBudgetNum = Number(params.daily_budget);
       if (isNaN(dailyBudgetNum) || dailyBudgetNum < 10) {
@@ -379,7 +484,7 @@ async function handleUpdateCampaign(
       updates.schedule_hours = params.schedule_hours ?? null;
     }
 
-    // 其他字段被传入时给出明确错误提示
+    // 其他受限字段被传入时给出明确错误提示
     const restrictedFields = ['bid_price', 'placement', 'target_id', 'target_type', 'category_id', 'start_at', 'end_at'];
     for (const field of restrictedFields) {
       if (params[field] !== undefined) {
@@ -726,9 +831,10 @@ async function handleListRecharges(
 
 // ============================================================
 // action: get_placement_config — 获取广告位配置
-// 无需额外参数，返回所有广告位的 min_bid / max_slots / billing_type
+// 无需额外参数，返回所有广告位的 min_bid / max_slots / billing_type / is_enabled 等字段
 // ============================================================
 async function handleGetPlacementConfig(): Promise<Response> {
+  // select('*') 已包含 is_enabled，无需额外指定
   const { data: configs, error } = await supabase
     .from('ad_placement_config')
     .select('*')
@@ -740,6 +846,51 @@ async function handleGetPlacementConfig(): Promise<Response> {
   }
 
   return jsonResponse({ configs: configs ?? [] });
+}
+
+// ============================================================
+// action: get_splash_estimate — 获取 splash 广告预估覆盖用户数
+// 参数: { lat: number, lng: number, radius_meters: number }
+// 调用 RPC get_splash_ad_estimate(lat, lng, radius_meters)
+// 返回 { estimate: number }
+// ============================================================
+async function handleGetSplashEstimate(
+  params: Record<string, unknown>
+): Promise<Response> {
+  const { lat, lng, radius_meters } = params;
+
+  // 参数校验
+  if (lat == null || lng == null || radius_meters == null) {
+    return errorResponse('Missing required fields: lat, lng, radius_meters');
+  }
+
+  const latNum = Number(lat);
+  const lngNum = Number(lng);
+  const radiusNum = Number(radius_meters);
+
+  if (isNaN(latNum) || isNaN(lngNum)) {
+    return errorResponse('lat and lng must be valid numbers');
+  }
+
+  if (!SPLASH_VALID_RADII.includes(radiusNum)) {
+    return errorResponse(
+      `radius_meters must be one of: ${SPLASH_VALID_RADII.join(', ')}`
+    );
+  }
+
+  // 调用 RPC 函数获取预估用户数
+  const { data, error } = await supabase.rpc('get_splash_ad_estimate', {
+    p_lat: latNum,
+    p_lng: lngNum,
+    p_radius_meters: radiusNum,
+  });
+
+  if (error) {
+    console.error('[get_splash_estimate] RPC 调用失败:', error);
+    return errorResponse('Failed to get splash estimate', 500);
+  }
+
+  return jsonResponse({ estimate: data ?? 0 });
 }
 
 // ============================================================
@@ -834,6 +985,9 @@ Deno.serve(async (req: Request) => {
 
       case 'get_placement_config':
         return await handleGetPlacementConfig();
+
+      case 'get_splash_estimate':
+        return await handleGetSplashEstimate(params);
 
       default:
         return errorResponse(`Unknown action: ${action}`, 400);

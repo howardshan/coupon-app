@@ -35,6 +35,32 @@ export async function pauseCampaign(campaignId: string, adminNote: string) {
   revalidatePath(`/ads/${campaignId}`)
 }
 
+// 启用广告位竞价投放
+export async function enablePlacement(placement: string) {
+  await requireAdmin()
+  const supabase = getServiceRoleClient()
+  const { error } = await supabase
+    .from('ad_placement_config')
+    .update({ is_enabled: true })
+    .eq('placement', placement)
+  if (error) throw new Error(`Failed: ${error.message}`)
+  revalidatePath('/settings/splash')
+  revalidatePath('/ads')
+}
+
+// 禁用广告位竞价投放
+export async function disablePlacement(placement: string) {
+  await requireAdmin()
+  const supabase = getServiceRoleClient()
+  const { error } = await supabase
+    .from('ad_placement_config')
+    .update({ is_enabled: false })
+    .eq('placement', placement)
+  if (error) throw new Error(`Failed: ${error.message}`)
+  revalidatePath('/settings/splash')
+  revalidatePath('/ads')
+}
+
 // Admin 恢复 campaign
 export async function resumeCampaign(campaignId: string) {
   await requireAdmin()

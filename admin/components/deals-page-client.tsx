@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useTransition } from 'react'
 import AdminDebouncedSearchForm from '@/components/admin-debounced-search-form'
+import { CopyableId } from '@/components/copyable-id'
 import AdminListScrollArea from '@/components/admin-list-scroll-area'
 import DealSortOrder from '@/components/deal-sort-order'
 import OrdersFilterMultiSelect from '@/components/orders-filter-multi-select'
@@ -257,6 +258,7 @@ export default function DealsPageClient({
         <table className="w-full text-sm">
           <thead className="border-b border-gray-200 bg-gray-50">
             <tr>
+              <th className="px-4 py-3 text-left font-medium text-gray-600">Deal ID</th>
               <th className="px-4 py-3 text-left font-medium text-gray-600">Title</th>
               <th className="px-4 py-3 text-left font-medium text-gray-600">Merchant</th>
               <th className="px-4 py-3 text-left font-medium text-gray-600">Sale Price</th>
@@ -276,6 +278,9 @@ export default function DealsPageClient({
 
               return (
                 <tr key={String(d.id)} className="hover:bg-gray-50">
+                  <td className="px-4 py-3">
+                    <CopyableId id={String(d.id)} />
+                  </td>
                   <td className="px-4 py-3 font-medium text-gray-900">
                     <Link
                       href={`/deals/${d.id}`}

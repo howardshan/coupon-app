@@ -90,6 +90,19 @@ export async function activateSplashConfig(configId: string) {
   revalidatePath('/settings/splash')
 }
 
+export async function deactivateSplashConfig(configId: string) {
+  await requireAdmin()
+  const supabase = getServiceRoleClient()
+
+  const { error } = await supabase
+    .from('splash_configs')
+    .update({ is_active: false, updated_at: new Date().toISOString() })
+    .eq('id', configId)
+
+  if (error) throw new Error(error.message)
+  revalidatePath('/settings/splash')
+}
+
 export async function createSplashConfig(slides: WelcomeSlide[], durationSeconds: number) {
   const user = await requireAdmin()
   const supabase = getServiceRoleClient()
@@ -155,6 +168,19 @@ export async function activateOnboardingConfig(configId: string) {
   revalidatePath('/settings/onboarding')
 }
 
+export async function deactivateOnboardingConfig(configId: string) {
+  await requireAdmin()
+  const supabase = getServiceRoleClient()
+
+  const { error } = await supabase
+    .from('onboarding_configs')
+    .update({ is_active: false, updated_at: new Date().toISOString() })
+    .eq('id', configId)
+
+  if (error) throw new Error(error.message)
+  revalidatePath('/settings/onboarding')
+}
+
 // ── Banner 配置 ──
 
 export async function getBannerConfig() {
@@ -199,6 +225,19 @@ export async function activateBannerConfig(configId: string) {
   const { error } = await supabase
     .from('banner_configs')
     .update({ is_active: true, updated_at: new Date().toISOString() })
+    .eq('id', configId)
+
+  if (error) throw new Error(error.message)
+  revalidatePath('/settings/banner')
+}
+
+export async function deactivateBannerConfig(configId: string) {
+  await requireAdmin()
+  const supabase = getServiceRoleClient()
+
+  const { error } = await supabase
+    .from('banner_configs')
+    .update({ is_active: false, updated_at: new Date().toISOString() })
     .eq('id', configId)
 
   if (error) throw new Error(error.message)

@@ -7,12 +7,14 @@ class AdPlacementConfig {
   final double minBid;        // 最低出价（美元）
   final int maxSlots;         // 该位置最大同时在投数量
   final String billingType;   // 计费方式: cpm（千次曝光计费）| cpc（点击计费）
+  final bool isEnabled;       // 该广告位是否对商家开放
 
   const AdPlacementConfig({
     required this.placement,
     required this.minBid,
     required this.maxSlots,
     required this.billingType,
+    this.isEnabled = true,
   });
 
   /// 从 Edge Function 返回的 JSON 构造，所有字段 null-safe
@@ -22,6 +24,7 @@ class AdPlacementConfig {
       minBid:      (json['min_bid'] as num?)?.toDouble() ?? 0.0,
       maxSlots:    (json['max_slots'] as num?)?.toInt() ?? 1,
       billingType: json['billing_type'] as String? ?? 'cpc',
+      isEnabled:   json['is_enabled'] as bool? ?? true,
     );
   }
 
@@ -38,6 +41,8 @@ class AdPlacementConfig {
         return 'Search Results Top';
       case 'merchant_nearby':
         return 'Nearby Merchants';
+      case 'splash':
+        return 'App Splash Screen';
       default:
         return placement
             .split('_')
