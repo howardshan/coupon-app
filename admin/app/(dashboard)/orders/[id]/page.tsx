@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { getServiceRoleClient } from '@/lib/supabase/service'
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import OrderRefundButtons from '@/components/order-refund-buttons'
@@ -7,6 +8,7 @@ import OrderDetailCustomerSidebar, {
   type OrderCustomerSummary,
 } from '@/components/order-detail-customer-sidebar'
 import OrderDetailTimelineCard from '@/components/order-detail-timeline-card'
+import AdminActivityTimelineCard from '@/components/admin-activity-timeline-card'
 import { getOrderDetailStatusTags, STATUS_STYLES, STATUS_LABELS } from '@/lib/order-display-status'
 import {
   buildDealPriceLines,
@@ -21,6 +23,10 @@ import {
   type OrderItemLike,
   type V2CouponLike,
 } from '@/lib/order-admin-timeline'
+import {
+  buildMergedOrderRefundDisputeTimelines,
+  type RefundDisputeTimelineInput,
+} from '@/lib/refund-dispute-admin-timeline'
 import {
   couponCodeForClipboard,
   displayCouponCode,
@@ -381,6 +387,36 @@ export default async function OrderDetailPage({
   const timelineEvents = hasV3Items && orderItems
     ? buildOrderTimelineV3(orderForTimeline, orderItems as OrderItemLike[])
     : buildOrderTimelineV2(orderForTimeline, v2Coupons as V2CouponLike[], { dealTitle: v2DealTitle })
+
+  // 核销后退款争议（refund_requests），与订单支付时间线分离展示
+  const serviceClient = getServiceRoleClient()
+  const { data: refundRequestRows } = await serviceClient
+    .from('refund_requests')
+    .select(
+      `id, status, created_at, updated_at, refund_amount, user_reason,
+       merchant_decision, merchant_reason, merchant_decided_at,
+       admin_decision, admin_reason, admin_decided_at, completed_at`
+    )
+    .eq('order_id', id)
+    .order('created_at', { ascending: true })
+
+  const refundTimelineInputs: RefundDisputeTimelineInput[] = (refundRequestRows ?? []).map((r: Record<string, unknown>) => ({
+    id: r.id as string,
+    createdAt: r.created_at as string,
+    updatedAt: (r.updated_at as string | null) ?? null,
+    status: (r.status as string | null) ?? null,
+    refundAmount: Number(r.refund_amount ?? 0),
+    userReason: (r.user_reason as string | null) ?? null,
+    merchantDecision: (r.merchant_decision as string | null) ?? null,
+    merchantReason: (r.merchant_reason as string | null) ?? null,
+    merchantDecidedAt: (r.merchant_decided_at as string | null) ?? null,
+    adminDecision: (r.admin_decision as string | null) ?? null,
+    adminReason: (r.admin_reason as string | null) ?? null,
+    adminDecidedAt: (r.admin_decided_at as string | null) ?? null,
+    completedAt: (r.completed_at as string | null) ?? null,
+  }))
+
+  const refundDisputeTimelineEvents = buildMergedOrderRefundDisputeTimelines(refundTimelineInputs)
 
   return (
     <div>
@@ -918,6 +954,11 @@ export default async function OrderDetailPage({
         <aside className="order-2 flex w-full shrink-0 flex-col gap-4 md:sticky md:top-4 md:w-72 md:max-w-[22rem] lg:w-80">
           <OrderDetailCustomerSidebar customer={customerSummary} returnToPath={`/orders/${order.id}`} />
           <OrderDetailTimelineCard events={timelineEvents} />
+          <AdminActivityTimelineCard
+            title="Refund dispute timeline"
+            footnote="Milestones from refund_requests (post-redemption dispute flow). Timestamps reflect DB columns, not Stripe webhooks. When empty, this order has no dispute rows."
+            events={refundDisputeTimelineEvents}
+          />
         </aside>
       </div>
     </div>
