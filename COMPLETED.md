@@ -193,6 +193,14 @@
   - `admin/components/approvals/refund-dispute-drawer.tsx` — 抽屉内时间线
   - `admin/app/actions/approvals.ts` — `approveRefundDispute` / `rejectRefundDispute` 成功后 `revalidatePath(/orders/[id])`
 
+#### Admin 售后活动时间线（Phase 4）✅
+- 状态：已完成，审批中心 After-Sales 抽屉使用通用 `AdminActivityTimelineCard`；`timeline` JSONB 经 `buildAfterSalesTimelineEntries` 映射；条目附件链接保留
+- 受保护文件：
+  - `admin/lib/after-sales-admin-timeline.ts`
+  - `admin/components/approvals/after-sales-drawer.tsx`
+  - `admin/lib/admin-activity-timeline-types.ts` — 可选 `attachments` 字段（与各域 builder 共用）
+  - `admin/components/admin-activity-timeline-card.tsx` — 多行 subtitle、附件链接展示
+
 ---
 
 ## 更新记录
@@ -206,6 +214,7 @@
 | 2026-03-13 | Brand 鉴权/门店切换 + Logo 上传/客户端展示 + 首页固定头部 — 全部加入保护清单 | Claude |
 | 2026-03-21 | Admin 侧栏 Email 分组 + Email Log 页面与预览 Action | Claude |
 | 2026-03-30 | Admin 退款争议活动时间线（订单详情 + Refund 抽屉 + revalidate） | Claude |
+| 2026-03-30 | Admin 售后时间线统一通用卡片 + `after-sales-admin-timeline.ts` | Claude |
 
 ---
 

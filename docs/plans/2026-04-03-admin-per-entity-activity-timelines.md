@@ -1,6 +1,6 @@
 # 后台管理 — 分模块活动时间线（追溯）开发计划
 
-**文档版本**: v1.6  
+**文档版本**: v1.7  
 **创建日期**: 2026-04-03  
 **影响范围**: Admin Portal (Next.js) + Supabase（`merchant_activity_events` 迁移与 Edge Functions）  
 **相关文档**: [统一审批中心](./2026-04-01-unified-approvals-page.md)
@@ -141,10 +141,11 @@ export type AdminActivityTimelineEntry = {
 
 **刷新**：`approveRefundDispute` / `rejectRefundDispute` 成功后 `revalidatePath(/orders/[orderId])` 以便订单侧栏时间线更新。
 
-### 5.4 After-sales（售后）
+### 5.4 After-sales（售后）— **已实现（v1.7）**
 
-- 抽屉内已有 `timeline` JSONB 与 `TimelineBlock`（`after-sales-drawer.tsx`）。
-- **本计划建议**：将展示**迁移/复用**通用 `AdminActivityTimelineCard` 的样式与结构，或把 `TimelineBlock` 改为内部调用通用组件，**统一视觉**。
+- **数据来源**：售后详情 API 返回的 `request.timeline`（JSONB 数组：`status`、`actor`、`note`、`attachments`、`at`）。
+- **展示**：`after-sales-drawer.tsx` 已移除内联 `TimelineBlock`，改用 `AdminActivityTimelineCard` + `admin/lib/after-sales-admin-timeline.ts` 的 `buildAfterSalesTimelineEntries`（升序、标题为状态文案、副标题含 Actor 与 note）。
+- **附件**：`AdminActivityTimelineEntry` 增加可选 `attachments`，通用卡片在每条目下渲染与旧版一致的「File N」外链，避免能力回退。
 
 ### 5.5 统一审批中心 `/approvals`
 
@@ -198,12 +199,14 @@ export type AdminActivityTimelineEntry = {
 
 **验收**：有待审或已结争议的单据在订单页与抽屉均可见里程碑；管理员批准后订单页侧栏可刷新出 Admin 节点（依赖 `admin_decided_at` 等字段由 Edge 写入）。
 
-### Phase 4：售后时间线与样式统一
+### Phase 4：售后时间线与样式统一 — **已完成（v1.7）**
 
-1. 对比 `after-sales-drawer.tsx` 中 `TimelineBlock` 与通用组件差异。
-2. 统一为同一套卡片样式；映射 `timeline` JSONB 字段到 `AdminActivityTimelineEntry`。
+1. 新增 `admin/lib/after-sales-admin-timeline.ts`：`buildAfterSalesTimelineEntries(timeline)`。
+2. `admin/lib/admin-activity-timeline-types.ts`：`AdminActivityTimelineEntry` 可选 `attachments`。
+3. `admin/components/admin-activity-timeline-card.tsx`：`subtitle` 支持多行（`whitespace-pre-line`）；有条目附件时渲染链接行。
+4. `after-sales-drawer.tsx`：用 `AdminActivityTimelineCard` 替换 `TimelineBlock`，footnote 说明记录来源与历史可能不完整。
 
-**验收**：售后抽屉时间线可读性与现网一致或提升；无回归。
+**验收**：视觉与订单/退款等时间线一致；Actor、note、附件链接保留；无事件时不占版面。
 
 ### Phase 5（可选）：审批中心抽屉内迷你时间线
 
@@ -211,13 +214,14 @@ export type AdminActivityTimelineEntry = {
 
 ---
 
-## 七、文件变更清单（Merchant 审计 + Phase 3 退款争议已落地；售后等仍为预估）
+## 七、文件变更清单（Merchant 审计 + Phase 3 退款 + Phase 4 售后时间线已落地）
 
 
 | 路径                                                  | 说明                  |
 | --------------------------------------------------- | ------------------- |
-| `admin/lib/admin-activity-timeline-types.ts`        | 新建，通用条目类型           |
-| `admin/components/admin-activity-timeline-card.tsx` | 新建，通用 UI            |
+| `admin/lib/admin-activity-timeline-types.ts`        | 通用条目类型；Phase 4 起含可选 `attachments` |
+| `admin/components/admin-activity-timeline-card.tsx` | 通用 UI；Phase 4 多行 subtitle + 附件链接 |
+| `admin/lib/after-sales-admin-timeline.ts`           | 新建；JSONB timeline → 通用条目 |
 | `admin/components/order-detail-timeline-card.tsx`   | 改为复用通用组件（可选但推荐）     |
 | `admin/lib/deal-admin-timeline.ts`                  | 新建                  |
 | `admin/lib/merchant-admin-timeline.ts`              | 新建；含审计行合并与行内兜底        |
@@ -237,7 +241,7 @@ export type AdminActivityTimelineEntry = {
 | `admin/app/(dashboard)/deals/[id]/page.tsx`         | 接入时间线               |
 | `admin/app/(dashboard)/merchants/[id]/page.tsx`     | 接入时间线 + 事件查询 + 可见性侧栏   |
 | `admin/components/approvals/*.tsx`                  | 可选：抽屉内时间线           |
-| `admin/components/approvals/after-sales-drawer.tsx` | 可选：Timeline 与通用组件对齐 |
+| `admin/components/approvals/after-sales-drawer.tsx` | Phase 4：`AdminActivityTimelineCard` + builder |
 
 
 ---
@@ -262,7 +266,7 @@ export type AdminActivityTimelineEntry = {
 | Deal        | 详情页可见与驳回历史一致的时间线；无捏造字段           |
 | Merchant    | 详情页可见审计事件 + 行内兜底；footnote 说明历史起算时间与局限；管理员可强制上下线并记审计 |
 | Refund      | 订单详情侧栏 + Refund 抽屉可见 `refund_requests` 里程碑；仲裁后订单页可刷新 |
-| After-sales | 样式统一或明确保留差异理由                    |
+| After-sales | 抽屉内 `timeline` 经 builder 展示；与通用时间线卡片一致；附件可点   |
 | 回归          | 订单详情原时间线行为不变（Phase 0 后）          |
 
 
@@ -288,5 +292,6 @@ export type AdminActivityTimelineEntry = {
 | v1.4 | 2026-04-06 | Merchant 审计表 `merchant_activity_events` + 全链路写入；时间线合并事件；管理员强制上下线 `adminSetMerchantStoreOnline`                       |
 | v1.5 | 2026-04-06 | 计划书同步：§5.2 / Phase 2 / 文件清单 / 风险 / 验收总览与实现对齐；补充事件类型、写入路径、部署与 `deal_joy` 目录约定   |
 | v1.6 | 2026-04-06 | Phase 3 落地：§5.3、`refund-dispute-admin-timeline.ts`、订单侧栏 + Refund 抽屉、`RefundDisputeItem` 字段扩展、仲裁后 revalidate 订单详情   |
+| v1.7 | 2026-03-30 | Phase 4：`after-sales-admin-timeline.ts`、售后抽屉统一 `AdminActivityTimelineCard`；条目类型支持 `attachments`、卡片多行 subtitle   |
 
 

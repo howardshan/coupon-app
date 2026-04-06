@@ -10,6 +10,8 @@ export type AdminActivityTimelineEntry = {
   title: string
   /** 副标题：原因、操作者、关联 ID 等 */
   subtitle?: string
+  /** 可选：条目关联的证据链接（如售后时间线） */
+  attachments?: string[]
 }
 
 /** 按时间升序（最早在上，适合纵向时间线） */
