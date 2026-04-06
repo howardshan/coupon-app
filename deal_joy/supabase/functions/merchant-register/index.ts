@@ -6,6 +6,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { sendEmail, getAdminRecipients } from "../_shared/email.ts";
+import { logMerchantActivity } from "../_shared/merchant_activity_log.ts";
 import { buildM1Email } from "../_shared/email-templates/merchant/welcome.ts";
 import { buildM2Email } from "../_shared/email-templates/merchant/verification-pending.ts";
 import { buildA2Email } from "../_shared/email-templates/admin/merchant-application.ts";
@@ -110,6 +111,7 @@ Deno.serve(async (req: Request) => {
     .maybeSingle();
 
   let merchantId: string;
+  const submittedAtIso = new Date().toISOString();
 
   if (existingMerchant) {
     // 已存在（重新提交场景）：更新 merchants 记录
@@ -126,8 +128,8 @@ Deno.serve(async (req: Request) => {
         address: body.address,
         status: "pending",                 // 重新提交后回到 pending
         rejection_reason: null,            // 清空拒绝原因
-        submitted_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        submitted_at: submittedAtIso,
+        updated_at: submittedAtIso,
       })
       .eq("id", existingMerchant.id);
 
@@ -184,7 +186,7 @@ Deno.serve(async (req: Request) => {
         lat: body.lat || null,
         lng: body.lng || null,
         status: "pending",
-        submitted_at: new Date().toISOString(),
+        submitted_at: submittedAtIso,
       })
       .select("id")
       .single();
@@ -259,6 +261,15 @@ Deno.serve(async (req: Request) => {
     }
   }
 
+  // 活动时间线：申请提交（含首次注册与重新提交）
+  await logMerchantActivity(adminSupabase, {
+    merchant_id: merchantId,
+    event_type: "application_submitted",
+    actor_type: "merchant_owner",
+    actor_user_id: user.id,
+    created_at: submittedAtIso,
+  });
+
   // 查询是否关联了品牌
   let brandId: string | undefined;
   if (registrationType === 'multiple') {
@@ -277,7 +288,7 @@ Deno.serve(async (req: Request) => {
     const merchantEmail = user.email ?? body.contact_email;
     const merchantName  = body.company_name;
     const isResubmission = !!existingMerchant;
-    const submittedAt = new Date().toISOString();
+    const submittedAt = submittedAtIso;
 
     // M1：仅新商家首次注册时发送欢迎邮件
     if (!isResubmission && merchantEmail) {

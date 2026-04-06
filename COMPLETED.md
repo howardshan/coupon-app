@@ -174,6 +174,16 @@
   - `admin/components/email-logs-table.tsx`
   - `admin/app/actions/email-logs.ts` — `getEmailLogHtmlBody`
 
+#### Admin 商户活动时间线（审计表）✅
+- 状态：已完成，`merchant_activity_events` 记录申请/审批/上下线/闭店；商户详情页时间线合并展示；管理员可强制上下线
+- 受保护文件：
+  - `deal_joy/supabase/migrations/20260402140000_merchant_activity_events.sql`
+  - `deal_joy/supabase/functions/_shared/merchant_activity_log.ts`
+  - `admin/lib/merchant-activity-events.ts`、`admin/lib/merchant-admin-timeline.ts`
+  - `admin/app/actions/admin.ts` — `approveMerchant` / `rejectMerchant` / `revokeMerchantApproval` / `adminSetMerchantStoreOnline` 与审计写入
+  - `admin/components/merchant-admin-visibility-actions.tsx`
+  - `deal_joy/supabase/functions/merchant-register/index.ts`、`merchant-dashboard/index.ts`、`merchant-store/index.ts` — 对应审计写入
+
 ---
 
 ## 更新记录
