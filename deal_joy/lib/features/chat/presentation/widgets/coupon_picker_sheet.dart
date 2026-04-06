@@ -129,6 +129,8 @@ class CouponPickerSheet extends ConsumerWidget {
                         // 构造 couponPayload，供 sendCouponMessage 使用
                         final payload = <String, dynamic>{
                           'order_item_id': item.id,
+                          if (item.couponId != null && item.couponId!.isNotEmpty)
+                            'coupon_id': item.couponId,
                           'coupon_code': item.couponCode ?? '',
                           'deal_title': item.dealTitle,
                           'merchant_name': item.merchantName ?? '',

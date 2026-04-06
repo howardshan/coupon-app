@@ -187,15 +187,15 @@ class _ProfileBody extends StatelessWidget {
                   label: 'History',
                   onTap: () => context.push('/history'),
                 ),
-                _IconGridItem(
-                  icon: Icons.confirmation_number_outlined,
-                  label: 'Coupons',
-                  onTap: () => context.push('/coupons'),
-                ),
-                _IconGridItem(
+_IconGridItem(
                   icon: Icons.account_balance_wallet_outlined,
                   label: 'Credit',
                   onTap: () => context.push('/profile/store-credit'),
+                ),
+                _IconGridItem(
+                  icon: Icons.card_giftcard_outlined,
+                  label: 'Gift',
+                  onTap: () => context.push('/coupons?tab=gifted'),
                 ),
               ],
             ),
@@ -314,12 +314,6 @@ class _ProfileBody extends StatelessWidget {
                   title: 'Payment Methods',
                   subtitle: 'Manage saved cards',
                   onTap: () => context.push('/profile/payment-methods'),
-                ),
-                const Divider(height: 1),
-                _SettingsTile(
-                  icon: Icons.location_on_outlined,
-                  title: 'Billing Address',
-                  onTap: () => context.push('/profile/billing-address'),
                 ),
               ],
             ),

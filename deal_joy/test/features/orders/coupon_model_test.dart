@@ -24,6 +24,10 @@ void main() {
         'description': 'Includes ribs, brisket, and sides',
         'image_urls': ['https://example.com/bbq.jpg'],
         'refund_policy': 'Refund anytime before use, refund when expired',
+        'usage_rules': [
+          '1 deal per table per visit',
+          'Cannot be combined with other offers',
+        ],
         'merchants': {
           'name': 'Texas BBQ House',
           'logo_url': 'https://example.com/logo.png',
@@ -54,6 +58,8 @@ void main() {
       expect(coupon.dealDescription, 'Includes ribs, brisket, and sides');
       expect(coupon.dealImageUrl, 'https://example.com/bbq.jpg');
       expect(coupon.refundPolicy, 'Refund anytime before use, refund when expired');
+      expect(coupon.usageRules.length, 2);
+      expect(coupon.usageRules.first, '1 deal per table per visit');
       expect(coupon.merchantName, 'Texas BBQ House');
       expect(coupon.merchantLogoUrl, 'https://example.com/logo.png');
       expect(coupon.merchantAddress, '123 Main St, Dallas, TX');
@@ -115,6 +121,8 @@ void main() {
       CouponModel fromStatus(String s) {
         final json = Map<String, dynamic>.from(baseJson);
         json['status'] = s;
+        // 避免随系统日期超过 expires_at 后 isExpired 误判
+        json['expires_at'] = '2099-12-31T00:00:00.000Z';
         return CouponModel.fromJson(json);
       }
 
@@ -129,6 +137,53 @@ void main() {
 
       expect(fromStatus('refunded').isRefunded, isTrue);
       expect(fromStatus('refunded').isExpired, isFalse);
+    });
+
+    test('effectiveHolderUserId and viewerCanManagePurchaseActions', () {
+      final json = Map<String, dynamic>.from(baseJson);
+      json['current_holder_user_id'] = 'user-friend';
+      final c = CouponModel.fromJson(json);
+      expect(c.effectiveHolderUserId, 'user-friend');
+      expect(c.isHeldByUser('user-friend'), isTrue);
+      expect(c.isHeldByUser('user-001'), isFalse);
+      expect(c.viewerCanManagePurchaseActions('user-001'), isFalse);
+      expect(c.viewerCanManagePurchaseActions('user-friend'), isFalse);
+    });
+
+    test('viewerCanManagePurchaseActions when holder is purchaser', () {
+      final c = CouponModel.fromJson(baseJson);
+      expect(c.effectiveHolderUserId, 'user-001');
+      expect(c.viewerCanManagePurchaseActions('user-001'), isTrue);
+      expect(c.viewerCanManagePurchaseActions(null), isFalse);
+    });
+
+    test('fromJson parses deals as List embed (PostgREST) and usage_rules', () {
+      final json = Map<String, dynamic>.from(baseJson);
+      final dealsMap = Map<String, dynamic>.from(
+          json['deals'] as Map<String, dynamic>);
+      json['deals'] = [dealsMap];
+      final coupon = CouponModel.fromJson(json);
+      expect(coupon.usageRules.length, 2);
+      expect(coupon.dealTitle, 'BBQ Combo for 2');
+    });
+
+    test('parseUsageRulesDynamic handles JSON string array', () {
+      final rules = CouponModel.parseUsageRulesDynamic(
+          '["Rule one", "Rule two"]');
+      expect(rules, ['Rule one', 'Rule two']);
+    });
+
+    test('usageDisplayLines falls back to usage_notes when usage_rules empty',
+        () {
+      final json = Map<String, dynamic>.from(baseJson);
+      final deals = Map<String, dynamic>.from(
+          json['deals'] as Map<String, dynamic>);
+      deals['usage_rules'] = <String>[];
+      deals['usage_notes'] = 'Line one\nLine two';
+      json['deals'] = deals;
+      final coupon = CouponModel.fromJson(json);
+      expect(coupon.usageRules, isEmpty);
+      expect(coupon.usageDisplayLines, ['Line one', 'Line two']);
     });
   });
 }

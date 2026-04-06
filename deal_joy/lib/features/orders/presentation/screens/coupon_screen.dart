@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../../core/errors/app_exception.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../reviews/domain/providers/my_reviews_provider.dart';
 import '../../data/models/coupon_model.dart';
@@ -116,6 +117,10 @@ class _CouponDetailBodyState extends State<_CouponDetailBody> {
   @override
   Widget build(BuildContext context) {
     final coupon = widget.coupon;
+    final myUserId = Supabase.instance.client.auth.currentUser?.id ?? '';
+    final heldByViewer =
+        myUserId.isNotEmpty && coupon.isHeldByUser(myUserId);
+    final viewerIsPurchaser = myUserId.isNotEmpty && coupon.userId == myUserId;
 
     // 退款状态使用专属布局（refunded 和 expired refunded 共用）
     if (coupon.isRefunded || coupon.status == 'expired') {
@@ -143,6 +148,14 @@ class _CouponDetailBodyState extends State<_CouponDetailBody> {
             // ── 商户信息 ──────────────────────────────────
             _MerchantInfoSection(coupon: coupon),
 
+            // ── 使用规则（usage_rules 或 usage_notes，与 Deal 详情 Purchase Notes 一致） ──
+            if (coupon.usageDisplayLines.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              const Divider(indent: 16, endIndent: 16),
+              const SizedBox(height: 8),
+              _UsageRulesSection(rules: coupon.usageDisplayLines),
+            ],
+
             // ── Buy Again 按钮 ───────────────────────────
             _BuyAgainButton(coupon: coupon),
             const SizedBox(height: 32),
@@ -158,16 +171,24 @@ class _CouponDetailBodyState extends State<_CouponDetailBody> {
           // ── 状态 Banner ──────────────────────────────
           _StatusBanner(coupon: coupon),
 
-          // ── QR / 已作废 / 已用等 ─────────────────────
-          if (coupon.isVoided)
-            _UsedStatusSection(coupon: coupon)
-          else if (coupon.isUnused)
+          // ── QR / 已作废 / 已赠送 / 已用等 ─────────────────────
+          // 受赠人：order_items.customer_status 仍为 gifted，但持券人已是自己 → 应显示 QR
+          if (coupon.isUnused && !coupon.isVoided && heldByViewer)
             _QrSection(coupon: coupon)
+          else if (coupon.isVoided && coupon.voidReason == 'gifted')
+            _UsedStatusSection(coupon: coupon)
+          else if (coupon.isVoided)
+            _UsedStatusSection(coupon: coupon)
+          else if (coupon.customerStatus == 'gifted' && !heldByViewer)
+            _UsedStatusSection(coupon: coupon)
           else
             _UsedStatusSection(coupon: coupon),
 
-          // ── Gifted 信息（仅 gifted 状态显示） ──────────
-          if (coupon.isVoided && coupon.voidReason == 'gifted' && coupon.orderItemId != null)
+          // ── Gifted 信息（仅赠送人可见：撤回/更换受赠方） ──────────
+          if (viewerIsPurchaser &&
+              (coupon.customerStatus == 'gifted' ||
+                  (coupon.isVoided && coupon.voidReason == 'gifted')) &&
+              coupon.orderItemId != null)
             _GiftInfoSection(orderItemId: coupon.orderItemId!, coupon: coupon),
 
           const SizedBox(height: 8),
@@ -183,6 +204,14 @@ class _CouponDetailBodyState extends State<_CouponDetailBody> {
 
           // ── 商户信息 ──────────────────────────────────
           _MerchantInfoSection(coupon: coupon),
+
+          // ── 使用规则（usage_rules 或 usage_notes） ──
+          if (coupon.usageDisplayLines.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            const Divider(indent: 16, endIndent: 16),
+            const SizedBox(height: 8),
+            _UsageRulesSection(rules: coupon.usageDisplayLines),
+          ],
 
           // ── 我的评价（仅已核销且未作废）────────────────
           if (coupon.isUsed && !coupon.isVoided) ...[
@@ -216,9 +245,26 @@ class _StatusBanner extends StatelessWidget {
 
   const _StatusBanner({required this.coupon});
 
-  /// 与列表卡片一致：已退款一律按 REFUNDED 展示，未退款但已过期按 EXPIRED，其余按 status
-  Color get _color {
-    if (coupon.isVoided && coupon.voidReason == 'gifted') return const Color(0xFF9C27B0);
+  /// 与列表卡片一致；赠券受赠人持券可用时按 READY TO USE 展示（不误导为已送出）
+  Color _bannerColor(bool heldByViewer) {
+    if (heldByViewer &&
+        coupon.isUnused &&
+        !coupon.isVoided &&
+        !coupon.isExpired) {
+      return switch (coupon.status) {
+        'unused' => AppColors.primary,
+        'used' => AppColors.success,
+        'expired' => AppColors.textSecondary,
+        'refunded' => AppColors.warning,
+        _ => AppColors.primary,
+      };
+    }
+    if (coupon.customerStatus == 'gifted' && !heldByViewer) {
+      return const Color(0xFF9C27B0);
+    }
+    if (coupon.isVoided && coupon.voidReason == 'gifted') {
+      return const Color(0xFF9C27B0);
+    }
     if (coupon.isVoided) return AppColors.textSecondary;
     if (coupon.status == 'refunded') return AppColors.warning;
     if (coupon.isExpired) return AppColors.textSecondary;
@@ -231,7 +277,20 @@ class _StatusBanner extends StatelessWidget {
     };
   }
 
-  String get _label {
+  String _bannerLabel(bool heldByViewer) {
+    if (heldByViewer &&
+        coupon.isUnused &&
+        !coupon.isVoided &&
+        !coupon.isExpired) {
+      return switch (coupon.status) {
+        'unused' => 'READY TO USE',
+        'used' => 'USED',
+        'expired' => 'EXPIRED REFUND',
+        'refunded' => 'REFUNDED',
+        _ => coupon.status.toUpperCase(),
+      };
+    }
+    if (coupon.customerStatus == 'gifted' && !heldByViewer) return 'GIFTED';
     if (coupon.isVoided && coupon.voidReason == 'gifted') return 'GIFTED';
     if (coupon.isVoided) return 'CANCELLED';
     if (coupon.isExpired) return 'EXPIRED REFUND';
@@ -247,19 +306,24 @@ class _StatusBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final uid = Supabase.instance.client.auth.currentUser?.id;
+    final heldByViewer = uid != null && coupon.isHeldByUser(uid);
+    final color = _bannerColor(heldByViewer);
+    final label = _bannerLabel(heldByViewer);
+
     return Container(
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.symmetric(vertical: 12),
       decoration: BoxDecoration(
-        color: _color.withValues(alpha: 0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _color.withValues(alpha: 0.3)),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
       ),
       child: Text(
-        _label,
+        label,
         textAlign: TextAlign.center,
         style: TextStyle(
-          color: _color,
+          color: color,
           fontWeight: FontWeight.bold,
           fontSize: 16,
           letterSpacing: 1.5,
@@ -363,8 +427,17 @@ class _UsedStatusSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     String message;
+    final uid = Supabase.instance.client.auth.currentUser?.id;
+    final heldByViewer = uid != null && coupon.isHeldByUser(uid);
 
-    if (coupon.isVoided && coupon.voidReason == 'gifted') {
+    // 赠送人已转出、券仍为 unused（in-app 赠礼后 order_item 恒为 gifted）
+    if (coupon.customerStatus == 'gifted' &&
+        !heldByViewer &&
+        coupon.isUnused &&
+        !coupon.isVoided) {
+      message =
+          'You sent this voucher to a friend. They can redeem it from their account.';
+    } else if (coupon.isVoided && coupon.voidReason == 'gifted') {
       message = 'This voucher has been gifted to a friend.';
       if (coupon.voidedAt != null) {
         message +=
@@ -398,7 +471,11 @@ class _UsedStatusSection extends StatelessWidget {
       child: Column(
         children: [
           Icon(
-            coupon.isVoided && coupon.voidReason == 'gifted'
+            (coupon.customerStatus == 'gifted' &&
+                    !heldByViewer &&
+                    coupon.isUnused &&
+                    !coupon.isVoided) ||
+                    (coupon.isVoided && coupon.voidReason == 'gifted')
                 ? Icons.card_giftcard_outlined
                 : coupon.isVoided
                     ? Icons.cancel_outlined
@@ -914,6 +991,97 @@ class _MultiStoreList extends ConsumerWidget {
 }
 
 // ──────────────────────────────────────────────
+// 使用规则（deals.usage_rules）
+// ──────────────────────────────────────────────
+class _UsageRulesSection extends StatelessWidget {
+  final List<String> rules;
+
+  const _UsageRulesSection({required this.rules});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Usage Rules',
+            style: Theme.of(context)
+                .textTheme
+                .titleSmall
+                ?.copyWith(color: AppColors.textSecondary),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.info.withValues(alpha: 0.07),
+              borderRadius: BorderRadius.circular(10),
+              border:
+                  Border.all(color: AppColors.info.withValues(alpha: 0.2)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.format_list_bulleted,
+                        size: 18, color: AppColors.info),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Please follow these rules when redeeming:',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                ...rules.map(
+                  (line) => Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          '• ',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: AppColors.textSecondary,
+                            height: 1.4,
+                          ),
+                        ),
+                        Expanded(
+                          child: Text(
+                            line,
+                            style: const TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 13,
+                              height: 1.4,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ──────────────────────────────────────────────
 // 退款政策区域
 // ──────────────────────────────────────────────
 class _RefundPolicySection extends StatelessWidget {
@@ -929,7 +1097,7 @@ class _RefundPolicySection extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Usage Rules & Refund Policy',
+            'Refund Policy',
             style: Theme.of(context)
                 .textTheme
                 .titleSmall
@@ -1046,8 +1214,8 @@ class _GiftInfoSection extends ConsumerWidget {
                       .format(gift.createdAt.toLocal()),
                 ),
 
-                // 操作按钮（仅 pending 状态可用）
-                if (gift.canEdit || gift.canRecall) ...[
+                // 操作按钮（与 recall-gift 一致：券已核销/作废则不显示撤回）
+                if (gift.canEdit || gift.canShowRecallButton(coupon)) ...[
                   const SizedBox(height: 16),
                   Row(
                     children: [
@@ -1075,10 +1243,10 @@ class _GiftInfoSection extends ConsumerWidget {
                             ),
                           ),
                         ),
-                      if (gift.canEdit && gift.canRecall)
+                      if (gift.canEdit && gift.canShowRecallButton(coupon))
                         const SizedBox(width: 10),
                       // 撤回赠送
-                      if (gift.canRecall)
+                      if (gift.canShowRecallButton(coupon))
                         Expanded(
                           child: OutlinedButton.icon(
                             onPressed: () =>
@@ -1184,10 +1352,16 @@ class _GiftInfoSection extends ConsumerWidget {
     }
 
     if (context.mounted) {
+      var failMsg = 'Failed to recall gift';
+      if (!ok) {
+        final e = ref.read(giftNotifierProvider).error;
+        if (e != null) {
+          failMsg = e is AppException ? e.message : e.toString();
+        }
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-              ok ? 'Gift recalled successfully' : 'Failed to recall gift'),
+          content: Text(ok ? 'Gift recalled successfully' : failMsg),
           backgroundColor: ok ? AppColors.success : AppColors.error,
         ),
       );
@@ -1597,8 +1771,12 @@ class _ActionButtonsState extends ConsumerState<_ActionButtons> {
             ),
           if (coupon.merchantPhone != null) const SizedBox(height: 10),
 
-          // 仅 unused 且未作废：退款 + 转赠
-          if (coupon.isUnused && !coupon.isVoided) ...[
+          // 仅购买人且仍持券：退款 + 转赠（已赠出给好友后不可操作）
+          if (coupon.isUnused &&
+              !coupon.isVoided &&
+              coupon.viewerCanManagePurchaseActions(
+                Supabase.instance.client.auth.currentUser?.id,
+              )) ...[
             OutlinedButton.icon(
               onPressed: _isGifting ? null : _giftToFriend,
               icon: _isGifting
