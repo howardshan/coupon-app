@@ -1,8 +1,8 @@
 # 后台管理 — 分模块活动时间线（追溯）开发计划
 
-**文档版本**: v1.3  
+**文档版本**: v1.5  
 **创建日期**: 2026-04-03  
-**影响范围**: Admin Portal (Next.js)  
+**影响范围**: Admin Portal (Next.js) + Supabase（`merchant_activity_events` 迁移与 Edge Functions）  
 **相关文档**: [统一审批中心](./2026-04-01-unified-approvals-page.md)
 
 ---
@@ -99,16 +99,31 @@ export type AdminActivityTimelineEntry = {
 
 **注意**：`setDealActive` / `rejectDeal` 若未单独落事件表，**下架时间**可能仅体现在 `updated_at` 或 `deal_status` 变更推断，需在文案 footnote 中说明「部分步骤由时间戳推导」。
 
-### 5.2 Merchant（`/merchants/[id]`）
+### 5.2 Merchant（`/merchants/[id]`）— **已实现（v1.4+）**
 
 
-| 数据来源           | 可展示节点（示例）                                               |
-| -------------- | ------------------------------------------------------- |
-| `merchants`    | `submitted_at` / `created_at`、`updated_at`、`status` 当前值 |
-| 若库中**无**状态变更流水 | 首版仅展示「注册 / 提交 / 最后更新」；**不虚构**中间节点                       |
+| 数据来源 | 可展示节点（示例） |
+| -------- | ------------------ |
+| **`merchant_activity_events`（审计表）** | 迁移上线后新产生的：**申请提交**、**管理员通过/拒绝/撤销认证**、**门店对消费者在线/离线**（商家 Dashboard 或管理员按钮）、**商家闭店**等；含 `actor_type`、`actor_user_id`、驳回 `detail`。 |
+| **`merchants`（行内字段）** | **兜底**：当该商户**尚无**审计行时，`buildMerchantTimeline` 仅用 `created_at` / `submitted_at` / `updated_at` / 当前 `status` 推导「建档 / 提交 / 最后更新」，**不虚构**中间节点。 |
+| **详情页查询** | `merchant_activity_events` 按 `merchant_id` + `created_at` 升序；批量解析 `users.email` 作为副标题中的操作者标识。 |
 
 
-**可选后续增强**：迁移或表 `merchant_status_events`（本计划不强制）。
+**事件类型（`event_type`）**：`application_submitted`、`admin_approved`、`admin_rejected`、`admin_revoked_to_pending`、`store_online_merchant`、`store_offline_merchant`、`store_online_admin`、`store_offline_admin`、`store_closed_merchant`。
+
+**写入路径摘要**：
+
+| 路径 | 写入事件 |
+| ---- | -------- |
+| Edge `merchant-register` | `application_submitted`（对齐 `submitted_at`） |
+| Edge `merchant-dashboard` PATCH `is_online` | `store_online_merchant` / `store_offline_merchant` |
+| Edge `merchant-store` POST `close` | `store_closed_merchant` |
+| Admin `approveMerchant` / `rejectMerchant` / `revokeMerchantApproval` | `admin_*` |
+| Admin `adminSetMerchantStoreOnline` | `store_online_admin` / `store_offline_admin` |
+
+**部署注意**：迁移需推生产；上述 Edge Functions 需从 **`deal_joy/`** 目录部署。审计数据**自迁移与部署后起算**，历史行为不自动回填。
+
+**原「可选后续」**：域内事件表已落地为 `merchant_activity_events`，不再依赖单独的 `merchant_status_events` 命名。
 
 ### 5.3 退款争议（`refund_requests`，展示位置待定）
 
@@ -153,12 +168,22 @@ export type AdminActivityTimelineEntry = {
 
 **验收**：含驳回记录的 Deal 时间线包含驳回节点；无驳回时至少有创建/发布等可用节点（以实际字段为准）。
 
-### Phase 2：Merchant 详情时间线
+### Phase 2：Merchant 详情时间线 — **已完成**
 
-1. 新增 `admin/lib/merchant-admin-timeline.ts`，基于 `merchants` 现有字段组装事件。
-2. 在 `merchants/[id]/page.tsx` 挂载时间线卡片。
+**2a（初版，v1.3）**
 
-**验收**：不编造无库表支撑的事件；footnote 标明局限。
+1. 新增 `admin/lib/merchant-admin-timeline.ts`，基于 `merchants` 行内字段组装兜底事件。
+2. 在 `merchants/[id]/page.tsx` 挂载 `AdminActivityTimelineCard`，footnote 说明推导局限。
+
+**2b（完整审计，v1.4）**
+
+1. 新增迁移 `deal_joy/supabase/migrations/20260402140000_merchant_activity_events.sql` 与表 `merchant_activity_events`（RLS：admin 全读、门店主读本店）。
+2. Deno 共享 `deal_joy/supabase/functions/_shared/merchant_activity_log.ts`；在 `merchant-register`、`merchant-dashboard`、`merchant-store` 成功路径追加写入。
+3. Admin：`admin/lib/merchant-activity-events.ts`（`logMerchantActivityServer`）；`admin.ts` 中 `approveMerchant` / `rejectMerchant` / `revokeMerchantApproval` 写审计；新增 `adminSetMerchantStoreOnline`；`requireAdmin` 返回 `adminUserId` 供操作者关联。
+4. `merchant-admin-timeline.ts`：`buildMerchantTimeline(merchant, activityEvents[])` — 有审计行则映射为英文节点并排序，可补「建档」锚点与「Record last updated」；无行则回退 2a。
+5. `merchants/[id]/page.tsx`：查询事件表 + 操作者邮箱；展示 `is_online` 与 `MerchantAdminVisibilityActions`（Take offline / Put online）；footnote 区分有数据 / 无数据 / 查询失败。
+
+**验收**：迁移后新操作在时间线可见（含多次驳回/通过、上下线、闭店）；无审计行时仍为行内推导且不捏造节点；footnote 诚实说明历史不完整范围。
 
 ### Phase 3：退款争议时间线
 
@@ -181,7 +206,7 @@ export type AdminActivityTimelineEntry = {
 
 ---
 
-## 七、文件变更清单（预估）
+## 七、文件变更清单（含 Merchant 审计已落地；其余阶段仍为预估）
 
 
 | 路径                                                  | 说明                  |
@@ -190,10 +215,18 @@ export type AdminActivityTimelineEntry = {
 | `admin/components/admin-activity-timeline-card.tsx` | 新建，通用 UI            |
 | `admin/components/order-detail-timeline-card.tsx`   | 改为复用通用组件（可选但推荐）     |
 | `admin/lib/deal-admin-timeline.ts`                  | 新建                  |
-| `admin/lib/merchant-admin-timeline.ts`              | 新建                  |
+| `admin/lib/merchant-admin-timeline.ts`              | 新建；含审计行合并与行内兜底        |
+| `admin/lib/merchant-activity-events.ts`             | 新建；Server 侧写 `merchant_activity_events` |
+| `admin/components/merchant-admin-visibility-actions.tsx` | 新建；管理员强制上下线 UI    |
+| `admin/app/actions/admin.ts`                        | 审批/上下线审计写入；`requireAdmin` 返回 `adminUserId`；`rejectDeal.rejected_by` 等 |
+| `deal_joy/supabase/migrations/20260402140000_merchant_activity_events.sql` | 审计表 + RLS |
+| `deal_joy/supabase/functions/_shared/merchant_activity_log.ts` | 新建；Edge 侧写审计 |
+| `deal_joy/supabase/functions/merchant-register/index.ts` | 申请提交事件 |
+| `deal_joy/supabase/functions/merchant-dashboard/index.ts` | `is_online` 变更事件 |
+| `deal_joy/supabase/functions/merchant-store/index.ts` | 闭店事件 |
 | `admin/lib/refund-dispute-admin-timeline.ts`        | 新建（或命名调整）           |
 | `admin/app/(dashboard)/deals/[id]/page.tsx`         | 接入时间线               |
-| `admin/app/(dashboard)/merchants/[id]/page.tsx`     | 接入时间线               |
+| `admin/app/(dashboard)/merchants/[id]/page.tsx`     | 接入时间线 + 事件查询 + 可见性侧栏   |
 | `admin/components/approvals/*.tsx`                  | 可选：抽屉内时间线           |
 | `admin/components/approvals/after-sales-drawer.tsx` | 可选：Timeline 与通用组件对齐 |
 
@@ -206,6 +239,8 @@ export type AdminActivityTimelineEntry = {
 2. **与邮件/日志对账**：时间线不等于法务级审计；重要场景保留 Email Logs、Stripe Dashboard 等外部源。
 3. **性能**：Deal 驳回记录通常体量小；若未来单 Deal 驳回次数极大，注意 limit 与分页（当前可省略）。
 4. **RLS**：Admin 页面已用 `createClient` / `getServiceRoleClient` 的模式需与各查询一致，避免详情页能看、时间线查不到。
+5. **Merchant 审计表**：`merchant_activity_events` 仅 service role / 受控服务端写入；部署 Edge 与迁移顺序错误会导致写入失败（函数内仅打日志，主流程不中断）。
+6. **CLI 部署路径**：`supabase functions deploy` 须在含 `supabase/functions/` 的 **`deal_joy/`** 目录执行，避免仓库根目录报 entrypoint 不存在。
 
 ---
 
@@ -216,7 +251,7 @@ export type AdminActivityTimelineEntry = {
 | ----------- | -------------------------------- |
 | 通用组件        | 空数组不渲染；时间升序展示；英文标题/副标题；与订单卡片视觉协调 |
 | Deal        | 详情页可见与驳回历史一致的时间线；无捏造字段           |
-| Merchant    | 详情页可见基于现有字段的时间线；局限有 footnote     |
+| Merchant    | 详情页可见审计事件 + 行内兜底；footnote 说明历史起算时间与局限；管理员可强制上下线并记审计 |
 | Refund      | 选定载体上可见关键里程碑时间                   |
 | After-sales | 样式统一或明确保留差异理由                    |
 | 回归          | 订单详情原时间线行为不变（Phase 0 后）          |
@@ -227,7 +262,8 @@ export type AdminActivityTimelineEntry = {
 ## 十、后续演进（不在本批次必须完成）
 
 - 若需 **全站审批导出**：增加 `admin_audit_events` 表或在 Edge Function 层双写；本计划的各 `build*Timeline` 可改为「读事件表 + 读实体表」混合。  
-- 若某域强依赖 **操作者**：在对应 Server Action 成功路径更新列或写域内事件表，再并入时间线 builder。
+- 若某域强依赖 **操作者**：在对应 Server Action 成功路径更新列或写域内事件表，再并入时间线 builder。  
+- **Merchant 域**已采用 `merchant_activity_events`，可作为其他域（如统一 `admin_audit_events`）的参考模式。
 
 ---
 
@@ -240,5 +276,7 @@ export type AdminActivityTimelineEntry = {
 | v1.1 | 2026-04-03 | Phase 0 落地：`admin-activity-timeline-types`、`AdminActivityTimelineCard`、订单时间线改为薄封装复用                                  |
 | v1.2 | 2026-04-03 | Phase 1：`deal-admin-timeline.ts`、`/deals/[id]` 接入 Activity timeline；`sortActivityTimelineAscending` 抽取至 types，订单排序复用 |
 | v1.3 | 2026-03-30 | Phase 2：`merchant-admin-timeline.ts`、`/merchants/[id]` 接入 Activity timeline；仅 merchants 行内时间戳推导，footnote 说明无独立审批时刻   |
+| v1.4 | 2026-03-30 | Merchant 审计表 `merchant_activity_events` + 全链路写入；时间线合并事件；管理员强制上下线 `adminSetMerchantStoreOnline`                       |
+| v1.5 | 2026-04-06 | 计划书同步：§5.2 / Phase 2 / 文件清单 / 风险 / 验收总览与实现对齐；补充事件类型、写入路径、部署与 `deal_joy` 目录约定   |
 
 
