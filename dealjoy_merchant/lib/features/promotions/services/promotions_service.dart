@@ -116,13 +116,14 @@ class PromotionsService {
   /// 创建新广告计划
   /// [campaign] — 用 AdCampaign.toCreateJson() 序列化的参数
   Future<AdCampaign> createCampaign(AdCampaign campaign) async {
+    // 与 Edge Function 一致：参数字段与 action 同级（扁平 JSON）
     final response = await _supabase.functions.invoke(
       _adsFn,
       method: HttpMethod.post,
       headers: _headers,
       body: {
-        'action':   'create_campaign',
-        'campaign': campaign.toCreateJson(),
+        'action': 'create_campaign',
+        ...campaign.toCreateJson(),
       },
     );
     final data = _parseResponse(response);
@@ -132,25 +133,38 @@ class PromotionsService {
     return AdCampaign.fromJson(campaignJson);
   }
 
-  /// 更新广告计划（仅允许修改 dailyBudget / scheduleHours）
+  /// 更新广告计划（与 Edge Function 扁平参数一致；未消费时可额外改出价与日期）
   Future<AdCampaign> updateCampaign(
     String campaignId, {
     double? dailyBudget,
+    bool applyScheduleHours = false,
     List<int>? scheduleHours,
+    double? bidPrice,
+    DateTime? startAt,
+    bool applyEndAt = false,
+    DateTime? endAt,
   }) async {
-    final updates = <String, dynamic>{};
-    if (dailyBudget != null)    updates['daily_budget']   = dailyBudget;
-    if (scheduleHours != null)  updates['schedule_hours'] = scheduleHours;
+    final body = <String, dynamic>{
+      'action': 'update_campaign',
+      'campaign_id': campaignId,
+    };
+    if (dailyBudget != null) body['daily_budget'] = dailyBudget;
+    if (applyScheduleHours) {
+      body['schedule_hours'] = scheduleHours;
+    }
+    if (bidPrice != null) body['bid_price'] = bidPrice;
+    if (startAt != null) {
+      body['start_at'] = startAt.toIso8601String();
+    }
+    if (applyEndAt) {
+      body['end_at'] = endAt?.toIso8601String();
+    }
 
     final response = await _supabase.functions.invoke(
       _adsFn,
       method: HttpMethod.post,
       headers: _headers,
-      body: {
-        'action':      'update_campaign',
-        'campaign_id': campaignId,
-        'updates':     updates,
-      },
+      body: body,
     );
     final data = _parseResponse(response);
     _checkError(data);
@@ -267,7 +281,7 @@ class PromotionsService {
       _adsFn,
       method: HttpMethod.post,
       headers: _headers,
-      body: {'action': 'get_placement_configs'},
+      body: {'action': 'get_placement_config'},
     );
     final data = _parseResponse(response);
     _checkError(data);

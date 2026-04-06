@@ -112,7 +112,19 @@ export default async function OrderDetailPage({
         refunded_at, refund_reason, refund_amount, refund_method,
         deals ( id, title, discount_price, merchants ( id, name ) ),
         coupons!order_items_coupon_id_fkey ( id, qr_code, coupon_code, status, expires_at, used_at, is_gifted, current_holder_user_id ),
-        coupon_gifts ( id, recipient_user_id, recipient_email, recipient_phone, gift_message, status, claimed_at, recalled_at, created_at )
+        coupon_gifts (
+          id,
+          recipient_user_id,
+          recipient_email,
+          recipient_phone,
+          gift_message,
+          gift_type,
+          status,
+          claimed_at,
+          recalled_at,
+          created_at,
+          recipient_user:users!coupon_gifts_recipient_user_id_fkey ( id, email, full_name, username )
+        )
       )
     `)
     .eq('id', id)

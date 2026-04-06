@@ -48,15 +48,36 @@ class _CampaignEditPageState extends ConsumerState<CampaignEditPage> {
   // ----------------------------------------------------------
   // 从 campaign 对象初始化表单
   // ----------------------------------------------------------
+  /// 后端 schedule_hours 列表 → 编辑页单选预设
+  String _presetFromScheduleHours(List<int>? h) {
+    if (h == null || h.isEmpty) return 'all_day';
+    final s = h.toSet();
+    if (s.containsAll({11, 12, 13}) && s.length <= 4) return 'lunch';
+    if (h.any((e) => e >= 17 && e <= 21)) return 'dinner';
+    return 'all_day';
+  }
+
+  /// 预设 → 创建/更新用的 schedule_hours
+  List<int>? _hoursFromPreset(String k) {
+    switch (k) {
+      case 'lunch':
+        return [11, 12, 13];
+      case 'dinner':
+        return [17, 18, 19, 20, 21];
+      default:
+        return null;
+    }
+  }
+
   void _initFromCampaign(AdCampaign campaign) {
     if (_initialized) return;
-    _initialized    = true;
-    _bidPrice       = campaign.bidPrice;
-    _dailyBudget    = campaign.dailyBudget;
-    _scheduleHours  = campaign.scheduleHours;
-    _startDate      = campaign.startDate;
-    _endDate        = campaign.endDate;
-    _bidController.text    = campaign.bidPrice.toStringAsFixed(2);
+    _initialized = true;
+    _bidPrice = campaign.bidPrice;
+    _dailyBudget = campaign.dailyBudget;
+    _scheduleHours = _presetFromScheduleHours(campaign.scheduleHours);
+    _startDate = campaign.startAt;
+    _endDate = campaign.endAt;
+    _bidController.text = campaign.bidPrice.toStringAsFixed(2);
     _budgetController.text = campaign.dailyBudget.toStringAsFixed(0);
   }
 
@@ -68,32 +89,38 @@ class _CampaignEditPageState extends ConsumerState<CampaignEditPage> {
 
     setState(() => _isSubmitting = true);
     try {
-      final supabase   = Supabase.instance.client;
-      final user       = supabase.auth.currentUser;
+      final user = Supabase.instance.client.auth.currentUser;
       if (user == null) throw Exception('Not logged in');
 
-      final merchantRow = await supabase
-          .from('merchants')
-          .select('id')
-          .eq('user_id', user.id)
-          .maybeSingle();
-      final merchantId = merchantRow?['id'] as String? ?? '';
-
-      // 根据是否有消费决定可更新的字段
       final hasSpend = campaign.totalSpend > 0;
-      final params   = <String, dynamic>{
-        'daily_budget':   _dailyBudget,
-        'schedule_hours': _scheduleHours,
-        if (!hasSpend) 'bid_price':  _bidPrice,
-        if (!hasSpend && _startDate != null)
-          'start_date': _startDate!.toIso8601String(),
-        if (!hasSpend && _endDate != null)
-          'end_date': _endDate!.toIso8601String(),
-      };
 
-      await ref
-          .read(campaignsProvider.notifier)
-          .updateCampaign(merchantId, widget.campaignId, params);
+      await ref.read(campaignsProvider.notifier).updateCampaignOnServer(
+            campaignId: widget.campaignId,
+            dailyBudget: _dailyBudget,
+            applyScheduleHours: true,
+            scheduleHours: _hoursFromPreset(_scheduleHours),
+            bidPrice: hasSpend ? null : _bidPrice,
+            startAt: (!hasSpend && _startDate != null)
+                ? DateTime(
+                    _startDate!.year,
+                    _startDate!.month,
+                    _startDate!.day,
+                  )
+                : null,
+            applyEndAt: !hasSpend,
+            endAt: !hasSpend
+                ? (_endDate != null
+                    ? DateTime(
+                        _endDate!.year,
+                        _endDate!.month,
+                        _endDate!.day,
+                        23,
+                        59,
+                        59,
+                      )
+                    : null)
+                : null,
+          );
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -193,7 +220,7 @@ class _CampaignEditPageState extends ConsumerState<CampaignEditPage> {
             // ------------------------------------------------
             // Admin 暂停提示
             // ------------------------------------------------
-            if (campaign.adminPaused) ...[
+            if (campaign.status == CampaignStatus.adminPaused) ...[
               _AdminPausedBanner(),
               const SizedBox(height: 16),
             ],
@@ -478,7 +505,7 @@ class _ReadOnlyInfoCard extends StatelessWidget {
           _InfoRow(
             label: 'Target',
             value:
-                '${campaign.targetName} (${campaign.targetType.toUpperCase()})',
+                '${campaign.targetType == TargetType.deal ? "Deal" : "Store"} · ${campaign.targetId}',
           ),
           const SizedBox(height: 6),
           _InfoRow(label: 'Placement', value: campaign.placement),

@@ -95,12 +95,14 @@ class BalanceCard extends StatelessWidget {
               ),
               const SizedBox(height: 4),
 
-              // 账户状态
+              // 活跃计划数（AdAccount 无独立 status 字段）
               Text(
-                _statusLabel(account.status),
-                style: TextStyle(
+                account.activeCampaignCount == 1
+                    ? '1 active campaign'
+                    : '${account.activeCampaignCount} active campaigns',
+                style: const TextStyle(
                   fontSize: 12,
-                  color: _statusColor(account.status),
+                  color: Colors.white54,
                   fontWeight: FontWeight.w500,
                 ),
               ),
@@ -172,31 +174,5 @@ class BalanceCard extends StatelessWidget {
         ],
       ],
     );
-  }
-
-  /// 账户状态文案
-  String _statusLabel(String status) {
-    switch (status) {
-      case 'active':
-        return 'Active';
-      case 'suspended':
-        return 'Suspended — contact support';
-      case 'inactive':
-        return 'Inactive';
-      default:
-        return status;
-    }
-  }
-
-  /// 账户状态颜色
-  Color _statusColor(String status) {
-    switch (status) {
-      case 'active':
-        return const Color(0xFF4CAF50);
-      case 'suspended':
-        return const Color(0xFFFF5252);
-      default:
-        return Colors.white54;
-    }
   }
 }
