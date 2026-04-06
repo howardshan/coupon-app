@@ -102,40 +102,43 @@ export type AdminActivityTimelineEntry = {
 ### 5.2 Merchant（`/merchants/[id]`）— **已实现（v1.4+）**
 
 
-| 数据来源 | 可展示节点（示例） |
-| -------- | ------------------ |
-| **`merchant_activity_events`（审计表）** | 迁移上线后新产生的：**申请提交**、**管理员通过/拒绝/撤销认证**、**门店对消费者在线/离线**（商家 Dashboard 或管理员按钮）、**商家闭店**等；含 `actor_type`、`actor_user_id`、驳回 `detail`。 |
-| **`merchants`（行内字段）** | **兜底**：当该商户**尚无**审计行时，`buildMerchantTimeline` 仅用 `created_at` / `submitted_at` / `updated_at` / 当前 `status` 推导「建档 / 提交 / 最后更新」，**不虚构**中间节点。 |
-| **详情页查询** | `merchant_activity_events` 按 `merchant_id` + `created_at` 升序；批量解析 `users.email` 作为副标题中的操作者标识。 |
+| 数据来源                                | 可展示节点（示例）                                                                                                                                   |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `**merchant_activity_events`（审计表）** | 迁移上线后新产生的：**申请提交**、**管理员通过/拒绝/撤销认证**、**门店对消费者在线/离线**（商家 Dashboard 或管理员按钮）、**商家闭店**等；含 `actor_type`、`actor_user_id`、驳回 `detail`。             |
+| `**merchants`（行内字段）**               | **兜底**：当该商户**尚无**审计行时，`buildMerchantTimeline` 仅用 `created_at` / `submitted_at` / `updated_at` / 当前 `status` 推导「建档 / 提交 / 最后更新」，**不虚构**中间节点。 |
+| **详情页查询**                           | `merchant_activity_events` 按 `merchant_id` + `created_at` 升序；批量解析 `users.email` 作为副标题中的操作者标识。                                               |
 
 
 **事件类型（`event_type`）**：`application_submitted`、`admin_approved`、`admin_rejected`、`admin_revoked_to_pending`、`store_online_merchant`、`store_offline_merchant`、`store_online_admin`、`store_offline_admin`、`store_closed_merchant`。
 
 **写入路径摘要**：
 
-| 路径 | 写入事件 |
-| ---- | -------- |
-| Edge `merchant-register` | `application_submitted`（对齐 `submitted_at`） |
-| Edge `merchant-dashboard` PATCH `is_online` | `store_online_merchant` / `store_offline_merchant` |
-| Edge `merchant-store` POST `close` | `store_closed_merchant` |
-| Admin `approveMerchant` / `rejectMerchant` / `revokeMerchantApproval` | `admin_*` |
-| Admin `adminSetMerchantStoreOnline` | `store_online_admin` / `store_offline_admin` |
 
-**部署注意**：迁移需推生产；上述 Edge Functions 需从 **`deal_joy/`** 目录部署。审计数据**自迁移与部署后起算**，历史行为不自动回填。
+| 路径                                                                    | 写入事件                                               |
+| --------------------------------------------------------------------- | -------------------------------------------------- |
+| Edge `merchant-register`                                              | `application_submitted`（对齐 `submitted_at`）         |
+| Edge `merchant-dashboard` PATCH `is_online`                           | `store_online_merchant` / `store_offline_merchant` |
+| Edge `merchant-store` POST `close`                                    | `store_closed_merchant`                            |
+| Admin `approveMerchant` / `rejectMerchant` / `revokeMerchantApproval` | `admin_`*                                          |
+| Admin `adminSetMerchantStoreOnline`                                   | `store_online_admin` / `store_offline_admin`       |
+
+
+**部署注意**：迁移需推生产；上述 Edge Functions 需从 `**deal_joy/`** 目录部署。审计数据**自迁移与部署后起算**，历史行为不自动回填。
 
 **原「可选后续」**：域内事件表已落地为 `merchant_activity_events`，不再依赖单独的 `merchant_status_events` 命名。
 
 ### 5.3 退款争议（`refund_requests`）— **已实现（v1.6）**
 
 
-| 数据来源 | 可展示节点（示例） |
-| -------- | ------------------ |
+| 数据来源              | 可展示节点（示例）                                                                                                                                                                                                                   |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `refund_requests` | 提交（`created_at` + 用户理由摘要）、商家决定（`merchant_decided_at` + `merchant_decision` / `merchant_reason`）、管理员决定（`admin_decided_at` + `admin_decision` / `admin_reason`）、完成（`completed_at`）、用户撤回（`status = cancelled` + `updated_at`）。 |
+
 
 **展示载体（已定稿）**：**A + B 并行**  
 
 - **Admin 订单详情** `/orders/[id]`：侧栏在订单 `OrderDetailTimelineCard` 下方增加 **Refund dispute timeline**（`service_role` 按 `order_id` 拉取全部争议行，多条则合并排序）。  
-- **审批中心 Refund Dispute 抽屉**：在陈述区上方挂载同一套 `AdminActivityTimelineCard`（单条争议）；`RefundDisputeItem` 已扩展字段供时间线与 Overview 一致。  
+- **审批中心 Refund Dispute 抽屉**：在陈述区上方挂载同一套 `AdminActivityTimelineCard`（单条争议）；`RefundDisputeItem` 已扩展字段供时间线与 Overview 一致。
 
 **实现文件**：`admin/lib/refund-dispute-admin-timeline.ts`（`buildRefundDisputeTimeline` / `buildMergedOrderRefundDisputeTimelines`）。  
 
@@ -212,7 +215,7 @@ export type AdminActivityTimelineEntry = {
 
 ### Phase 5（可选）：审批中心抽屉内迷你时间线 — **已完成（v1.8）**
 
-1. Deal / Merchant：`AdminActivityTimelineCard` + 既有 builder；数据来自列表字段 + Deal 驳回 API / Merchant 详情 API。  
+1. Deal / Merchant：`AdminActivityTimelineCard` + 既有 builder；数据来自列表字段 + Deal 驳回 API / Merchant 详情 API。
 2. Refund / After-Sales：跳转与文案增强（订单页对照）；不重复缩成「迷你」时间线。
 
 **验收**：审批人在抽屉内可预览与详情页一致推导的 Deal/Merchant 时间线；可一键打开详情或订单页。
@@ -222,35 +225,35 @@ export type AdminActivityTimelineEntry = {
 ## 七、文件变更清单（至 Phase 5 审批抽屉预览）
 
 
-| 路径                                                  | 说明                  |
-| --------------------------------------------------- | ------------------- |
-| `admin/lib/admin-activity-timeline-types.ts`        | 通用条目类型；Phase 4 起含可选 `attachments` |
-| `admin/components/admin-activity-timeline-card.tsx` | 通用 UI；Phase 4 多行 subtitle + 附件链接 |
-| `admin/lib/after-sales-admin-timeline.ts`           | 新建；JSONB timeline → 通用条目 |
-| `admin/components/order-detail-timeline-card.tsx`   | 改为复用通用组件（可选但推荐）     |
-| `admin/lib/deal-admin-timeline.ts`                  | 新建                  |
-| `admin/lib/merchant-admin-timeline.ts`              | 新建；含审计行合并与行内兜底        |
-| `admin/lib/merchant-activity-events.ts`             | 新建；Server 侧写 `merchant_activity_events` |
-| `admin/components/merchant-admin-visibility-actions.tsx` | 新建；管理员强制上下线 UI    |
-| `admin/app/actions/admin.ts`                        | 审批/上下线审计写入；`requireAdmin` 返回 `adminUserId`；`rejectDeal.rejected_by` 等 |
-| `deal_joy/supabase/migrations/20260402140000_merchant_activity_events.sql` | 审计表 + RLS |
-| `deal_joy/supabase/functions/_shared/merchant_activity_log.ts` | 新建；Edge 侧写审计 |
-| `deal_joy/supabase/functions/merchant-register/index.ts` | 申请提交事件 |
-| `deal_joy/supabase/functions/merchant-dashboard/index.ts` | `is_online` 变更事件 |
-| `deal_joy/supabase/functions/merchant-store/index.ts` | 闭店事件 |
-| `admin/lib/refund-dispute-admin-timeline.ts`        | 新建；退款争议时间线 builder   |
-| `admin/app/actions/approvals.ts`                    | 仲裁后 revalidate 订单详情（与 Phase 3 联动） |
-| `admin/components/approvals/refund-dispute-drawer.tsx` | 挂载 Refund dispute timeline |
-| `admin/app/(dashboard)/orders/[id]/page.tsx`        | Refund dispute timeline（侧栏） |
-| `admin/app/(dashboard)/approvals/page.tsx`          | Refund 列表字段扩展（时间线 / Overview） |
-| `admin/app/(dashboard)/deals/[id]/page.tsx`         | 接入时间线               |
-| `admin/app/(dashboard)/merchants/[id]/page.tsx`     | 接入时间线 + 事件查询 + 可见性侧栏   |
-| `admin/components/approvals/deal-drawer.tsx`        | Phase 5：Activity preview + 详情链接文案 |
-| `admin/components/approvals/merchant-drawer.tsx`    | Phase 5：Activity preview + 详情链接文案 |
-| `admin/components/approvals/refund-dispute-drawer.tsx` | Phase 5：订单链接说明 |
-| `admin/components/approvals/after-sales-drawer.tsx` | Phase 4 时间线 + Phase 5：`order_id` 跳转订单 |
-| `admin/app/(dashboard)/approvals/page.tsx`          | Phase 5：`DealItem` 扩展字段与查询 |
-| `admin/app/api/approvals/merchant/[id]/route.ts`    | Phase 5：`updated_at` |
+| 路径                                                                         | 说明                                                                    |
+| -------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `admin/lib/admin-activity-timeline-types.ts`                               | 通用条目类型；Phase 4 起含可选 `attachments`                                     |
+| `admin/components/admin-activity-timeline-card.tsx`                        | 通用 UI；Phase 4 多行 subtitle + 附件链接                                      |
+| `admin/lib/after-sales-admin-timeline.ts`                                  | 新建；JSONB timeline → 通用条目                                              |
+| `admin/components/order-detail-timeline-card.tsx`                          | 改为复用通用组件（可选但推荐）                                                       |
+| `admin/lib/deal-admin-timeline.ts`                                         | 新建                                                                    |
+| `admin/lib/merchant-admin-timeline.ts`                                     | 新建；含审计行合并与行内兜底                                                        |
+| `admin/lib/merchant-activity-events.ts`                                    | 新建；Server 侧写 `merchant_activity_events`                               |
+| `admin/components/merchant-admin-visibility-actions.tsx`                   | 新建；管理员强制上下线 UI                                                        |
+| `admin/app/actions/admin.ts`                                               | 审批/上下线审计写入；`requireAdmin` 返回 `adminUserId`；`rejectDeal.rejected_by` 等 |
+| `deal_joy/supabase/migrations/20260402140000_merchant_activity_events.sql` | 审计表 + RLS                                                             |
+| `deal_joy/supabase/functions/_shared/merchant_activity_log.ts`             | 新建；Edge 侧写审计                                                          |
+| `deal_joy/supabase/functions/merchant-register/index.ts`                   | 申请提交事件                                                                |
+| `deal_joy/supabase/functions/merchant-dashboard/index.ts`                  | `is_online` 变更事件                                                      |
+| `deal_joy/supabase/functions/merchant-store/index.ts`                      | 闭店事件                                                                  |
+| `admin/lib/refund-dispute-admin-timeline.ts`                               | 新建；退款争议时间线 builder                                                    |
+| `admin/app/actions/approvals.ts`                                           | 仲裁后 revalidate 订单详情（与 Phase 3 联动）                                     |
+| `admin/components/approvals/refund-dispute-drawer.tsx`                     | 挂载 Refund dispute timeline                                            |
+| `admin/app/(dashboard)/orders/[id]/page.tsx`                               | Refund dispute timeline（侧栏）                                           |
+| `admin/app/(dashboard)/approvals/page.tsx`                                 | Refund 列表字段扩展（时间线 / Overview）                                         |
+| `admin/app/(dashboard)/deals/[id]/page.tsx`                                | 接入时间线                                                                 |
+| `admin/app/(dashboard)/merchants/[id]/page.tsx`                            | 接入时间线 + 事件查询 + 可见性侧栏                                                  |
+| `admin/components/approvals/deal-drawer.tsx`                               | Phase 5：Activity preview + 详情链接文案                                     |
+| `admin/components/approvals/merchant-drawer.tsx`                           | Phase 5：Activity preview + 详情链接文案                                     |
+| `admin/components/approvals/refund-dispute-drawer.tsx`                     | Phase 5：订单链接说明                                                        |
+| `admin/components/approvals/after-sales-drawer.tsx`                        | Phase 4 时间线 + Phase 5：`order_id` 跳转订单                                 |
+| `admin/app/(dashboard)/approvals/page.tsx`                                 | Phase 5：`DealItem` 扩展字段与查询                                            |
+| `admin/app/api/approvals/merchant/[id]/route.ts`                           | Phase 5：`updated_at`                                                  |
 
 
 ---
@@ -262,22 +265,22 @@ export type AdminActivityTimelineEntry = {
 3. **性能**：Deal 驳回记录通常体量小；若未来单 Deal 驳回次数极大，注意 limit 与分页（当前可省略）。
 4. **RLS**：Admin 页面已用 `createClient` / `getServiceRoleClient` 的模式需与各查询一致，避免详情页能看、时间线查不到。
 5. **Merchant 审计表**：`merchant_activity_events` 仅 service role / 受控服务端写入；部署 Edge 与迁移顺序错误会导致写入失败（函数内仅打日志，主流程不中断）。
-6. **CLI 部署路径**：`supabase functions deploy` 须在含 `supabase/functions/` 的 **`deal_joy/`** 目录执行，避免仓库根目录报 entrypoint 不存在。
+6. **CLI 部署路径**：`supabase functions deploy` 须在含 `supabase/functions/` 的 `**deal_joy/`** 目录执行，避免仓库根目录报 entrypoint 不存在。
 
 ---
 
 ## 九、验收标准总览
 
 
-| 项           | 标准                               |
-| ----------- | -------------------------------- |
-| 通用组件        | 空数组不渲染；时间升序展示；英文标题/副标题；与订单卡片视觉协调 |
-| Deal        | 详情页可见与驳回历史一致的时间线；无捏造字段           |
-| Merchant    | 详情页可见审计事件 + 行内兜底；footnote 说明历史起算时间与局限；管理员可强制上下线并记审计 |
-| Refund      | 订单详情侧栏 + Refund 抽屉可见 `refund_requests` 里程碑；仲裁后订单页可刷新 |
-| After-sales | 抽屉内 `timeline` 经 builder 展示；与通用时间线卡片一致；附件可点   |
-| Approvals 抽屉 | Deal/Merchant 预览与详情 builder 一致；可打开详情/订单对照完整时间线   |
-| 回归          | 订单详情原时间线行为不变（Phase 0 后）          |
+| 项            | 标准                                                   |
+| ------------ | ---------------------------------------------------- |
+| 通用组件         | 空数组不渲染；时间升序展示；英文标题/副标题；与订单卡片视觉协调                     |
+| Deal         | 详情页可见与驳回历史一致的时间线；无捏造字段                               |
+| Merchant     | 详情页可见审计事件 + 行内兜底；footnote 说明历史起算时间与局限；管理员可强制上下线并记审计  |
+| Refund       | 订单详情侧栏 + Refund 抽屉可见 `refund_requests` 里程碑；仲裁后订单页可刷新 |
+| After-sales  | 抽屉内 `timeline` 经 builder 展示；与通用时间线卡片一致；附件可点          |
+| Approvals 抽屉 | Deal/Merchant 预览与详情 builder 一致；可打开详情/订单对照完整时间线       |
+| 回归           | 订单详情原时间线行为不变（Phase 0 后）                              |
 
 
 ---
@@ -300,9 +303,9 @@ export type AdminActivityTimelineEntry = {
 | v1.2 | 2026-04-03 | Phase 1：`deal-admin-timeline.ts`、`/deals/[id]` 接入 Activity timeline；`sortActivityTimelineAscending` 抽取至 types，订单排序复用 |
 | v1.3 | 2026-04-06 | Phase 2：`merchant-admin-timeline.ts`、`/merchants/[id]` 接入 Activity timeline；仅 merchants 行内时间戳推导，footnote 说明无独立审批时刻   |
 | v1.4 | 2026-04-06 | Merchant 审计表 `merchant_activity_events` + 全链路写入；时间线合并事件；管理员强制上下线 `adminSetMerchantStoreOnline`                       |
-| v1.5 | 2026-04-06 | 计划书同步：§5.2 / Phase 2 / 文件清单 / 风险 / 验收总览与实现对齐；补充事件类型、写入路径、部署与 `deal_joy` 目录约定   |
-| v1.6 | 2026-04-06 | Phase 3 落地：§5.3、`refund-dispute-admin-timeline.ts`、订单侧栏 + Refund 抽屉、`RefundDisputeItem` 字段扩展、仲裁后 revalidate 订单详情   |
-| v1.7 | 2026-04-06 | Phase 4：`after-sales-admin-timeline.ts`、售后抽屉统一 `AdminActivityTimelineCard`；条目类型支持 `attachments`、卡片多行 subtitle   |
-| v1.8 | 2026-04-06 | Phase 5：Deal/Merchant 审批抽屉 Activity preview；After-Sales `order_id` 链订单；Refund 订单说明；`DealItem` 与 merchant API 字段扩展   |
+| v1.5 | 2026-04-06 | 计划书同步：§5.2 / Phase 2 / 文件清单 / 风险 / 验收总览与实现对齐；补充事件类型、写入路径、部署与 `deal_joy` 目录约定                                         |
+| v1.6 | 2026-04-06 | Phase 3 落地：§5.3、`refund-dispute-admin-timeline.ts`、订单侧栏 + Refund 抽屉、`RefundDisputeItem` 字段扩展、仲裁后 revalidate 订单详情     |
+| v1.7 | 2026-04-06 | Phase 4：`after-sales-admin-timeline.ts`、售后抽屉统一 `AdminActivityTimelineCard`；条目类型支持 `attachments`、卡片多行 subtitle        |
+| v1.8 | 2026-04-06 | Phase 5：Deal/Merchant 审批抽屉 Activity preview；After-Sales `order_id` 链订单；Refund 订单说明；`DealItem` 与 merchant API 字段扩展    |
 
 
