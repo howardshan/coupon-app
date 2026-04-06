@@ -14,7 +14,7 @@ const _couponSelect =
     'void_reason, voided_at, '
     'gifted_from_user_id, current_holder_user_id, '
     'order_item_id, coupon_code, '
-    'deals(id, title, description, image_urls, refund_policy, '
+    'deals(id, title, description, image_urls, refund_policy, usage_rules, usage_notes, '
     'merchants(name, logo_url, address, phone)), '
     'gifter_user:users!coupons_gifted_from_user_id_fkey(full_name), '
     'orders!coupons_order_id_fkey(order_number), '
@@ -35,11 +35,75 @@ class CouponsRepository {
           .select(_couponSelect)
           .or('user_id.eq.$userId,current_holder_user_id.eq.$userId')
           .order('created_at', ascending: false);
-      return (data as List)
+      final list = (data as List)
           .map((e) => CouponModel.fromJson(e as Map<String, dynamic>))
           .toList();
+      return _batchEnrichDealUsageRules(list);
     } on PostgrestException catch (e) {
       throwForCouponListPostgrest(e);
+    }
+  }
+
+  /// 当 embed deals 未带回 usage_rules 时（受赠人场景较常见），按 deal_id 批量补全
+  Future<List<CouponModel>> _batchEnrichDealUsageRules(
+      List<CouponModel> list) async {
+    final needIds = list
+        .where((c) =>
+            c.dealId.isNotEmpty &&
+            c.usageRules.isEmpty &&
+            (c.usageNotes == null || c.usageNotes!.trim().isEmpty))
+        .map((c) => c.dealId)
+        .toSet()
+        .toList();
+    if (needIds.isEmpty) return list;
+    try {
+      final rows = await _client
+          .from('deals')
+          .select('id, usage_rules, refund_policy, usage_notes')
+          .inFilter('id', needIds);
+      final byDealId = <String, Map<String, dynamic>>{};
+      for (final r in rows as List) {
+        final m = r as Map<String, dynamic>;
+        final id = m['id'] as String?;
+        if (id != null) byDealId[id] = m;
+      }
+      return list.map((c) {
+        if (c.usageRules.isNotEmpty ||
+            (c.usageNotes != null && c.usageNotes!.trim().isNotEmpty)) {
+          return c;
+        }
+        final row = byDealId[c.dealId];
+        if (row == null) return c;
+        final rules = CouponModel.parseUsageRulesDynamic(row['usage_rules']);
+        final notes = row['usage_notes'] as String?;
+        final rp = row['refund_policy'] as String?;
+        if (rules.isEmpty &&
+            (notes == null || notes.trim().isEmpty) &&
+            rp == null) {
+          return c;
+        }
+        return c.copyWith(
+          usageRules: rules.isNotEmpty ? rules : c.usageRules,
+          usageNotes: c.usageNotes ?? notes,
+          refundPolicy: c.refundPolicy ?? rp,
+        );
+      }).toList();
+    } catch (_) {
+      return list;
+    }
+  }
+
+  /// 按 order_item_id 查询券 ID（聊天「View」跳转等；失败返回 null 不阻断主流程）
+  Future<String?> fetchCouponIdByOrderItemId(String orderItemId) async {
+    try {
+      final data = await _client
+          .from('coupons')
+          .select('id')
+          .eq('order_item_id', orderItemId)
+          .maybeSingle();
+      return data?['id'] as String?;
+    } catch (_) {
+      return null;
     }
   }
 
@@ -51,7 +115,9 @@ class CouponsRepository {
           .select(_couponSelect)
           .eq('id', couponId)
           .single();
-      return CouponModel.fromJson(data);
+      final model = CouponModel.fromJson(data);
+      final enriched = await _batchEnrichDealUsageRules([model]);
+      return enriched.first;
     } on PostgrestException catch (e) {
       throwForCouponDetailPostgrest(e);
     }
@@ -218,12 +284,23 @@ class CouponsRepository {
         throw AppException(data['error'] as String);
       }
     } on FunctionException catch (e) {
-      throw AppException(_extractFunctionError(e));
+      // HTTP 非 2xx：从 details 中提取 Edge Function 返回的 JSON 字段
+      throw AppException(_extractRecallFunctionError(e));
     } on AppException {
       rethrow;
     } catch (e) {
       throw AppException('Failed to recall gift: $e');
     }
+  }
+
+  /// 解析 recall-gift / create-refund 等 Edge Function 的业务错误文案
+  String _extractRecallFunctionError(FunctionException e) {
+    final details = e.details;
+    if (details is Map) {
+      if (details['error'] != null) return details['error'].toString();
+      if (details['message'] != null) return details['message'].toString();
+    }
+    return 'Recall failed (${e.status})';
   }
 
   /// 查询某个 order_item 的当前有效 gift（pending 或 claimed）

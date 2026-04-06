@@ -6,6 +6,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../data/models/message_model.dart';
 
@@ -711,6 +712,38 @@ class _GiftSentBubble extends StatelessWidget {
 
   const _GiftSentBubble({required this.payload, required this.onViewDeal});
 
+  /// 点击 View：优先 payload 内 coupon_id，否则按 order_item_id 查询，跳转券详情
+  Future<void> _navigateToCoupon(BuildContext context) async {
+    final directId = payload['coupon_id'] as String?;
+    if (directId != null && directId.isNotEmpty) {
+      if (!context.mounted) return;
+      context.push('/coupon/$directId');
+      return;
+    }
+
+    final orderItemId = payload['order_item_id'] as String?;
+    if (orderItemId == null || orderItemId.isEmpty) {
+      if (context.mounted) context.push('/coupons?tab=unused');
+      return;
+    }
+    try {
+      final data = await Supabase.instance.client
+          .from('coupons')
+          .select('id')
+          .eq('order_item_id', orderItemId)
+          .maybeSingle();
+      if (!context.mounted) return;
+      final id = data?['id'] as String?;
+      if (id != null && id.isNotEmpty) {
+        context.push('/coupon/$id');
+      } else {
+        context.push('/coupons?tab=unused');
+      }
+    } catch (_) {
+      if (context.mounted) context.push('/coupons?tab=unused');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final dealTitle = payload['deal_title'] as String? ?? 'A coupon';
@@ -826,14 +859,19 @@ class _GiftSentBubble extends StatelessWidget {
                   ),
                 ),
                 const Spacer(),
-                GestureDetector(
-                  onTap: () => GoRouter.of(context).push('/coupons'),
+                TextButton(
+                  onPressed: () => _navigateToCoupon(context),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    foregroundColor: AppColors.primary,
+                  ),
                   child: const Text(
                     'View',
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
-                      color: AppColors.primary,
                       decoration: TextDecoration.underline,
                     ),
                   ),

@@ -54,6 +54,12 @@ final couponsByStatusProvider =
             c.status == 'refunded' && !c.isExpired).toList();
       case 'gifted':
         // 赠送出去的券：order_items.customer_status == 'gifted'
+        // DEBUG: 打印所有券的 customerStatus 以排查过滤问题
+        for (final c in coupons) {
+          if (c.customerStatus != null && c.customerStatus != 'unused') {
+            debugPrint('[GiftedFilter] coupon=${c.id} status=${c.status} customerStatus=${c.customerStatus}');
+          }
+        }
         return coupons.where((c) => c.customerStatus == 'gifted').toList();
       default:
         return coupons.where((c) => c.status == status).toList();
@@ -219,17 +225,22 @@ class GiftNotifier extends AsyncNotifier<void> {
             giftMessage: giftMessage,
           );
 
-      // 2. 发送 chat 消息通知好友
+      // 2. 发送 chat 消息通知好友（附带 coupon_id 便于「View」直达券详情）
       try {
         final userId =
             (await ref.read(currentUserProvider.future))?.id;
         if (userId != null) {
+          final couponId = await ref
+              .read(couponsRepositoryProvider)
+              .fetchCouponIdByOrderItemId(orderItemId);
           final chatRepo = ref.read(chatRepositoryProvider);
           final convId =
               await chatRepo.getOrCreateDirectChat(userId, recipientUserId);
           await chatRepo.sendCouponMessage(convId, userId, {
             'gift_action': 'gift_sent',
             'gift_id': result['gift_id'],
+            'order_item_id': orderItemId,
+            if (couponId != null && couponId.isNotEmpty) 'coupon_id': couponId,
             'deal_title': dealTitle,
             'deal_image_url': dealImageUrl,
             'merchant_name': merchantName,

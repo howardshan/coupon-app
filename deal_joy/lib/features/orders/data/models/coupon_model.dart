@@ -1,5 +1,7 @@
 // 团购券数据模型 — 对应 Supabase coupons 表，携带关联的 deal/merchant 信息
 
+import 'dart:convert';
+
 class CouponModel {
   final String id;
   final String orderId;
@@ -36,6 +38,10 @@ class CouponModel {
   final String? dealDescription;
   final String? dealImageUrl;
   final String? refundPolicy;
+  /// 使用规则（来自 deals.usage_rules，text[]）
+  final List<String> usageRules;
+  /// 购买须知长文案（来自 deals.usage_notes；部分商家只填此项未填 usage_rules）
+  final String? usageNotes;
 
   // Join 字段 — 来自 deals.merchants 表
   final String? merchantName;
@@ -85,6 +91,8 @@ class CouponModel {
     this.dealDescription,
     this.dealImageUrl,
     this.refundPolicy,
+    this.usageRules = const [],
+    this.usageNotes,
     this.merchantName,
     this.merchantLogoUrl,
     this.merchantAddress,
@@ -99,6 +107,28 @@ class CouponModel {
     this.customerStatus,
   });
 
+  /// 解析 deals.usage_rules（text[] / JSON 数组 / 异常字符串）
+  static List<String> parseUsageRulesDynamic(dynamic raw) {
+    if (raw == null) return [];
+    if (raw is List) {
+      return raw
+          .map((e) => e?.toString().trim() ?? '')
+          .where((s) => s.isNotEmpty)
+          .toList();
+    }
+    if (raw is String) {
+      final s = raw.trim();
+      if (s.isEmpty) return [];
+      if (s.startsWith('[')) {
+        try {
+          final decoded = jsonDecode(s);
+          return parseUsageRulesDynamic(decoded);
+        } catch (_) {}
+      }
+    }
+    return [];
+  }
+
   factory CouponModel.fromJson(Map<String, dynamic> json) {
     // V3：从 order_items join 获取 applicable_store_ids（新字段）
     // 注意：order_items 是反向 FK join，返回 List 而非 Map，取第一个元素
@@ -112,8 +142,15 @@ class CouponModel {
         ? ordersRaw
         : (ordersRaw is List && ordersRaw.isNotEmpty ? ordersRaw.first as Map<String, dynamic>? : null);
 
-    // 解析嵌套的 deals 对象
-    final deals = json['deals'] as Map<String, dynamic>?;
+    // 解析嵌套的 deals：PostgREST 在部分 embed 下可能返回 Map 或单元素 List
+    final rawDeals = json['deals'];
+    Map<String, dynamic>? deals;
+    if (rawDeals is Map<String, dynamic>) {
+      deals = rawDeals;
+    } else if (rawDeals is List && rawDeals.isNotEmpty) {
+      final first = rawDeals.first;
+      if (first is Map<String, dynamic>) deals = first;
+    }
 
     // 解析嵌套的 deals.merchants 对象
     final merchants = deals?['merchants'] as Map<String, dynamic>?;
@@ -126,6 +163,8 @@ class CouponModel {
         dealImageUrl = imageUrls.first as String?;
       }
     }
+
+    final usageRules = parseUsageRulesDynamic(deals?['usage_rules']);
 
     return CouponModel(
       id: json['id'] as String,
@@ -155,6 +194,8 @@ class CouponModel {
       dealDescription: deals?['description'] as String?,
       dealImageUrl: dealImageUrl,
       refundPolicy: deals?['refund_policy'] as String?,
+      usageRules: usageRules,
+      usageNotes: deals?['usage_notes'] as String?,
       merchantName: merchants?['name'] as String?,
       merchantLogoUrl: merchants?['logo_url'] as String?,
       merchantAddress: merchants?['address'] as String?,
@@ -188,4 +229,78 @@ class CouponModel {
   bool get isExpired => status == 'expired' || DateTime.now().isAfter(expiresAt);
   bool get isRefunded => status == 'refunded';
   bool get isVoided => status == 'voided';
+
+  /// 详情页「Usage Rules」展示行：优先 usage_rules 数组，否则拆 usage_notes
+  List<String> get usageDisplayLines {
+    if (usageRules.isNotEmpty) return usageRules;
+    final notes = usageNotes?.trim() ?? '';
+    if (notes.isEmpty) return [];
+    return notes
+        .split(RegExp(r'\r?\n'))
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+  }
+
+  /// 当前可持券核销的用户（好友赠送后为受赠人，否则为购买人）
+  String get effectiveHolderUserId =>
+      currentHolderUserId ?? userId;
+
+  /// 指定用户是否为当前持券人（用于详情页 QR / 文案分流）
+  bool isHeldByUser(String uid) => effectiveHolderUserId == uid;
+
+  /// 是否仍为订单购买人且持有该券（可退款、转赠；已赠出给好友后应为 false）
+  bool viewerCanManagePurchaseActions(String? viewerUserId) {
+    if (viewerUserId == null || viewerUserId.isEmpty) return false;
+    if (userId != viewerUserId) return false;
+    return currentHolderUserId == null ||
+        currentHolderUserId == viewerUserId;
+  }
+
+  /// 合并 deals 兜底查询（如 usage_rules / refund_policy）
+  CouponModel copyWith({
+    List<String>? usageRules,
+    String? refundPolicy,
+    String? usageNotes,
+  }) {
+    return CouponModel(
+      id: id,
+      orderId: orderId,
+      userId: userId,
+      dealId: dealId,
+      merchantId: merchantId,
+      qrCode: qrCode,
+      status: status,
+      voidReason: voidReason,
+      voidedAt: voidedAt,
+      expiresAt: expiresAt,
+      usedAt: usedAt,
+      createdAt: createdAt,
+      giftedFrom: giftedFrom,
+      verifiedBy: verifiedBy,
+      giftedFromUserId: giftedFromUserId,
+      currentHolderUserId: currentHolderUserId,
+      giftedFromUserName: giftedFromUserName,
+      orderItemId: orderItemId,
+      couponCode: couponCode,
+      dealTitle: dealTitle,
+      dealDescription: dealDescription,
+      dealImageUrl: dealImageUrl,
+      refundPolicy: refundPolicy ?? this.refundPolicy,
+      usageRules: usageRules ?? this.usageRules,
+      usageNotes: usageNotes ?? this.usageNotes,
+      merchantName: merchantName,
+      merchantLogoUrl: merchantLogoUrl,
+      merchantAddress: merchantAddress,
+      merchantPhone: merchantPhone,
+      applicableMerchantIds: applicableMerchantIds,
+      applicableStoreIds: applicableStoreIds,
+      orderNumber: orderNumber,
+      unitPrice: unitPrice,
+      refundedAt: refundedAt,
+      refundAmount: refundAmount,
+      refundMethod: refundMethod,
+      customerStatus: customerStatus,
+    );
+  }
 }
