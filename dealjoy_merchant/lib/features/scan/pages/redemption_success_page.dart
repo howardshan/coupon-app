@@ -210,7 +210,6 @@ class _RedemptionSuccessPageState
                 child: ElevatedButton(
                   key: const ValueKey('redemption_done_btn'),
                   onPressed: () {
-                    // 重置 ScanNotifier 状态，回到扫码页
                     ref.read(scanNotifierProvider.notifier).reset();
                     context.go('/scan');
                   },
@@ -224,6 +223,34 @@ class _RedemptionSuccessPageState
                   ),
                   child: const Text(
                     'Scan Another',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // 返回仪表盘（不依赖底部 Tab）
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: OutlinedButton(
+                  key: const ValueKey('redemption_dashboard_btn'),
+                  onPressed: () {
+                    ref.read(scanNotifierProvider.notifier).reset();
+                    context.go('/dashboard');
+                  },
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF1A1A1A),
+                    side: BorderSide(color: Colors.grey.shade300),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text(
+                    'Back to Dashboard',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
