@@ -56,7 +56,15 @@ export type RefundDisputeItem = {
   userReason: string
   merchantReason: string | null
   merchantDecidedAt: string | null
+  /** merchant_decision: approved | rejected */
+  merchantDecision: string | null
   createdAt: string
+  updatedAt: string | null
+  status: string
+  adminDecision: string | null
+  adminReason: string | null
+  adminDecidedAt: string | null
+  completedAt: string | null
   orderId: string
   merchantName: string
   userNameMasked: string
@@ -177,7 +185,9 @@ async function fetchRefundDisputes(db: ReturnType<typeof getServiceRoleClient>, 
     .from('refund_requests')
     .select(
       `id, refund_amount, refund_items, user_reason,
-       merchant_reason, merchant_decided_at, created_at,
+       merchant_reason, merchant_decided_at, merchant_decision,
+       created_at, updated_at, status,
+       admin_decision, admin_reason, admin_decided_at, completed_at,
        order_id,
        merchants(name),
        users(full_name)`,
@@ -194,7 +204,14 @@ async function fetchRefundDisputes(db: ReturnType<typeof getServiceRoleClient>, 
     userReason: r.user_reason,
     merchantReason: r.merchant_reason,
     merchantDecidedAt: r.merchant_decided_at,
+    merchantDecision: r.merchant_decision ?? null,
     createdAt: r.created_at,
+    updatedAt: r.updated_at ?? null,
+    status: r.status ?? '',
+    adminDecision: r.admin_decision ?? null,
+    adminReason: r.admin_reason ?? null,
+    adminDecidedAt: r.admin_decided_at ?? null,
+    completedAt: r.completed_at ?? null,
     orderId: r.order_id,
     merchantName: r.merchants?.name ?? '',
     userNameMasked: maskName(r.users?.full_name ?? null),
@@ -279,7 +296,9 @@ async function fetchUnifiedAllTab(
           .from('refund_requests')
           .select(
             `id, refund_amount, refund_items, user_reason,
-             merchant_reason, merchant_decided_at, created_at,
+             merchant_reason, merchant_decided_at, merchant_decision,
+             created_at, updated_at, status,
+             admin_decision, admin_reason, admin_decided_at, completed_at,
              order_id,
              merchants(name),
              users(full_name)`
@@ -354,7 +373,14 @@ async function fetchUnifiedAllTab(
       userReason: (r.user_reason as string) ?? '',
       merchantReason: (r.merchant_reason as string | null) ?? null,
       merchantDecidedAt: (r.merchant_decided_at as string | null) ?? null,
+      merchantDecision: (r.merchant_decision as string | null) ?? null,
       createdAt: r.created_at as string,
+      updatedAt: (r.updated_at as string | null) ?? null,
+      status: (r.status as string) ?? '',
+      adminDecision: (r.admin_decision as string | null) ?? null,
+      adminReason: (r.admin_reason as string | null) ?? null,
+      adminDecidedAt: (r.admin_decided_at as string | null) ?? null,
+      completedAt: (r.completed_at as string | null) ?? null,
       orderId: r.order_id as string,
       merchantName: merchants?.name ?? '',
       userNameMasked: maskName(users?.full_name ?? null),
