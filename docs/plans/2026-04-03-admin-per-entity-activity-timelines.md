@@ -302,7 +302,7 @@ export type AdminActivityTimelineEntry = {
 | v1.4 | 2026-04-06 | Merchant 审计表 `merchant_activity_events` + 全链路写入；时间线合并事件；管理员强制上下线 `adminSetMerchantStoreOnline`                       |
 | v1.5 | 2026-04-06 | 计划书同步：§5.2 / Phase 2 / 文件清单 / 风险 / 验收总览与实现对齐；补充事件类型、写入路径、部署与 `deal_joy` 目录约定   |
 | v1.6 | 2026-04-06 | Phase 3 落地：§5.3、`refund-dispute-admin-timeline.ts`、订单侧栏 + Refund 抽屉、`RefundDisputeItem` 字段扩展、仲裁后 revalidate 订单详情   |
-| v1.7 | 2026-03-30 | Phase 4：`after-sales-admin-timeline.ts`、售后抽屉统一 `AdminActivityTimelineCard`；条目类型支持 `attachments`、卡片多行 subtitle   |
-| v1.8 | 2026-03-30 | Phase 5：Deal/Merchant 审批抽屉 Activity preview；After-Sales `order_id` 链订单；Refund 订单说明；`DealItem` 与 merchant API 字段扩展   |
+| v1.7 | 2026-04-06 | Phase 4：`after-sales-admin-timeline.ts`、售后抽屉统一 `AdminActivityTimelineCard`；条目类型支持 `attachments`、卡片多行 subtitle   |
+| v1.8 | 2026-04-06 | Phase 5：Deal/Merchant 审批抽屉 Activity preview；After-Sales `order_id` 链订单；Refund 订单说明；`DealItem` 与 merchant API 字段扩展   |
 
 
