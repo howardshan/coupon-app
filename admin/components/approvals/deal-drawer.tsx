@@ -1,11 +1,12 @@
 'use client'
 
-import { useEffect, useState, useTransition } from 'react'
+import { useEffect, useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import type { DealItem } from '@/app/(dashboard)/approvals/page'
 import { setDealActive, rejectDeal } from '@/app/actions/admin'
-import { getServiceRoleClient } from '@/lib/supabase/service'
+import AdminActivityTimelineCard from '@/components/admin-activity-timeline-card'
+import { buildDealTimeline } from '@/lib/deal-admin-timeline'
 
 type RejectionRecord = {
   id: string
@@ -73,6 +74,26 @@ export default function DealDrawer({
       .catch(() => setRejectionHistory([]))
       .finally(() => setHistoryLoading(false))
   }, [deal.id])
+
+  const dealPreviewTimeline = useMemo(
+    () =>
+      buildDealTimeline(
+        {
+          created_at: deal.createdAt,
+          updated_at: deal.updatedAt,
+          published_at: deal.publishedAt,
+          expires_at: deal.expiresAt,
+          deal_status: deal.dealStatus,
+          is_active: deal.isActive,
+        },
+        rejectionHistory.map((r) => ({
+          created_at: r.created_at,
+          reason: r.reason,
+          users: r.users,
+        }))
+      ),
+    [deal, rejectionHistory]
+  )
 
   function handleApprove() {
     startTransition(async () => {
@@ -277,22 +298,12 @@ export default function DealDrawer({
             )}
           </section>
 
-          {/* 驳回历史 */}
-          {!historyLoading && rejectionHistory.length > 0 && (
-            <section>
-              <h3 className="font-semibold text-gray-800 mb-2">Rejection History</h3>
-              <div className="space-y-2">
-                {rejectionHistory.map(r => (
-                  <div key={r.id} className="rounded-lg border border-red-200 bg-red-50 p-3">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs text-red-600 font-medium">{r.users?.email ?? 'admin'}</span>
-                      <span className="text-xs text-red-400">{new Date(r.created_at).toLocaleString()}</span>
-                    </div>
-                    <p className="text-sm text-red-700">{r.reason}</p>
-                  </div>
-                ))}
-              </div>
-            </section>
+          {!historyLoading && (
+            <AdminActivityTimelineCard
+              title="Activity preview"
+              footnote="Same derivation as deal detail page. Open full deal below for complete context."
+              events={dealPreviewTimeline}
+            />
           )}
 
           {/* 拒绝原因输入框 */}
@@ -349,9 +360,9 @@ export default function DealDrawer({
             href={`/deals/${deal.id}`}
             target="_blank"
             rel="noreferrer"
-            className="block text-center text-sm text-gray-400 hover:text-gray-600"
+            className="block text-center text-sm text-gray-500 hover:text-gray-800"
           >
-            View Full Deal →
+            Open deal detail (full activity timeline) →
           </a>
         </div>
       </div>

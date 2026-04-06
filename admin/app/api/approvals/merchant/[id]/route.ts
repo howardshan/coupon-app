@@ -28,7 +28,7 @@ export async function GET(
   const { data: merchant, error: merchantError } = await db
     .from('merchants')
     .select(
-      'id, user_id, name, company_name, description, contact_name, contact_email, phone, category, ein, address, status, rejection_reason, submitted_at, created_at'
+      'id, user_id, name, company_name, description, contact_name, contact_email, phone, category, ein, address, status, rejection_reason, submitted_at, created_at, updated_at'
     )
     .eq('id', id)
     .single()

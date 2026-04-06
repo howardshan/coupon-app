@@ -36,6 +36,11 @@ export type DealItem = {
   stockLimit: number | null
   expiresAt: string | null
   createdAt: string
+  /** 供审批抽屉迷你时间线与详情页 builder 一致 */
+  updatedAt: string | null
+  publishedAt: string | null
+  dealStatus: string | null
+  isActive: boolean | null
   merchantName: string
   merchantAddress: string | null
   dishes: unknown
@@ -134,7 +139,8 @@ async function fetchDeals(db: ReturnType<typeof getServiceRoleClient>, page: num
     .from('deals')
     .select(
       `id, title, original_price, discount_price, discount_label,
-       image_urls, stock_limit, expires_at, created_at,
+       image_urls, stock_limit, expires_at, created_at, updated_at, published_at,
+       deal_status, is_active,
        dishes, package_contents, usage_notes, usage_days,
        validity_type, validity_days, max_per_person, is_stackable,
        merchants(name, address),
@@ -155,6 +161,10 @@ async function fetchDeals(db: ReturnType<typeof getServiceRoleClient>, page: num
     stockLimit: r.stock_limit,
     expiresAt: r.expires_at,
     createdAt: r.created_at,
+    updatedAt: (r.updated_at as string | null) ?? null,
+    publishedAt: (r.published_at as string | null) ?? null,
+    dealStatus: (r.deal_status as string | null) ?? null,
+    isActive: r.is_active != null ? Boolean(r.is_active) : null,
     merchantName: r.merchants?.name ?? '',
     merchantAddress: r.merchants?.address ?? null,
     dishes: r.dishes,
@@ -283,7 +293,8 @@ async function fetchUnifiedAllTab(
           .from('deals')
           .select(
             `id, title, original_price, discount_price, discount_label,
-             image_urls, stock_limit, expires_at, created_at,
+             image_urls, stock_limit, expires_at, created_at, updated_at, published_at,
+             deal_status, is_active,
              dishes, package_contents, usage_notes, usage_days,
              validity_type, validity_days, max_per_person, is_stackable,
              merchants(name, address),
@@ -343,6 +354,10 @@ async function fetchUnifiedAllTab(
       stockLimit: (r.stock_limit as number | null) ?? null,
       expiresAt: (r.expires_at as string | null) ?? null,
       createdAt: r.created_at as string,
+      updatedAt: (r.updated_at as string | null) ?? null,
+      publishedAt: (r.published_at as string | null) ?? null,
+      dealStatus: (r.deal_status as string | null) ?? null,
+      isActive: r.is_active != null ? Boolean(r.is_active) : null,
       merchantName: merchants?.name ?? '',
       merchantAddress: merchants?.address ?? null,
       dishes: r.dishes,
