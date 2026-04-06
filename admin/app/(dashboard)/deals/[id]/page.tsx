@@ -3,6 +3,8 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import RejectionHistory from '@/components/rejection-history'
 import DealOperationalActions from '@/components/deal-operational-actions'
+import AdminActivityTimelineCard from '@/components/admin-activity-timeline-card'
+import { buildDealTimeline } from '@/lib/deal-admin-timeline'
 
 /** 只允许回到订单相关页，避免开放重定向 */
 function isValidReturnTo(returnTo: string | null | undefined): boolean {
@@ -162,6 +164,18 @@ export default async function DealReviewPage({
   // 门店预确认
   const storeConfirmations = Array.isArray(deal.store_confirmations) ? (deal.store_confirmations as any[]) : []
 
+  const dealTimelineEvents = buildDealTimeline(
+    {
+      created_at: deal.created_at,
+      updated_at: deal.updated_at,
+      published_at: deal.published_at,
+      expires_at: deal.expires_at,
+      deal_status: deal.deal_status,
+      is_active: deal.is_active,
+    },
+    rejectionHistory ?? []
+  )
+
   return (
     <div>
       <div className="mb-6">
@@ -228,6 +242,12 @@ export default async function DealReviewPage({
           </div>
           <RejectionHistory records={rejectionHistory ?? []} />
         </div>
+
+        <AdminActivityTimelineCard
+          title="Activity timeline"
+          footnote="Derived from deal timestamps and rejection records. Deactivation or content edits may only appear as “Record last updated” unless stored separately."
+          events={dealTimelineEvents}
+        />
 
         {/* ── Basic Information ── */}
         <div className="bg-white rounded-xl border border-gray-200 p-6">
