@@ -259,6 +259,11 @@ class _VoucherDetailBodyState extends ConsumerState<_VoucherDetailBody> {
                 orderItemId: dealItems.first.id,
                 merchantName: dealItems.first.merchantName,
                 expiresAt: dealItems.first.couponExpiresAt,
+                // 所有 unused item IDs，供 Gift 选择数量
+                unusedOrderItemIds: dealItems
+                    .where((i) => i.customerStatus == CustomerItemStatus.unused)
+                    .map((i) => i.id)
+                    .toList(),
               ),
             ),
 
@@ -912,6 +917,8 @@ class _VoucherQuickActions extends StatefulWidget {
   final String? orderItemId;
   final String? merchantName;
   final DateTime? expiresAt;
+  // 所有 unused item IDs，供 Gift 选择赠送数量
+  final List<String> unusedOrderItemIds;
 
   const _VoucherQuickActions({
     this.merchantId,
@@ -920,6 +927,7 @@ class _VoucherQuickActions extends StatefulWidget {
     this.orderItemId,
     this.merchantName,
     this.expiresAt,
+    this.unusedOrderItemIds = const [],
   });
 
   @override
@@ -981,13 +989,14 @@ class _VoucherQuickActionsState extends State<_VoucherQuickActions> {
   void _giftToFriend() {
     final orderItemId = widget.orderItemId;
     if (orderItemId == null) return;
-    // 调用 Gift Bottom Sheet 而非导航到 coupon 页面
+    // 调用 Gift Bottom Sheet，传入所有 unused item IDs 供选择数量
     GiftBottomSheet.show(
       context,
       dealTitle: widget.dealTitle ?? '',
       orderItemId: orderItemId,
       merchantName: widget.merchantName,
       expiresAt: widget.expiresAt,
+      unusedOrderItemIds: widget.unusedOrderItemIds,
     );
   }
 

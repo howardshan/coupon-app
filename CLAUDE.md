@@ -132,6 +132,22 @@ merchant_photos, merchant_hours, merchant_documents, deal_images
 - `deal_joy/lib/features/auth/presentation/screens/welcome_screen.dart`
 - `deal_joy/lib/features/auth/data/repositories/auth_repository.dart` — signUp/signIn/isUsernameTaken/isEmailTaken 逻辑
 
+### 客户端 Gifted 赠送券功能
+以下文件的赠送券过滤、状态展示、Gift 详情逻辑**禁止修改**，除非用户明确命令要求：
+- `deal_joy/lib/features/orders/domain/providers/coupons_provider.dart` — couponsByStatusProvider 中 gifted/expired case 分支逻辑
+- `deal_joy/lib/features/orders/presentation/widgets/coupon_card.dart` — customerStatus == 'gifted' 判断、displayStatus、QR 码隐藏逻辑
+- `deal_joy/lib/features/orders/presentation/screens/coupon_screen.dart` — _StatusBanner 中 customerStatus == 'gifted' 判断、_CouponDetailBody 中 gifted 分支（QR 隐藏 + GiftInfoSection 展示）
+- `deal_joy/lib/features/orders/data/models/coupon_gift_model.dart` — GiftStatus 枚举、CouponGiftModel 数据模型
+- `deal_joy/lib/features/orders/presentation/widgets/gift_bottom_sheet.dart` — GiftBottomSheet 赠送弹窗
+- `deal_joy/supabase/functions/auto-refund-expired/index.ts` — customer_status == 'gifted' 的过期退款逻辑、C15 邮件通知
+
+### 客户端 Payment Methods 支付方式管理
+以下文件**禁止修改**，除非用户明确命令要求：
+- `deal_joy/lib/features/profile/presentation/screens/payment_methods_screen.dart` — 整个文件（卡片列表、编辑卡片表单、操作弹层、添加新卡 Stripe 流程）
+- `deal_joy/lib/features/profile/data/repositories/payment_methods_repository.dart` — Stripe API 调用逻辑
+- `deal_joy/lib/features/profile/domain/providers/payment_methods_provider.dart` — paymentMethodsProvider、updateCard、setDefault、deleteCard
+- `deal_joy/lib/features/profile/data/models/saved_card_model.dart` — SavedCard 数据模型
+
 ### 客户端 Near Me / 城市切换功能
 以下文件的地区切换、Near Me GPS 搜索、城市模式搜索相关逻辑**禁止修改**，除非用户明确命令要求：
 - `deal_joy/lib/features/deals/domain/providers/deals_provider.dart` — selectedLocationProvider, isNearMeProvider, dealsListProvider 中 Near Me / 城市分支逻辑

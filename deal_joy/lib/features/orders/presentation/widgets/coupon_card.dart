@@ -3,6 +3,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../deals/data/models/review_model.dart';
 import '../../data/models/coupon_model.dart';
@@ -56,8 +57,17 @@ class CouponCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // 状态判断：gifted(含 customerStatus) > voided > 过期(全部自动退款=Expired Return) > 原始状态
+    // 受赠人持券可用：order_item 仍为 gifted，但应按 Unused 展示
+    final myUid = Supabase.instance.client.auth.currentUser?.id;
+    final heldByViewer =
+        myUid != null && coupon.isHeldByUser(myUid);
     final String displayStatus;
-    if (coupon.customerStatus == 'gifted') {
+    if (coupon.customerStatus == 'gifted' &&
+        heldByViewer &&
+        coupon.isUnused &&
+        !coupon.isVoided) {
+      displayStatus = 'unused';
+    } else if (coupon.customerStatus == 'gifted') {
       displayStatus = 'gifted';
     } else if (coupon.isVoided && coupon.voidReason == 'gifted') {
       displayStatus = 'gifted';

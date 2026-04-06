@@ -1,5 +1,7 @@
 // 赠券记录数据模型 — 对应 Supabase coupon_gifts 表
 
+import 'coupon_model.dart';
+
 // 赠送状态枚举
 enum GiftStatus {
   pending,   // 已赠出，等待领取
@@ -71,6 +73,12 @@ class CouponGiftModel {
 
   /// 可修改受赠方：仅 pending 状态
   bool get canEdit => status == GiftStatus.pending;
+
+  /// 是否显示「撤回」按钮：与 recall-gift 一致，券已核销/作废时不显示（避免误点报 Fail）
+  bool canShowRecallButton(CouponModel coupon) {
+    if (!canRecall) return false;
+    return coupon.isUnused && !coupon.isVoided;
+  }
 
   factory CouponGiftModel.fromJson(Map<String, dynamic> json) {
     return CouponGiftModel(

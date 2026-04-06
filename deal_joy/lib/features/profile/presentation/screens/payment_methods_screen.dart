@@ -824,6 +824,27 @@ class _CardOptionsSheetState extends ConsumerState<_CardOptionsSheet> {
           const Divider(height: 1),
           const SizedBox(height: 8),
 
+          // 编辑卡片（过期日期+账单地址）
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.edit_outlined, color: AppColors.textSecondary),
+            title: const Text('Edit Card',
+                style: TextStyle(fontWeight: FontWeight.w500)),
+            trailing: const Icon(Icons.chevron_right, color: AppColors.textHint),
+            onTap: () {
+              Navigator.pop(context);
+              showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                backgroundColor: Colors.white,
+                shape: const RoundedRectangleBorder(
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+                ),
+                builder: (_) => _EditCardSheet(card: card),
+              );
+            },
+          ),
+
           // 设为默认（仅非默认卡显示）
           if (!card.isDefault)
             ListTile(

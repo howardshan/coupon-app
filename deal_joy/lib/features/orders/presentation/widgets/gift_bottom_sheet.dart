@@ -26,6 +26,7 @@ class GiftBottomSheet extends ConsumerStatefulWidget {
     this.prefillPhone,
     this.existingGiftId,
     this.dealImageUrl,
+    this.unusedOrderItemIds = const [],
   });
 
   final String dealTitle;
@@ -39,6 +40,8 @@ class GiftBottomSheet extends ConsumerStatefulWidget {
   final String? existingGiftId;
   /// deal 图片 URL（好友模式发送 chat 消息时使用）
   final String? dealImageUrl;
+  /// 所有 unused item IDs，供选择赠送数量（为空时默认赠送单张）
+  final List<String> unusedOrderItemIds;
 
   /// 静态方法：弹出 bottom sheet
   static Future<void> show(
@@ -52,6 +55,7 @@ class GiftBottomSheet extends ConsumerStatefulWidget {
     String? prefillPhone,
     String? existingGiftId,
     String? dealImageUrl,
+    List<String> unusedOrderItemIds = const [],
   }) {
     return showModalBottomSheet(
       context: context,
@@ -67,6 +71,7 @@ class GiftBottomSheet extends ConsumerStatefulWidget {
         prefillPhone: prefillPhone,
         existingGiftId: existingGiftId,
         dealImageUrl: dealImageUrl,
+        unusedOrderItemIds: unusedOrderItemIds,
       ),
     );
   }
@@ -89,6 +94,15 @@ class _GiftBottomSheetState extends ConsumerState<GiftBottomSheet> {
 
   /// 已选中的好友
   FriendModel? _selectedFriend;
+
+  /// 赠送数量（默认 1）
+  int _giftQuantity = 1;
+
+  /// 可赠送的 item IDs（>1 时显示数量选择器）
+  List<String> get _availableItemIds =>
+      widget.unusedOrderItemIds.isNotEmpty
+          ? widget.unusedOrderItemIds
+          : [widget.orderItemId];
 
   @override
   void initState() {
@@ -156,6 +170,9 @@ class _GiftBottomSheetState extends ConsumerState<GiftBottomSheet> {
   Future<void> _handleSend() async {
     setState(() => _inlineError = null);
 
+    // 获取要赠送的 item IDs（按选择数量取前 N 个）
+    final itemIdsToGift = _availableItemIds.take(_giftQuantity).toList();
+
     // 好友模式：验证选择 + 调用 sendGiftToFriend
     if (_sendMode == _GiftSendMode.friend) {
       if (_selectedFriend == null) {
@@ -181,25 +198,36 @@ class _GiftBottomSheetState extends ConsumerState<GiftBottomSheet> {
         }
       }
 
-      final success =
-          await ref.read(giftNotifierProvider.notifier).sendGiftToFriend(
-                orderItemId: widget.orderItemId,
-                recipientUserId: _selectedFriend!.friendId,
-                giftMessage: message.isNotEmpty ? message : null,
-                dealTitle: widget.dealTitle,
-                dealImageUrl: widget.dealImageUrl,
-                merchantName: widget.merchantName,
-              );
+      // 逐张赠送
+      int successCount = 0;
+      for (final itemId in itemIdsToGift) {
+        final ok = await ref.read(giftNotifierProvider.notifier).sendGiftToFriend(
+              orderItemId: itemId,
+              recipientUserId: _selectedFriend!.friendId,
+              // 只在第一张附带留言
+              giftMessage: successCount == 0 && message.isNotEmpty ? message : null,
+              dealTitle: widget.dealTitle,
+              dealImageUrl: widget.dealImageUrl,
+              merchantName: widget.merchantName,
+            );
+        if (ok) {
+          successCount++;
+        } else {
+          break;
+        }
+      }
 
       if (!mounted) return;
       setState(() => _isLoading = false);
 
-      if (success) {
+      if (successCount == itemIdsToGift.length) {
         Navigator.of(context).pop();
         widget.onGiftSent?.call();
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Gift sent successfully!'),
+          SnackBar(
+            content: Text(successCount > 1
+                ? '$successCount gifts sent successfully!'
+                : 'Gift sent successfully!'),
             backgroundColor: AppColors.success,
             behavior: SnackBarBehavior.floating,
           ),
@@ -207,13 +235,13 @@ class _GiftBottomSheetState extends ConsumerState<GiftBottomSheet> {
       } else {
         final giftState = ref.read(giftNotifierProvider);
         final errMsg = giftState.error?.toString() ??
-            'Failed to send gift. Please try again.';
+            'Failed to send gift. $successCount of ${itemIdsToGift.length} sent.';
         setState(() => _inlineError = errMsg);
       }
       return;
     }
 
-    // Email/Phone 模式：现有逻辑
+    // Email/Phone 模式
     if (!_formKey.currentState!.validate()) return;
 
     final recipient = _recipientController.text.trim();
@@ -236,34 +264,42 @@ class _GiftBottomSheetState extends ConsumerState<GiftBottomSheet> {
       }
     }
 
-    final success = await ref.read(giftNotifierProvider.notifier).sendGift(
-          orderItemId: widget.orderItemId,
-          recipientEmail: _isEmail(recipient) ? recipient : null,
-          recipientPhone: _isPhone(recipient) ? _digitsOnly(recipient) : null,
-          giftMessage: message.isNotEmpty ? message : null,
-        );
+    // 逐张赠送
+    int successCount = 0;
+    for (final itemId in itemIdsToGift) {
+      final ok = await ref.read(giftNotifierProvider.notifier).sendGift(
+            orderItemId: itemId,
+            recipientEmail: _isEmail(recipient) ? recipient : null,
+            recipientPhone: _isPhone(recipient) ? _digitsOnly(recipient) : null,
+            // 只在第一张附带留言
+            giftMessage: successCount == 0 && message.isNotEmpty ? message : null,
+          );
+      if (ok) {
+        successCount++;
+      } else {
+        break;
+      }
+    }
 
     if (!mounted) return;
     setState(() => _isLoading = false);
 
-    if (success) {
-      // 关闭 sheet
+    if (successCount == itemIdsToGift.length) {
       Navigator.of(context).pop();
-      // 回调通知上层刷新
       widget.onGiftSent?.call();
-      // 成功 SnackBar
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Gift sent successfully!'),
+        SnackBar(
+          content: Text(successCount > 1
+              ? '$successCount gifts sent successfully!'
+              : 'Gift sent successfully!'),
           backgroundColor: AppColors.success,
           behavior: SnackBarBehavior.floating,
         ),
       );
     } else {
-      // 读取 provider 中的错误信息，展示内联错误
       final giftState = ref.read(giftNotifierProvider);
       final errMsg =
-          giftState.error?.toString() ?? 'Failed to send gift. Please try again.';
+          giftState.error?.toString() ?? 'Failed to send gift. $successCount of ${itemIdsToGift.length} sent.';
       setState(() => _inlineError = errMsg);
     }
   }
@@ -310,6 +346,16 @@ class _GiftBottomSheetState extends ConsumerState<GiftBottomSheet> {
               merchantName: widget.merchantName,
               expiresAt: widget.expiresAt,
             ),
+
+            // 数量选择器（仅在有多张可赠送时显示）
+            if (_availableItemIds.length > 1) ...[
+              const SizedBox(height: 16),
+              _QuantitySelector(
+                quantity: _giftQuantity,
+                maxQuantity: _availableItemIds.length,
+                onChanged: (q) => setState(() => _giftQuantity = q),
+              ),
+            ],
             const SizedBox(height: 24),
 
             // 发送模式切换
@@ -825,6 +871,114 @@ class _FriendPickerList extends ConsumerWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// 数量选择器：- [数字] +
+class _QuantitySelector extends StatelessWidget {
+  final int quantity;
+  final int maxQuantity;
+  final ValueChanged<int> onChanged;
+
+  const _QuantitySelector({
+    required this.quantity,
+    required this.maxQuantity,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceVariant,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.confirmation_number_outlined,
+            size: 18,
+            color: AppColors.textSecondary,
+          ),
+          const SizedBox(width: 8),
+          const Text(
+            'Quantity',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const Spacer(),
+          // 减号按钮
+          _CircleButton(
+            icon: Icons.remove,
+            enabled: quantity > 1,
+            onTap: () => onChanged(quantity - 1),
+          ),
+          // 数量显示
+          SizedBox(
+            width: 36,
+            child: Text(
+              '$quantity',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textPrimary,
+              ),
+            ),
+          ),
+          // 加号按钮
+          _CircleButton(
+            icon: Icons.add,
+            enabled: quantity < maxQuantity,
+            onTap: () => onChanged(quantity + 1),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 圆形加减按钮
+class _CircleButton extends StatelessWidget {
+  final IconData icon;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  const _CircleButton({
+    required this.icon,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: enabled ? onTap : null,
+      child: Container(
+        width: 30,
+        height: 30,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: enabled
+              ? AppColors.primary.withValues(alpha: 0.1)
+              : AppColors.surfaceVariant,
+          border: Border.all(
+            color: enabled
+                ? AppColors.primary.withValues(alpha: 0.3)
+                : AppColors.textHint.withValues(alpha: 0.3),
+          ),
+        ),
+        child: Icon(
+          icon,
+          size: 16,
+          color: enabled ? AppColors.primary : AppColors.textHint,
+        ),
+      ),
     );
   }
 }
