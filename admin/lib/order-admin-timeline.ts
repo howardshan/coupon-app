@@ -4,7 +4,10 @@
  */
 
 import { displayCouponCode } from '@/lib/coupon-admin-display'
-import type { AdminActivityTimelineEntry } from '@/lib/admin-activity-timeline-types'
+import {
+  sortActivityTimelineAscending,
+  type AdminActivityTimelineEntry,
+} from '@/lib/admin-activity-timeline-types'
 
 /** 与通用时间线条目结构一致，保留别名便于订单模块内阅读 */
 export type OrderTimelineEntry = AdminActivityTimelineEntry
@@ -177,7 +180,7 @@ function pushGiftEventsForItem(
 
 /** 按时间升序（最早在上，适合纵向时间线阅读） */
 export function sortTimelineAscending(entries: OrderTimelineEntry[]): OrderTimelineEntry[] {
-  return [...entries].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())
+  return sortActivityTimelineAscending(entries)
 }
 
 /**

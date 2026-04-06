@@ -163,6 +163,18 @@ export default async function DealReviewPage({
   // 门店预确认
   const storeConfirmations = Array.isArray(deal.store_confirmations) ? (deal.store_confirmations as any[]) : []
 
+  const dealTimelineEvents = buildDealTimeline(
+    {
+      created_at: deal.created_at,
+      updated_at: deal.updated_at,
+      published_at: deal.published_at,
+      expires_at: deal.expires_at,
+      deal_status: deal.deal_status,
+      is_active: deal.is_active,
+    },
+    rejectionHistory ?? []
+  )
+
   return (
     <div>
       <div className="mb-6">
@@ -203,34 +215,8 @@ export default async function DealReviewPage({
         )}
       </div>
 
-      <div className="space-y-6">
-
-        {/* ── Status ── */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Status</h2>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${
-              isExpired ? 'bg-red-100 text-red-700'
-              : deal.deal_status === 'rejected' ? 'bg-red-100 text-red-700'
-              : deal.deal_status === 'pending' ? 'bg-yellow-100 text-yellow-700'
-              : deal.is_active ? 'bg-green-100 text-green-700'
-              : 'bg-gray-100 text-gray-600'
-            }`}>
-              {isExpired ? 'expired' : deal.deal_status ?? (deal.is_active ? 'active' : 'inactive')}
-            </span>
-            {deal.is_featured && (
-              <span className="inline-block px-3 py-1 rounded-full text-sm font-medium bg-amber-100 text-amber-700">Featured</span>
-            )}
-            {deal.deal_type && deal.deal_type !== 'regular' && (
-              <span className="inline-block px-3 py-1 rounded-full text-sm font-medium bg-indigo-100 text-indigo-700">{deal.deal_type}</span>
-            )}
-            {deal.badge_text && (
-              <span className="inline-block px-3 py-1 rounded-full text-sm font-medium bg-pink-100 text-pink-700">{deal.badge_text}</span>
-            )}
-          </div>
-          <RejectionHistory records={rejectionHistory ?? []} />
-        </div>
-
+      <div className="flex flex-col gap-5 md:flex-row md:items-start md:gap-6">
+        <div className="order-1 min-w-0 flex-1 space-y-6">
         {/* ── Basic Information ── */}
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">Basic Information</h2>
@@ -294,39 +280,6 @@ export default async function DealReviewPage({
             <div><dt className="text-gray-500">Stackable</dt><dd className="font-medium text-gray-900">{deal.is_stackable ? 'Yes' : 'No'}</dd></div>
           </dl>
         </div>
-
-        {/* ── Package Contents ── */}
-        {deal.package_contents && (
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Package Contents</h2>
-            <p className="text-sm text-gray-900 whitespace-pre-wrap">{deal.package_contents}</p>
-          </div>
-        )}
-
-        {/* ── Dishes / Products ── */}
-        {dishesList.length > 0 && (
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">Dishes / Included Items ({dishesList.length})</h2>
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="text-left px-3 py-2 font-medium text-gray-600">Item</th>
-                  <th className="text-left px-3 py-2 font-medium text-gray-600">Qty</th>
-                  <th className="text-left px-3 py-2 font-medium text-gray-600">Subtotal</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {dishesList.map((d, i) => (
-                  <tr key={i}>
-                    <td className="px-3 py-2 text-gray-900">{d.name}</td>
-                    <td className="px-3 py-2 text-gray-600">{d.qty ?? '—'}</td>
-                    <td className="px-3 py-2 text-gray-600">{d.subtotal ? `$${d.subtotal}` : '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
 
         {/* ── Option Groups ── */}
         {optionGroups.length > 0 && (
@@ -396,30 +349,6 @@ export default async function DealReviewPage({
           </div>
         )}
 
-        {/* ── Location & Hours ── */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">Location & Hours</h2>
-          <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3 text-sm">
-            {(deal.address || (deal.merchants as any)?.address) && (
-              <div className="sm:col-span-2">
-                <dt className="text-gray-500">Address</dt>
-                <dd className="font-medium text-gray-900">
-                  {deal.address || (deal.merchants as any)?.address}
-                  {!deal.address && (deal.merchants as any)?.address && <span className="text-xs text-gray-400 ml-1">(from merchant)</span>}
-                </dd>
-              </div>
-            )}
-            {(deal.merchants as any)?.phone && (
-              <div className="sm:col-span-2">
-                <dt className="text-gray-500">Phone</dt>
-                <dd className="font-medium text-gray-900">{(deal.merchants as any).phone}</dd>
-              </div>
-            )}
-            {deal.merchant_hours && <div className="sm:col-span-2"><dt className="text-gray-500">Merchant hours</dt><dd className="font-medium text-gray-900">{deal.merchant_hours}</dd></div>}
-            {!deal.address && !(deal.merchants as any)?.address && !deal.merchant_hours && <p className="text-gray-500 text-sm">Not provided.</p>}
-          </dl>
-        </div>
-
         {/* ── Refund Policy ── */}
         {deal.refund_policy && (
           <div className="bg-white rounded-xl border border-gray-200 p-6">
@@ -473,6 +402,105 @@ export default async function DealReviewPage({
           </div>
         )}
 
+        </div>
+
+        <aside className="order-2 flex w-full shrink-0 flex-col gap-4 md:sticky md:top-4 md:w-72 md:max-w-[22rem] lg:w-80">
+          <div className="bg-white rounded-xl border border-gray-200 p-5">
+            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Status</h2>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${
+                isExpired ? 'bg-red-100 text-red-700'
+                : deal.deal_status === 'rejected' ? 'bg-red-100 text-red-700'
+                : deal.deal_status === 'pending' ? 'bg-yellow-100 text-yellow-700'
+                : deal.is_active ? 'bg-green-100 text-green-700'
+                : 'bg-gray-100 text-gray-600'
+              }`}>
+                {isExpired ? 'expired' : deal.deal_status ?? (deal.is_active ? 'active' : 'inactive')}
+              </span>
+              {deal.is_featured && (
+                <span className="inline-block px-3 py-1 rounded-full text-sm font-medium bg-amber-100 text-amber-700">Featured</span>
+              )}
+              {deal.deal_type && deal.deal_type !== 'regular' && (
+                <span className="inline-block px-3 py-1 rounded-full text-sm font-medium bg-indigo-100 text-indigo-700">{deal.deal_type}</span>
+              )}
+              {deal.badge_text && (
+                <span className="inline-block px-3 py-1 rounded-full text-sm font-medium bg-pink-100 text-pink-700">{deal.badge_text}</span>
+              )}
+            </div>
+            <RejectionHistory records={rejectionHistory ?? []} />
+          </div>
+
+          <AdminActivityTimelineCard
+            title="Activity timeline"
+            footnote="Derived from deal timestamps and rejection records. Deactivation or content edits may only appear as “Record last updated” unless stored separately."
+            events={dealTimelineEvents}
+          />
+
+          <div className="bg-white rounded-xl border border-gray-200 p-5">
+            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">Location & Hours</h2>
+            <dl className="grid grid-cols-1 gap-x-4 gap-y-3 text-sm">
+              {(deal.address || (deal.merchants as any)?.address) && (
+                <div>
+                  <dt className="text-gray-500">Address</dt>
+                  <dd className="font-medium text-gray-900 break-words">
+                    {deal.address || (deal.merchants as any)?.address}
+                    {!deal.address && (deal.merchants as any)?.address && <span className="text-xs text-gray-400 ml-1">(from merchant)</span>}
+                  </dd>
+                </div>
+              )}
+              {(deal.merchants as any)?.phone && (
+                <div>
+                  <dt className="text-gray-500">Phone</dt>
+                  <dd className="font-medium text-gray-900 break-all">{(deal.merchants as any).phone}</dd>
+                </div>
+              )}
+              {deal.merchant_hours && (
+                <div>
+                  <dt className="text-gray-500">Merchant hours</dt>
+                  <dd className="font-medium text-gray-900 whitespace-pre-wrap break-words">{deal.merchant_hours}</dd>
+                </div>
+              )}
+              {!deal.address && !(deal.merchants as any)?.address && !deal.merchant_hours && (
+                <p className="text-gray-500 text-sm">Not provided.</p>
+              )}
+            </dl>
+          </div>
+
+          {deal.package_contents && (
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Package Contents</h2>
+              <p className="text-sm text-gray-900 whitespace-pre-wrap break-words">{deal.package_contents}</p>
+            </div>
+          )}
+
+          {dishesList.length > 0 && (
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
+                Dishes / Included Items ({dishesList.length})
+              </h2>
+              <div className="overflow-x-auto -mx-1">
+                <table className="w-full min-w-[200px] text-xs">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="text-left px-2 py-1.5 font-medium text-gray-600">Item</th>
+                      <th className="text-left px-2 py-1.5 font-medium text-gray-600 whitespace-nowrap">Qty</th>
+                      <th className="text-left px-2 py-1.5 font-medium text-gray-600 whitespace-nowrap">Subtotal</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {dishesList.map((d, i) => (
+                      <tr key={i}>
+                        <td className="px-2 py-1.5 text-gray-900 break-words max-w-[10rem]">{d.name}</td>
+                        <td className="px-2 py-1.5 text-gray-600 whitespace-nowrap">{d.qty ?? '—'}</td>
+                        <td className="px-2 py-1.5 text-gray-600 whitespace-nowrap">{d.subtotal ? `$${d.subtotal}` : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </aside>
       </div>
     </div>
   )

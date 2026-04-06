@@ -5,6 +5,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { resolveAuth, requirePermission } from "../_shared/auth.ts";
+import { logMerchantActivity } from "../_shared/merchant_activity_log.ts";
 
 // CORS 响应头（允许跨域调用）
 const corsHeaders = {
@@ -205,6 +206,13 @@ Deno.serve(async (req: Request) => {
       if (closeErr) {
         return errorResponse(`Failed to close store: ${closeErr.message}`);
       }
+
+      await logMerchantActivity(supabaseAdmin, {
+        merchant_id: merchantId,
+        event_type: "store_closed_merchant",
+        actor_type: "merchant_owner",
+        actor_user_id: user.id,
+      });
 
       // 2. 下架所有该门店的 active deals
       await supabaseAdmin

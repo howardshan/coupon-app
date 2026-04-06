@@ -6,6 +6,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { resolveAuth, requirePermission } from "../_shared/auth.ts";
+import { logMerchantActivity } from "../_shared/merchant_activity_log.ts";
 
 // CORS 响应头（允许商家端 App 跨域调用）
 const corsHeaders = {
@@ -129,7 +130,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (req.method === 'PATCH') {
-      return await handlePatch(serviceClient, supabase, merchantId, req);
+      return await handlePatch(serviceClient, supabase, merchantId, req, user.id);
     }
 
     return errorResponse('Method not allowed', 405);
@@ -225,6 +226,7 @@ async function handlePatch(
   userClient: ReturnType<typeof createClient>,
   merchantId: string,
   req: Request,
+  actorUserId: string,
 ): Promise<Response> {
   // 解析请求体
   let body: { is_online?: boolean };
@@ -238,6 +240,16 @@ async function handlePatch(
     return errorResponse('is_online must be a boolean value');
   }
 
+  const { data: beforeRow, error: beforeErr } = await serviceClient
+    .from('merchants')
+    .select('is_online')
+    .eq('id', merchantId)
+    .single();
+
+  if (beforeErr) {
+    console.error('[merchant-dashboard] read is_online before patch:', beforeErr);
+  }
+
   // 使用 user client 更新（RLS 策略: merchants_manage_own — user_id = auth.uid()）
   const { error: updateError } = await userClient
     .from('merchants')
@@ -247,6 +259,15 @@ async function handlePatch(
   if (updateError) {
     console.error('[merchant-dashboard] update is_online error:', updateError);
     return errorResponse('Failed to update store status', 500);
+  }
+
+  if (beforeRow && beforeRow.is_online !== body.is_online) {
+    await logMerchantActivity(serviceClient, {
+      merchant_id: merchantId,
+      event_type: body.is_online ? 'store_online_merchant' : 'store_offline_merchant',
+      actor_type: 'merchant_owner',
+      actor_user_id: actorUserId,
+    });
   }
 
   return jsonResponse({

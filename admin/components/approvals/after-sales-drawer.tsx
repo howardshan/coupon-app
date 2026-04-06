@@ -4,10 +4,14 @@ import { useEffect, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import type { AfterSalesItem } from '@/app/(dashboard)/approvals/page'
 import { revalidateApprovalsPendingCount } from '@/app/actions/approvals'
+import AdminActivityTimelineCard from '@/components/admin-activity-timeline-card'
+import { buildAfterSalesTimelineEntries } from '@/lib/after-sales-admin-timeline'
 
 type AfterSalesDetail = {
   request: {
     id: string
+    /** 平台 Edge 详情含 order_id，用于跳转订单页 */
+    order_id?: string
     status: string
     reason_code?: string
     reason_detail?: string
@@ -215,6 +219,18 @@ export default function AfterSalesDrawer({
                   {item.reasonDetail}
                 </p>
               )}
+              {detail?.request?.order_id && (
+                <p className="mt-3 border-t border-gray-100 pt-3 text-sm">
+                  <a
+                    href={`/orders/${detail.request.order_id}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-medium text-blue-600 hover:underline"
+                  >
+                    Open order detail (activity & refund dispute timelines) →
+                  </a>
+                </p>
+              )}
             </section>
 
             {/* 懒加载详情 */}
@@ -230,7 +246,11 @@ export default function AfterSalesDrawer({
                 <AttachmentBlock title="User Attachments" attachments={detail.request.user_attachments ?? []} />
                 <AttachmentBlock title="Merchant Attachments" attachments={detail.request.merchant_attachments ?? []} />
                 <AttachmentBlock title="Platform Attachments" attachments={detail.request.platform_attachments ?? []} />
-                <TimelineBlock entries={detail.request.timeline ?? []} />
+                <AdminActivityTimelineCard
+                  title="After-sales timeline"
+                  footnote="Events are stored on the after-sales request record. Older requests may have incomplete history."
+                  events={buildAfterSalesTimelineEntries(detail.request.timeline)}
+                />
               </>
             )}
 
@@ -348,42 +368,3 @@ function AttachmentBlock({ title, attachments }: { title: string; attachments: s
   )
 }
 
-function TimelineBlock({
-  entries,
-}: {
-  entries: Array<{ status: string; actor: string; note?: string; attachments?: string[]; at: string }>
-}) {
-  if (!entries.length) return null
-  return (
-    <section className="rounded-xl border border-gray-200 p-4">
-      <h3 className="font-semibold text-gray-800 mb-3">Timeline</h3>
-      <div className="space-y-3">
-        {entries.map((entry, idx) => (
-          <div key={`${entry.status}-${idx}`} className="rounded-lg border border-gray-100 bg-gray-50 p-3">
-            <div className="flex items-center justify-between text-sm">
-              <span className="font-semibold text-gray-900">{entry.status.replaceAll('_', ' ')}</span>
-              <span className="text-gray-500">{new Date(entry.at).toLocaleString()}</span>
-            </div>
-            <p className="mt-1 text-xs text-gray-600">Actor: {entry.actor}</p>
-            {entry.note && <p className="mt-1 text-sm text-gray-700">{entry.note}</p>}
-            {(entry.attachments?.length ?? 0) > 0 && (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {entry.attachments?.map((url, innerIdx) => (
-                  <a
-                    key={`${url}-${innerIdx}`}
-                    href={url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="rounded-full border border-gray-300 px-3 py-1 text-xs hover:bg-gray-50"
-                  >
-                    File {innerIdx + 1}
-                  </a>
-                ))}
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-    </section>
-  )
-}

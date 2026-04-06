@@ -41,7 +41,7 @@ export default async function MerchantReviewPage({
 
   const { data: merchant } = await supabase
     .from('merchants')
-    .select('id, user_id, name, company_name, description, contact_name, contact_email, phone, category, ein, address, status, rejection_reason, submitted_at, created_at, updated_at, brand_id, commission_free_until, commission_rate, commission_stripe_rate, commission_stripe_flat_fee, commission_effective_from, commission_effective_to, brands(id, name, logo_url)')
+    .select('id, user_id, name, company_name, description, contact_name, contact_email, phone, category, ein, address, status, rejection_reason, submitted_at, created_at, updated_at, is_online, brand_id, commission_free_until, commission_rate, commission_stripe_rate, commission_stripe_flat_fee, commission_effective_from, commission_effective_to, brands(id, name, logo_url)')
     .eq('id', id)
     .single()
 
@@ -55,6 +55,32 @@ export default async function MerchantReviewPage({
       </div>
     )
   }
+
+  const { data: activityRows, error: activityEventsError } = await supabase
+    .from('merchant_activity_events')
+    .select('created_at, event_type, actor_type, actor_user_id, detail')
+    .eq('merchant_id', id)
+    .order('created_at', { ascending: true })
+
+  const activityRowsSafe = activityEventsError ? [] : (activityRows ?? [])
+
+  const actorIds = [...new Set(activityRowsSafe.map((r) => r.actor_user_id).filter(Boolean))] as string[]
+  const emailByUserId: Record<string, string> = {}
+  if (actorIds.length > 0) {
+    const { data: actorUsers } = await supabase.from('users').select('id, email').in('id', actorIds)
+    for (const u of actorUsers ?? []) {
+      if (u.id && u.email) emailByUserId[u.id] = u.email
+    }
+  }
+
+  const activityEventsForTimeline = activityRowsSafe.map((r) => ({
+    created_at: r.created_at,
+    event_type: r.event_type,
+    actor_type: r.actor_type,
+    actor_user_id: r.actor_user_id,
+    detail: r.detail,
+    users: r.actor_user_id ? { email: emailByUserId[r.actor_user_id] ?? null } : null,
+  }))
 
   const { data: documents } = await supabase
     .from('merchant_documents')
@@ -179,6 +205,9 @@ export default async function MerchantReviewPage({
   const showMerchantOperations =
     merchant.status === 'approved' || merchant.status === 'rejected'
 
+  const merchantTimelineEvents = buildMerchantTimeline(merchant, activityEventsForTimeline)
+  const storeIsOnline = Boolean((merchant as { is_online?: boolean }).is_online)
+
   return (
     <div>
       <div className="mb-6">
@@ -219,17 +248,8 @@ export default async function MerchantReviewPage({
         )}
       </div>
 
-      <div className="space-y-6">
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Status</h2>
-          <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${merchant.status === 'approved' ? 'bg-green-100 text-green-700' : merchant.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
-            {merchant.status}
-          </span>
-          {merchant.rejection_reason && (
-            <p className="mt-2 text-sm text-red-600 bg-red-50 p-3 rounded-lg">Rejection reason: {merchant.rejection_reason}</p>
-          )}
-        </div>
-
+      <div className="flex flex-col gap-5 md:flex-row md:items-start md:gap-6">
+        <div className="order-1 min-w-0 flex-1 space-y-6">
         {brandInfo && (
           <div className="bg-white rounded-xl border border-gray-200 p-6">
             <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Brand</h2>
@@ -297,40 +317,6 @@ export default async function MerchantReviewPage({
           defaultStripeRate={Number(globalConfig?.stripe_processing_rate ?? 0.03)}
           defaultStripeFlatFee={Number(globalConfig?.stripe_flat_fee ?? 0.30)}
         />
-
-        {/* 商家本月收入 */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">Merchant Earnings (This Month)</h2>
-          {brandInfo && (
-            <div className="mb-4 p-3 bg-blue-50 rounded-lg text-sm">
-              <span className="text-gray-500">Brand Fee:</span>{' '}
-              <Link href={`/brands/${brandInfo.id}`} className="text-blue-600 hover:underline font-medium">{brandInfo.name}</Link>
-              {merchant.commission_rate != null && (
-                <span className="ml-2 text-gray-600">
-                  (Brand Commission: {((merchant as any).commission_rate * 100).toFixed(0)}%)
-                </span>
-              )}
-            </div>
-          )}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <div className="bg-gray-50 rounded-lg p-4">
-              <p className="text-xs text-gray-500 mb-1">This Month</p>
-              <p className="text-xl font-bold text-orange-600">${(mEarnings?.total_revenue ?? 0).toFixed(2)}</p>
-            </div>
-            <div className="bg-gray-50 rounded-lg p-4">
-              <p className="text-xs text-gray-500 mb-1">Awaiting Settlement</p>
-              <p className="text-xl font-bold text-yellow-600">${(mEarnings?.pending_settlement ?? 0).toFixed(2)}</p>
-            </div>
-            <div className="bg-gray-50 rounded-lg p-4">
-              <p className="text-xs text-gray-500 mb-1">Settled</p>
-              <p className="text-xl font-bold text-green-600">${(mEarnings?.settled_amount ?? 0).toFixed(2)}</p>
-            </div>
-            <div className="bg-gray-50 rounded-lg p-4">
-              <p className="text-xs text-gray-500 mb-1">Refunded</p>
-              <p className="text-xl font-bold text-red-500">${(mEarnings?.refunded_amount ?? 0).toFixed(2)}</p>
-            </div>
-          </div>
-        </div>
 
         {/* 最近交易（以券为最小单位） */}
         <div className="bg-white rounded-xl border border-gray-200 p-6">
@@ -431,6 +417,78 @@ export default async function MerchantReviewPage({
             <p className="text-sm text-gray-500">No staff members.</p>
           )}
         </div>
+        </div>
+
+        <aside className="order-2 flex w-full shrink-0 flex-col gap-4 md:sticky md:top-4 md:w-72 md:max-w-[22rem] lg:w-80">
+          <div className="bg-white rounded-xl border border-gray-200 p-5">
+            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Status</h2>
+            <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${merchant.status === 'approved' ? 'bg-green-100 text-green-700' : merchant.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
+              {merchant.status}
+            </span>
+            {merchant.status === 'approved' && (
+              <p className="mt-2 text-xs text-gray-600">
+                Customer-facing visibility:{' '}
+                <span className={`font-semibold ${storeIsOnline ? 'text-emerald-700' : 'text-slate-600'}`}>
+                  {storeIsOnline ? 'Online' : 'Offline'}
+                </span>
+              </p>
+            )}
+            {merchant.status === 'approved' && (
+              <div className="mt-3 border-t border-gray-100 pt-3">
+                <p className="mb-2 text-[10px] font-medium uppercase tracking-wide text-gray-500">Store visibility (admin)</p>
+                <MerchantAdminVisibilityActions merchantId={merchant.id} isOnline={storeIsOnline} />
+              </div>
+            )}
+            {merchant.rejection_reason && (
+              <p className="mt-2 text-sm text-red-600 bg-red-50 p-3 rounded-lg break-words">Rejection reason: {merchant.rejection_reason}</p>
+            )}
+          </div>
+
+          <AdminActivityTimelineCard
+            title="Activity timeline"
+            footnote={
+              activityEventsError
+                ? 'Could not load audit events (run DB migration if the table is missing). Showing derived milestones from the merchant row only.'
+                : activityRowsSafe.length > 0
+                  ? 'Includes persisted audit events (applications, approvals, rejections, store online/offline, close). Events exist from migration deploy forward; older history may be incomplete.'
+                  : 'No audit rows yet — showing derived milestones from the merchant record only. After DB migration, new approvals and visibility changes are logged automatically.'
+            }
+            events={merchantTimelineEvents}
+          />
+
+          <div className="bg-white rounded-xl border border-gray-200 p-5">
+            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Merchant Earnings (This Month)</h2>
+            {brandInfo && (
+              <div className="mb-3 p-2.5 bg-blue-50 rounded-lg text-xs break-words">
+                <span className="text-gray-500">Brand Fee:</span>{' '}
+                <Link href={`/brands/${brandInfo.id}`} className="text-blue-600 hover:underline font-medium">{brandInfo.name}</Link>
+                {merchant.commission_rate != null && (
+                  <span className="block sm:inline sm:ml-2 text-gray-600 mt-1 sm:mt-0">
+                    (Brand Commission: {((merchant as any).commission_rate * 100).toFixed(0)}%)
+                  </span>
+                )}
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-2.5">
+              <div className="bg-gray-50 rounded-lg p-3">
+                <p className="text-[10px] uppercase tracking-wide text-gray-500 mb-0.5 leading-tight">This Month</p>
+                <p className="text-base font-bold text-orange-600 tabular-nums">${(mEarnings?.total_revenue ?? 0).toFixed(2)}</p>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-3">
+                <p className="text-[10px] uppercase tracking-wide text-gray-500 mb-0.5 leading-tight">Awaiting Settlement</p>
+                <p className="text-base font-bold text-yellow-600 tabular-nums">${(mEarnings?.pending_settlement ?? 0).toFixed(2)}</p>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-3">
+                <p className="text-[10px] uppercase tracking-wide text-gray-500 mb-0.5 leading-tight">Settled</p>
+                <p className="text-base font-bold text-green-600 tabular-nums">${(mEarnings?.settled_amount ?? 0).toFixed(2)}</p>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-3">
+                <p className="text-[10px] uppercase tracking-wide text-gray-500 mb-0.5 leading-tight">Refunded</p>
+                <p className="text-base font-bold text-red-500 tabular-nums">${(mEarnings?.refunded_amount ?? 0).toFixed(2)}</p>
+              </div>
+            </div>
+          </div>
+        </aside>
       </div>
     </div>
   )

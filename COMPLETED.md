@@ -174,6 +174,40 @@
   - `admin/components/email-logs-table.tsx`
   - `admin/app/actions/email-logs.ts` — `getEmailLogHtmlBody`
 
+#### Admin 商户活动时间线（审计表）✅
+- 状态：已完成，`merchant_activity_events` 记录申请/审批/上下线/闭店；商户详情页时间线合并展示；管理员可强制上下线
+- 受保护文件：
+  - `deal_joy/supabase/migrations/20260402140000_merchant_activity_events.sql`
+  - `deal_joy/supabase/functions/_shared/merchant_activity_log.ts`
+  - `admin/lib/merchant-activity-events.ts`、`admin/lib/merchant-admin-timeline.ts`
+  - `admin/app/actions/admin.ts` — `approveMerchant` / `rejectMerchant` / `revokeMerchantApproval` / `adminSetMerchantStoreOnline` 与审计写入
+  - `admin/components/merchant-admin-visibility-actions.tsx`
+  - `deal_joy/supabase/functions/merchant-register/index.ts`、`merchant-dashboard/index.ts`、`merchant-store/index.ts` — 对应审计写入
+
+#### Admin 退款争议活动时间线（Phase 3）✅
+- 状态：已完成，订单详情侧栏与审批中心 Refund Dispute 抽屉展示 `refund_requests` 里程碑；同单多争议合并排序；仲裁后 `revalidatePath` 刷新订单页
+- 受保护文件：
+  - `admin/lib/refund-dispute-admin-timeline.ts`
+  - `admin/app/(dashboard)/orders/[id]/page.tsx` — Refund dispute timeline 查询与挂载
+  - `admin/app/(dashboard)/approvals/page.tsx` — `RefundDisputeItem` 字段与 `fetchRefundDisputes` / 统一 Tab 批量查询
+  - `admin/components/approvals/refund-dispute-drawer.tsx` — 抽屉内时间线
+  - `admin/app/actions/approvals.ts` — `approveRefundDispute` / `rejectRefundDispute` 成功后 `revalidatePath(/orders/[id])`
+
+#### Admin 售后活动时间线（Phase 4）✅
+- 状态：已完成，审批中心 After-Sales 抽屉使用通用 `AdminActivityTimelineCard`；`timeline` JSONB 经 `buildAfterSalesTimelineEntries` 映射；条目附件链接保留
+- 受保护文件：
+  - `admin/lib/after-sales-admin-timeline.ts`
+  - `admin/components/approvals/after-sales-drawer.tsx`
+  - `admin/lib/admin-activity-timeline-types.ts` — 可选 `attachments` 字段（与各域 builder 共用）
+  - `admin/components/admin-activity-timeline-card.tsx` — 多行 subtitle、附件链接展示
+
+#### Admin 审批中心抽屉活动时间预览（Phase 5）✅
+- 状态：已完成，Deal/Merchant 抽屉内 `AdminActivityTimelineCard` 预览（与详情页 builder 一致）；After-Sales 详情含 `order_id` 时链至订单页；Refund 抽屉补充订单页说明
+- 受保护文件：
+  - `admin/components/approvals/deal-drawer.tsx`、`merchant-drawer.tsx`、`refund-dispute-drawer.tsx`、`after-sales-drawer.tsx`
+  - `admin/app/(dashboard)/approvals/page.tsx` — `DealItem` 与 `fetchDeals` / All Tab deals 查询字段
+  - `admin/app/api/approvals/merchant/[id]/route.ts` — `updated_at`
+
 ---
 
 ## 更新记录
@@ -186,6 +220,9 @@
 | 2026-03-13 | Brand Deal 创建/审批/客户端展示 — RPC 类型修复 + 商家详情页关联查询 + provider autoDispose | Claude |
 | 2026-03-13 | Brand 鉴权/门店切换 + Logo 上传/客户端展示 + 首页固定头部 — 全部加入保护清单 | Claude |
 | 2026-03-21 | Admin 侧栏 Email 分组 + Email Log 页面与预览 Action | Claude |
+| 2026-03-30 | Admin 退款争议活动时间线（订单详情 + Refund 抽屉 + revalidate） | Claude |
+| 2026-03-30 | Admin 售后时间线统一通用卡片 + `after-sales-admin-timeline.ts` | Claude |
+| 2026-03-30 | Admin Phase 5：审批抽屉 Activity preview + 订单跳转与说明 | Claude |
 
 ---
 

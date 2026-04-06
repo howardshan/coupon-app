@@ -2,6 +2,7 @@
 
 import { revalidatePath, revalidateTag } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { getServiceRoleClient } from '@/lib/supabase/service'
 import { APPROVALS_PENDING_COUNT_TAG } from '@/lib/approvals-cache-tag'
 
 async function requireAdmin() {
@@ -48,6 +49,12 @@ export async function approveRefundDispute(requestId: string, adminReason?: stri
     throw new Error((body as { message?: string }).message ?? 'Failed to approve refund dispute')
   }
 
+  const db = getServiceRoleClient()
+  const { data: rr } = await db.from('refund_requests').select('order_id').eq('id', requestId).maybeSingle()
+  if (rr?.order_id) {
+    revalidatePath(`/orders/${rr.order_id}`)
+  }
+
   revalidateTag(APPROVALS_PENDING_COUNT_TAG)
   revalidatePath('/approvals')
 }
@@ -79,6 +86,12 @@ export async function rejectRefundDispute(requestId: string, adminReason: string
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
     throw new Error((body as { message?: string }).message ?? 'Failed to reject refund dispute')
+  }
+
+  const db = getServiceRoleClient()
+  const { data: rr } = await db.from('refund_requests').select('order_id').eq('id', requestId).maybeSingle()
+  if (rr?.order_id) {
+    revalidatePath(`/orders/${rr.order_id}`)
   }
 
   revalidateTag(APPROVALS_PENDING_COUNT_TAG)

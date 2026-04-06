@@ -53,10 +53,27 @@ export default function AdminActivityTimelineCard({ title, footnote, events }: P
             </div>
             <div className="min-w-0 flex-1 pb-6">
               <p className="text-sm font-semibold text-slate-900">{e.title}</p>
-              {e.subtitle ? <p className="mt-1 text-sm text-slate-600">{e.subtitle}</p> : null}
+              {e.subtitle ? (
+                <p className="mt-1 whitespace-pre-line text-sm text-slate-600">{e.subtitle}</p>
+              ) : null}
               <time className="mt-1 block text-xs tabular-nums text-slate-500" dateTime={e.at}>
                 {formatWhen(e.at)}
               </time>
+              {e.attachments && e.attachments.length > 0 ? (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {e.attachments.map((url, j) => (
+                    <a
+                      key={`${url}-${j}`}
+                      href={url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 shadow-sm hover:bg-slate-50"
+                    >
+                      File {j + 1}
+                    </a>
+                  ))}
+                </div>
+              ) : null}
             </div>
           </li>
         ))}

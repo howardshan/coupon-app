@@ -5,12 +5,35 @@ import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import type { RefundDisputeItem } from '@/app/(dashboard)/approvals/page'
 import { approveRefundDispute, rejectRefundDispute } from '@/app/actions/approvals'
+import AdminActivityTimelineCard from '@/components/admin-activity-timeline-card'
+import {
+  buildRefundDisputeTimeline,
+  type RefundDisputeTimelineInput,
+} from '@/lib/refund-dispute-admin-timeline'
 
 type RefundLineItem = {
   name: string
   qty?: number
   unit_price?: number
   refund_amount?: number
+}
+
+function disputeToTimelineInput(d: RefundDisputeItem): RefundDisputeTimelineInput {
+  return {
+    id: d.id,
+    createdAt: d.createdAt,
+    updatedAt: d.updatedAt,
+    status: d.status,
+    refundAmount: d.refundAmount,
+    userReason: d.userReason,
+    merchantDecision: d.merchantDecision,
+    merchantReason: d.merchantReason,
+    merchantDecidedAt: d.merchantDecidedAt,
+    adminDecision: d.adminDecision,
+    adminReason: d.adminReason,
+    adminDecidedAt: d.adminDecidedAt,
+    completedAt: d.completedAt,
+  }
 }
 
 function parseRefundItems(raw: unknown): RefundLineItem[] {
@@ -44,6 +67,7 @@ export default function RefundDisputeDrawer({
   const [rejectReason, setRejectReason] = useState('')
 
   const lineItems = parseRefundItems(dispute.refundItems)
+  const refundTimelineEvents = buildRefundDisputeTimeline(disputeToTimelineInput(dispute))
 
   function handleApprove() {
     startTransition(async () => {
@@ -115,7 +139,7 @@ export default function RefundDisputeDrawer({
                   <dt className="text-gray-500">Merchant</dt>
                   <dd className="font-medium text-gray-900">{dispute.merchantName}</dd>
                 </div>
-                <div>
+                <div className="col-span-2">
                   <dt className="text-gray-500">Order</dt>
                   <dd>
                     <a
@@ -126,6 +150,9 @@ export default function RefundDisputeDrawer({
                     >
                       {dispute.orderId.slice(0, 8)}… ↗
                     </a>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Order page includes order activity and any other refund dispute timelines for this order.
+                    </p>
                   </dd>
                 </div>
                 <div>
@@ -134,7 +161,13 @@ export default function RefundDisputeDrawer({
                 </div>
                 {dispute.merchantDecidedAt && (
                   <div>
-                    <dt className="text-gray-500">Merchant Rejected</dt>
+                    <dt className="text-gray-500">
+                      {dispute.merchantDecision === 'rejected'
+                        ? 'Merchant rejected at'
+                        : dispute.merchantDecision === 'approved'
+                          ? 'Merchant approved at'
+                          : 'Merchant decided at'}
+                    </dt>
                     <dd className="font-medium text-gray-900">{new Date(dispute.merchantDecidedAt).toLocaleString()}</dd>
                   </div>
                 )}
@@ -177,6 +210,12 @@ export default function RefundDisputeDrawer({
                 </table>
               </section>
             )}
+
+            <AdminActivityTimelineCard
+              title="Refund dispute timeline"
+              footnote="Same milestones as on the order detail page; derived from refund_requests timestamps."
+              events={refundTimelineEvents}
+            />
 
             {/* 双方陈述 */}
             <section className="space-y-3">

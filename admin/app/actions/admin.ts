@@ -9,8 +9,14 @@ import { buildM3Email } from '@/lib/email-templates/merchant/verification-approv
 import { buildM4Email } from '@/lib/email-templates/merchant/verification-rejected'
 import { buildM16Email } from '@/lib/email-templates/merchant/deal-rejected'
 import { buildM17Email } from '@/lib/email-templates/merchant/deal-approved'
+import { logMerchantActivityServer } from '@/lib/merchant-activity-events'
 
-async function requireAdmin() {
+type AdminSession = {
+  supabase: Awaited<ReturnType<typeof createClient>>
+  adminUserId: string
+}
+
+async function requireAdmin(): Promise<AdminSession> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Unauthorized')
@@ -22,12 +28,12 @@ async function requireAdmin() {
     .single()
 
   if (profile?.role !== 'admin') throw new Error('Forbidden')
-  return supabase
+  return { supabase, adminUserId: user.id }
 }
 
 // 更新用户角色
 export async function updateUserRole(userId: string, role: 'user' | 'merchant' | 'admin') {
-  const supabase = await requireAdmin()
+  const { supabase } = await requireAdmin()
 
   const { error } = await supabase
     .from('users')
@@ -41,7 +47,7 @@ export async function updateUserRole(userId: string, role: 'user' | 'merchant' |
 
 // 审核商家：通过（使用 service_role 写库，避免 merchant_staff RLS 无限递归）
 export async function approveMerchant(merchantId: string, merchantUserId: string) {
-  await requireAdmin()
+  const { adminUserId } = await requireAdmin()
   const supabase = getServiceRoleClient()
 
   // 读取全局免费期月数，计算免费期截止时间
@@ -69,6 +75,13 @@ export async function approveMerchant(merchantId: string, merchantUserId: string
     .from('users')
     .update({ role: 'merchant' })
     .eq('id', merchantUserId)
+
+  await logMerchantActivityServer({
+    merchantId,
+    eventType: 'admin_approved',
+    actorType: 'admin',
+    actorUserId: adminUserId,
+  })
 
   // 发送 M3 商户认证通过邮件（即发即忘，不阻断主流程）
   const { data: merchantInfo } = await supabase
@@ -99,12 +112,13 @@ export async function approveMerchant(merchantId: string, merchantUserId: string
 
   revalidateTag(APPROVALS_PENDING_COUNT_TAG)
   revalidatePath('/merchants')
+  revalidatePath(`/merchants/${merchantId}`)
   revalidatePath('/approvals')
 }
 
 // 审核商家：拒绝（使用 service_role 写库，避免 merchant_staff RLS 无限递归）
 export async function rejectMerchant(merchantId: string, rejectionReason?: string | null) {
-  await requireAdmin()
+  const { adminUserId } = await requireAdmin()
 
   const supabase = getServiceRoleClient()
   const reason = rejectionReason?.trim() || null
@@ -118,6 +132,14 @@ export async function rejectMerchant(merchantId: string, rejectionReason?: strin
     .eq('id', merchantId)
 
   if (error) throw new Error(error.message)
+
+  await logMerchantActivityServer({
+    merchantId,
+    eventType: 'admin_rejected',
+    actorType: 'admin',
+    actorUserId: adminUserId,
+    detail: reason,
+  })
 
   // 发送 M4 商户认证拒绝邮件（即发即忘，不阻断主流程）
   const { data: merchantInfo } = await supabase
@@ -157,7 +179,7 @@ export async function rejectMerchant(merchantId: string, rejectionReason?: strin
 
 // 撤销审批：将已通过的商家改回待审核（使用 service_role 写库，避免 RLS 递归）
 export async function revokeMerchantApproval(merchantId: string) {
-  await requireAdmin()
+  const { adminUserId } = await requireAdmin()
 
   const supabase = getServiceRoleClient()
   const { error } = await supabase
@@ -169,10 +191,59 @@ export async function revokeMerchantApproval(merchantId: string) {
     .eq('id', merchantId)
 
   if (error) throw new Error(error.message)
+
+  await logMerchantActivityServer({
+    merchantId,
+    eventType: 'admin_revoked_to_pending',
+    actorType: 'admin',
+    actorUserId: adminUserId,
+  })
+
   revalidateTag(APPROVALS_PENDING_COUNT_TAG)
   revalidatePath('/merchants')
   revalidatePath(`/merchants/${merchantId}`)
   revalidatePath('/approvals')
+}
+
+/**
+ * 管理员设置门店对消费者是否「在线」可见（is_online），与商家端 Dashboard 开关并列记录审计事件。
+ */
+export async function adminSetMerchantStoreOnline(merchantId: string, isOnline: boolean) {
+  const { adminUserId } = await requireAdmin()
+  const supabase = getServiceRoleClient()
+
+  const { data: row, error: fetchErr } = await supabase
+    .from('merchants')
+    .select('id, is_online, status')
+    .eq('id', merchantId)
+    .single()
+
+  if (fetchErr || !row) throw new Error(fetchErr?.message ?? 'Merchant not found')
+  if (row.status !== 'approved') {
+    throw new Error('Only approved merchants can have visibility toggled by admin')
+  }
+  if (row.is_online === isOnline) {
+    revalidatePath(`/merchants/${merchantId}`)
+    return
+  }
+
+  const now = new Date().toISOString()
+  const { error: updErr } = await supabase
+    .from('merchants')
+    .update({ is_online: isOnline, updated_at: now })
+    .eq('id', merchantId)
+
+  if (updErr) throw new Error(updErr.message)
+
+  await logMerchantActivityServer({
+    merchantId,
+    eventType: isOnline ? 'store_online_admin' : 'store_offline_admin',
+    actorType: 'admin',
+    actorUserId: adminUserId,
+  })
+
+  revalidatePath('/merchants')
+  revalidatePath(`/merchants/${merchantId}`)
 }
 
 // 更新全局抽成配置（唯一一行，先查 id 再 update）
@@ -285,7 +356,7 @@ export async function reopenSupportConversation(conversationId: string) {
 
 // 更新 Deal 首页展示排序（null = 不在首页展示）
 export async function updateDealSortOrder(dealId: string, sortOrder: number | null) {
-  const supabase = await requireAdmin()
+  const { supabase } = await requireAdmin()
 
   const { error } = await supabase
     .from('deals')
@@ -361,8 +432,7 @@ export async function setDealActive(dealId: string, active: boolean) {
 
 // Deal 审核：驳回（设置 deal_status = rejected，保存 deal 快照 + 驳回历史记录）
 export async function rejectDeal(dealId: string, rejectionReason?: string | null) {
-  const userSupabase = await requireAdmin()
-  const { data: { user } } = await userSupabase.auth.getUser()
+  const { adminUserId } = await requireAdmin()
 
   const supabase = getServiceRoleClient()
   const reason = rejectionReason?.trim() || null
@@ -406,7 +476,7 @@ export async function rejectDeal(dealId: string, rejectionReason?: string | null
       .insert({
         deal_id: dealId,
         reason,
-        rejected_by: user?.id ?? null,
+        rejected_by: adminUserId,
         deal_snapshot: dealSnapshot ?? null,
       })
       .select('id')
