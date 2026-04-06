@@ -1,10 +1,12 @@
 'use client'
 
-import { useEffect, useState, useTransition } from 'react'
+import { useEffect, useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import type { MerchantItem } from '@/app/(dashboard)/approvals/page'
 import { approveMerchant, rejectMerchant } from '@/app/actions/admin'
+import AdminActivityTimelineCard from '@/components/admin-activity-timeline-card'
+import { buildMerchantTimeline } from '@/lib/merchant-admin-timeline'
 
 type Document = {
   id: string
@@ -26,8 +28,11 @@ type MerchantDetail = {
   category: string | null
   ein: string | null
   address: string | null
+  status: string | null
+  rejection_reason: string | null
   submitted_at: string | null
   created_at: string
+  updated_at: string | null
 }
 
 const DOC_TYPE_LABELS: Record<string, string> = {
@@ -75,6 +80,20 @@ export default function MerchantDrawer({
       .finally(() => setLoading(false))
   }, [merchant.id])
 
+  const merchantPreviewTimeline = useMemo(() => {
+    if (!detail) return []
+    return buildMerchantTimeline(
+      {
+        created_at: detail.created_at,
+        updated_at: detail.updated_at,
+        submitted_at: detail.submitted_at,
+        status: detail.status,
+        rejection_reason: detail.rejection_reason,
+      },
+      []
+    )
+  }, [detail])
+
   function confirmReject() {
     startTransition(async () => {
       try {
@@ -115,6 +134,12 @@ export default function MerchantDrawer({
 
             {detail && (
               <>
+                <AdminActivityTimelineCard
+                  title="Activity preview"
+                  footnote="Derived from merchant row only (no audit events in drawer). Open full profile for complete audit timeline when available."
+                  events={merchantPreviewTimeline}
+                />
+
                 {/* 基本信息 */}
                 <section className="rounded-xl border border-gray-200 p-4 space-y-3">
                   <h3 className="font-semibold text-gray-800">Business Info</h3>
@@ -238,9 +263,9 @@ export default function MerchantDrawer({
               href={`/merchants/${merchant.id}`}
               target="_blank"
               rel="noreferrer"
-              className="block text-center text-sm text-gray-400 hover:text-gray-600"
+              className="block text-center text-sm text-gray-500 hover:text-gray-800"
             >
-              View Full Profile →
+              Open merchant detail (full activity timeline) →
             </a>
           </div>
         </div>

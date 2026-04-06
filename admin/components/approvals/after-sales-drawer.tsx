@@ -10,6 +10,8 @@ import { buildAfterSalesTimelineEntries } from '@/lib/after-sales-admin-timeline
 type AfterSalesDetail = {
   request: {
     id: string
+    /** 平台 Edge 详情含 order_id，用于跳转订单页 */
+    order_id?: string
     status: string
     reason_code?: string
     reason_detail?: string
@@ -215,6 +217,18 @@ export default function AfterSalesDrawer({
               {item.reasonDetail && (
                 <p className="mt-3 text-sm text-gray-700 whitespace-pre-line border-t border-gray-100 pt-3">
                   {item.reasonDetail}
+                </p>
+              )}
+              {detail?.request?.order_id && (
+                <p className="mt-3 border-t border-gray-100 pt-3 text-sm">
+                  <a
+                    href={`/orders/${detail.request.order_id}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-medium text-blue-600 hover:underline"
+                  >
+                    Open order detail (activity & refund dispute timelines) →
+                  </a>
                 </p>
               )}
             </section>

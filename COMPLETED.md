@@ -201,6 +201,13 @@
   - `admin/lib/admin-activity-timeline-types.ts` — 可选 `attachments` 字段（与各域 builder 共用）
   - `admin/components/admin-activity-timeline-card.tsx` — 多行 subtitle、附件链接展示
 
+#### Admin 审批中心抽屉活动时间预览（Phase 5）✅
+- 状态：已完成，Deal/Merchant 抽屉内 `AdminActivityTimelineCard` 预览（与详情页 builder 一致）；After-Sales 详情含 `order_id` 时链至订单页；Refund 抽屉补充订单页说明
+- 受保护文件：
+  - `admin/components/approvals/deal-drawer.tsx`、`merchant-drawer.tsx`、`refund-dispute-drawer.tsx`、`after-sales-drawer.tsx`
+  - `admin/app/(dashboard)/approvals/page.tsx` — `DealItem` 与 `fetchDeals` / All Tab deals 查询字段
+  - `admin/app/api/approvals/merchant/[id]/route.ts` — `updated_at`
+
 ---
 
 ## 更新记录
@@ -215,6 +222,7 @@
 | 2026-03-21 | Admin 侧栏 Email 分组 + Email Log 页面与预览 Action | Claude |
 | 2026-03-30 | Admin 退款争议活动时间线（订单详情 + Refund 抽屉 + revalidate） | Claude |
 | 2026-03-30 | Admin 售后时间线统一通用卡片 + `after-sales-admin-timeline.ts` | Claude |
+| 2026-03-30 | Admin Phase 5：审批抽屉 Activity preview + 订单跳转与说明 | Claude |
 
 ---
 

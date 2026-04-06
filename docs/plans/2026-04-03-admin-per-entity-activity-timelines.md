@@ -1,6 +1,6 @@
 # 后台管理 — 分模块活动时间线（追溯）开发计划
 
-**文档版本**: v1.7  
+**文档版本**: v1.8  
 **创建日期**: 2026-04-03  
 **影响范围**: Admin Portal (Next.js) + Supabase（`merchant_activity_events` 迁移与 Edge Functions）  
 **相关文档**: [统一审批中心](./2026-04-01-unified-approvals-page.md)
@@ -147,10 +147,12 @@ export type AdminActivityTimelineEntry = {
 - **展示**：`after-sales-drawer.tsx` 已移除内联 `TimelineBlock`，改用 `AdminActivityTimelineCard` + `admin/lib/after-sales-admin-timeline.ts` 的 `buildAfterSalesTimelineEntries`（升序、标题为状态文案、副标题含 Actor 与 note）。
 - **附件**：`AdminActivityTimelineEntry` 增加可选 `attachments`，通用卡片在每条目下渲染与旧版一致的「File N」外链，避免能力回退。
 
-### 5.5 统一审批中心 `/approvals`
+### 5.5 统一审批中心 `/approvals` — **Phase 5 已落地（v1.8）**
 
-- **可选**：在各抽屉底部增加「Mini timeline」（仅当前实体、数据来自抽屉已加载字段），减少跳转详情页的频率。  
-- **优先级**：低于详情页完整时间线。
+- **Deal 抽屉**：`buildDealTimeline` + `AdminActivityTimelineCard`（Activity preview）；列表/All Tab 的 `DealItem` 补充 `updated_at` 等字段；底部链接文案改为打开详情完整时间线。  
+- **Merchant 抽屉**：`buildMerchantTimeline(…, [])` 行内推导预览；`/api/approvals/merchant/[id]` 增加 `updated_at`；底部链接同 Deal。  
+- **Refund 抽屉**：已有完整争议时间线；补充订单链接旁说明（订单页含 activity 与同单其他争议）。  
+- **After-Sales 抽屉**：详情返回 `order_id` 后在 Overview 显示跳转订单链接。
 
 ---
 
@@ -208,13 +210,16 @@ export type AdminActivityTimelineEntry = {
 
 **验收**：视觉与订单/退款等时间线一致；Actor、note、附件链接保留；无事件时不占版面。
 
-### Phase 5（可选）：审批中心抽屉内迷你时间线
+### Phase 5（可选）：审批中心抽屉内迷你时间线 — **已完成（v1.8）**
 
-1. Deal / Merchant / Refund 抽屉在数据足够处嵌入简化时间线或「View full timeline → `/deals/[id]`」链接。
+1. Deal / Merchant：`AdminActivityTimelineCard` + 既有 builder；数据来自列表字段 + Deal 驳回 API / Merchant 详情 API。  
+2. Refund / After-Sales：跳转与文案增强（订单页对照）；不重复缩成「迷你」时间线。
+
+**验收**：审批人在抽屉内可预览与详情页一致推导的 Deal/Merchant 时间线；可一键打开详情或订单页。
 
 ---
 
-## 七、文件变更清单（Merchant 审计 + Phase 3 退款 + Phase 4 售后时间线已落地）
+## 七、文件变更清单（至 Phase 5 审批抽屉预览）
 
 
 | 路径                                                  | 说明                  |
@@ -240,8 +245,12 @@ export type AdminActivityTimelineEntry = {
 | `admin/app/(dashboard)/approvals/page.tsx`          | Refund 列表字段扩展（时间线 / Overview） |
 | `admin/app/(dashboard)/deals/[id]/page.tsx`         | 接入时间线               |
 | `admin/app/(dashboard)/merchants/[id]/page.tsx`     | 接入时间线 + 事件查询 + 可见性侧栏   |
-| `admin/components/approvals/*.tsx`                  | 可选：抽屉内时间线           |
-| `admin/components/approvals/after-sales-drawer.tsx` | Phase 4：`AdminActivityTimelineCard` + builder |
+| `admin/components/approvals/deal-drawer.tsx`        | Phase 5：Activity preview + 详情链接文案 |
+| `admin/components/approvals/merchant-drawer.tsx`    | Phase 5：Activity preview + 详情链接文案 |
+| `admin/components/approvals/refund-dispute-drawer.tsx` | Phase 5：订单链接说明 |
+| `admin/components/approvals/after-sales-drawer.tsx` | Phase 4 时间线 + Phase 5：`order_id` 跳转订单 |
+| `admin/app/(dashboard)/approvals/page.tsx`          | Phase 5：`DealItem` 扩展字段与查询 |
+| `admin/app/api/approvals/merchant/[id]/route.ts`    | Phase 5：`updated_at` |
 
 
 ---
@@ -267,6 +276,7 @@ export type AdminActivityTimelineEntry = {
 | Merchant    | 详情页可见审计事件 + 行内兜底；footnote 说明历史起算时间与局限；管理员可强制上下线并记审计 |
 | Refund      | 订单详情侧栏 + Refund 抽屉可见 `refund_requests` 里程碑；仲裁后订单页可刷新 |
 | After-sales | 抽屉内 `timeline` 经 builder 展示；与通用时间线卡片一致；附件可点   |
+| Approvals 抽屉 | Deal/Merchant 预览与详情 builder 一致；可打开详情/订单对照完整时间线   |
 | 回归          | 订单详情原时间线行为不变（Phase 0 后）          |
 
 
@@ -293,5 +303,6 @@ export type AdminActivityTimelineEntry = {
 | v1.5 | 2026-04-06 | 计划书同步：§5.2 / Phase 2 / 文件清单 / 风险 / 验收总览与实现对齐；补充事件类型、写入路径、部署与 `deal_joy` 目录约定   |
 | v1.6 | 2026-04-06 | Phase 3 落地：§5.3、`refund-dispute-admin-timeline.ts`、订单侧栏 + Refund 抽屉、`RefundDisputeItem` 字段扩展、仲裁后 revalidate 订单详情   |
 | v1.7 | 2026-03-30 | Phase 4：`after-sales-admin-timeline.ts`、售后抽屉统一 `AdminActivityTimelineCard`；条目类型支持 `attachments`、卡片多行 subtitle   |
+| v1.8 | 2026-03-30 | Phase 5：Deal/Merchant 审批抽屉 Activity preview；After-Sales `order_id` 链订单；Refund 订单说明；`DealItem` 与 merchant API 字段扩展   |
 
 

@@ -139,7 +139,7 @@ export default function RefundDisputeDrawer({
                   <dt className="text-gray-500">Merchant</dt>
                   <dd className="font-medium text-gray-900">{dispute.merchantName}</dd>
                 </div>
-                <div>
+                <div className="col-span-2">
                   <dt className="text-gray-500">Order</dt>
                   <dd>
                     <a
@@ -150,6 +150,9 @@ export default function RefundDisputeDrawer({
                     >
                       {dispute.orderId.slice(0, 8)}… ↗
                     </a>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Order page includes order activity and any other refund dispute timelines for this order.
+                    </p>
                   </dd>
                 </div>
                 <div>
