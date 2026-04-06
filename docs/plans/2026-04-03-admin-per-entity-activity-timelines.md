@@ -1,6 +1,6 @@
 # 后台管理 — 分模块活动时间线（追溯）开发计划
 
-**文档版本**: v1.1  
+**文档版本**: v1.2  
 **创建日期**: 2026-04-03  
 **影响范围**: Admin Portal (Next.js)  
 **相关文档**: [统一审批中心](./2026-04-01-unified-approvals-page.md)
@@ -31,11 +31,13 @@
 
 ## 二、方案概述
 
-| 维度 | 做法 |
-|------|------|
-| 数据 | **各域自用已有表与字段**，在 Server 或 `lib/*-timeline.ts` 内组装为统一结构的「事件数组」 |
-| UI | **抽取通用时间线展示组件**（样式对齐 `OrderDetailTimelineCard`），各页传入已排序事件 |
-| 扩展 | 某域若仅有「当前状态」、缺历史节点，可**后续**为该域增加小范围事件表或补字段，仍通过同一 UI 渲染 |
+
+| 维度  | 做法                                                            |
+| --- | ------------------------------------------------------------- |
+| 数据  | **各域自用已有表与字段**，在 Server 或 `lib/*-timeline.ts` 内组装为统一结构的「事件数组」 |
+| UI  | **抽取通用时间线展示组件**（样式对齐 `OrderDetailTimelineCard`），各页传入已排序事件     |
+| 扩展  | 某域若仅有「当前状态」、缺历史节点，可**后续**为该域增加小范围事件表或补字段，仍通过同一 UI 渲染          |
+
 
 **缺点（已接受）**：每个模块需单独实现「数据组装逻辑」与联调；**优点**：改动面可控、不阻塞业务表演进。
 
@@ -43,11 +45,13 @@
 
 ## 三、参考实现（订单）
 
-| 文件 | 职责 |
-|------|------|
-| `admin/lib/order-admin-timeline.ts` | `OrderTimelineEntry` 类型；`buildOrderTimelineV2` / `buildOrderTimelineV3`；`sortTimelineAscending` |
-| `admin/components/order-detail-timeline-card.tsx` | 订单详情「Activity timeline」卡片 UI |
-| `admin/app/(dashboard)/orders/[id]/page.tsx` | 拉取订单与 items 后调用 builder，传入 `OrderDetailTimelineCard` |
+
+| 文件                                                | 职责                                                                                              |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `admin/lib/order-admin-timeline.ts`               | `OrderTimelineEntry` 类型；`buildOrderTimelineV2` / `buildOrderTimelineV3`；`sortTimelineAscending` |
+| `admin/components/order-detail-timeline-card.tsx` | 订单详情「Activity timeline」卡片 UI                                                                    |
+| `admin/app/(dashboard)/orders/[id]/page.tsx`      | 拉取订单与 items 后调用 builder，传入 `OrderDetailTimelineCard`                                            |
+
 
 **约定**：时间线文案 **UI 英文**；代码注释 **中文**（与仓库规范一致）。
 
@@ -86,29 +90,36 @@ export type AdminActivityTimelineEntry = {
 
 ### 5.1 Deal（`/deals/[id]`）
 
-| 数据来源 | 可展示节点（示例） |
-|----------|-------------------|
-| `deals` | `created_at`、`published_at`、`updated_at`（需定义文案：创建 / 上架 / 最后更新） |
+
+| 数据来源              | 可展示节点（示例）                                                                                  |
+| ----------------- | ------------------------------------------------------------------------------------------ |
+| `deals`           | `created_at`、`published_at`、`updated_at`（需定义文案：创建 / 上架 / 最后更新）                             |
 | `deal_rejections` | 每条驳回：`created_at`、`reason`、`users.email` 或 `rejected_by`（与现有 `RejectionHistory` 信息对齐，避免矛盾） |
+
 
 **注意**：`setDealActive` / `rejectDeal` 若未单独落事件表，**下架时间**可能仅体现在 `updated_at` 或 `deal_status` 变更推断，需在文案 footnote 中说明「部分步骤由时间戳推导」。
 
 ### 5.2 Merchant（`/merchants/[id]`）
 
-| 数据来源 | 可展示节点（示例） |
-|----------|-------------------|
-| `merchants` | `submitted_at` / `created_at`、`updated_at`、`status` 当前值 |
-| 若库中**无**状态变更流水 | 首版仅展示「注册 / 提交 / 最后更新」；**不虚构**中间节点 |
+
+| 数据来源           | 可展示节点（示例）                                               |
+| -------------- | ------------------------------------------------------- |
+| `merchants`    | `submitted_at` / `created_at`、`updated_at`、`status` 当前值 |
+| 若库中**无**状态变更流水 | 首版仅展示「注册 / 提交 / 最后更新」；**不虚构**中间节点                       |
+
 
 **可选后续增强**：迁移或表 `merchant_status_events`（本计划不强制）。
 
 ### 5.3 退款争议（`refund_requests`，展示位置待定）
 
-| 数据来源 | 可展示节点（示例） |
-|----------|-------------------|
+
+| 数据来源              | 可展示节点（示例）                                                                                                                  |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | `refund_requests` | `created_at`、`merchant_decided_at`、`admin_decided_at`、状态文本；`user_reason` / `merchant_reason` / `admin_reason` 摘要进 subtitle |
 
+
 **展示位置选项**（实现时二选一或并行）：  
+
 - A）在 **Admin 订单详情** 关联区块（若易从订单跳转）；  
 - B）在 **审批中心 Refund Dispute 抽屉** 底部增加折叠时间线（数据已在列表/详情接口中部分存在）。
 
@@ -172,40 +183,44 @@ export type AdminActivityTimelineEntry = {
 
 ## 七、文件变更清单（预估）
 
-| 路径 | 说明 |
-|------|------|
-| `admin/lib/admin-activity-timeline-types.ts` | 新建，通用条目类型 |
-| `admin/components/admin-activity-timeline-card.tsx` | 新建，通用 UI |
-| `admin/components/order-detail-timeline-card.tsx` | 改为复用通用组件（可选但推荐） |
-| `admin/lib/deal-admin-timeline.ts` | 新建 |
-| `admin/lib/merchant-admin-timeline.ts` | 新建 |
-| `admin/lib/refund-dispute-admin-timeline.ts` | 新建（或命名调整） |
-| `admin/app/(dashboard)/deals/[id]/page.tsx` | 接入时间线 |
-| `admin/app/(dashboard)/merchants/[id]/page.tsx` | 接入时间线 |
-| `admin/components/approvals/*.tsx` | 可选：抽屉内时间线 |
+
+| 路径                                                  | 说明                  |
+| --------------------------------------------------- | ------------------- |
+| `admin/lib/admin-activity-timeline-types.ts`        | 新建，通用条目类型           |
+| `admin/components/admin-activity-timeline-card.tsx` | 新建，通用 UI            |
+| `admin/components/order-detail-timeline-card.tsx`   | 改为复用通用组件（可选但推荐）     |
+| `admin/lib/deal-admin-timeline.ts`                  | 新建                  |
+| `admin/lib/merchant-admin-timeline.ts`              | 新建                  |
+| `admin/lib/refund-dispute-admin-timeline.ts`        | 新建（或命名调整）           |
+| `admin/app/(dashboard)/deals/[id]/page.tsx`         | 接入时间线               |
+| `admin/app/(dashboard)/merchants/[id]/page.tsx`     | 接入时间线               |
+| `admin/components/approvals/*.tsx`                  | 可选：抽屉内时间线           |
 | `admin/components/approvals/after-sales-drawer.tsx` | 可选：Timeline 与通用组件对齐 |
+
 
 ---
 
 ## 八、风险与注意事项
 
-1. **信息不完整**：仅靠 `updated_at` 无法区分「改标题」与「下架」，footnote 必须诚实说明。  
-2. **与邮件/日志对账**：时间线不等于法务级审计；重要场景保留 Email Logs、Stripe Dashboard 等外部源。  
-3. **性能**：Deal 驳回记录通常体量小；若未来单 Deal 驳回次数极大，注意 limit 与分页（当前可省略）。  
+1. **信息不完整**：仅靠 `updated_at` 无法区分「改标题」与「下架」，footnote 必须诚实说明。
+2. **与邮件/日志对账**：时间线不等于法务级审计；重要场景保留 Email Logs、Stripe Dashboard 等外部源。
+3. **性能**：Deal 驳回记录通常体量小；若未来单 Deal 驳回次数极大，注意 limit 与分页（当前可省略）。
 4. **RLS**：Admin 页面已用 `createClient` / `getServiceRoleClient` 的模式需与各查询一致，避免详情页能看、时间线查不到。
 
 ---
 
 ## 九、验收标准总览
 
-| 项 | 标准 |
-|----|------|
-| 通用组件 | 空数组不渲染；时间升序展示；英文标题/副标题；与订单卡片视觉协调 |
-| Deal | 详情页可见与驳回历史一致的时间线；无捏造字段 |
-| Merchant | 详情页可见基于现有字段的时间线；局限有 footnote |
-| Refund | 选定载体上可见关键里程碑时间 |
-| After-sales | 样式统一或明确保留差异理由 |
-| 回归 | 订单详情原时间线行为不变（Phase 0 后） |
+
+| 项           | 标准                               |
+| ----------- | -------------------------------- |
+| 通用组件        | 空数组不渲染；时间升序展示；英文标题/副标题；与订单卡片视觉协调 |
+| Deal        | 详情页可见与驳回历史一致的时间线；无捏造字段           |
+| Merchant    | 详情页可见基于现有字段的时间线；局限有 footnote     |
+| Refund      | 选定载体上可见关键里程碑时间                   |
+| After-sales | 样式统一或明确保留差异理由                    |
+| 回归          | 订单详情原时间线行为不变（Phase 0 后）          |
+
 
 ---
 
@@ -218,7 +233,11 @@ export type AdminActivityTimelineEntry = {
 
 ## 变更记录
 
-| 版本 | 日期 | 变更内容 |
-|------|------|----------|
-| v1.0 | 2026-04-03 | 初稿：分模块时间线方案、阶段划分、文件清单与验收标准 |
-| v1.1 | 2026-04-03 | Phase 0 落地：`admin-activity-timeline-types`、`AdminActivityTimelineCard`、订单时间线改为薄封装复用 |
+
+| 版本   | 日期         | 变更内容                                                                                                                 |
+| ---- | ---------- | -------------------------------------------------------------------------------------------------------------------- |
+| v1.0 | 2026-04-03 | 初稿：分模块时间线方案、阶段划分、文件清单与验收标准                                                                                           |
+| v1.1 | 2026-04-03 | Phase 0 落地：`admin-activity-timeline-types`、`AdminActivityTimelineCard`、订单时间线改为薄封装复用                                  |
+| v1.2 | 2026-04-03 | Phase 1：`deal-admin-timeline.ts`、`/deals/[id]` 接入 Activity timeline；`sortActivityTimelineAscending` 抽取至 types，订单排序复用 |
+
+

@@ -11,3 +11,10 @@ export type AdminActivityTimelineEntry = {
   /** 副标题：原因、操作者、关联 ID 等 */
   subtitle?: string
 }
+
+/** 按时间升序（最早在上，适合纵向时间线） */
+export function sortActivityTimelineAscending(
+  entries: AdminActivityTimelineEntry[]
+): AdminActivityTimelineEntry[] {
+  return [...entries].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())
+}
