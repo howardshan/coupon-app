@@ -172,7 +172,9 @@ Deno.serve(async (req: Request) => {
         return errorResponse('record_failed', 'Failed to record ad event', 500);
       }
 
-      const recordStatus = recordResult as string;
+      // charge_ad_account 返回 jsonb，impression/skip 路径只需取 status 字段用于日志
+      const recordResultJson = recordResult as { status: string; balance_after: number };
+      const recordStatus = recordResultJson?.status ?? String(recordResult);
       // impression/skip 写库不做余额判断，RPC 返回任意状态都视为成功
       console.log(`[record-ad-event] cpc ${eventType} recorded, rpc status: ${recordStatus}`);
       return jsonResponse({
@@ -234,29 +236,61 @@ Deno.serve(async (req: Request) => {
   }
 
   // -------------------------------------------------------
-  // 7. 根据 RPC 返回状态码决定响应
+  // 7. 根据 RPC 返回的 jsonb 决定响应
+  //    charge_ad_account 现在返回 { status: string; balance_after: number }
   // -------------------------------------------------------
-  const status = chargeResult as string;
+  const chargeResultJson = chargeResult as { status: string; balance_after: number };
+  const chargeStatus = chargeResultJson?.status ?? String(chargeResult);
+  const balanceAfter = chargeResultJson?.balance_after ?? 0;
 
-  if (status === 'ok') {
+  if (chargeStatus === 'ok') {
+    // CPC 点击扣费成功，写入 click_charged 日志（fire-and-forget）
+    if (billingType === 'cpc' && eventType === 'click') {
+      try {
+        await supabase.from('ad_campaign_logs').insert({
+          campaign_id: campaignId,
+          merchant_id: campaign.merchant_id,
+          actor_type: 'system',
+          event_type: 'click_charged',
+          detail: { cost: cost, balance_after: balanceAfter, user_id: userId ?? null },
+        });
+      } catch (_) {
+        // 日志写入失败不阻塞主流程
+      }
+    }
     return jsonResponse({ success: true, charged: true });
   }
 
-  if (status === 'ok_low_balance') {
+  if (chargeStatus === 'ok_low_balance') {
+    // CPC 点击扣费成功但余额偏低，写入 click_charged 日志（fire-and-forget）
+    if (billingType === 'cpc' && eventType === 'click') {
+      try {
+        await supabase.from('ad_campaign_logs').insert({
+          campaign_id: campaignId,
+          merchant_id: campaign.merchant_id,
+          actor_type: 'system',
+          event_type: 'click_charged',
+          detail: { cost: cost, balance_after: balanceAfter, user_id: userId ?? null },
+        });
+      } catch (_) {
+        // 日志写入失败不阻塞主流程
+      }
+    }
     // 余额已低，异步触发低余额通知（不阻塞响应）
     triggerLowBalanceNotification(campaign.merchant_id);
     return jsonResponse({ success: true, charged: true });
   }
 
-  if (status === 'insufficient_balance') {
+  if (chargeStatus === 'insufficient_balance') {
     return jsonResponse({ success: true, charged: false, reason: 'insufficient_balance' });
   }
 
-  if (status === 'daily_budget_exceeded') {
+  if (chargeStatus === 'daily_budget_exceeded') {
+    // exhausted 日志已由 charge_ad_account SQL 函数内部写入，此处不重复写入（R22）
     return jsonResponse({ success: true, charged: false, reason: 'daily_budget_exceeded' });
   }
 
   // 未知状态码兜底
-  console.error('[record-ad-event] unexpected charge status:', status);
-  return errorResponse('unexpected_status', `Unexpected charge result: ${status}`, 500);
+  console.error('[record-ad-event] unexpected charge status:', chargeStatus);
+  return errorResponse('unexpected_status', `Unexpected charge result: ${chargeStatus}`, 500);
 });

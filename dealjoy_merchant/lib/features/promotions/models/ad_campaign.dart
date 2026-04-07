@@ -333,8 +333,8 @@ class AdCampaign {
     // splash 广告位额外传入素材与投放配置
     if (placement == 'splash') {
       if (creativeUrl != null) base['creative_url'] = creativeUrl;
-      if (splashLinkType != null) base['splash_link_type'] = splashLinkType;
-      if (splashLinkValue != null) base['splash_link_value'] = splashLinkValue;
+      base['splash_link_type'] = splashLinkType ?? 'none';
+      base['splash_link_value'] = splashLinkValue;
       base['splash_radius_meters'] = splashRadiusMeters;
     }
     return base;

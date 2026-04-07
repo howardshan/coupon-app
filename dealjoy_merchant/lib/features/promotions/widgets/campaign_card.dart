@@ -186,6 +186,96 @@ class CampaignCard extends StatelessWidget {
                   ),
                 ),
               ],
+
+              // exhausted 提示
+              if (campaign.status == CampaignStatus.exhausted) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF3E0),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.account_balance_wallet_outlined,
+                          size: 13, color: Color(0xFFE65100)),
+                      SizedBox(width: 4),
+                      Text(
+                        'Budget exhausted — recharge to resume',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Color(0xFFE65100),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+
+              // -----------------------------------------------
+              // 操作按钮：Pause/Resume + Delete
+              // -----------------------------------------------
+              if (campaign.status != CampaignStatus.adminPaused) ...[
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    // Pause / Resume 按钮
+                    if (campaign.status == CampaignStatus.active && onPause != null)
+                      Expanded(
+                        child: _ActionButton(
+                          icon: Icons.pause_rounded,
+                          label: 'Pause',
+                          color: const Color(0xFFFF9800),
+                          onTap: onPause!,
+                        ),
+                      ),
+                    if (campaign.status == CampaignStatus.paused && onResume != null)
+                      Expanded(
+                        child: _ActionButton(
+                          icon: Icons.play_arrow_rounded,
+                          label: 'Resume',
+                          color: const Color(0xFF4CAF50),
+                          onTap: onResume!,
+                        ),
+                      ),
+                    // Delete 按钮（先暂停再删除，或 paused/ended 直接删除）
+                    if (onDelete != null) ...[
+                      const SizedBox(width: 8),
+                      _ActionButton(
+                        icon: Icons.delete_outline,
+                        label: 'Delete',
+                        color: const Color(0xFFE53935),
+                        onTap: () async {
+                          if (campaign.status == CampaignStatus.active ||
+                              campaign.status == CampaignStatus.exhausted) {
+                            // active/exhausted 需先暂停
+                            if (onPause != null) {
+                              onPause!();
+                              // 提示用户暂停后再删除
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Campaign paused. Tap delete again to remove it.'),
+                                    behavior: SnackBarBehavior.floating,
+                                  ),
+                                );
+                              }
+                            }
+                          } else {
+                            // paused/ended 可直接删除
+                            final confirmed = await _confirmDelete(context);
+                            if (confirmed) onDelete!();
+                          }
+                        },
+                      ),
+                    ],
+                  ],
+                ),
+              ],
             ],
           ),
         ),
@@ -285,6 +375,54 @@ class CampaignCard extends StatelessWidget {
     return result ?? false;
   }
 
+}
+
+// =============================================================
+// _ActionButton — 操作按钮（Pause / Resume / Delete）
+// =============================================================
+class _ActionButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _ActionButton({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: color.withAlpha(77)),
+          color: color.withAlpha(15),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 16, color: color),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: color,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 // =============================================================

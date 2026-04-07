@@ -18,7 +18,10 @@ import '../providers/promotions_provider.dart';
 // 使用 ConsumerStatefulWidget 管理多步骤表单本地状态
 // =============================================================
 class CampaignCreatePage extends ConsumerStatefulWidget {
-  const CampaignCreatePage({super.key});
+  /// 从 promotions 主页传入的预选类型（'splash' / 'store_booster' / 'deal_booster'）
+  final String? campaignType;
+
+  const CampaignCreatePage({super.key, this.campaignType});
 
   @override
   ConsumerState<CampaignCreatePage> createState() =>
@@ -54,6 +57,9 @@ class _CampaignCreatePageState extends ConsumerState<CampaignCreatePage> {
   List<Map<String, dynamic>> _targetList = [];
   bool _isLoadingTargets = false;
 
+  // splash link type = deal 时的 active deal 列表
+  List<Map<String, dynamic>> _activeDeals = [];
+
   final _bidController   = TextEditingController();
   final _budgetController = TextEditingController();
 
@@ -62,6 +68,25 @@ class _CampaignCreatePageState extends ConsumerState<CampaignCreatePage> {
     super.initState();
     _bidController.text    = _bidPrice.toStringAsFixed(2);
     _budgetController.text = _dailyBudget.toStringAsFixed(0);
+
+    // 根据 campaignType 预设表单字段和起始步骤（R14）
+    final type = widget.campaignType;
+    if (type == 'splash') {
+      // splash：预设 target=store、placement='splash'，直接跳到 step 3（splash 配置）
+      // targetId 将在 _loadTargets 完成后自动填充为当前商家 ID
+      _targetType = 'store';
+      _placement = 'splash';
+      _currentStep = 3;
+    } else if (type == 'store_booster') {
+      // store_booster：预设 target=store，从 step 1 开始选门店
+      _targetType = 'store';
+      _currentStep = 1;
+    } else if (type == 'deal_booster') {
+      // deal_booster：预设 target=deal，从 step 1 开始选 deal
+      _targetType = 'deal';
+      _currentStep = 1;
+    }
+
     _loadTargets();
   }
 
@@ -91,17 +116,22 @@ class _CampaignCreatePageState extends ConsumerState<CampaignCreatePage> {
       final merchantId = merchantRow?['id'] as String? ?? '';
       if (merchantId.isEmpty) return;
 
+      // 始终加载 active deals（供 splash link type = deal 选择用）
+      final dealRows = await supabase
+          .from('deals')
+          .select('id, title, discount_price')
+          .eq('merchant_id', merchantId)
+          .eq('is_active', true)
+          .order('created_at', ascending: false)
+          .limit(50);
+      setState(() {
+        _activeDeals = List<Map<String, dynamic>>.from(dealRows as List);
+      });
+
       if (_targetType == 'deal') {
-        // 加载该商家的 Deal 列表
-        final rows = await supabase
-            .from('deals')
-            .select('id, title')
-            .eq('merchant_id', merchantId)
-            .eq('is_active', true)
-            .order('created_at', ascending: false)
-            .limit(50);
+        // deal booster 模式：直接复用已加载的 active deals
         setState(() {
-          _targetList = List<Map<String, dynamic>>.from(rows as List);
+          _targetList = _activeDeals;
         });
       } else {
         // store 模式：只展示当前门店本身
@@ -113,6 +143,11 @@ class _CampaignCreatePageState extends ConsumerState<CampaignCreatePage> {
         if (row != null) {
           setState(() {
             _targetList = [Map<String, dynamic>.from(row)];
+            // splash 模式：_loadTargets 完成后自动填充 targetId 为当前商家 ID（R14）
+            if (widget.campaignType == 'splash' && _targetId == null) {
+              _targetId   = row['id'] as String? ?? '';
+              _targetName = row['name'] as String? ?? 'My Store';
+            }
           });
         }
       }
@@ -250,7 +285,7 @@ class _CampaignCreatePageState extends ConsumerState<CampaignCreatePage> {
       adScore: 0,
       // splash 专属字段
       creativeUrl: _splashCreativeUrl,
-      splashLinkType: _splashLinkType == 'none' ? null : _splashLinkType,
+      splashLinkType: _splashLinkType,
       splashLinkValue: _splashLinkValue,
       splashRadiusMeters: _splashRadiusMeters,
       createdAt: DateTime.now(),
@@ -281,11 +316,23 @@ class _CampaignCreatePageState extends ConsumerState<CampaignCreatePage> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to create campaign: $e'),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
+        // 解析错误信息，提取 details 中的 error 字段
+        String message = '$e';
+        final detailMatch = RegExp(r'error:\s*(.+?)[},]').firstMatch(message);
+        if (detailMatch != null) {
+          message = detailMatch.group(1)?.trim() ?? message;
+        }
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Cannot Create Campaign'),
+            content: Text(message),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('OK'),
+              ),
+            ],
           ),
         );
       }
@@ -495,6 +542,26 @@ class _CampaignCreatePageState extends ConsumerState<CampaignCreatePage> {
   }
 
   // ----------------------------------------------------------
+  // 根据 campaignType 过滤广告位列表（R8/R13）
+  // ----------------------------------------------------------
+  List<AdPlacementConfig> _getFilteredPlacements(List<AdPlacementConfig> all) {
+    final type = widget.campaignType;
+    if (type == 'store_booster') {
+      // store_booster 仅展示门店相关广告位
+      return all.where((p) =>
+        ['home_store_top', 'category_store_top'].contains(p.placement)
+      ).toList();
+    } else if (type == 'deal_booster') {
+      // deal_booster 仅展示 deal 相关广告位（R8：不含 home_banner，CPM 计费不同）
+      return all.where((p) =>
+        ['home_deal_top', 'category_deal_top'].contains(p.placement)
+      ).toList();
+    }
+    // 无类型限制时显示全部
+    return all;
+  }
+
+  // ----------------------------------------------------------
   // Step 2: 选择广告位
   // ----------------------------------------------------------
   Widget _buildStep2SelectPlacement(
@@ -508,46 +575,50 @@ class _CampaignCreatePageState extends ConsumerState<CampaignCreatePage> {
         ),
         const SizedBox(height: 24),
         placementsAsync.when(
-          loading: () => const Center(child: CircularProgressIndicator(
-            color: Color(0xFFFF6B35),
-          )),
-          error: (_, _) => const Text('Failed to load placements'),
-          data: (configs) => ListView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: configs.length,
-            itemBuilder: (_, i) {
-              final config = configs[i];
-              return _PlacementOptionCard(
-                config: config,
-                isSelected: _placement == config.placement,
-                onTap: () async {
-                  // 选择广告位，若为 splash 则自动填充 target_id 为当前门店
-                  if (config.placement == 'splash') {
-                    final supabase = Supabase.instance.client;
-                    final user = supabase.auth.currentUser;
-                    if (user != null) {
-                      final row = await supabase
-                          .from('merchants')
-                          .select('id, name')
-                          .eq('user_id', user.id)
-                          .maybeSingle();
-                      if (mounted && row != null) {
-                        setState(() {
-                          _placement = config.placement;
-                          _targetId = row['id'] as String? ?? '';
-                          _targetName = row['name'] as String? ?? 'My Store';
-                          _targetType = 'store';
-                        });
-                        return;
+          loading: () => const Center(
+            child: CircularProgressIndicator(color: Color(0xFFFF6B35)),
+          ),
+          error: (e, st) => const Text('Failed to load placements'),
+          data: (configs) {
+            // 根据入口类型过滤广告位列表（R8/R13）
+            final filtered = _getFilteredPlacements(configs);
+            return ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: filtered.length,
+              itemBuilder: (_, i) {
+                final config = filtered[i];
+                return _PlacementOptionCard(
+                  config: config,
+                  isSelected: _placement == config.placement,
+                  onTap: () async {
+                    // 选择广告位，若为 splash 则自动填充 target_id 为当前门店
+                    if (config.placement == 'splash') {
+                      final supabase = Supabase.instance.client;
+                      final user = supabase.auth.currentUser;
+                      if (user != null) {
+                        final row = await supabase
+                            .from('merchants')
+                            .select('id, name')
+                            .eq('user_id', user.id)
+                            .maybeSingle();
+                        if (mounted && row != null) {
+                          setState(() {
+                            _placement = config.placement;
+                            _targetId = row['id'] as String? ?? '';
+                            _targetName = row['name'] as String? ?? 'My Store';
+                            _targetType = 'store';
+                          });
+                          return;
+                        }
                       }
                     }
-                  }
-                  setState(() => _placement = config.placement);
-                },
-              );
-            },
-          ),
+                    setState(() => _placement = config.placement);
+                  },
+                );
+              },
+            );
+          },
         ),
       ],
     );
@@ -692,8 +763,14 @@ class _CampaignCreatePageState extends ConsumerState<CampaignCreatePage> {
           return GestureDetector(
             onTap: () => setState(() {
               _splashLinkType = lt.$1;
-              // 切换类型时清空 value
-              if (_splashLinkType == 'none') _splashLinkValue = null;
+              // 切换类型时重置 value
+              _splashLinkValue = null;
+              splashLinkController.clear();
+              // merchant 类型：自动填充当前商家 ID
+              if (_splashLinkType == 'merchant' && _targetId != null) {
+                _splashLinkValue = _targetId;
+                splashLinkController.text = _targetId!;
+              }
             }),
             child: Container(
               margin: const EdgeInsets.only(bottom: 8),
@@ -739,24 +816,89 @@ class _CampaignCreatePageState extends ConsumerState<CampaignCreatePage> {
         }),
 
         // ------------------------------------------------
-        // Link Value 输入框（Link Type 非 none 时显示）
+        // Link Value（Link Type 非 none 时显示）
+        // deal: 选择列表 / merchant: 自动当前商家 / external: 输入 URL
         // ------------------------------------------------
-        if (_splashLinkType != 'none') ...[
+        if (_splashLinkType == 'deal') ...[
           const SizedBox(height: 16),
-          Text(
-            _splashLinkType == 'external' ? 'URL' : 'ID',
-            style: const TextStyle(
-                fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF1A1A2E)),
+          const Text(
+            'Select Deal',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF1A1A2E)),
+          ),
+          const SizedBox(height: 8),
+          if (_activeDeals.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.grey.shade200),
+              ),
+              child: const Text(
+                'No active deals available',
+                style: TextStyle(color: Colors.grey, fontSize: 14),
+                textAlign: TextAlign.center,
+              ),
+            )
+          else
+            ...(_activeDeals.map((deal) {
+              final dealId = deal['id'] as String;
+              final title = deal['title'] as String? ?? '';
+              final price = (deal['discount_price'] as num?)?.toDouble();
+              final isSelected = _splashLinkValue == dealId;
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Material(
+                  color: isSelected ? const Color(0xFFFFF3ED) : Colors.white,
+                  borderRadius: BorderRadius.circular(10),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(10),
+                    onTap: () => setState(() {
+                      _splashLinkValue = dealId;
+                      splashLinkController.text = dealId;
+                    }),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: isSelected ? const Color(0xFFFF6B35) : Colors.grey.shade200,
+                          width: isSelected ? 2 : 1,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                                if (price != null)
+                                  Text('\$${price.toStringAsFixed(2)}',
+                                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                              ],
+                            ),
+                          ),
+                          if (isSelected)
+                            const Icon(Icons.check_circle, color: Color(0xFFFF6B35), size: 22),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            })),
+        ] else if (_splashLinkType == 'external') ...[
+          const SizedBox(height: 16),
+          const Text(
+            'URL',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF1A1A2E)),
           ),
           const SizedBox(height: 8),
           TextField(
             controller: splashLinkController,
             decoration: InputDecoration(
-              hintText: _splashLinkType == 'external'
-                  ? 'https://example.com'
-                  : _splashLinkType == 'deal'
-                      ? 'Deal ID'
-                      : 'Merchant ID',
+              hintText: 'https://example.com',
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
@@ -766,6 +908,27 @@ class _CampaignCreatePageState extends ConsumerState<CampaignCreatePage> {
               fillColor: Colors.white,
             ),
             onChanged: (val) => setState(() => _splashLinkValue = val.isEmpty ? null : val),
+          ),
+        ] else if (_splashLinkType == 'merchant') ...[
+          // merchant 类型：自动填充当前商家 ID，显示提示
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.green.shade50,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.green.shade200),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.store, color: Colors.green.shade700, size: 20),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text('Will link to your store page',
+                      style: TextStyle(fontSize: 13, color: Color(0xFF2E7D32))),
+                ),
+              ],
+            ),
           ),
         ],
         const SizedBox(height: 24),
@@ -839,30 +1002,6 @@ class _CampaignCreatePageState extends ConsumerState<CampaignCreatePage> {
         ),
         const SizedBox(height: 24),
         if (config != null) ...[
-          // 出价范围提示
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF3F0FF),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.info_outline,
-                    size: 16, color: Color(0xFF7C4DFF)),
-                const SizedBox(width: 8),
-                Text(
-                  'Min: \$${config.minBid.toStringAsFixed(2)}'
-                  '  ·  Suggested: \$${config.suggestedBidLow.toStringAsFixed(2)}'
-                  ' – \$${config.suggestedBidHigh.toStringAsFixed(2)}',
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: Color(0xFF5E35B1),
-                  ),
-                ),
-              ],
-            ),
-          ),
           const SizedBox(height: 16),
         ],
         // 出价输入框
@@ -883,9 +1022,7 @@ class _CampaignCreatePageState extends ConsumerState<CampaignCreatePage> {
               borderRadius: BorderRadius.circular(10),
               borderSide: const BorderSide(color: Color(0xFFFF6B35)),
             ),
-            helperText: config != null
-                ? 'Minimum: \$${config.minBid.toStringAsFixed(2)}'
-                : null,
+            helperText: null,
           ),
           onChanged: (val) {
             final parsed = double.tryParse(val) ?? 0;

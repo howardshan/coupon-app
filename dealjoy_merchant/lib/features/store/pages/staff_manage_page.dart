@@ -296,10 +296,22 @@ class StaffManagePage extends ConsumerWidget {
               DropdownButtonFormField<StaffRole>(
                 key: const ValueKey('staff_invite_role_dropdown'),
                 value: selectedRole,
-                decoration: const InputDecoration(
+                isExpanded: true,
+                decoration: InputDecoration(
                   labelText: 'Role',
-                  border: OutlineInputBorder(),
+                  border: const OutlineInputBorder(),
+                  helperText: selectedRole.description,
+                  helperStyle: TextStyle(fontSize: 12, color: Colors.grey[500]),
                 ),
+                // 收起状态：只显示角色名，描述放 helperText
+                selectedItemBuilder: (context) {
+                  return StaffRole.values.map((role) {
+                    return Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(role.displayLabel),
+                    );
+                  }).toList();
+                },
                 items: StaffRole.values.map((role) {
                   return DropdownMenuItem(
                     value: role,
