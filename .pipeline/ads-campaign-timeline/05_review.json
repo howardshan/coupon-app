@@ -1,0 +1,58 @@
+{
+  "module": "ads-campaign-timeline",
+  "reviewed_files": [
+    "admin/app/(dashboard)/ads/[id]/page.tsx"
+  ],
+  "issues": [
+    {
+      "level": "P2",
+      "file": "admin/app/(dashboard)/ads/[id]/page.tsx",
+      "location": "行 281–287",
+      "description": "当 timelineEvents.length === 0 时，AdminActivityTimelineCard 内部已返回 null（组件自带 empty guard），后面的 fallback div 会正常渲染占位，不会出现双重渲染。逻辑正确，但可将空状态 UI 移入组件本身统一管理，本次保留现有方式。",
+      "fixed": false,
+      "reason": "仅为建议，不影响正确性"
+    }
+  ],
+  "p0_issues": [],
+  "p1_issues": [],
+  "p2_issues": [
+    {
+      "description": "空状态占位 UI 写在组件外部而非复用组件内部，轻微重复代码",
+      "fixed": false
+    }
+  ],
+  "changes_made": [
+    {
+      "type": "feature",
+      "description": "新增 ad_campaign_logs 查询，按 created_at 升序，最多 100 条",
+      "lines": "57–62"
+    },
+    {
+      "type": "feature",
+      "description": "添加 event_type → 英文标题映射表，覆盖全部 11 种事件类型",
+      "lines": "64–77"
+    },
+    {
+      "type": "feature",
+      "description": "将 campaignLogs 转换为 AdminActivityTimelineEntry[]，detail jsonb 展平为 key: value 副标题，过滤 null/空值",
+      "lines": "79–97"
+    },
+    {
+      "type": "feature",
+      "description": "在 Daily Stats 表格后追加 AdminActivityTimelineCard 时间线组件，有日志时渲染时间线，无日志时显示空状态占位",
+      "lines": "274–288"
+    },
+    {
+      "type": "import",
+      "description": "新增 AdminActivityTimelineCard 和 AdminActivityTimelineEntry 的 import",
+      "lines": "6–7"
+    }
+  ],
+  "security": {
+    "rls": "ad_campaign_logs 查询使用 serviceClient（service role），绕过 RLS，仅在已通过 admin role 鉴权后执行，安全",
+    "sql_injection": "无 raw SQL，全部使用 Supabase JS SDK 参数化查询",
+    "secret_leak": "无"
+  },
+  "ui_language_check": "所有 UI 文案均为英文，无中文字符串暴露到前端",
+  "verdict": "APPROVED"
+}

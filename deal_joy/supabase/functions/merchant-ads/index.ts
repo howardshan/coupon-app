@@ -15,6 +15,7 @@
 //   list_recharges       — 充值记录（支持分页）
 //   get_placement_config — 获取广告位配置（min_bid / is_enabled 等）
 //   get_splash_estimate  — 获取 splash 广告预估覆盖用户数
+//   list_campaign_logs   — 获取 Campaign 操作日志（分页）
 // ============================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2?target=deno';
@@ -25,6 +26,38 @@ const supabase = createClient(
   Deno.env.get('SUPABASE_URL') ?? '',
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
 );
+
+// ---------- 写入操作日志（fire-and-forget，不阻塞主流程） ----------
+// 参数说明:
+//   campaignId   — 被操作的 campaign ID
+//   merchantId   — 所属商家 ID
+//   userId       — 操作者 JWT user ID
+//   eventType    — 事件类型: created / updated / paused / resumed / deleted
+//   detail       — 附加信息（对象格式，依事件类型而异）
+function logCampaignEvent(
+  campaignId: string,
+  merchantId: string,
+  userId: string,
+  eventType: string,
+  detail: Record<string, unknown>,
+): void {
+  supabase
+    .from('ad_campaign_logs')
+    .insert({
+      campaign_id: campaignId,
+      merchant_id: merchantId,
+      actor_type: 'merchant',
+      actor_user_id: userId,
+      event_type: eventType,
+      detail,
+    })
+    .then(({ error }) => {
+      if (error) {
+        // 日志写入失败不影响主流程，仅打印错误
+        console.error(`[ad_campaign_logs] 写入日志失败 (${eventType}):`, error);
+      }
+    });
+}
 
 // ---------- 通用 CORS 响应头 ----------
 const corsHeaders = {
@@ -179,6 +212,7 @@ const SPLASH_VALID_RADII = [8047, 16093, 24140, 40234];
 // ============================================================
 async function handleCreateCampaign(
   merchantId: string,
+  userId: string,
   params: Record<string, unknown>
 ): Promise<Response> {
   const {
@@ -243,6 +277,18 @@ async function handleCreateCampaign(
 
   if (isNaN(dailyBudgetNum) || dailyBudgetNum < 10) {
     return errorResponse('daily_budget must be >= 10');
+  }
+
+  // R7: splash 广告位上线前需校验 is_enabled，管理员可在后台关闭此广告位
+  if (isSplash) {
+    const { data: splashConfig } = await supabase
+      .from('ad_placement_config')
+      .select('is_enabled')
+      .eq('placement', 'splash')
+      .single();
+    if (!splashConfig?.is_enabled) {
+      return errorResponse('Splash ads are currently disabled by admin');
+    }
   }
 
   // 1. 查询广告位配置，校验 min_bid
@@ -372,6 +418,14 @@ async function handleCreateCampaign(
     return errorResponse('Failed to create campaign', 500);
   }
 
+  // 写入操作日志（fire-and-forget）
+  logCampaignEvent(newCampaign.id, merchantId, userId, 'created', {
+    placement: placement as string,
+    target_type: target_type as string,
+    bid_price: bidPriceNum,
+    daily_budget: dailyBudgetNum,
+  });
+
   return jsonResponse({ campaign: newCampaign }, 201);
 }
 
@@ -384,6 +438,7 @@ async function handleCreateCampaign(
 // ============================================================
 async function handleUpdateCampaign(
   merchantId: string,
+  userId: string,
   params: Record<string, unknown>
 ): Promise<Response> {
   const campaignId = params.campaign_id as string;
@@ -620,6 +675,20 @@ async function handleUpdateCampaign(
     return errorResponse('Failed to update campaign', 500);
   }
 
+  // 计算实际发生变更的字段（before / after 对比），写入操作日志（fire-and-forget）
+  const changes: Array<{ field: string; before: unknown; after: unknown }> = [];
+  for (const field of Object.keys(updates)) {
+    const before = (campaign as Record<string, unknown>)[field];
+    const after = updates[field];
+    // 仅记录真正有差异的字段（JSON 序列化对比，避免类型差异误判）
+    if (JSON.stringify(before) !== JSON.stringify(after)) {
+      changes.push({ field, before, after });
+    }
+  }
+  if (changes.length > 0) {
+    logCampaignEvent(campaignId, merchantId, userId, 'updated', { changes });
+  }
+
   return jsonResponse({ campaign: updatedCampaign });
 }
 
@@ -630,6 +699,7 @@ async function handleUpdateCampaign(
 // ============================================================
 async function handlePauseCampaign(
   merchantId: string,
+  userId: string,
   params: Record<string, unknown>
 ): Promise<Response> {
   const campaignId = params.campaign_id as string;
@@ -674,6 +744,9 @@ async function handlePauseCampaign(
     return errorResponse('Failed to pause campaign', 500);
   }
 
+  // 写入暂停操作日志（fire-and-forget）
+  logCampaignEvent(campaignId, merchantId, userId, 'paused', {});
+
   return jsonResponse({ campaign: updatedCampaign });
 }
 
@@ -684,6 +757,7 @@ async function handlePauseCampaign(
 // ============================================================
 async function handleResumeCampaign(
   merchantId: string,
+  userId: string,
   params: Record<string, unknown>
 ): Promise<Response> {
   const campaignId = params.campaign_id as string;
@@ -746,6 +820,9 @@ async function handleResumeCampaign(
     return errorResponse('Failed to resume campaign', 500);
   }
 
+  // 写入恢复操作日志（fire-and-forget）
+  logCampaignEvent(campaignId, merchantId, userId, 'resumed', {});
+
   return jsonResponse({ campaign: updatedCampaign });
 }
 
@@ -756,6 +833,7 @@ async function handleResumeCampaign(
 // ============================================================
 async function handleDeleteCampaign(
   merchantId: string,
+  userId: string,
   params: Record<string, unknown>
 ): Promise<Response> {
   const campaignId = params.campaign_id as string;
@@ -793,6 +871,10 @@ async function handleDeleteCampaign(
     return errorResponse('Failed to delete campaign', 500);
   }
 
+  // 写入删除操作日志（fire-and-forget）
+  // 注意：campaign 已删除，使用删除前查询到的 campaign.merchant_id 记录
+  logCampaignEvent(campaignId, merchantId, userId, 'deleted', {});
+
   return jsonResponse({ success: true, deleted_campaign_id: campaignId });
 }
 
@@ -822,6 +904,67 @@ async function handleListRecharges(
 
   return jsonResponse({
     recharges: recharges ?? [],
+    total: count ?? 0,
+    page,
+    page_size: pageSize,
+    total_pages: Math.ceil((count ?? 0) / pageSize),
+  });
+}
+
+// ============================================================
+// action: list_campaign_logs — 获取 Campaign 操作日志
+// 参数: { campaign_id: string (必填), page?: number, page_size?: number }
+// 鉴权: 校验 campaign.merchant_id 属于当前 JWT 用户
+// 排序: created_at DESC
+// ============================================================
+async function handleListCampaignLogs(
+  merchantId: string,
+  params: Record<string, unknown>
+): Promise<Response> {
+  const campaignId = params.campaign_id as string;
+  if (!campaignId) {
+    return errorResponse('campaign_id is required');
+  }
+
+  // 校验 campaign 归属（与 get_campaign 一致）
+  const { data: campaign, error: fetchError } = await supabase
+    .from('ad_campaigns')
+    .select('id, merchant_id')
+    .eq('id', campaignId)
+    .maybeSingle();
+
+  if (fetchError) {
+    console.error('[list_campaign_logs] 查询 campaign 失败:', fetchError);
+    return errorResponse('Failed to fetch campaign', 500);
+  }
+
+  if (!campaign) {
+    return errorResponse('Campaign not found', 404);
+  }
+
+  // 安全校验：campaign 必须属于当前商家
+  if (campaign.merchant_id !== merchantId) {
+    return errorResponse('Unauthorized: campaign does not belong to this merchant', 403);
+  }
+
+  const page = Math.max(1, Number(params.page ?? 1));
+  const pageSize = Math.min(100, Math.max(1, Number(params.page_size ?? 50)));
+  const offset = (page - 1) * pageSize;
+
+  const { data: logs, error, count } = await supabase
+    .from('ad_campaign_logs')
+    .select('*', { count: 'exact' })
+    .eq('campaign_id', campaignId)
+    .order('created_at', { ascending: false })
+    .range(offset, offset + pageSize - 1);
+
+  if (error) {
+    console.error('[list_campaign_logs] 查询日志失败:', error);
+    return errorResponse('Failed to fetch campaign logs', 500);
+  }
+
+  return jsonResponse({
+    logs: logs ?? [],
     total: count ?? 0,
     page,
     page_size: pageSize,
@@ -953,6 +1096,9 @@ Deno.serve(async (req: Request) => {
     return errorResponse('Missing or invalid "action" field');
   }
 
+  // 从鉴权结果中获取 userId，用于操作日志
+  const userId = user.id;
+
   // 路由分发
   try {
     switch (action) {
@@ -966,19 +1112,19 @@ Deno.serve(async (req: Request) => {
         return await handleGetCampaign(merchantId, params);
 
       case 'create_campaign':
-        return await handleCreateCampaign(merchantId, params);
+        return await handleCreateCampaign(merchantId, userId, params);
 
       case 'update_campaign':
-        return await handleUpdateCampaign(merchantId, params);
+        return await handleUpdateCampaign(merchantId, userId, params);
 
       case 'pause_campaign':
-        return await handlePauseCampaign(merchantId, params);
+        return await handlePauseCampaign(merchantId, userId, params);
 
       case 'resume_campaign':
-        return await handleResumeCampaign(merchantId, params);
+        return await handleResumeCampaign(merchantId, userId, params);
 
       case 'delete_campaign':
-        return await handleDeleteCampaign(merchantId, params);
+        return await handleDeleteCampaign(merchantId, userId, params);
 
       case 'list_recharges':
         return await handleListRecharges(merchantId, params);
@@ -988,6 +1134,9 @@ Deno.serve(async (req: Request) => {
 
       case 'get_splash_estimate':
         return await handleGetSplashEstimate(params);
+
+      case 'list_campaign_logs':
+        return await handleListCampaignLogs(merchantId, params);
 
       default:
         return errorResponse(`Unknown action: ${action}`, 400);

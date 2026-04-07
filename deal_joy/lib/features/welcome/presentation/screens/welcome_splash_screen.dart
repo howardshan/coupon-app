@@ -98,27 +98,19 @@ class _WelcomeSplashScreenState extends ConsumerState<WelcomeSplashScreen>
           return;
         }
       } else {
-        debugPrint('[Splash] 无位置缓存，跳过竞价广告');
+        debugPrint('[Splash] 无位置缓存，直接进首页');
+        _navigateNext();
+        return;
       }
     } else {
-      debugPrint('[Splash] 今天已展示过竞价广告，跳过');
-    }
-
-    // ── Step 5: Fallback 到静态配置 ──
-    if (!mounted) return;
-    final config = await repo.fetchActiveSplashConfig();
-    debugPrint('[Splash] 静态配置: ${config?.slides.length ?? 'null'} slides');
-    if (!mounted) return;
-
-    if (config == null || config.slides.isEmpty) {
-      debugPrint('[Splash] 无配置，直接跳过');
+      debugPrint('[Splash] 今天已展示过竞价广告，直接进首页');
       _navigateNext();
       return;
     }
 
-    debugPrint('[Splash] 显示 ${config.slides.length} 张静态图片');
-    setState(() => _config = config);
-    _startCountdown();
+    // ── Step 5: 无竞价广告 → 直接进首页 ──
+    debugPrint('[Splash] 无竞价广告，直接进首页');
+    _navigateNext();
   }
 
   void _startCountdown() {

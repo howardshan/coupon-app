@@ -153,6 +153,23 @@ final campaignsProvider =
     AsyncNotifierProvider<CampaignsNotifier, List<AdCampaign>>(
         CampaignsNotifier.new);
 
+/// 活跃的 campaigns（active/paused/exhausted/admin_paused）
+final activeCampaignsProvider = Provider<List<AdCampaign>>((ref) {
+  final all = ref.watch(campaignsProvider).valueOrNull ?? [];
+  return all.where((c) =>
+    c.status == CampaignStatus.active ||
+    c.status == CampaignStatus.paused ||
+    c.status == CampaignStatus.exhausted ||
+    c.status == CampaignStatus.adminPaused
+  ).toList();
+});
+
+/// 过期的 campaigns（ended）
+final expiredCampaignsProvider = Provider<List<AdCampaign>>((ref) {
+  final all = ref.watch(campaignsProvider).valueOrNull ?? [];
+  return all.where((c) => c.status == CampaignStatus.ended).toList();
+});
+
 // =============================================================
 // placementConfigsProvider — 广告位配置
 // =============================================================

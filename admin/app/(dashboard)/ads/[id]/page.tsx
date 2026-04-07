@@ -3,6 +3,8 @@ import { getServiceRoleClient } from '@/lib/supabase/service'
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import CampaignDetailActions from './campaign-detail-actions'
+import AdminActivityTimelineCard from '@/components/admin-activity-timeline-card'
+import type { AdminActivityTimelineEntry } from '@/lib/admin-activity-timeline-types'
 
 export const dynamic = 'force-dynamic'
 
@@ -50,6 +52,49 @@ export default async function CampaignDetailPage({
     .eq('campaign_id', id)
     .order('stat_date', { ascending: false })
     .limit(30)
+
+  // 查询 campaign 操作日志（按时间升序，最多 100 条）
+  const { data: campaignLogs } = await serviceClient
+    .from('ad_campaign_logs')
+    .select('*')
+    .eq('campaign_id', id)
+    .order('created_at', { ascending: true })
+    .limit(100)
+
+  // event_type → 可读英文标题映射
+  const eventTypeLabel: Record<string, string> = {
+    created: 'Campaign created',
+    updated: 'Campaign updated',
+    paused: 'Campaign paused by merchant',
+    resumed: 'Campaign resumed',
+    deleted: 'Campaign deleted',
+    admin_paused: 'Paused by admin',
+    admin_resumed: 'Resumed by admin',
+    exhausted: 'Budget exhausted',
+    click_charged: 'Click charged',
+    splash_auto_paused: 'Auto-paused (splash disabled)',
+    splash_auto_resumed: 'Auto-resumed (splash enabled)',
+  }
+
+  // 将 campaignLogs 转换为 AdminActivityTimelineEntry 格式
+  const timelineEvents: AdminActivityTimelineEntry[] = (campaignLogs ?? []).map((log: any) => {
+    const label = eventTypeLabel[log.event_type as string] ?? log.event_type ?? 'Event'
+
+    // 将 detail jsonb 展平为 key: value 文字，忽略空值
+    let subtitle: string | undefined
+    if (log.detail && typeof log.detail === 'object' && Object.keys(log.detail).length > 0) {
+      const lines = Object.entries(log.detail)
+        .filter(([, v]) => v !== null && v !== undefined && v !== '')
+        .map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : String(v)}`)
+      if (lines.length > 0) subtitle = lines.join('\n')
+    }
+
+    return {
+      at: log.created_at as string,
+      title: label,
+      subtitle,
+    }
+  })
 
   // 汇总统计
   const totalSpend = (dailyStats ?? []).reduce((sum: number, s: any) => sum + Number(s.spend ?? 0), 0)
@@ -223,6 +268,22 @@ export default async function CampaignDetailPage({
         </table>
         {(!dailyStats || dailyStats.length === 0) && (
           <p className="text-center text-gray-400 py-8">No daily stats yet</p>
+        )}
+      </div>
+
+      {/* 操作时间线 */}
+      <div className="mt-6">
+        <AdminActivityTimelineCard
+          title="Activity Timeline"
+          footnote="All status changes and system events for this campaign"
+          events={timelineEvents}
+        />
+        {timelineEvents.length === 0 && (
+          <div className="rounded-2xl border border-slate-200/90 bg-white p-6 shadow-sm ring-1 ring-slate-900/[0.04]">
+            <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500 mb-1">Activity Timeline</h2>
+            <p className="text-xs text-slate-500 mb-4">All status changes and system events for this campaign</p>
+            <p className="text-center text-slate-400 py-4 text-sm">No activity logs yet</p>
+          </div>
         )}
       </div>
     </div>
