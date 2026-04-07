@@ -604,7 +604,10 @@ final appRouter = GoRouter(
       routes: [
         GoRoute(
           path: 'create',
-          builder: (context, state) => const CampaignCreatePage(),
+          // 通过 state.extra 传入 campaignType（'splash' / 'store_booster' / 'deal_booster'）
+          builder: (context, state) => CampaignCreatePage(
+            campaignType: state.extra as String?,
+          ),
         ),
         GoRoute(
           path: 'recharge',
