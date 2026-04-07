@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/errors/app_exception.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../after_sales/presentation/pages/after_sales_screen_args.dart';
 import '../../data/models/order_item_model.dart';
@@ -42,12 +43,10 @@ void showUsedRefundEntry(
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (ctx) => _DisputeRefundSheet(
+      builder: (sheetCtx) => _DisputeRefundSheet(
+        parentContext: context,
         item: item,
-        onSubmitted: () {
-          Navigator.pop(ctx);
-          onRefresh();
-        },
+        onRefresh: onRefresh,
       ),
     );
     return;
@@ -145,15 +144,24 @@ void showUsedRefundEntry(
 
 class _DisputeRefundSheet extends ConsumerStatefulWidget {
   const _DisputeRefundSheet({
+    required this.parentContext,
     required this.item,
-    required this.onSubmitted,
+    required this.onRefresh,
   });
 
+  /// 打开 bottom sheet 的页面 context，用于关闭弹窗后在主 Scaffold 上显示 SnackBar（避免被遮罩）
+  final BuildContext parentContext;
   final OrderItemModel item;
-  final VoidCallback onSubmitted;
+  final VoidCallback onRefresh;
 
   @override
   ConsumerState<_DisputeRefundSheet> createState() => _DisputeRefundSheetState();
+}
+
+String _disputeErrorMessage(Object? error) {
+  if (error == null) return 'Request failed. Please try again.';
+  if (error is AppException) return error.message;
+  return error.toString();
 }
 
 class _DisputeRefundSheetState extends ConsumerState<_DisputeRefundSheet> {
@@ -227,6 +235,8 @@ class _DisputeRefundSheetState extends ConsumerState<_DisputeRefundSheet> {
                   ? null
                   : () async {
                       if (!(_formKey.currentState?.validate() ?? false)) return;
+                      final sheetContext = context;
+                      final parentContext = widget.parentContext;
                       setState(() => _submitting = true);
                       final ok = await ref.read(refundNotifierProvider.notifier).submitRefundDispute(
                             widget.item.id,
@@ -234,26 +244,26 @@ class _DisputeRefundSheetState extends ConsumerState<_DisputeRefundSheet> {
                             couponId: widget.item.couponId,
                             orderId: widget.item.orderId,
                           );
-                      if (!context.mounted) return;
-                      setState(() => _submitting = false);
-                      if (ok) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Request submitted. The merchant will review it.'),
-                            behavior: SnackBarBehavior.floating,
-                          ),
-                        );
-                        widget.onSubmitted();
-                      } else {
-                        final err = ref.read(refundNotifierProvider).error;
-                        ScaffoldMessenger.of(context).showSnackBar(
+                      final err = ref.read(refundNotifierProvider).error;
+                      if (!sheetContext.mounted) return;
+                      // 先关弹窗再提示，避免 SnackBar 被 bottom sheet 挡住；此处不再 setState（即将 dispose）
+                      Navigator.of(sheetContext).pop();
+                      if (ok) widget.onRefresh();
+                      final String snackText = ok
+                          ? 'Request submitted. The merchant will review it.'
+                          : _disputeErrorMessage(err);
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (!parentContext.mounted) return;
+                        ScaffoldMessenger.of(parentContext).clearSnackBars();
+                        ScaffoldMessenger.of(parentContext).showSnackBar(
                           SnackBar(
-                            content: Text(err?.toString() ?? 'Request failed'),
-                            backgroundColor: AppColors.error,
+                            content: Text(snackText),
                             behavior: SnackBarBehavior.floating,
+                            duration: Duration(seconds: ok ? 4 : 6),
+                            backgroundColor: ok ? null : AppColors.error,
                           ),
                         );
-                      }
+                      });
                     },
               child: _submitting
                   ? const SizedBox(

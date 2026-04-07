@@ -403,9 +403,10 @@ class CouponsRepository {
   /// 从 FunctionException 中提取可读的错误信息
   String _extractFunctionError(FunctionException e) {
     final details = e.details;
-    if (details is Map && details.containsKey('error')) {
-      return details['error'].toString();
+    if (details is Map) {
+      if (details['error'] != null) return details['error'].toString();
+      if (details['message'] != null) return details['message'].toString();
     }
-    return 'Refund request failed (${e.status})';
+    return 'Request failed (HTTP ${e.status}). Check network or try again.';
   }
 }
