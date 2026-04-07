@@ -291,6 +291,8 @@ class _OrdersListPageState extends ConsumerState<OrdersListPage>
           return OrderTile(
             order: order,
             onTap: () {
+              // 列表返回后再进详情时确保重新请求（与 autoDispose 配合，避免陈旧券状态）
+              ref.invalidate(orderDetailProvider(order.id));
               Navigator.of(context).push(
                 MaterialPageRoute<void>(
                   builder: (_) => OrderDetailPage(orderId: order.id),

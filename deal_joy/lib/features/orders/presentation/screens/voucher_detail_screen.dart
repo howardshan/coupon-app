@@ -773,8 +773,12 @@ class _CouponDetailRow extends ConsumerWidget {
             List<String>? selectedItemIds}) async {
           final navigator = Navigator.of(context);
           final messenger = ScaffoldMessenger.of(context);
+          final String method =
+              item.showRefundRequest ? 'store_credit' : refundMethod;
           final List<OrderItemModel> itemsToCancel;
-          if (selectedItemIds != null && selectedItemIds.isNotEmpty) {
+          if (item.showRefundRequest) {
+            itemsToCancel = [item];
+          } else if (selectedItemIds != null && selectedItemIds.isNotEmpty) {
             final idSet = selectedItemIds.toSet();
             itemsToCancel =
                 sameDealUnused.where((i) => idSet.contains(i.id)).toList();
@@ -787,16 +791,20 @@ class _CouponDetailRow extends ConsumerWidget {
                 .read(refundNotifierProvider.notifier)
                 .requestItemRefund(
                   cancelItem.id,
-                  refundMethod: refundMethod,
+                  refundMethod: method,
                 );
             if (ok) successCount++;
           }
           navigator.pop();
           if (successCount > 0) {
+            final String msg = item.showRefundRequest
+                ? (successCount > 1
+                    ? '$successCount vouchers refunded to Store Credit'
+                    : 'Refunded to Store Credit successfully')
+                : '$successCount voucher${successCount > 1 ? 's' : ''} cancelled successfully';
             messenger.showSnackBar(
               SnackBar(
-                content: Text(
-                    '$successCount voucher${successCount > 1 ? 's' : ''} cancelled successfully'),
+                content: Text(msg),
                 behavior: SnackBarBehavior.floating,
               ),
             );
@@ -1445,6 +1453,19 @@ class _CancelSheetState extends ConsumerState<_CancelSheet> {
       ];
     }
 
+    if (!isCancel) {
+      return [
+        _RefundMethodOption(
+          selected: true,
+          title: 'Store Credit',
+          subtitle: 'Used vouchers refund to Store Credit only · Incl. service fee · Instant',
+          badge: 'Only Option',
+          badgeColor: AppColors.success,
+          onTap: () {},
+        ),
+      ];
+    }
+
     String originalPaymentSubtitle;
     if (_isPartialStoreCredit && isCancel) {
       final creditUsedFmt = widget.storeCreditUsed.toStringAsFixed(2);
@@ -1521,7 +1542,7 @@ class _CancelSheetState extends ConsumerState<_CancelSheet> {
           Text(
             isCancel
                 ? 'Choose how you would like to receive your refund.'
-                : 'You used this voucher. Choose a refund method.',
+                : 'You used this voucher. Refunds are credited to Store Credit only.',
             style: const TextStyle(
               fontSize: 13,
               color: AppColors.textSecondary,
