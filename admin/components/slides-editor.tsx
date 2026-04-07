@@ -1,6 +1,35 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
+
+// 通用图片上传 hook
+function useImageUpload(folder: string) {
+  const [uploading, setUploading] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  async function upload(file: File): Promise<string | null> {
+    setUploading(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('folder', folder)
+      const res = await fetch('/api/upload', { method: 'POST', body: formData })
+      const data = await res.json()
+      if (!res.ok) {
+        alert(data.message || 'Upload failed')
+        return null
+      }
+      return data.url as string
+    } catch {
+      alert('Upload failed')
+      return null
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  return { upload, uploading, inputRef }
+}
 
 // ── 通用类型 ──
 export interface WelcomeSlideData {
@@ -27,6 +56,8 @@ export function WelcomeSlidesEditor({
   durationSeconds: initialDuration,
   onDurationChange,
   durationLabel,
+  imageHint,
+  uploadFolder = 'splash',
 }: {
   slides: WelcomeSlideData[]
   onSave: (slides: WelcomeSlideData[]) => void
@@ -34,9 +65,12 @@ export function WelcomeSlidesEditor({
   durationSeconds?: number
   onDurationChange?: (v: number) => void
   durationLabel?: string
+  imageHint?: string
+  uploadFolder?: string
 }) {
   const [slides, setSlides] = useState<WelcomeSlideData[]>(initialSlides)
   const [editIdx, setEditIdx] = useState<number | null>(null)
+  const { upload, uploading, inputRef } = useImageUpload(uploadFolder)
 
   function addSlide() {
     const newSlide: WelcomeSlideData = {
@@ -147,14 +181,40 @@ export function WelcomeSlidesEditor({
           {editIdx === idx && (
             <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Image URL</label>
-                <input
-                  type="url"
-                  value={slide.image_url}
-                  onChange={e => updateSlide(idx, { image_url: e.target.value })}
-                  placeholder="https://..."
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                />
+                <label className="block text-xs font-medium text-gray-600 mb-1">Image</label>
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    value={slide.image_url}
+                    onChange={e => updateSlide(idx, { image_url: e.target.value })}
+                    placeholder="https://..."
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  />
+                  <input
+                    ref={inputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    className="hidden"
+                    onChange={async e => {
+                      const file = e.target.files?.[0]
+                      if (!file) return
+                      const url = await upload(file)
+                      if (url) updateSlide(idx, { image_url: url })
+                      e.target.value = ''
+                    }}
+                  />
+                  <button
+                    type="button"
+                    disabled={uploading}
+                    onClick={() => inputRef.current?.click()}
+                    className="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm whitespace-nowrap disabled:opacity-50"
+                  >
+                    {uploading ? 'Uploading...' : 'Upload'}
+                  </button>
+                </div>
+                <p className="mt-1 text-xs text-gray-400">
+                  {imageHint || 'Paste a URL or upload an image (max 5MB)'}
+                </p>
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Link Type</label>
@@ -224,6 +284,7 @@ export function OnboardingSlidesEditor({
 }) {
   const [slides, setSlides] = useState<OnboardingSlideData[]>(initialSlides)
   const [editIdx, setEditIdx] = useState<number | null>(null)
+  const { upload, uploading, inputRef } = useImageUpload('onboarding')
 
   function addSlide() {
     if (slides.length >= 5) return
@@ -299,10 +360,34 @@ export function OnboardingSlidesEditor({
           {editIdx === idx && (
             <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Image URL</label>
-                <input type="url" value={slide.image_url}
-                  onChange={e => updateSlide(idx, { image_url: e.target.value })}
-                  placeholder="https://..." className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                <label className="block text-xs font-medium text-gray-600 mb-1">Image</label>
+                <div className="flex gap-2">
+                  <input type="url" value={slide.image_url}
+                    onChange={e => updateSlide(idx, { image_url: e.target.value })}
+                    placeholder="https://..." className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                  <input
+                    ref={inputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    className="hidden"
+                    onChange={async e => {
+                      const file = e.target.files?.[0]
+                      if (!file) return
+                      const url = await upload(file)
+                      if (url) updateSlide(idx, { image_url: url })
+                      e.target.value = ''
+                    }}
+                  />
+                  <button
+                    type="button"
+                    disabled={uploading}
+                    onClick={() => inputRef.current?.click()}
+                    className="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm whitespace-nowrap disabled:opacity-50"
+                  >
+                    {uploading ? 'Uploading...' : 'Upload'}
+                  </button>
+                </div>
+                <p className="mt-1 text-xs text-gray-400">Paste a URL or upload an image (max 5MB)</p>
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Title</label>

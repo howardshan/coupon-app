@@ -46,6 +46,8 @@ export default function BannerConfigEditor({ config }: BannerConfigEditorProps) 
       durationSeconds={autoPlay}
       onDurationChange={setAutoPlay}
       durationLabel="Auto-play interval"
+      imageHint="Recommended: 1080×405 (16:6 landscape). Max 5MB."
+      uploadFolder="banner"
     />
   )
 }

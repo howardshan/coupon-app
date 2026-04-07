@@ -3,8 +3,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import RejectionHistory from '@/components/rejection-history'
 import DealOperationalActions from '@/components/deal-operational-actions'
-import AdminActivityTimelineCard from '@/components/admin-activity-timeline-card'
-import { buildDealTimeline } from '@/lib/deal-admin-timeline'
+import { CopyableId } from '@/components/copyable-id'
 
 /** 只允许回到订单相关页，避免开放重定向 */
 function isValidReturnTo(returnTo: string | null | undefined): boolean {
@@ -185,6 +184,7 @@ export default async function DealReviewPage({
               ← Back
             </Link>
             <h1 className="text-2xl font-bold text-gray-900">Deal Detail</h1>
+            <p className="text-xs text-gray-400 mt-1">ID: <CopyableId id={deal.id} showFull /></p>
           </div>
           {showDealOperations && (
             <div className="shrink-0">
