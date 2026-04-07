@@ -4,11 +4,14 @@
 // - 客服(service): Scan + Orders + Me (3 tab)
 // - 店长(manager): Dashboard + Scan + Orders + Me (4 tab)
 // - 门店老板/品牌管理员: 全部 (4 tab)
+// 启动时检查待签法律文档，有则弹出 ConsentBarrier
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'features/store/providers/store_provider.dart';
+import 'shared/providers/legal_provider.dart';
+import 'shared/widgets/consent_barrier.dart';
 
 /// 定义一个 Tab 项（路由 + 图标 + 标签 + 所需权限）
 class _TabItem {
@@ -72,13 +75,55 @@ const _allTabs = [
   ),
 ];
 
-class AppShell extends ConsumerWidget {
+class AppShell extends ConsumerStatefulWidget {
   final Widget child;
 
   const AppShell({super.key, required this.child});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<AppShell> createState() => _AppShellState();
+}
+
+class _AppShellState extends ConsumerState<AppShell> {
+  // 标记是否已弹出过 ConsentBarrier（避免重复弹出）
+  bool _consentChecked = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 仅在首次加载时触发一次 consent 检查
+    // 使用 addPostFrameCallback 确保在第一帧完成后再弹窗，避免 context 尚未挂载
+    if (!_consentChecked) {
+      _consentChecked = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _checkConsent();
+      });
+    }
+  }
+
+  /// 检查是否有待签法律文档，有则弹出 ConsentBarrier
+  Future<void> _checkConsent() async {
+    // 等待 provider 数据加载完成
+    final pending = await ref.read(pendingConsentsProvider.future);
+    if (pending.isNotEmpty && mounted) {
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const ConsentBarrier(),
+      );
+    }
+  }
+
+  /// 根据当前路由路径计算高亮 tab 下标
+  int _tabIndex(String location, List<_TabItem> tabs) {
+    for (var i = 0; i < tabs.length; i++) {
+      if (location.startsWith(tabs[i].path)) return i;
+    }
+    return 0; // 默认第一个
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final location = GoRouterState.of(context).matchedLocation;
 
     // 获取当前门店信息中的权限列表
@@ -101,7 +146,7 @@ class AppShell extends ConsumerWidget {
     final currentIndex = _tabIndex(location, visibleTabs);
 
     return Scaffold(
-      body: child,
+      body: widget.child,
       bottomNavigationBar: NavigationBar(
         selectedIndex: currentIndex,
         onDestinationSelected: (i) {
@@ -118,13 +163,5 @@ class AppShell extends ConsumerWidget {
             .toList(),
       ),
     );
-  }
-
-  /// 根据当前路由路径计算高亮 tab 下标
-  int _tabIndex(String location, List<_TabItem> tabs) {
-    for (var i = 0; i < tabs.length; i++) {
-      if (location.startsWith(tabs[i].path)) return i;
-    }
-    return 0; // 默认第一个
   }
 }

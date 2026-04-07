@@ -1,6 +1,7 @@
 // 商家注册多步骤向导页
 // 5个步骤: 账号注册 → 公司信息 → 类别选择 → 证件上传 → 地址与提交
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geocoding/geocoding.dart';
@@ -10,6 +11,7 @@ import '../models/merchant_application.dart';
 import '../providers/merchant_auth_provider.dart';
 import '../widgets/category_selector.dart';
 import '../widgets/document_upload_tile.dart';
+import '../../../shared/widgets/legal_document_screen.dart';
 
 // ============================================================
 // MerchantRegisterPage — 多步骤注册向导（ConsumerWidget）
@@ -71,6 +73,9 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
 
   // 记录每个证件上传是否在加载中
   final Map<DocumentType, bool> _uploadingMap = {};
+
+  // 最后一步：用户是否勾选了法律协议复选框
+  bool _agreementAccepted = false;
 
   static const _primaryOrange = Color(0xFFFF6B35);
   static const _bgColor = Color(0xFFF8F9FA);
@@ -745,37 +750,101 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
         color: Colors.white,
         border: Border(top: BorderSide(color: Color(0xFFE0E0E0))),
       ),
-      child: SizedBox(
-        width: double.infinity,
-        height: 52,
-        child: ElevatedButton(
-          key: ValueKey(isLastStep ? 'register_submit_btn' : 'register_next_btn'),
-          onPressed: isLoading ? null : _handleNext,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: _primaryOrange,
-            foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-            disabledBackgroundColor: _primaryOrange.withAlpha(128),
-          ),
-          child: isLoading
-              ? const SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: CircularProgressIndicator(
-                    color: Colors.white,
-                    strokeWidth: 2.5,
-                  ),
-                )
-              : Text(
-                  isLastStep ? 'Submit for Review' : 'Next',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // 最后一步才显示法律协议复选框
+          if (isLastStep)
+            CheckboxListTile(
+              value: _agreementAccepted,
+              onChanged: isLoading
+                  ? null
+                  : (v) => setState(() => _agreementAccepted = v ?? false),
+              controlAffinity: ListTileControlAffinity.leading,
+              contentPadding: EdgeInsets.zero,
+              title: Text.rich(
+                TextSpan(
+                  style: const TextStyle(fontSize: 13),
+                  children: [
+                    const TextSpan(text: 'I agree to the '),
+                    TextSpan(
+                      text: 'Merchant Agreement',
+                      style: const TextStyle(
+                        color: Color(0xFF1A73E8),
+                        decoration: TextDecoration.underline,
+                      ),
+                      recognizer: TapGestureRecognizer()
+                        ..onTap = () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const LegalDocumentScreen(
+                                slug: 'merchant-agreement',
+                                title: 'Merchant Agreement',
+                              ),
+                            ),
+                          );
+                        },
+                    ),
+                    const TextSpan(text: ' and '),
+                    TextSpan(
+                      text: 'Terms of Service',
+                      style: const TextStyle(
+                        color: Color(0xFF1A73E8),
+                        decoration: TextDecoration.underline,
+                      ),
+                      recognizer: TapGestureRecognizer()
+                        ..onTap = () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const LegalDocumentScreen(
+                                slug: 'terms-of-service',
+                                title: 'Terms of Service',
+                              ),
+                            ),
+                          );
+                        },
+                    ),
+                  ],
                 ),
-        ),
+              ),
+            ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            height: 52,
+            child: ElevatedButton(
+              key: ValueKey(isLastStep ? 'register_submit_btn' : 'register_next_btn'),
+              // 最后一步需额外满足协议勾选
+              onPressed: isLoading || (isLastStep && !_agreementAccepted)
+                  ? null
+                  : _handleNext,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _primaryOrange,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                disabledBackgroundColor: _primaryOrange.withAlpha(128),
+              ),
+              child: isLoading
+                  ? const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2.5,
+                      ),
+                    )
+                  : Text(
+                      isLastStep ? 'Submit for Review' : 'Next',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+            ),
+          ),
+        ],
       ),
     );
   }

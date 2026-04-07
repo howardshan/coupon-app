@@ -22,6 +22,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
 
   File? _pickedImage;
   String? _currentAvatarUrl;
+  DateTime? _dateOfBirth;
   bool _initialized = false;
 
   @override
@@ -43,6 +44,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
         _nameCtrl.text = user.fullName ?? '';
         _bioCtrl.text = user.bio ?? '';
         _currentAvatarUrl = user.avatarUrl;
+        _dateOfBirth = user.dateOfBirth;
         _initialized = true;
       }
     });
@@ -113,6 +115,67 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                 maxLines: 3,
                 onChanged: (_) => setState(() {}),
               ),
+              const SizedBox(height: 16),
+
+              // Date of Birth（生日选择器）
+              GestureDetector(
+                onTap: () async {
+                  final now = DateTime.now();
+                  final picked = await showDatePicker(
+                    context: context,
+                    initialDate: _dateOfBirth ?? DateTime(now.year - 18, now.month, now.day),
+                    firstDate: DateTime(1900),
+                    lastDate: now,
+                    helpText: 'SELECT YOUR DATE OF BIRTH',
+                  );
+                  if (picked != null) {
+                    setState(() => _dateOfBirth = picked);
+                  }
+                },
+                child: AbsorbPointer(
+                  child: TextFormField(
+                    decoration: const InputDecoration(
+                      labelText: 'Date of Birth',
+                      hintText: 'MM/DD/YYYY',
+                      prefixIcon: Icon(Icons.cake_outlined, size: 20),
+                      border: OutlineInputBorder(),
+                    ),
+                    controller: TextEditingController(
+                      text: _dateOfBirth != null
+                          ? '${_dateOfBirth!.month.toString().padLeft(2, '0')}/${_dateOfBirth!.day.toString().padLeft(2, '0')}/${_dateOfBirth!.year}'
+                          : '',
+                    ),
+                    validator: (_) {
+                      if (_dateOfBirth == null) {
+                        return 'Date of birth is required';
+                      }
+                      final age = DateTime.now().difference(_dateOfBirth!).inDays ~/ 365;
+                      if (age < 18) {
+                        return 'You must be at least 18 years old';
+                      }
+                      return null;
+                    },
+                  ),
+                ),
+              ),
+              // 未满 18 岁警告
+              if (_dateOfBirth != null &&
+                  DateTime.now().difference(_dateOfBirth!).inDays ~/ 365 < 18)
+                const Padding(
+                  padding: EdgeInsets.only(top: 6, left: 4),
+                  child: Row(
+                    children: [
+                      Icon(Icons.warning_amber_rounded, size: 14, color: AppColors.error),
+                      SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          'You must be at least 18 years old to use Crunchy Plum.',
+                          style: TextStyle(fontSize: 12, color: AppColors.error),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
             ],
           ),
         ),
@@ -231,6 +294,18 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
 
     final user = ref.read(currentUserProvider).valueOrNull;
     if (user == null) return;
+
+    // 如果生日有变化，先保存生日
+    if (_dateOfBirth != null && _dateOfBirth != user.dateOfBirth) {
+      try {
+        await ref.read(profileRepositoryProvider).updateDateOfBirth(
+          userId: user.id,
+          dateOfBirth: _dateOfBirth!,
+        );
+      } catch (_) {
+        // 不阻塞其他 profile 保存
+      }
+    }
 
     final success = await ref.read(profileEditProvider.notifier).saveProfile(
       userId: user.id,
