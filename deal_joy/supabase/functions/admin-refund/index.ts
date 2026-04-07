@@ -135,7 +135,7 @@ Deno.serve(async (req) => {
     // 查询申请，确认状态为 pending_admin（含退款金额、关联订单信息用于发邮件）
     const { data: refundReq, error: rrError } = await serviceClient
       .from('refund_requests')
-      .select('id, status, order_id, refund_amount, user_id, orders!inner(order_number)')
+      .select('id, status, order_id, order_item_id, refund_amount, user_id, orders!inner(order_number)')
       .eq('id', refundRequestId)
       .single();
 
@@ -182,11 +182,13 @@ Deno.serve(async (req) => {
         })
         .eq('id', refundRequestId);
 
-      // 更新订单状态（execute-refund 已更新，这里作为保障再更新一次）
-      await serviceClient
-        .from('orders')
-        .update({ status: 'refunded', refunded_at: now, updated_at: now })
-        .eq('id', refundReq.order_id);
+      // 单笔争议 Store Credit 不更新整单状态（避免 V3 多单混状态）
+      if (!refundReq.order_item_id) {
+        await serviceClient
+          .from('orders')
+          .update({ status: 'refunded', refunded_at: now, updated_at: now })
+          .eq('id', refundReq.order_id);
+      }
 
       return jsonResponse({ success: true, status: 'approved_admin' });
     } else {
@@ -201,17 +203,22 @@ Deno.serve(async (req) => {
         })
         .eq('id', refundRequestId);
 
-      // 更新订单状态 → refund_rejected
-      await serviceClient
-        .from('orders')
-        .update({ status: 'refund_rejected', updated_at: now })
-        .eq('id', refundReq.order_id);
+      if (!refundReq.order_item_id) {
+        await serviceClient
+          .from('orders')
+          .update({ status: 'refund_rejected', updated_at: now })
+          .eq('id', refundReq.order_id);
 
-      // 更新关联券状态 → used（恢复为已使用，不可退款）
-      await serviceClient
-        .from('coupons')
-        .update({ status: 'used' })
-        .eq('order_id', refundReq.order_id);
+        await serviceClient
+          .from('coupons')
+          .update({ status: 'used' })
+          .eq('order_id', refundReq.order_id);
+      } else {
+        await serviceClient
+          .from('coupons')
+          .update({ status: 'used', updated_at: now })
+          .eq('order_item_id', refundReq.order_item_id);
+      }
 
       // 发送 C14 管理员最终拒绝退款通知邮件
       try {

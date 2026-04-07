@@ -1,7 +1,5 @@
 // Edge Function: execute-refund (内部调用)
-// 执行实际的 Stripe 退款操作
-// 由 merchant-orders/refund-requests/:id PATCH（商家批准）和 admin-refund（管理员批准）调用
-// 不对外暴露给普通用户
+// 执行退款：order_item + store_credit 争议单走单笔入账；否则走 Stripe 整单 legacy 路径
 
 import Stripe from 'https://esm.sh/stripe@14?target=deno';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2?target=deno';
@@ -39,10 +37,18 @@ Deno.serve(async (req) => {
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
     const serviceClient = createClient(supabaseUrl, serviceRoleKey);
 
-    // 查询退款申请（含关联订单）
     const { data: refundReq, error: rrError } = await serviceClient
       .from('refund_requests')
-      .select('id, order_id, refund_amount, status, orders(payment_intent_id, is_captured, total_amount)')
+      .select(`
+        id,
+        order_id,
+        order_item_id,
+        refund_amount,
+        status,
+        refund_method,
+        user_reason,
+        orders(payment_intent_id, is_captured, total_amount, user_id)
+      `)
       .eq('id', refundRequestId)
       .single();
 
@@ -53,7 +59,6 @@ Deno.serve(async (req) => {
       );
     }
 
-    // 幂等性检查：已完成则直接返回成功
     if (refundReq.status === 'completed') {
       return new Response(
         JSON.stringify({ success: true, message: 'Already completed' }),
@@ -61,7 +66,96 @@ Deno.serve(async (req) => {
       );
     }
 
-    const order = refundReq.orders as { payment_intent_id: string; is_captured: boolean; total_amount: number } | null;
+    const now = new Date().toISOString();
+    const orderItemId = refundReq.order_item_id as string | null | undefined;
+    const refundMethod = refundReq.refund_method as string | null | undefined;
+
+    // ── 单笔 Store Credit（submit-refund-dispute + order_item_id）────────────────
+    if (orderItemId && refundMethod === 'store_credit') {
+      const order = refundReq.orders as {
+        user_id: string;
+      } | null;
+      if (!order?.user_id) {
+        return new Response(
+          JSON.stringify({ error: 'Order user not found' }),
+          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
+
+      const { data: line, error: lineErr } = await serviceClient
+        .from('order_items')
+        .select('id, order_id')
+        .eq('id', orderItemId)
+        .single();
+
+      if (lineErr || !line || line.order_id !== refundReq.order_id) {
+        return new Response(
+          JSON.stringify({ error: 'Order item mismatch' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
+
+      const refundAmount = Number(refundReq.refund_amount);
+      const desc = String(refundReq.user_reason ?? '').trim() || 'Refund dispute approved';
+
+      const { error: rpcErr } = await serviceClient.rpc('add_store_credit', {
+        p_user_id: order.user_id,
+        p_amount: refundAmount,
+        p_order_item_id: orderItemId,
+        p_description: desc,
+      });
+
+      if (rpcErr) {
+        console.error('[execute-refund] add_store_credit (item) error:', rpcErr);
+        return new Response(
+          JSON.stringify({ error: 'Failed to add store credit' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
+
+      await serviceClient
+        .from('order_items')
+        .update({
+          customer_status: 'refund_success',
+          refunded_at: now,
+          refund_amount: refundAmount,
+          refund_method: 'store_credit',
+          refund_reason: desc,
+          updated_at: now,
+        })
+        .eq('id', orderItemId);
+
+      await serviceClient
+        .from('coupons')
+        .update({ status: 'refunded', updated_at: now })
+        .eq('order_item_id', orderItemId);
+
+      const decidedField = approvedBy === 'admin' ? 'admin_decided_at' : 'merchant_decided_at';
+      await serviceClient
+        .from('refund_requests')
+        .update({
+          status: 'completed',
+          [decidedField]: now,
+          updated_at: now,
+        })
+        .eq('id', refundRequestId);
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          mode: 'store_credit_item',
+          refundAmount,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
+    // ── Legacy：整单 Stripe 退款 ───────────────────────────────────────────────
+    const order = refundReq.orders as {
+      payment_intent_id: string;
+      is_captured: boolean;
+      total_amount: number;
+    } | null;
     if (!order) {
       return new Response(
         JSON.stringify({ error: 'Order not found' }),
@@ -69,19 +163,16 @@ Deno.serve(async (req) => {
       );
     }
 
-    const now = new Date().toISOString();
     let refundId: string;
     let refundStatus: string;
 
     try {
       if (!order.is_captured) {
-        // 预授权未扣款 → 取消授权
         const cancelled = await stripe.paymentIntents.cancel(order.payment_intent_id);
         refundId = cancelled.id;
         refundStatus = cancelled.status;
         console.log(`[execute-refund] cancelled pre-auth pi=${order.payment_intent_id}`);
       } else {
-        // 已扣款 → 标准 Stripe 退款
         const refundAmountCents = Math.round(Number(refundReq.refund_amount) * 100);
         const refund = await stripe.refunds.create({
           payment_intent: order.payment_intent_id,
@@ -93,7 +184,6 @@ Deno.serve(async (req) => {
         console.log(`[execute-refund] stripe refund created refund=${refundId}`);
       }
     } catch (stripeErr) {
-      // Stripe 失败 → 标记 refund_failed（不更新 refund_requests 状态，保留在审批状态）
       const message = stripeErr instanceof Error ? stripeErr.message : 'Stripe refund failed';
       console.error('[execute-refund] stripe error:', message);
       return new Response(
@@ -102,18 +192,16 @@ Deno.serve(async (req) => {
       );
     }
 
-    // 更新退款申请 → completed
-    const completedStatus = approvedBy === 'admin' ? 'approved_admin' : 'approved_merchant';
+    const decidedField = approvedBy === 'admin' ? 'admin_decided_at' : 'merchant_decided_at';
     await serviceClient
       .from('refund_requests')
       .update({
         status: 'completed',
-        [`${completedStatus === 'approved_merchant' ? 'merchant' : 'admin'}_decided_at`]: now,
+        [decidedField]: now,
         updated_at: now,
       })
       .eq('id', refundRequestId);
 
-    // 更新订单 → refunded
     await serviceClient
       .from('orders')
       .update({
@@ -123,7 +211,6 @@ Deno.serve(async (req) => {
       })
       .eq('id', refundReq.order_id);
 
-    // 更新 payments 表
     await serviceClient
       .from('payments')
       .update({
@@ -132,7 +219,6 @@ Deno.serve(async (req) => {
       })
       .eq('order_id', refundReq.order_id);
 
-    // 更新关联券状态 → refunded
     await serviceClient
       .from('coupons')
       .update({ status: 'refunded' })

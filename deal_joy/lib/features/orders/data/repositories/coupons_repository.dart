@@ -200,6 +200,29 @@ class CouponsRepository {
     }
   }
 
+  /// 已核销券 24h 内争议退款 — submit-refund-dispute（需商家/平台审批后入账）
+  Future<Map<String, dynamic>> submitRefundDispute({
+    required String orderItemId,
+    required String reason,
+  }) async {
+    try {
+      final response = await _client.functions.invoke(
+        'submit-refund-dispute',
+        body: {
+          'orderItemId': orderItemId,
+          'reason': reason.trim(),
+        },
+      );
+      return _parseRefundResponse(response);
+    } on AppException {
+      rethrow;
+    } on FunctionException catch (e) {
+      throw AppException(_extractFunctionError(e));
+    } catch (e) {
+      throw AppException('Refund dispute failed: $e');
+    }
+  }
+
   /// V3：通过 orderItemId 直接请求退款（供 OrdersRepository/Provider 使用）
   Future<Map<String, dynamic>> requestRefundByItemId(
     String orderItemId, {

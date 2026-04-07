@@ -17,6 +17,7 @@ import '../../data/models/order_item_model.dart';
 import '../../domain/providers/orders_provider.dart';
 import '../../domain/providers/coupons_provider.dart';
 import '../widgets/gift_bottom_sheet.dart';
+import '../widgets/used_refund_entry.dart';
 
 // ── 未使用券 QR 码弹窗 ────────────────────────────
 
@@ -810,7 +811,12 @@ class _CouponDetailRow extends ConsumerWidget {
                   _SmallButton(
                     label: 'Refund',
                     color: AppColors.warning,
-                    onTap: () => _showCancelSheet(context, ref, item),
+                    onTap: () => showUsedRefundEntry(
+                      context,
+                      ref,
+                      item,
+                      onRefresh: onRefreshOrder,
+                    ),
                   ),
                 if (item.showWriteReview)
                   _SmallButton(
@@ -943,13 +949,8 @@ class _CouponDetailRow extends ConsumerWidget {
         onConfirm: (refundMethod, {int cancelCount = 1, List<String>? selectedItemIds}) async {
           final navigator = Navigator.of(context);
           final messenger = ScaffoldMessenger.of(context);
-          // 已核销券：只退当前这一条，且仅 Store Credit（与 create-refund 一致）
-          final String method =
-              item.showRefundRequest ? 'store_credit' : refundMethod;
           final List<OrderItemModel> itemsToCancel;
-          if (item.showRefundRequest) {
-            itemsToCancel = [item];
-          } else if (selectedItemIds != null && selectedItemIds.isNotEmpty) {
+          if (selectedItemIds != null && selectedItemIds.isNotEmpty) {
             final idSet = selectedItemIds.toSet();
             itemsToCancel = sameDealUnused.where((i) => idSet.contains(i.id)).toList();
           } else {
@@ -961,17 +962,14 @@ class _CouponDetailRow extends ConsumerWidget {
                 .read(refundNotifierProvider.notifier)
                 .requestItemRefund(
                   cancelItem.id,
-                  refundMethod: method,
+                  refundMethod: refundMethod,
                 );
             if (ok) successCount++;
           }
           navigator.pop();
           if (successCount > 0) {
-            final String msg = item.showRefundRequest
-                ? (successCount > 1
-                    ? '$successCount vouchers refunded to Store Credit'
-                    : 'Refunded to Store Credit successfully')
-                : '$successCount voucher${successCount > 1 ? 's' : ''} cancelled successfully';
+            final String msg =
+                '$successCount voucher${successCount > 1 ? 's' : ''} cancelled successfully';
             messenger.showSnackBar(
               SnackBar(
                 content: Text(msg),
@@ -1704,8 +1702,8 @@ class _CancelSheetState extends ConsumerState<_CancelSheet> {
     }
   }
 
-  /// 根据支付方式构建退款选项列表
-  List<Widget> _buildRefundOptions(bool isCancel) {
+  /// 根据支付方式构建退款选项列表（本 Sheet 仅用于未使用券取消）
+  List<Widget> _buildRefundOptions() {
     if (_isPaidByStoreCredit) {
       // 全额 Store Credit 支付：只能退回 Store Credit
       return [
@@ -1720,41 +1718,23 @@ class _CancelSheetState extends ConsumerState<_CancelSheet> {
       ];
     }
 
-    // 已核销券仅可退回 Store Credit（create-refund 拒绝 original_payment）
-    if (!isCancel) {
-      return [
-        _RefundMethodOption(
-          selected: true,
-          title: 'Store Credit',
-          subtitle: 'Used vouchers refund to Store Credit only · Incl. service fee · Instant',
-          badge: 'Only Option',
-          badgeColor: AppColors.success,
-          onTap: () {},
-        ),
-      ];
-    }
-
     // 混合支付时的 Original Payment 说明文案
     String originalPaymentSubtitle;
-    if (_isPartialStoreCredit && isCancel) {
+    if (_isPartialStoreCredit) {
       final creditUsedFmt = widget.storeCreditUsed.toStringAsFixed(2);
       originalPaymentSubtitle =
           'Store Credit portion (\$$creditUsedFmt) refunds to Store Credit first, '
           'remainder to card\n'
           'Service fee non-refundable · 5-10 business days';
     } else {
-      originalPaymentSubtitle = isCancel
-          ? 'Excluding service fee · 5-10 business days'
-          : '5-10 business days to original card';
+      originalPaymentSubtitle = 'Excluding service fee · 5-10 business days';
     }
 
     return [
       _RefundMethodOption(
         selected: _selectedMethod == 'store_credit',
         title: 'Store Credit',
-        subtitle: isCancel
-            ? 'Full amount incl. service fee · Instant'
-            : 'Processed within 1-2 business days',
+        subtitle: 'Full amount incl. service fee · Instant',
         badge: 'Recommended',
         badgeColor: AppColors.success,
         onTap: () => setState(() => _selectedMethod = 'store_credit'),
@@ -1771,7 +1751,6 @@ class _CancelSheetState extends ConsumerState<_CancelSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final isCancel = widget.item.showCancel;
     final totalUnused = widget.totalUnusedCount;
 
     return Padding(
@@ -1799,20 +1778,18 @@ class _CancelSheetState extends ConsumerState<_CancelSheet> {
           const SizedBox(height: 20),
 
           // 标题
-          Text(
-            isCancel ? 'Cancel Voucher' : 'Request Refund',
-            style: const TextStyle(
+          const Text(
+            'Cancel Voucher',
+            style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w700,
               color: AppColors.textPrimary,
             ),
           ),
           const SizedBox(height: 8),
-          Text(
-            isCancel
-                ? 'Choose how you would like to receive your refund.'
-                : 'You used this voucher. Refunds are credited to Store Credit only.',
-            style: const TextStyle(
+          const Text(
+            'Choose how you would like to receive your refund.',
+            style: TextStyle(
               fontSize: 13,
               color: AppColors.textSecondary,
             ),
@@ -1982,7 +1959,7 @@ class _CancelSheetState extends ConsumerState<_CancelSheet> {
           const SizedBox(height: 20),
 
           // 判断是否全额 Store Credit 支付（payment_intent_id 含 store_credit）
-          ..._buildRefundOptions(isCancel),
+          ..._buildRefundOptions(),
           const SizedBox(height: 24),
 
           // 确认按钮（全额 Store Credit 时自动锁定为 store_credit）

@@ -136,18 +136,19 @@ Deno.serve(async (req) => {
       );
     }
 
-    // 退款资格校验
-    // - unused: 允许两种退款方式
-    // - used: 核销后仅允许 store_credit（售后走线下）
-    // - 其他状态（refund_success / refund_processing / expired 等）：拒绝
-    if (customerStatus === 'used' && refundMethod === 'original_payment') {
+    // 退款资格：仅未使用券可走本函数即时退款；已核销须 submit-refund-dispute + 商家/平台审批后再由 execute-refund 入账
+    if (customerStatus === 'used') {
       return new Response(
-        JSON.stringify({ error: 'Used coupons can only be refunded via store credit' }),
+        JSON.stringify({
+          error:
+            'Redeemed coupons require merchant approval. Submit a refund dispute in the app within 24 hours of redemption.',
+          code: 'use_submit_refund_dispute',
+        }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
 
-    if (customerStatus !== 'unused' && customerStatus !== 'used') {
+    if (customerStatus !== 'unused') {
       return new Response(
         JSON.stringify({ error: `Cannot refund item with status: ${customerStatus}` }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
