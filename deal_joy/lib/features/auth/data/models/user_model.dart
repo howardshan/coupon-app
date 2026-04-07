@@ -8,6 +8,7 @@ class UserModel {
   final String? phone;
   final String role; // 'user' | 'merchant' | 'admin'
   final String registrationSource; // 'email' | 'google' | 'apple'
+  final DateTime? dateOfBirth;
   final DateTime? lastLoginAt;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -22,6 +23,7 @@ class UserModel {
     this.phone,
     this.role = 'user',
     this.registrationSource = 'email',
+    this.dateOfBirth,
     this.lastLoginAt,
     required this.createdAt,
     required this.updatedAt,
@@ -37,6 +39,9 @@ class UserModel {
     phone: json['phone'] as String?,
     role: json['role'] as String? ?? 'user',
     registrationSource: json['registration_source'] as String? ?? 'email',
+    dateOfBirth: json['date_of_birth'] != null
+        ? DateTime.parse(json['date_of_birth'] as String)
+        : null,
     lastLoginAt: json['last_login_at'] != null
         ? DateTime.parse(json['last_login_at'] as String)
         : null,
@@ -54,6 +59,7 @@ class UserModel {
     'phone': phone,
     'role': role,
     'registration_source': registrationSource,
+    'date_of_birth': dateOfBirth?.toIso8601String().split('T').first,
     'last_login_at': lastLoginAt?.toIso8601String(),
     'created_at': createdAt.toIso8601String(),
     'updated_at': updatedAt.toIso8601String(),
@@ -65,6 +71,7 @@ class UserModel {
     String? avatarUrl,
     String? bio,
     String? phone,
+    DateTime? dateOfBirth,
     DateTime? lastLoginAt,
   }) => UserModel(
     id: id,
@@ -76,6 +83,7 @@ class UserModel {
     phone: phone ?? this.phone,
     role: role,
     registrationSource: registrationSource,
+    dateOfBirth: dateOfBirth ?? this.dateOfBirth,
     lastLoginAt: lastLoginAt ?? this.lastLoginAt,
     createdAt: createdAt,
     updatedAt: updatedAt,

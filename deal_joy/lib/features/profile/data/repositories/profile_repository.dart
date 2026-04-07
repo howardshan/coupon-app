@@ -37,4 +37,15 @@ class ProfileRepository {
 
     await _client.from('users').update(updates).eq('id', userId);
   }
+
+  /// 更新用户生日
+  Future<void> updateDateOfBirth({
+    required String userId,
+    required DateTime dateOfBirth,
+  }) async {
+    await _client.from('users').update({
+      'date_of_birth': dateOfBirth.toIso8601String().split('T').first,
+      'updated_at': DateTime.now().toIso8601String(),
+    }).eq('id', userId);
+  }
 }

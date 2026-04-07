@@ -1,0 +1,106 @@
+{
+  "module": "admin-legal",
+  "reviewed_at": "2026-04-07",
+  "reviewer": "claude-sonnet-4-6",
+  "summary": "发现并修复 7 处 P0/P1 级别问题，涵盖重复 import、API 返回值字段名不匹配、函数调用签名不一致、缺失 import 等。",
+  "issues": [
+    {
+      "id": "LEGAL-001",
+      "severity": "P0",
+      "file": "app/(dashboard)/users/[id]/page.tsx",
+      "line": "14-19",
+      "type": "重复 import",
+      "description": "ConsentStatusCard、LegalTimeline、getUserConsentStatus、getUserLegalTimeline 各被 import 了两次，会导致 TypeScript 编译错误。",
+      "fix": "删除重复的 3 行 import，保留首次出现的一组。",
+      "status": "fixed"
+    },
+    {
+      "id": "LEGAL-002",
+      "severity": "P0",
+      "file": "app/(dashboard)/users/[id]/page.tsx",
+      "line": "130",
+      "type": "API 返回字段名不匹配",
+      "description": "解构 getUserLegalTimeline 返回值时使用 { entries: legalTimeline }，但函数实际返回 { items, total, page, pageSize, totalPages }，字段 entries 不存在，legalTimeline 会是 undefined，传给 LegalTimeline 组件后渲染出错。",
+      "fix": "改为 { items: legalTimeline, total: legalTotal }。",
+      "status": "fixed"
+    },
+    {
+      "id": "LEGAL-003",
+      "severity": "P0",
+      "file": "app/(dashboard)/merchants/[id]/page.tsx",
+      "line": "216",
+      "type": "API 返回字段名不匹配",
+      "description": "同 LEGAL-002，getUserLegalTimeline 返回 items 不是 entries。",
+      "fix": "改为 { items: legalTimeline, total: legalTotal }。",
+      "status": "fixed"
+    },
+    {
+      "id": "LEGAL-004",
+      "severity": "P1",
+      "file": "app/(dashboard)/merchants/[id]/page.tsx",
+      "line": "1-11",
+      "type": "缺失 import",
+      "description": "MerchantAdminVisibilityActions（line 446）、AdminActivityTimelineCard（line 454）、buildMerchantTimeline（line 211）均在文件中使用但没有 import，会导致编译失败。",
+      "fix": "在 import 区块末尾补充这三个 import。",
+      "status": "fixed"
+    },
+    {
+      "id": "LEGAL-005",
+      "severity": "P0",
+      "file": "components/legal-timeline.tsx",
+      "line": "205-237",
+      "type": "函数调用签名不一致",
+      "description": "客户端调用 getUserLegalTimeline(userId, { eventType, limit, offset }) 使用对象形式传参，但服务端函数签名是 (userId: string, page: number, pageSize: number, eventTypeFilter?: string)，两者不匹配会在运行时得到错误结果（page 被传入一个对象，导致分页计算错误）。另外 result.data 字段不存在，正确字段是 result.items。",
+      "fix": "将调用改为位置参数形式，并把 result.data 改为 result.items。",
+      "status": "fixed"
+    },
+    {
+      "id": "LEGAL-006",
+      "severity": "P0",
+      "file": "components/legal-timeline.tsx",
+      "line": "243-264",
+      "type": "API 返回字段名不匹配",
+      "description": "exportUserLegalTimeline 返回 { format, data, filename }，但调用方使用 result.content（字段不存在），导致 downloadBlob 接收 undefined 生成空文件。",
+      "fix": "改为 result.data 和 result.filename。",
+      "status": "fixed"
+    },
+    {
+      "id": "LEGAL-007",
+      "severity": "P0",
+      "file": "app/(dashboard)/settings/legal/[slug]/legal-doc-editor.tsx",
+      "line": "85, 106, 128",
+      "type": "函数第一参数错误（id 传入期望 slug 的参数位）",
+      "description": "saveDraft(document.id)、publishVersion(document.id)、updateDocumentSettings(document.id) 均把 document.id（UUID）传给第一参数，但函数定义要求第一参数是 slug（字符串标识符），Supabase 查询 .eq('slug', slug) 匹配 UUID 会找不到记录，操作静默失败。另外 handlePublish 中 result?.version?.version 字段路径错误，正确字段是 result.publishedVersion。",
+      "fix": "三处均改为 document.slug；toast 中版本号改为 result.publishedVersion；删除对 versions 状态的本地 push（返回值 version 是 number 非 LegalDocVersion 对象，类型不兼容）。",
+      "status": "fixed"
+    }
+  ],
+  "no_issues": [
+    {
+      "file": "app/actions/legal.ts",
+      "note": "crypto import 正确（createHash from 'crypto'），全局 crypto.randomUUID() 在 Node.js 18+ 可用。'use server' 声明正确。Supabase 查询均为参数化查询，无 SQL 注入风险。RLS 绕过通过 service role client，逻辑正确。"
+    },
+    {
+      "file": "app/(dashboard)/settings/legal/page.tsx",
+      "note": "Server Component，权限校验完整，无 'use client' 标记，params 无需 Promise 格式（非动态路由段）。"
+    },
+    {
+      "file": "app/(dashboard)/settings/legal/[slug]/page.tsx",
+      "note": "params: Promise<{ slug: string }> 格式正确（Next.js 15 App Router 要求）。权限校验完整。LegalDocEditor client 组件 import 路径正确。"
+    },
+    {
+      "file": "components/consent-status-card.tsx",
+      "note": "'use client' 标记正确。类型定义完整，无中文 UI 字符串。"
+    },
+    {
+      "file": "components/sidebar.tsx",
+      "note": "Legal Docs 导航项已正确添加（href: '/settings/legal'，label: 'Legal Docs'），位于 Settings 分组下。逻辑无问题。"
+    }
+  ],
+  "stats": {
+    "P0_count": 6,
+    "P1_count": 1,
+    "P2_count": 0,
+    "total_fixed": 7
+  }
+}

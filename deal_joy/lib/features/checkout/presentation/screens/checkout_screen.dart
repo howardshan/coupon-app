@@ -1,4 +1,5 @@
 import 'dart:math' show min;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,6 +9,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/errors/app_exception.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/widgets/app_button.dart';
+import '../../../../shared/widgets/legal_document_screen.dart';
 import '../../../auth/domain/providers/auth_provider.dart';
 import '../../../cart/data/models/cart_item_model.dart';
 import '../../../cart/domain/providers/cart_provider.dart';
@@ -323,6 +325,18 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       return;
     }
 
+    // 年龄检查：未满 18 岁禁止交易
+    if (user?.dateOfBirth != null) {
+      final age = DateTime.now().difference(user!.dateOfBirth!).inDays ~/ 365;
+      if (age < 18) {
+        _showPaymentFailedDialog('You must be at least 18 years old to make a purchase.');
+        return;
+      }
+    } else {
+      _showDateOfBirthRequiredDialog();
+      return;
+    }
+
     setState(() => _isProcessing = true);
     try {
       final repo = ref.read(checkoutRepositoryProvider);
@@ -401,6 +415,18 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     final userId = user?.id;
     if (userId == null || userId.isEmpty) {
       _showPaymentFailedDialog('Please sign in to complete your purchase.');
+      return;
+    }
+
+    // 年龄检查：未满 18 岁禁止交易
+    if (user?.dateOfBirth != null) {
+      final age = DateTime.now().difference(user!.dateOfBirth!).inDays ~/ 365;
+      if (age < 18) {
+        _showPaymentFailedDialog('You must be at least 18 years old to make a purchase.');
+        return;
+      }
+    } else {
+      _showDateOfBirthRequiredDialog();
       return;
     }
 
@@ -545,6 +571,33 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx),
             child: const Text('Try Again'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 生日缺失引导弹窗 — 引导用户去 Edit Profile 补填
+  void _showDateOfBirthRequiredDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Date of Birth Required'),
+        content: const Text(
+          'You must provide your date of birth before making a purchase. '
+          'Please update your profile to continue.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              context.push('/profile/edit');
+            },
+            child: const Text('Go to Profile'),
           ),
         ],
       ),
@@ -829,7 +882,55 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                   : _payCart,
               icon: Icons.lock_outline,
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
+            // 法律条款声明 — 购物车模式
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: Text.rich(
+                TextSpan(
+                  style: const TextStyle(fontSize: 11, color: Colors.grey, height: 1.4),
+                  children: [
+                    const TextSpan(text: 'By confirming payment, you agree to our '),
+                    TextSpan(
+                      text: 'Terms of Service',
+                      style: const TextStyle(
+                        color: Color(0xFF1A73E8),
+                        decoration: TextDecoration.underline,
+                      ),
+                      recognizer: TapGestureRecognizer()
+                        ..onTap = () {
+                          Navigator.of(context).push(MaterialPageRoute(
+                            builder: (_) => const LegalDocumentScreen(
+                              slug: 'terms-of-service',
+                              title: 'Terms of Service',
+                            ),
+                          ));
+                        },
+                    ),
+                    const TextSpan(text: ' and '),
+                    TextSpan(
+                      text: 'Refund Policy',
+                      style: const TextStyle(
+                        color: Color(0xFF1A73E8),
+                        decoration: TextDecoration.underline,
+                      ),
+                      recognizer: TapGestureRecognizer()
+                        ..onTap = () {
+                          Navigator.of(context).push(MaterialPageRoute(
+                            builder: (_) => const LegalDocumentScreen(
+                              slug: 'refund-policy',
+                              title: 'Refund Policy',
+                            ),
+                          ));
+                        },
+                    ),
+                    const TextSpan(text: '.'),
+                  ],
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            const SizedBox(height: 6),
             const Center(
               child: Text(
                 'ENCRYPTED SSL CONNECTION',

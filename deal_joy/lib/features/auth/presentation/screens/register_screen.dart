@@ -8,6 +8,8 @@ import '../../../../shared/widgets/app_button.dart';
 import '../../../../shared/widgets/app_text_field.dart';
 import '../../../auth/domain/providers/auth_provider.dart';
 import '../widgets/password_strength_indicator.dart';
+import '../../../../shared/widgets/legal_document_screen.dart';
+import '../../../../shared/providers/legal_provider.dart';
 
 class RegisterScreen extends ConsumerStatefulWidget {
   const RegisterScreen({super.key});
@@ -29,6 +31,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   // 用于实时监听密码强度和确认密码匹配
   String _passwordValue = '';
   String _confirmPasswordValue = '';
+
+  // 生日
+  DateTime? _dateOfBirth;
 
   // 服务条款是否勾选
   bool _tosAccepted = false;
@@ -137,8 +142,14 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     super.dispose();
   }
 
-  // 注册按钮是否可用：表单合法 + 服务条款已勾选
-  bool get _canSubmit => _tosAccepted;
+  // 注册按钮是否可用：表单合法 + 生日满 18 岁 + 服务条款已勾选
+  bool get _canSubmit {
+    if (!_tosAccepted) return false;
+    if (_dateOfBirth == null) return false;
+    final age = DateTime.now().difference(_dateOfBirth!).inDays ~/ 365;
+    if (age < 18) return false;
+    return true;
+  }
 
   // 密码策略校验：最少 8 字符、含大写、小写、数字、符号
   String? _validatePassword(String? v) {
@@ -172,11 +183,17 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     if (_usernameTaken == true || _usernameChecking) return;
     if (_emailTaken == true || _emailChecking) return;
 
+    // 验证生日已填写且满 18 岁
+    if (_dateOfBirth == null) return;
+    final age = DateTime.now().difference(_dateOfBirth!).inDays ~/ 365;
+    if (age < 18) return;
+
     await ref.read(authNotifierProvider.notifier).signUp(
           _emailCtrl.text.trim(),
           _passwordCtrl.text,
           _fullNameCtrl.text.trim(),
           username: _usernameCtrl.text.trim(),
+          dateOfBirth: _dateOfBirth!.toIso8601String().split('T').first,
         );
 
     if (mounted) {
@@ -189,7 +206,24 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
           _formKey.currentState!.validate();
         }
       } else {
-        // signUp 成功：登出 session，跳转到 OTP 验证码页面
+        // signUp 成功：记录用户对法律文档的同意（不阻塞注册流程）
+        try {
+          final legalRepo = ref.read(legalRepositoryProvider);
+          await legalRepo.recordConsent(
+            documentSlug: 'terms-of-service',
+            consentMethod: 'registration',
+            triggerContext: 'registration',
+          );
+          await legalRepo.recordConsent(
+            documentSlug: 'privacy-policy',
+            consentMethod: 'registration',
+            triggerContext: 'registration',
+          );
+        } catch (_) {
+          // 不阻塞注册流程
+        }
+
+        // 登出 session，跳转到 OTP 验证码页面
         await ref.read(authNotifierProvider.notifier).signOut();
 
         if (mounted) {
@@ -363,6 +397,70 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                 ),
                 const SizedBox(height: 16),
 
+                // ---- Date of Birth 字段 ----
+                GestureDetector(
+                  onTap: () async {
+                    final now = DateTime.now();
+                    final picked = await showDatePicker(
+                      context: context,
+                      initialDate: _dateOfBirth ?? DateTime(now.year - 18, now.month, now.day),
+                      firstDate: DateTime(1900),
+                      lastDate: now,
+                      helpText: 'SELECT YOUR DATE OF BIRTH',
+                    );
+                    if (picked != null) {
+                      setState(() => _dateOfBirth = picked);
+                    }
+                  },
+                  child: AbsorbPointer(
+                    child: TextFormField(
+                      key: const ValueKey('register_dob_field'),
+                      decoration: InputDecoration(
+                        labelText: 'Date of Birth',
+                        hintText: 'MM/DD/YYYY',
+                        prefixIcon: const Icon(Icons.cake_outlined, size: 20),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      controller: TextEditingController(
+                        text: _dateOfBirth != null
+                            ? '${_dateOfBirth!.month.toString().padLeft(2, '0')}/${_dateOfBirth!.day.toString().padLeft(2, '0')}/${_dateOfBirth!.year}'
+                            : '',
+                      ),
+                      validator: (_) {
+                        if (_dateOfBirth == null) {
+                          return 'Date of birth is required';
+                        }
+                        final age = DateTime.now().difference(_dateOfBirth!).inDays ~/ 365;
+                        if (age < 18) {
+                          return 'You must be at least 18 years old to register';
+                        }
+                        return null;
+                      },
+                    ),
+                  ),
+                ),
+                // 未满 18 岁警告
+                if (_dateOfBirth != null &&
+                    DateTime.now().difference(_dateOfBirth!).inDays ~/ 365 < 18)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 6, left: 4),
+                    child: Row(
+                      children: [
+                        Icon(Icons.warning_amber_rounded, size: 14, color: AppColors.error),
+                        SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            'You must be at least 18 years old to use Crunchy Plum.',
+                            style: TextStyle(fontSize: 12, color: AppColors.error),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                const SizedBox(height: 16),
+
                 // ---- Email 字段 ----
                 AppTextField(
                   key: const ValueKey('register_email_field'),
@@ -520,7 +618,15 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                               // 预留 Terms of Service 跳转（暂未实现）
                               recognizer: TapGestureRecognizer()
                                 ..onTap = () {
-                                  // TODO: 跳转到服务条款页面
+                                  // 跳转到服务条款页面
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) => const LegalDocumentScreen(
+                                        slug: 'terms-of-service',
+                                        title: 'Terms of Service',
+                                      ),
+                                    ),
+                                  );
                                 },
                             ),
                             const TextSpan(text: ' and '),
@@ -534,7 +640,15 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                               // 预留隐私政策跳转（暂未实现）
                               recognizer: TapGestureRecognizer()
                                 ..onTap = () {
-                                  // TODO: 跳转到隐私政策页面
+                                  // 跳转到隐私政策页面
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) => const LegalDocumentScreen(
+                                        slug: 'privacy-policy',
+                                        title: 'Privacy Policy',
+                                      ),
+                                    ),
+                                  );
                                 },
                             ),
                           ],

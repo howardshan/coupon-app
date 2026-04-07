@@ -50,6 +50,7 @@ const adminNav: NavEntry[] = [
       { href: '/settings/email-types', label: 'Email Types' },
       { href: '/settings/email-logs', label: 'Email Logs' },
       { href: '/settings/algorithm', label: 'Algorithm' },
+      { href: '/settings/legal', label: 'Legal Docs' },
     ],
   },
 ]

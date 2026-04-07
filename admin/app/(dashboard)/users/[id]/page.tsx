@@ -11,6 +11,9 @@ import UserBillingAddressesPanel, {
 } from '@/components/user-billing-addresses-panel'
 import UserStoreCreditPanel from '@/components/user-store-credit-panel'
 import { mapStoreCreditTransaction } from '@/lib/store-credit-map'
+import ConsentStatusCard from '@/components/consent-status-card'
+import LegalTimeline from '@/components/legal-timeline'
+import { getUserConsentStatus, getUserLegalTimeline } from '@/app/actions/legal'
 
 export default async function UserDetailPage({
   params,
@@ -29,7 +32,7 @@ export default async function UserDetailPage({
   // 用户基本信息
   const { data: userInfo } = await supabase
     .from('users')
-    .select('id, email, full_name, role, avatar_url, bio, phone, username, created_at, updated_at, last_login_at, registration_source')
+    .select('id, email, full_name, role, avatar_url, bio, phone, username, date_of_birth, created_at, updated_at, last_login_at, registration_source')
     .eq('id', id)
     .single()
 
@@ -119,6 +122,10 @@ export default async function UserDetailPage({
     mapStoreCreditTransaction(r as unknown as Record<string, unknown>)
   )
 
+  // 法律合规数据
+  const consentStatus = await getUserConsentStatus(id)
+  const { items: legalTimeline, total: legalTotal } = await getUserLegalTimeline(id, 1, 20)
+
   return (
     <div className="space-y-6">
       {/* 顶部导航 */}
@@ -174,6 +181,19 @@ export default async function UserDetailPage({
                 <div>
                   <dt className="text-xs font-medium text-gray-500">Registration source</dt>
                   <dd className="mt-0.5 text-gray-900">{userInfo.registration_source}</dd>
+                </div>
+              )}
+              {userInfo.date_of_birth && (
+                <div>
+                  <dt className="text-xs font-medium text-gray-500">Date of Birth</dt>
+                  <dd className="mt-0.5 text-gray-900">
+                    {new Date(userInfo.date_of_birth + 'T00:00:00').toLocaleDateString('en-US')}
+                    {(() => {
+                      const dob = new Date(userInfo.date_of_birth + 'T00:00:00')
+                      const age = Math.floor((Date.now() - dob.getTime()) / (365.25 * 24 * 60 * 60 * 1000))
+                      return <span className={`ml-2 text-xs px-1.5 py-0.5 rounded ${age < 18 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}>{age} yrs{age < 18 ? ' — Under 18' : ''}</span>
+                    })()}
+                  </dd>
                 </div>
               )}
               {userInfo.last_login_at && (
@@ -250,6 +270,15 @@ export default async function UserDetailPage({
             </div>
           </div>
         </aside>
+      </div>
+
+      {/* ── Legal Compliance ── */}
+      <div className="mt-10">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Legal Compliance</h2>
+        <ConsentStatusCard items={consentStatus} />
+        <div className="mt-6">
+          <LegalTimeline userId={id} initialData={legalTimeline} totalCount={legalTotal} />
+        </div>
       </div>
     </div>
   )
