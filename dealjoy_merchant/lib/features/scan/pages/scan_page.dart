@@ -10,7 +10,6 @@ import 'package:go_router/go_router.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import '../models/coupon_info.dart';
 import '../providers/scan_provider.dart';
-import 'coupon_verify_page.dart';
 
 class ScanPage extends ConsumerStatefulWidget {
   const ScanPage({super.key});
@@ -104,12 +103,8 @@ class _ScanPageState extends ConsumerState<ScanPage>
     state.when(
       data: (couponInfo) {
         if (couponInfo != null) {
-          // 跳转到确认页
-          Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => CouponVerifyPage(couponInfo: couponInfo),
-            ),
-          );
+          // 与 go_router 子路由一致，避免 Material 栈残留导致「再扫一次」仍显示确认页
+          context.push('/scan/verify', extra: couponInfo);
         }
       },
       error: (e, _) {
