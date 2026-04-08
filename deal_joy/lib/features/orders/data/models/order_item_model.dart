@@ -219,6 +219,34 @@ class OrderItemModel {
   /// 已使用后可申请售后退款
   bool get showRefundRequest => customerStatus == CustomerItemStatus.used;
 
+  /// 核销后 24h 内：走争议退款（submit-refund-dispute），与 Edge 校验窗口一致
+  bool get isInDisputeRefundWindow {
+    if (customerStatus != CustomerItemStatus.used) return false;
+    final r = redeemedAt;
+    if (r == null) return false;
+    final cutoff = DateTime.now().toUtc().subtract(const Duration(hours: 24));
+    return !r.toUtc().isBefore(cutoff);
+  }
+
+  /// 核销超过 24h 且在 7 天内：走 After-sales 表单
+  bool get isInAfterSalesRefundWindow {
+    if (customerStatus != CustomerItemStatus.used) return false;
+    final r = redeemedAt;
+    if (r == null) return false;
+    final now = DateTime.now().toUtc();
+    final afterDispute = now.subtract(const Duration(hours: 24));
+    final afterSalesEnd = now.subtract(const Duration(days: 7));
+    return r.toUtc().isBefore(afterDispute) && !r.toUtc().isBefore(afterSalesEnd);
+  }
+
+  /// 已超过 7 天售后窗口
+  bool get isPastAfterSalesRefundWindow {
+    if (customerStatus != CustomerItemStatus.used) return false;
+    final r = redeemedAt;
+    if (r == null) return false;
+    return r.toUtc().isBefore(DateTime.now().toUtc().subtract(const Duration(days: 7)));
+  }
+
   /// 已使用后可写评价
   bool get showWriteReview => customerStatus == CustomerItemStatus.used;
 

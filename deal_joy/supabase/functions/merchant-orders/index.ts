@@ -1144,7 +1144,7 @@ async function handleRefundRequestDecision(
   // 查询退款申请，确认属于该商家且状态为 pending_merchant
   const { data: refundReq, error: rrError } = await client
     .from('refund_requests')
-    .select('id, status, order_id, merchant_id')
+    .select('id, status, order_id, merchant_id, order_item_id')
     .eq('id', refundRequestId)
     .single();
 
@@ -1207,11 +1207,13 @@ async function handleRefundRequestDecision(
       })
       .eq('id', refundRequestId);
 
-    // 更新订单状态 → refund_pending_admin
-    await client
-      .from('orders')
-      .update({ status: 'refund_pending_admin', updated_at: now })
-      .eq('id', refundReq.order_id);
+    // 单笔 order_item 争议：不修改整单 orders.status，避免多单订单被误标
+    if (!refundReq.order_item_id) {
+      await client
+        .from('orders')
+        .update({ status: 'refund_pending_admin', updated_at: now })
+        .eq('id', refundReq.order_id);
+    }
 
     return jsonResponse({ success: true, status: 'pending_admin' });
   }

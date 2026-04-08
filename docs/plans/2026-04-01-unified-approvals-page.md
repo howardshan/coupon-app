@@ -10,10 +10,12 @@
 
 ## 变更记录
 
-| 版本 | 日期 | 变更内容 |
-|-----|------|---------|
-| v1.0 | 2026-04-01 | 初稿 |
+
+| 版本   | 日期         | 变更内容                                                                             |
+| ---- | ---------- | -------------------------------------------------------------------------------- |
+| v1.0 | 2026-04-01 | 初稿                                                                               |
 | v1.2 | 2026-04-02 | 根据用户确认更新：① `/after-sales` 整合后完全删除；② 原有页面审批按钮全部移除；③ Deal 上架支持批量审批；④ 补充两种退款流程的区别说明 |
+
 
 ---
 
@@ -23,21 +25,23 @@
 
 当前 admin portal 中，需要管理员介入的审批流共有 **4 种**，分散在不同页面：
 
-| 审批类型 | 数据来源 | 触发状态 | 当前入口 | 存在问题 |
-|---------|---------|---------|---------|---------|
-| 商家注册申请 | `merchants` + `merchant_documents` | `status = 'pending'` | `/merchants` 列表 + `/merchants/[id]` | 与已批准/已拒绝商家混在同一列表，需手动识别 |
-| Deal 上架申请 | `deals` | `deal_status = 'pending'` | `/deals` 列表（需手动筛选）+ `/deals/[id]` | 无专属待审队列，容易遗漏；无批量操作 |
-| 核销后退款争议仲裁 | `refund_requests` | `status = 'pending_admin'` | **Next.js admin 后台完全缺失** | 商家拒绝后升级至管理员的争议，admin portal 无任何入口 |
-| 售后仲裁申请 | `after_sales_requests` | `status = 'awaiting_platform'` | `/after-sales` 独立页 | 已有独立页，但需整合至统一入口后删除 |
+
+| 审批类型      | 数据来源                               | 触发状态                           | 当前入口                                | 存在问题                              |
+| --------- | ---------------------------------- | ------------------------------ | ----------------------------------- | --------------------------------- |
+| 商家注册申请    | `merchants` + `merchant_documents` | `status = 'pending'`           | `/merchants` 列表 + `/merchants/[id]` | 与已批准/已拒绝商家混在同一列表，需手动识别            |
+| Deal 上架申请 | `deals`                            | `deal_status = 'pending'`      | `/deals` 列表（需手动筛选）+ `/deals/[id]`   | 无专属待审队列，容易遗漏；无批量操作                |
+| 核销后退款争议仲裁 | `refund_requests`                  | `status = 'pending_admin'`     | **Next.js admin 后台完全缺失**            | 商家拒绝后升级至管理员的争议，admin portal 无任何入口 |
+| 售后仲裁申请    | `after_sales_requests`             | `status = 'awaiting_platform'` | `/after-sales` 独立页                  | 已有独立页，但需整合至统一入口后删除                |
+
 
 ### 核心痛点
 
 1. **分散跳转**：4 种审批类型分布在至少 3 个不同页面，高峰期来回切换效率低，容易漏单
 2. **信息不完全**：
-   - 商家注册：营业执照/证件图片集中在 `/merchants/[id]` 内，需跳转新页才能看
-   - Deal 审批：完整配置（套餐、图片、使用规则）需跳转 `/deals/[id]` 查看
-   - 退款争议：目前 admin portal 根本没有展示入口，是实际存在的功能空白
-   - 售后申请：双方图片证据和 timeline 已在现有抽屉展示，但页面孤立
+  - 商家注册：营业执照/证件图片集中在 `/merchants/[id]` 内，需跳转新页才能看
+  - Deal 审批：完整配置（套餐、图片、使用规则）需跳转 `/deals/[id]` 查看
+  - 退款争议：目前 admin portal 根本没有展示入口，是实际存在的功能空白
+  - 售后申请：双方图片证据和 timeline 已在现有抽屉展示，但页面孤立
 3. **缺乏全局视角**：没有统一的「待处理数量」汇总，管理员无法一眼判断当前积压情况
 
 ---
@@ -46,17 +50,19 @@
 
 > 本项目存在两套独立的用户投诉/退款流程，二者触发场景和处理机制不同，在审批中心中作为独立 Tab 分开处理。
 
-| 维度 | 核销后退款争议（`refund_requests`） | 售后仲裁申请（`after_sales_requests`） |
-|-----|----------------------------------|--------------------------------------|
-| **触发时机** | 券核销后 **24 小时内** | 券核销后 **7 天内** |
-| **申请粒度** | 订单级别 | Coupon 级别（单张券） |
-| **典型场景** | 刚被扫码核销，服务出问题，要求立即退款 | 体验完服务后，对质量/体验不满意，提出正式投诉 |
-| **举证能力** | 仅文字理由（`user_reason`，最少 10 字），无图片 | 结构化原因码 + 详细描述（最少 20 字）+ **双方图片证据** |
-| **退款细粒度** | 支持通过 `refund_items` JSONB 指定具体商品（部分退款） | 整张 coupon 退款 |
-| **升级路径** | 商家拒绝 → **自动**升级管理员（`pending_admin`） | 商家拒绝 → **用户主动**发起平台仲裁（`awaiting_platform`） |
-| **SLA 追踪** | 无截止时间字段 | 有 `expires_at` + `escalated_at` 时间戳 |
-| **完整 Timeline** | 无 | 有 `timeline` JSONB 记录所有操作 |
-| **定性** | "快速退款通道"，诉求直接 | "正式投诉机制"，流程严谨 |
+
+| 维度              | 核销后退款争议（`refund_requests`）             | 售后仲裁申请（`after_sales_requests`）             |
+| --------------- | -------------------------------------- | ------------------------------------------ |
+| **触发时机**        | 券核销后 **24 小时内**                        | 券核销后 **7 天内**                              |
+| **申请粒度**        | 订单级别                                   | Coupon 级别（单张券）                             |
+| **典型场景**        | 刚被扫码核销，服务出问题，要求立即退款                    | 体验完服务后，对质量/体验不满意，提出正式投诉                    |
+| **举证能力**        | 仅文字理由（`user_reason`，最少 10 字），无图片       | 结构化原因码 + 详细描述（最少 20 字）+ **双方图片证据**         |
+| **退款细粒度**       | 支持通过 `refund_items` JSONB 指定具体商品（部分退款） | 整张 coupon 退款                               |
+| **升级路径**        | 商家拒绝 → **自动**升级管理员（`pending_admin`）    | 商家拒绝 → **用户主动**发起平台仲裁（`awaiting_platform`） |
+| **SLA 追踪**      | 无截止时间字段                                | 有 `expires_at` + `escalated_at` 时间戳        |
+| **完整 Timeline** | 无                                      | 有 `timeline` JSONB 记录所有操作                  |
+| **定性**          | "快速退款通道"，诉求直接                          | "正式投诉机制"，流程严谨                              |
+
 
 ---
 
@@ -77,6 +83,7 @@
 ### 4.1 各类申请的数据库查询
 
 **商家注册申请（列表）**
+
 ```sql
 SELECT id, name, category, contact_name, contact_email, phone, created_at
 FROM merchants
@@ -85,6 +92,7 @@ ORDER BY created_at ASC;   -- 先进先出
 ```
 
 **商家注册申请（抽屉详情追加查询）**
+
 ```sql
 SELECT id, document_type, file_url, file_name, uploaded_at
 FROM merchant_documents
@@ -93,6 +101,7 @@ ORDER BY uploaded_at ASC;
 ```
 
 **Deal 上架申请**
+
 ```sql
 SELECT
   d.id, d.title, d.description, d.original_price, d.discount_price,
@@ -110,6 +119,7 @@ ORDER BY d.created_at ASC;
 ```
 
 **核销后退款争议（管理员仲裁队列）**
+
 ```sql
 SELECT
   rr.id, rr.refund_amount, rr.refund_items, rr.user_reason,
@@ -126,6 +136,7 @@ ORDER BY rr.created_at ASC;
 ```
 
 **售后仲裁申请**
+
 ```sql
 -- 沿用现有 view_merchant_after_sales_requests 视图
 -- 详情通过现有 /api/platform-after-sales/[id] API 获取
@@ -163,12 +174,12 @@ export async function rejectRefundDispute(requestId: string, adminReason: string
 ```
 
 操作逻辑：
+
 - `approveRefundDispute`：
   1. `requireAdmin()` 验证身份
   2. 更新 `refund_requests` 字段：`status = 'approved_admin'`、`admin_decision = 'approved'`、`admin_reason`、`admin_decided_at = now()`、`admin_decided_by = currentUserId`
   3. 调用 `admin-refund` Edge Function 执行实际退款（**开发前须先阅读该函数接口，确认兼容性**）
   4. `revalidatePath('/approvals')`
-
 - `rejectRefundDispute`：
   1. `requireAdmin()` 验证身份
   2. 更新 `refund_requests` 字段：`status = 'rejected_admin'`、对应决策字段
@@ -223,13 +234,15 @@ export async function batchRejectDeal(dealIds: string[], reason: string): Promis
 
 ### 5.2 Tab 设计
 
-| Tab | 数据条件 | 特殊功能 |
-|-----|---------|---------|
-| **All** | 4 类合并，按 `created_at ASC`（最老优先） | 无 |
-| **Merchant Applications** | `merchants.status = 'pending'` | 无 |
-| **Deal Reviews** | `deals.deal_status = 'pending'` | **支持多选 + 批量审批** |
-| **Refund Disputes** | `refund_requests.status = 'pending_admin'` | 无 |
-| **After-Sales** | `after_sales_requests.status = 'awaiting_platform'` | 无 |
+
+| Tab                       | 数据条件                                                | 特殊功能            |
+| ------------------------- | --------------------------------------------------- | --------------- |
+| **All**                   | 4 类合并，按 `created_at ASC`（最老优先）                      | 无               |
+| **Merchant Applications** | `merchants.status = 'pending'`                      | 无               |
+| **Deal Reviews**          | `deals.deal_status = 'pending'`                     | **支持多选 + 批量审批** |
+| **Refund Disputes**       | `refund_requests.status = 'pending_admin'`          | 无               |
+| **After-Sales**           | `after_sales_requests.status = 'awaiting_platform'` | 无               |
+
 
 每个 Tab 标签右侧显示该类型数量角标（红色，数量为 0 时不显示）。
 
@@ -237,15 +250,17 @@ export async function batchRejectDeal(dealIds: string[], reason: string): Promis
 
 每行统一字段：
 
-| 字段 | 说明 |
-|-----|-----|
-| 多选框 | 仅在 Deal Reviews tab 显示，用于批量操作 |
+
+| 字段   | 说明                                                                                  |
+| ---- | ----------------------------------------------------------------------------------- |
+| 多选框  | 仅在 Deal Reviews tab 显示，用于批量操作                                                       |
 | 类型标签 | `Merchant` / `Deal` / `Refund Dispute` / `After-Sales`，不同颜色区分；All tab 显示，其余 tab 可省略 |
-| 摘要 | 商家名 / Deal 标题 / 退款金额+商家名 / 原因类型 |
-| 申请人 | 商家联系人 / 商家名 / 用户（脱敏，格式 `U***r`）|
-| 提交时间 | 相对时间（"2h ago"）；hover 显示绝对时间 |
-| 超时警告 | 超过 24 小时未处理显示 ⚠️ 图标，行背景浅红色 |
-| 操作 | "Review" 按钮，点击开启详情抽屉 |
+| 摘要   | 商家名 / Deal 标题 / 退款金额+商家名 / 原因类型                                                     |
+| 申请人  | 商家联系人 / 商家名 / 用户（脱敏，格式 `U***r`）                                                     |
+| 提交时间 | 相对时间（"2h ago"）；hover 显示绝对时间                                                         |
+| 超时警告 | 超过 24 小时未处理显示 ⚠️ 图标，行背景浅红色                                                          |
+| 操作   | "Review" 按钮，点击开启详情抽屉                                                                |
+
 
 ### 5.4 Deal 批量审批交互流程
 
@@ -263,6 +278,7 @@ export async function batchRejectDeal(dealIds: string[], reason: string): Promis
 ### 5.5 各类型详情抽屉内容
 
 #### 商家注册申请抽屉
+
 ```
 [基本信息卡]
   商家名 / 公司名 / 类别 / EIN
@@ -282,6 +298,7 @@ export async function batchRejectDeal(dealIds: string[], reason: string): Promis
 ```
 
 #### Deal 上架申请抽屉
+
 ```
 [Deal 头部]
   图片画廊（主图 + deal_images，支持翻页）
@@ -310,6 +327,7 @@ export async function batchRejectDeal(dealIds: string[], reason: string): Promis
 ```
 
 #### 核销后退款争议仲裁抽屉（全新功能）
+
 ```
 [争议概览]
   退款申请金额 / 申请时间
@@ -332,6 +350,7 @@ export async function batchRejectDeal(dealIds: string[], reason: string): Promis
 ```
 
 #### 售后仲裁申请抽屉（从 /after-sales 迁移）
+
 ```
 [申请概览]
   原因类型（reason_code，格式化显示）/ 详细说明
@@ -359,33 +378,39 @@ export async function batchRejectDeal(dealIds: string[], reason: string): Promis
 
 ### 6.1 新建文件
 
-| 文件路径 | 类型 | 说明 |
-|---------|-----|------|
-| `admin/app/(dashboard)/approvals/page.tsx` | Server Component | 并行查询4张表，传递数据给 Client Component |
-| `admin/components/approvals-page-client.tsx` | Client Component | 主页面：Tab 切换、列表渲染、批量选择状态、抽屉状态管理 |
-| `admin/components/approvals/merchant-drawer.tsx` | Client Component | 商家注册详情抽屉；点击后懒加载 merchant_documents |
-| `admin/components/approvals/deal-drawer.tsx` | Client Component | Deal 详情抽屉；复用 RejectionHistory 组件 |
-| `admin/components/approvals/refund-dispute-drawer.tsx` | Client Component | 退款争议仲裁抽屉（全新功能） |
-| `admin/components/approvals/after-sales-drawer.tsx` | Client Component | 从现有 after-sales-page-client.tsx 提取抽屉逻辑 |
-| `admin/app/actions/approvals.ts` | Server Actions | approveRefundDispute / rejectRefundDispute |
-| `admin/app/api/approvals/merchant/[id]/route.ts` | API Route | 懒加载商家证件详情（使用 service role client） |
+
+| 文件路径                                                   | 类型               | 说明                                         |
+| ------------------------------------------------------ | ---------------- | ------------------------------------------ |
+| `admin/app/(dashboard)/approvals/page.tsx`             | Server Component | 并行查询4张表，传递数据给 Client Component             |
+| `admin/components/approvals-page-client.tsx`           | Client Component | 主页面：Tab 切换、列表渲染、批量选择状态、抽屉状态管理              |
+| `admin/components/approvals/merchant-drawer.tsx`       | Client Component | 商家注册详情抽屉；点击后懒加载 merchant_documents         |
+| `admin/components/approvals/deal-drawer.tsx`           | Client Component | Deal 详情抽屉；复用 RejectionHistory 组件           |
+| `admin/components/approvals/refund-dispute-drawer.tsx` | Client Component | 退款争议仲裁抽屉（全新功能）                             |
+| `admin/components/approvals/after-sales-drawer.tsx`    | Client Component | 从现有 after-sales-page-client.tsx 提取抽屉逻辑     |
+| `admin/app/actions/approvals.ts`                       | Server Actions   | approveRefundDispute / rejectRefundDispute |
+| `admin/app/api/approvals/merchant/[id]/route.ts`       | API Route        | 懒加载商家证件详情（使用 service role client）          |
+
 
 ### 6.2 修改文件
 
-| 文件路径 | 改动内容 |
-|---------|---------|
-| `admin/app/(dashboard)/layout.tsx` | 并行查询4张表待审批总数，传给 Sidebar；加缓存（revalidate: 300） |
-| `admin/components/sidebar.tsx` | adminNav 新增 Approvals 链接；接受 `pendingCount` prop 显示角标 |
-| `admin/app/actions/admin.ts` | 新增 `batchApproveDeal()` 和 `batchRejectDeal()` |
+
+| 文件路径                                            | 改动内容                                                            |
+| ----------------------------------------------- | --------------------------------------------------------------- |
+| `admin/app/(dashboard)/layout.tsx`              | 并行查询4张表待审批总数，传给 Sidebar；加缓存（revalidate: 300）                    |
+| `admin/components/sidebar.tsx`                  | adminNav 新增 Approvals 链接；接受 `pendingCount` prop 显示角标            |
+| `admin/app/actions/admin.ts`                    | 新增 `batchApproveDeal()` 和 `batchRejectDeal()`                   |
 | `admin/app/(dashboard)/merchants/[id]/page.tsx` | **移除** `<MerchantReviewActions>` 审批组件；保留页面其余内容（基本信息、员工管理、收入数据等） |
-| `admin/app/(dashboard)/deals/[id]/page.tsx` | **移除** `<DealReviewActions>` 审批组件；保留页面其余内容（Deal 详情展示、驳回历史查看） |
+| `admin/app/(dashboard)/deals/[id]/page.tsx`     | **移除** `<DealReviewActions>` 审批组件；保留页面其余内容（Deal 详情展示、驳回历史查看）    |
+
 
 ### 6.3 删除文件
 
-| 文件路径 | 原因 |
-|---------|------|
-| `admin/app/(dashboard)/after-sales/page.tsx` | 功能已完整迁移至 `/approvals` After-Sales tab，原页面删除 |
+
+| 文件路径                                           | 原因                                                |
+| ---------------------------------------------- | ------------------------------------------------- |
+| `admin/app/(dashboard)/after-sales/page.tsx`   | 功能已完整迁移至 `/approvals` After-Sales tab，原页面删除       |
 | `admin/components/after-sales-page-client.tsx` | 抽屉逻辑已提取至 `approvals/after-sales-drawer.tsx`，原文件删除 |
+
 
 > **删除前确认**：sidebar.tsx 中移除 after-sales 导航项（如有）；layout 中移除相关引用。
 
@@ -411,10 +436,10 @@ export async function batchRejectDeal(dealIds: string[], reason: string): Promis
 
 1. 完善 `admin/app/(dashboard)/approvals/page.tsx`：根据 `tab` search param 查询对应表，支持分页（每页 20 条）
 2. 新建 `admin/components/approvals-page-client.tsx`：
-   - Tab 组件（URL search param 联动）
-   - 统一列表行渲染（类型标签、摘要、申请人、时间、超时 ⚠️ 高亮）
-   - Deal tab 的多选 checkbox 框架（操作逻辑后续实现）
-   - 行点击 / Review 按钮事件占位
+  - Tab 组件（URL search param 联动）
+  - 统一列表行渲染（类型标签、摘要、申请人、时间、超时 ⚠️ 高亮）
+  - Deal tab 的多选 checkbox 框架（操作逻辑后续实现）
+  - 行点击 / Review 按钮事件占位
 
 **验收标准**：5 个 tab 数据正确；切换时 URL 参数变化；超过 24h 的行背景高亮
 
@@ -425,22 +450,19 @@ export async function batchRejectDeal(dealIds: string[], reason: string): Promis
 **目标**：点击行后抽屉滑出，包含完整信息，可在抽屉内完成审批
 
 1. 新建 `admin/app/api/approvals/merchant/[id]/route.ts`：
-   - 验证 admin 身份
-   - 使用 service role client 读取 `merchants` 完整字段 + `merchant_documents`
-   - 返回 JSON
-
+  - 验证 admin 身份
+  - 使用 service role client 读取 `merchants` 完整字段 + `merchant_documents`
+  - 返回 JSON
 2. 新建 `admin/components/approvals/merchant-drawer.tsx`：
-   - 点击触发，内部 fetch API route 懒加载详情
-   - 展示基本信息 + 证件图片列表
-   - 操作按钮调用现有 `approveMerchant()` / `rejectMerchant()`（来自 `admin.ts`）
-   - 操作成功后关闭抽屉 + `router.refresh()`
-
+  - 点击触发，内部 fetch API route 懒加载详情
+  - 展示基本信息 + 证件图片列表
+  - 操作按钮调用现有 `approveMerchant()` / `rejectMerchant()`（来自 `admin.ts`）
+  - 操作成功后关闭抽屉 + `router.refresh()`
 3. 新建 `admin/components/approvals/deal-drawer.tsx`：
-   - Deal 列表查询时已携带详情字段，无需独立 API，直接使用列表数据
-   - 展示图片画廊（支持翻页）、套餐、使用规则、驳回历史（复用 RejectionHistory）
-   - 操作按钮调用现有 `setDealActive()` / `rejectDeal()`（来自 `admin.ts`）
-   - 操作成功后关闭抽屉 + `router.refresh()`
-
+  - Deal 列表查询时已携带详情字段，无需独立 API，直接使用列表数据
+  - 展示图片画廊（支持翻页）、套餐、使用规则、驳回历史（复用 RejectionHistory）
+  - 操作按钮调用现有 `setDealActive()` / `rejectDeal()`（来自 `admin.ts`）
+  - 操作成功后关闭抽屉 + `router.refresh()`
 4. **移除** `/merchants/[id]` 中的 `<MerchantReviewActions>` 组件引用
 5. **移除** `/deals/[id]` 中的 `<DealReviewActions>` 组件引用
 
@@ -453,14 +475,13 @@ export async function batchRejectDeal(dealIds: string[], reason: string): Promis
 **目标**：Deal Reviews tab 支持多选 + 批量通过/拒绝
 
 1. 在 `admin/app/actions/admin.ts` 新增：
-   - `batchApproveDeal(dealIds: string[])`：循环调用现有 `setDealActive(id, true)` 逻辑，返回成功/失败列表
-   - `batchRejectDeal(dealIds: string[], reason: string)`：循环调用现有 `rejectDeal(id, reason)` 逻辑
-
+  - `batchApproveDeal(dealIds: string[])`：循环调用现有 `setDealActive(id, true)` 逻辑，返回成功/失败列表
+  - `batchRejectDeal(dealIds: string[], reason: string)`：循环调用现有 `rejectDeal(id, reason)` 逻辑
 2. 在 `approvals-page-client.tsx` 完善 Deal tab 的批量操作 UI：
-   - checkbox 全选 / 单选状态管理
-   - 顶部操作栏：选中数量显示、[Batch Approve] / [Batch Reject] 按钮
-   - 确认弹窗（Approve）/ 原因输入弹窗（Reject）
-   - 操作完成后显示结果摘要 toast
+  - checkbox 全选 / 单选状态管理
+  - 顶部操作栏：选中数量显示、[Batch Approve] / [Batch Reject] 按钮
+  - 确认弹窗（Approve）/ 原因输入弹窗（Reject）
+  - 操作完成后显示结果摘要 toast
 
 **验收标准**：可多选 Deal；批量 approve/reject 成功执行；结果摘要正确；列表刷新
 
@@ -471,12 +492,11 @@ export async function batchRejectDeal(dealIds: string[], reason: string): Promis
 **目标**：首次在 admin portal 中实现退款争议的管理员仲裁功能
 
 1. 新建 `admin/app/actions/approvals.ts`，实现 `approveRefundDispute` 和 `rejectRefundDispute`
-   - **开发前先阅读 `admin-refund` Edge Function 接口，确认与 `refund_requests` 表的兼容性**
-
+  - **开发前先阅读 `admin-refund` Edge Function 接口，确认与 `refund_requests` 表的兼容性**
 2. 新建 `admin/components/approvals/refund-dispute-drawer.tsx`：
-   - 展示争议概览、`refund_items` JSONB 商品明细、双方陈述
-   - Approve：确认弹窗（显示退款金额）→ `approveRefundDispute()`
-   - Reject：必填原因（min 10字）→ `rejectRefundDispute()`
+  - 展示争议概览、`refund_items` JSONB 商品明细、双方陈述
+  - Approve：确认弹窗（显示退款金额）→ `approveRefundDispute()`
+  - Reject：必填原因（min 10字）→ `rejectRefundDispute()`
 
 **验收标准**：Refund Dispute 行点击后抽屉正确展示 refund_items 明细和双方陈述；approve 后实际触发退款；reject 后状态变为 `rejected_admin`
 
@@ -487,10 +507,9 @@ export async function batchRejectDeal(dealIds: string[], reason: string): Promis
 **目标**：After-Sales tab 完整可用，原 /after-sales 页面删除
 
 1. 新建 `admin/components/approvals/after-sales-drawer.tsx`：
-   - 从 `after-sales-page-client.tsx` 中提取抽屉部分逻辑（展示 + 操作）
-   - 保留现有 API 调用（`/api/platform-after-sales/[id]` + `POST`）不改动
-   - 在 `approvals-page-client.tsx` 中集成此 Drawer
-
+  - 从 `after-sales-page-client.tsx` 中提取抽屉部分逻辑（展示 + 操作）
+  - 保留现有 API 调用（`/api/platform-after-sales/[id]` + `POST`）不改动
+  - 在 `approvals-page-client.tsx` 中集成此 Drawer
 2. **删除** `admin/app/(dashboard)/after-sales/page.tsx`
 3. **删除** `admin/components/after-sales-page-client.tsx`
 4. 移除 sidebar 中 after-sales 导航项（如有）
@@ -537,6 +556,7 @@ export async function batchRejectDeal(dealIds: string[], reason: string): Promis
 ### 8.4 退款争议退款执行路径
 
 Phase 5 开发前必须先确认 `admin-refund` Edge Function 的调用接口：
+
 - 若接口接受 `refund_request_id`，直接调用
 - 若接口接受 `order_id` + `amount`，从 `refund_requests` 表读取后传入
 - 若接口与本流程完全不兼容，在 Server Action 中参考 `create-refund` Edge Function 实现退款逻辑
@@ -558,31 +578,30 @@ Layout 层加入 Next.js `unstable_cache` 或路由段 `revalidate = 300`（5分
 
 ## 十、验收标准总览
 
-| 功能点 | 验收标准 |
-|-------|---------|
-| Sidebar 角标 | 正确显示4类待审批总数；任意审批操作后角标数字准确减少 |
-| Tab 切换 | 5个 tab 数据正确；URL 参数与 tab 联动；各 tab 角标数字准确 |
-| 超时高亮 | 超过 24h 未处理的行显示 ⚠️ 图标 + 浅红背景 |
-| 分页 | 各 tab 分页正确；页码与 URL 联动 |
-| 商家注册抽屉 | 展示基本信息 + 所有上传证件图片（懒加载）；approve/reject 操作成功 |
-| Deal 审批抽屉 | 展示图片画廊、套餐、使用规则、驳回历史；approve/reject 成功 |
-| Deal 批量审批 | 可多选；批量 approve/reject 成功；结果摘要正确显示 |
-| 退款争议抽屉 | 展示 refund_items 商品明细 + 双方陈述；approve 触发实际退款；reject 状态正确 |
-| 售后申请抽屉 | 展示双方证据图片 + timeline；approve/reject 操作成功 |
-| 原页面审批按钮移除 | `/merchants/[id]` 和 `/deals/[id]` 无审批按钮；页面其余功能正常 |
-| `/after-sales` 删除 | 路由返回 404；sidebar 无残留链接；approvals After-Sales tab 功能等同 |
-| 原有列表页不受影响 | `/merchants`、`/deals` 列表页功能正常 |
+
+| 功能点               | 验收标准                                                   |
+| ----------------- | ------------------------------------------------------ |
+| Sidebar 角标        | 正确显示4类待审批总数；任意审批操作后角标数字准确减少                            |
+| Tab 切换            | 5个 tab 数据正确；URL 参数与 tab 联动；各 tab 角标数字准确                |
+| 超时高亮              | 超过 24h 未处理的行显示 ⚠️ 图标 + 浅红背景                            |
+| 分页                | 各 tab 分页正确；页码与 URL 联动                                  |
+| 商家注册抽屉            | 展示基本信息 + 所有上传证件图片（懒加载）；approve/reject 操作成功             |
+| Deal 审批抽屉         | 展示图片画廊、套餐、使用规则、驳回历史；approve/reject 成功                  |
+| Deal 批量审批         | 可多选；批量 approve/reject 成功；结果摘要正确显示                      |
+| 退款争议抽屉            | 展示 refund_items 商品明细 + 双方陈述；approve 触发实际退款；reject 状态正确 |
+| 售后申请抽屉            | 展示双方证据图片 + timeline；approve/reject 操作成功                |
+| 原页面审批按钮移除         | `/merchants/[id]` 和 `/deals/[id]` 无审批按钮；页面其余功能正常       |
+| `/after-sales` 删除 | 路由返回 404；sidebar 无残留链接；approvals After-Sales tab 功能等同  |
+| 原有列表页不受影响         | `/merchants`、`/deals` 列表页功能正常                          |
+
 
 ---
 
 ## 十一、风险与注意事项
 
 1. **RLS 权限**：`refund_requests` 表仅对 service_role 开放全权限，admin portal 需全程使用 `getServiceRoleClient()` 查询，与 `after_sales_requests` 处理方式保持一致
-
 2. **退款执行兼容性**：Phase 5 开发前必须先阅读 `admin-refund` Edge Function 接口，避免重复实现退款逻辑
-
 3. **删除 /after-sales 前的依赖检查**：删除前确认 sidebar、layout、以及任何内部链接中无 `/after-sales` 路由引用
-
 4. **批量操作的邮件通知**：`batchApproveDeal` / `batchRejectDeal` 内部每条 deal 都会触发 M16/M17 邮件；需确认邮件发送不会因并发或循环频率触发限流，必要时在批量 action 中控制发送间隔或异步化
-
 5. **移除审批按钮后的 UX**：`/merchants/[id]` 和 `/deals/[id]` 移除审批按钮后，需要在页面上添加明显提示（如 `"Approval is managed in the Approvals Center →"`），避免管理员在旧页面找不到操作入口而困惑
+

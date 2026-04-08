@@ -9,3 +9,7 @@ verify_jwt = false
 # user-order-detail：同上，从 body 传 access_token，函数内自行鉴权
 [functions.user-order-detail]
 verify_jwt = false
+
+# submit-refund-dispute：用户 JWT 由网关校验 + 函数内 getUser 双保险
+[functions.submit-refund-dispute]
+verify_jwt = true
