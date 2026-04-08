@@ -78,6 +78,7 @@ class AuthRepository {
     required String password,
     required String fullName,
     required String username,
+    required String dateOfBirth,
   }) async {
     try {
       final response = await _client.auth.signUp(
@@ -86,6 +87,7 @@ class AuthRepository {
         data: {
           'full_name': fullName,
           'username': username,
+          'date_of_birth': dateOfBirth,
         },
       );
       if (response.user == null) {

@@ -56,6 +56,7 @@ import '../../features/welcome/presentation/screens/welcome_splash_screen.dart';
 import '../../features/welcome/presentation/screens/onboarding_screen.dart';
 import '../widgets/main_scaffold.dart';
 import '../widgets/splash_screen.dart';
+import '../../shared/widgets/legal_document_screen.dart';
 
 /// Bridges Riverpod's authStateProvider → GoRouter's refreshListenable.
 /// GoRouter calls redirect() whenever this notifier fires.
@@ -482,6 +483,18 @@ final routerProvider = Provider<GoRouter>((ref) {
           orderItemId: state.uri.queryParameters['orderItemId'] ?? '',
           existingReviewId: state.uri.queryParameters['reviewId'],
         ),
+      ),
+
+      // 法律文档页面（服务条款、隐私政策等）
+      GoRoute(
+        path: '/legal/:slug',
+        name: 'legal',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) {
+          final slug = state.pathParameters['slug'] ?? '';
+          final title = state.uri.queryParameters['title'] ?? 'Legal Document';
+          return LegalDocumentScreen(slug: slug, title: title);
+        },
       ),
     ],
     errorBuilder: (context, state) =>

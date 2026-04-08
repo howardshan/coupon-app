@@ -6,6 +6,12 @@ import StaffToggleButton from '@/components/staff-toggle-button'
 import MerchantCommissionForm from '@/components/merchant-commission-form'
 import MerchantOperationalActions from '@/components/merchant-operational-actions'
 import { CopyableId } from '@/components/copyable-id'
+import ConsentStatusCard from '@/components/consent-status-card'
+import LegalTimeline from '@/components/legal-timeline'
+import { getUserConsentStatus, getUserLegalTimeline } from '@/app/actions/legal'
+import MerchantAdminVisibilityActions from '@/components/merchant-admin-visibility-actions'
+import AdminActivityTimelineCard from '@/components/admin-activity-timeline-card'
+import { buildMerchantTimeline } from '@/lib/merchant-admin-timeline'
 
 const DOCUMENT_TYPE_LABELS: Record<string, string> = {
   business_license: 'Business License',
@@ -207,6 +213,10 @@ export default async function MerchantReviewPage({
 
   const merchantTimelineEvents = buildMerchantTimeline(merchant, activityEventsForTimeline)
   const storeIsOnline = Boolean((merchant as { is_online?: boolean }).is_online)
+
+  // 法律合规数据
+  const consentStatus = await getUserConsentStatus(merchant.user_id)
+  const { items: legalTimeline, total: legalTotal } = await getUserLegalTimeline(merchant.user_id, 1, 20)
 
   return (
     <div>
@@ -489,6 +499,15 @@ export default async function MerchantReviewPage({
             </div>
           </div>
         </aside>
+      </div>
+
+      {/* ── Legal Compliance ── */}
+      <div className="mt-10">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Legal Compliance</h2>
+        <ConsentStatusCard items={consentStatus} />
+        <div className="mt-6">
+          <LegalTimeline userId={merchant.user_id} initialData={legalTimeline} totalCount={legalTotal} />
+        </div>
       </div>
     </div>
   )

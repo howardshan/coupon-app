@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../auth/domain/providers/auth_provider.dart';
+import '../../../../shared/widgets/legal_document_screen.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -385,6 +386,67 @@ _IconGridItem(
                 color: AppColors.textHint,
               ),
               onTap: () => context.push('/support'),
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
+          // ── Legal ─────────────────────────────────────────────
+          _SectionCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Legal',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                // 服务条款
+                _SettingsTile(
+                  icon: Icons.description_outlined,
+                  title: 'Terms of Service',
+                  onTap: () {
+                    Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const LegalDocumentScreen(
+                        slug: 'terms-of-service',
+                        title: 'Terms of Service',
+                      ),
+                    ));
+                  },
+                ),
+                const Divider(height: 1),
+                // 隐私政策
+                _SettingsTile(
+                  icon: Icons.privacy_tip_outlined,
+                  title: 'Privacy Policy',
+                  onTap: () {
+                    Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const LegalDocumentScreen(
+                        slug: 'privacy-policy',
+                        title: 'Privacy Policy',
+                      ),
+                    ));
+                  },
+                ),
+                const Divider(height: 1),
+                // 退款政策
+                _SettingsTile(
+                  icon: Icons.shield_outlined,
+                  title: 'Refund Policy',
+                  onTap: () {
+                    Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const LegalDocumentScreen(
+                        slug: 'refund-policy',
+                        title: 'Refund Policy',
+                      ),
+                    ));
+                  },
+                ),
+              ],
             ),
           ),
 

@@ -1,0 +1,75 @@
+{
+  "module": "legal_consent",
+  "reviewed_at": "2026-04-07",
+  "reviewer": "claude-sonnet-4-6",
+  "files_reviewed": [
+    "dealjoy_merchant/lib/shared/providers/legal_provider.dart",
+    "dealjoy_merchant/lib/shared/widgets/legal_document_screen.dart",
+    "dealjoy_merchant/lib/shared/widgets/consent_barrier.dart",
+    "dealjoy_merchant/lib/app_shell.dart"
+  ],
+  "issues": [
+    {
+      "id": "R-01",
+      "severity": "P1",
+      "file": "dealjoy_merchant/lib/app_shell.dart",
+      "line": "92-98",
+      "description": "_checkConsent() 在 didChangeDependencies 中直接调用，showDialog 可能在第一帧 build 完成前触发，导致 context 尚无 Material 祖先。",
+      "fix": "使用 WidgetsBinding.instance.addPostFrameCallback 将调用推迟到第一帧后，并加 mounted 守卫。",
+      "status": "FIXED"
+    }
+  ],
+  "passed_checks": [
+    {
+      "check": "import 路径",
+      "result": "PASS",
+      "note": "所有相对 import 路径均正确：legal_provider.dart 在 shared/providers/，legal_document_screen.dart 在 shared/widgets/，相对路径 ../providers/ 正确匹配。"
+    },
+    {
+      "check": "Riverpod provider 用法",
+      "result": "PASS",
+      "note": "FutureProvider / FutureProvider.family / Provider 用法均正确；pendingConsentsProvider 在 _ConsentBarrierState 中用 ref.watch 监听，ref.invalidate 刷新。recordConsentProvider 用 ref.read，避免不必要订阅。"
+    },
+    {
+      "check": "Supabase RPC 调用",
+      "result": "PASS",
+      "note": "check_pending_consents / get_legal_document_content / record_user_consent 三个 RPC 调用参数名符合规范（p_ 前缀）；null 返回值已做 early return 保护。"
+    },
+    {
+      "check": "fromJson null-safe",
+      "result": "PASS",
+      "note": "PendingConsent.fromJson 和 LegalDocumentContent.fromJson 所有字段均使用 as String? ?? '' 或 (as num?)?.toInt() ?? 0 安全解析，无硬转换。"
+    },
+    {
+      "check": "退出登录方式",
+      "result": "PASS",
+      "note": "consent_barrier.dart 使用 Supabase.instance.client.auth.signOut() 后 context.go('/auth/login')，符合商家端规范。"
+    },
+    {
+      "check": "go_router import",
+      "result": "PASS",
+      "note": "consent_barrier.dart 已正确 import package:go_router/go_router.dart，context.go 可用。"
+    },
+    {
+      "check": "UI 无中文字符串",
+      "result": "PASS",
+      "note": "三个文件所有 UI 文案（Text、button label、snackbar）均为英文，中文仅出现在代码注释中，符合北美市场规范。"
+    },
+    {
+      "check": "ConsumerWidget / ConsumerStatefulWidget 用法",
+      "result": "PASS",
+      "note": "LegalDocumentScreen extends ConsumerWidget，ConsentBarrier extends ConsumerStatefulWidget，均正确使用 Riverpod ConsumerWidget 模式。"
+    },
+    {
+      "check": "StoreInfo.permissions 字段",
+      "result": "PASS",
+      "note": "app_shell.dart 中 storeAsync.valueOrNull?.permissions 引用的字段在 store_info.dart 第 339 行已定义，fromJson 也有对应解析。"
+    },
+    {
+      "check": "Dialog.fullscreen 内 Navigator.push",
+      "result": "PASS",
+      "note": "ConsentBarrier 在 Dialog 内通过 Navigator.of(context).push 推入 LegalDocumentScreen，用户阅读后 pop 回 Dialog，UX 流程正确，Navigator 层级无问题。"
+    }
+  ],
+  "summary": "共审查 4 个文件，发现 1 个 P1 问题（app_shell.dart 中 showDialog 调用时机）已直接修复。无 P0 问题。其余检查项全部通过。"
+}

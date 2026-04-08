@@ -137,6 +137,11 @@ export function wrapInLayout(options: {
                 CrunchyPlum · Dallas, TX · <a href="https://crunchyplum.com" style="color:${TEXT_MUTED};">crunchyplum.com</a>
               </p>
               <p style="margin:8px 0 0;font-size:11px;color:${TEXT_MUTED};">
+                <a href="https://crunchyplum.com/terms" style="color:${TEXT_MUTED};">Terms of Service</a> ·
+                <a href="https://crunchyplum.com/privacy" style="color:${TEXT_MUTED};">Privacy Policy</a> ·
+                <a href="https://crunchyplum.com/refund-policy" style="color:${TEXT_MUTED};">Refund Policy</a>
+              </p>
+              <p style="margin:8px 0 0;font-size:11px;color:${TEXT_MUTED};">
                 © ${new Date().getFullYear()} CrunchyPlum. All rights reserved.
               </p>
             </td>

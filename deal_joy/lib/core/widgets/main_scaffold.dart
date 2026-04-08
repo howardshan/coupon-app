@@ -2,12 +2,23 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../features/auth/domain/providers/auth_provider.dart';
+import '../../shared/providers/legal_provider.dart';
+import '../../shared/widgets/consent_barrier.dart';
 import '../theme/app_colors.dart';
 
-class MainScaffold extends ConsumerWidget {
+/// 主 Scaffold：包含底部导航栏，并在启动时检查是否有待签法律文档
+class MainScaffold extends ConsumerStatefulWidget {
   final Widget child;
 
   const MainScaffold({super.key, required this.child});
+
+  @override
+  ConsumerState<MainScaffold> createState() => _MainScaffoldState();
+}
+
+class _MainScaffoldState extends ConsumerState<MainScaffold> {
+  /// 防止重复弹出 ConsentBarrier dialog 的标志
+  bool _consentDialogShown = false;
 
   int _locationToIndex(String location) {
     if (location.startsWith('/home')) return 0;
@@ -18,11 +29,34 @@ class MainScaffold extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
+    // 监听待签法律文档，有待签文档时弹出拦截 dialog
+    final pendingAsync = ref.watch(pendingConsentsProvider);
+    pendingAsync.whenData((consents) {
+      if (consents.isNotEmpty && !_consentDialogShown) {
+        _consentDialogShown = true;
+        // 避免在 build 阶段直接调用 showDialog
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            useRootNavigator: true,
+            builder: (_) => const ConsentBarrier(),
+          ).then((_) {
+            // dialog 关闭后重置标志，允许下次登录后再次检查
+            if (mounted) {
+              setState(() => _consentDialogShown = false);
+            }
+          });
+        });
+      }
+    });
+
     final location = GoRouterState.of(context).matchedLocation;
     final currentIndex = _locationToIndex(location);
     return Scaffold(
-      body: child,
+      body: widget.child,
       bottomNavigationBar: NavigationBar(
         height: 60,
         selectedIndex: currentIndex,
