@@ -69,10 +69,12 @@ export default function ConsentStatusCard({ items }: Props) {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {items.map((item) => {
+              {items.map((item, index) => {
                 const status = resolveStatus(item)
+                // slug 可能重复或为空，用组合 key + index 保证唯一
+                const rowKey = `${item.document_slug || 'unknown'}:${item.document_type}:${item.current_version}:${index}`
                 return (
-                  <tr key={item.document_slug} className="text-slate-700">
+                  <tr key={rowKey} className="text-slate-700">
                     <td className="py-3 pr-4 font-medium text-slate-900">
                       {item.document_title}
                     </td>
