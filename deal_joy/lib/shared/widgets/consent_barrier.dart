@@ -47,14 +47,27 @@ class _ConsentBarrierState extends ConsumerState<ConsentBarrier> {
           triggerContext: 'consent_barrier',
         );
       }
-      // 刷新待同意列表，若已全部同意则弹窗将被上层移除
       ref.invalidate(pendingConsentsProvider);
+      // 全屏 Dialog 不会自动关闭；须主动 pop（SnackBar 也会被挡在下面）
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to record consent: $e'),
-            backgroundColor: AppColors.error,
+        await showDialog<void>(
+          context: context,
+          barrierDismissible: true,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Something went wrong'),
+            content: SingleChildScrollView(
+              child: Text('Failed to record consent: $e'),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('OK'),
+              ),
+            ],
           ),
         );
       }
@@ -120,8 +133,13 @@ class _ConsentBarrierState extends ConsumerState<ConsentBarrier> {
             ),
           ),
           data: (pendingList) {
-            // 若列表为空，外层应已关闭弹窗，此处显示加载态兜底
+            // 列表已空：关闭全屏弹窗（兜底，例如数据在别处已同步）
             if (pendingList.isEmpty) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!mounted) return;
+                final nav = Navigator.of(context, rootNavigator: true);
+                if (nav.canPop()) nav.pop();
+              });
               return const Center(
                 child: CircularProgressIndicator(color: AppColors.primary),
               );

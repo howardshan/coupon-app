@@ -201,7 +201,8 @@ class LegalRepository {
       params: {
         'p_user_id': user.id,
         'p_document_slug': documentSlug,
-        'p_actor_role': 'customer',
+        // 须与 legal_audit_log.actor_role CHECK 一致：'user'|'merchant'|'admin'|'system'
+        'p_actor_role': 'user',
         'p_consent_method': consentMethod,
         'p_trigger_context': triggerContext,
         'p_ip_address': null,
