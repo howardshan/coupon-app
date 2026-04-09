@@ -88,8 +88,10 @@ Deno.serve(async (req) => {
       let query = serviceClient
         .from('refund_requests')
         .select(`
-          id, status, refund_amount, reason, merchant_response, admin_response,
-          created_at, updated_at, responded_at, admin_decided_at,
+          id, status, refund_amount, reason, user_reason,
+          merchant_reason, merchant_decided_at, merchant_decision,
+          admin_reason, admin_decided_at, admin_decision,
+          created_at, updated_at, order_item_id,
           orders!inner(
             id, order_number, total_amount, status, created_at,
             deals!inner(id, title),
@@ -110,8 +112,16 @@ Deno.serve(async (req) => {
         return errorResponse('Failed to fetch refund requests', 'db_error', 500);
       }
 
+      // 管理端若仍读旧字段名，在此做别名
+      const rows = (data ?? []).map((row: Record<string, unknown>) => ({
+        ...row,
+        merchant_response: row.merchant_reason ?? null,
+        admin_response: row.admin_reason ?? null,
+        responded_at: row.merchant_decided_at ?? null,
+      }));
+
       return jsonResponse({
-        data: data ?? [],
+        data: rows,
         total: count ?? 0,
         page,
         per_page: perPage,
@@ -176,8 +186,10 @@ Deno.serve(async (req) => {
         .from('refund_requests')
         .update({
           status: 'approved_admin',
-          admin_response: adminReason?.trim() ?? null,
+          admin_decision: 'approved',
+          admin_reason: adminReason?.trim() ?? null,
           admin_decided_at: now,
+          admin_decided_by: userId,
           updated_at: now,
         })
         .eq('id', refundRequestId);
@@ -197,8 +209,10 @@ Deno.serve(async (req) => {
         .from('refund_requests')
         .update({
           status: 'rejected_admin',
-          admin_response: adminReason?.trim() ?? null,
+          admin_decision: 'rejected',
+          admin_reason: adminReason?.trim() ?? null,
           admin_decided_at: now,
+          admin_decided_by: userId,
           updated_at: now,
         })
         .eq('id', refundRequestId);
