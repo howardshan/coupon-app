@@ -114,7 +114,13 @@ serve(async (req: Request) => {
   if (subPath === 'refund-requests' && req.method === 'PATCH' && pathParts[1]) {
     const refundRequestId = pathParts[1];
     const patchBody = await req.json().catch(() => ({}));
-    return await handleRefundRequestDecision(serviceClient, merchantId, refundRequestId, patchBody);
+    return await handleRefundRequestDecision(
+      serviceClient,
+      merchantId,
+      userId,
+      refundRequestId,
+      patchBody,
+    );
   }
 
   // 导出 CSV（必须在 :id 路由前检查，避免 "export" 被当作 uuid）
@@ -1089,8 +1095,9 @@ async function handleRefundRequestsList(
   let query = client
     .from('refund_requests')
     .select(`
-      id, status, refund_amount, reason, merchant_response,
-      created_at, updated_at, responded_at,
+      id, status, refund_amount, reason, user_reason,
+      merchant_reason, merchant_decided_at, merchant_decision,
+      created_at, updated_at,
       order_item_id,
       orders!inner(
         id, order_number, total_amount, status, created_at,
@@ -1112,8 +1119,15 @@ async function handleRefundRequestsList(
     return jsonResponse({ error: 'db_error', message: 'Failed to fetch refund requests' }, 500);
   }
 
+  // 商家端 Flutter 仍读 merchant_response / responded_at；与 DB 列对齐
+  const rows = (data ?? []).map((row: Record<string, unknown>) => ({
+    ...row,
+    merchant_response: row.merchant_reason ?? null,
+    responded_at: row.merchant_decided_at ?? null,
+  }));
+
   return jsonResponse({
-    data: data ?? [],
+    data: rows,
     total: count ?? 0,
     page,
     per_page: perPage,
@@ -1129,6 +1143,7 @@ async function handleRefundRequestsList(
 async function handleRefundRequestDecision(
   client: ReturnType<typeof createClient>,
   merchantId: string,
+  actorUserId: string,
   refundRequestId: string,
   body: Record<string, unknown>,
 ): Promise<Response> {
@@ -1188,8 +1203,10 @@ async function handleRefundRequestDecision(
       .from('refund_requests')
       .update({
         status: 'approved_merchant',
-        merchant_response: reason?.trim() ?? null,
-        responded_at: now,
+        merchant_decision: 'approved',
+        merchant_reason: reason?.trim() ?? null,
+        merchant_decided_at: now,
+        merchant_decided_by: actorUserId,
         updated_at: now,
       })
       .eq('id', refundRequestId);
@@ -1201,8 +1218,10 @@ async function handleRefundRequestDecision(
       .from('refund_requests')
       .update({
         status: 'pending_admin',
-        merchant_response: reason?.trim(),
-        responded_at: now,
+        merchant_decision: 'rejected',
+        merchant_reason: reason?.trim() ?? null,
+        merchant_decided_at: now,
+        merchant_decided_by: actorUserId,
         updated_at: now,
       })
       .eq('id', refundRequestId);
