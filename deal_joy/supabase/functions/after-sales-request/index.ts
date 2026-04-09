@@ -74,6 +74,103 @@ function withinWindow(usedAt: string): boolean {
   return diffDays <= WINDOW_DAYS;
 }
 
+/** 宽松 UUID 匹配（16 位券码 XXXX-XXXX-XXXX-XXXX 不会误匹配） */
+const LOOSE_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** 将用户输入规范为 DB coupons.coupon_code（16 位大写十六进制，无分隔符） */
+function normalizeCouponCodeInput(raw: string): string | null {
+  const norm = raw.replace(/-/g, "").toUpperCase();
+  if (norm.length !== 16 || !/^[0-9A-F]+$/.test(norm)) return null;
+  return norm;
+}
+
+/** 仅标量列，避免 PostgREST 嵌套 embed 在部分环境下报错导致整查询失败 */
+const COUPON_SELECT_FOR_CREATE =
+  "id, order_id, user_id, status, used_at, merchant_id, redeemed_at_merchant_id, deal_id";
+
+type CouponForCreate = {
+  id: string;
+  order_id: string | null;
+  user_id: string;
+  status: string;
+  used_at: string | null;
+  merchant_id: string | null;
+  redeemed_at_merchant_id: string | null;
+  deal_id: string | null;
+};
+
+/**
+ * 解析可用于提交售后的已使用券：
+ * - couponId 为 UUID：按 id 查，若无行且带了 orderId 则回退按订单查（避免误传 order_item id）
+ * - couponId 为展示用券码：按 coupon_code 查
+ * - 仅 orderId：取该订单下最近核销的一张 used 券
+ */
+async function findCouponForAfterSalesCreate(
+  supabase: ReturnType<typeof createClient>,
+  userId: string,
+  couponIdRaw: string,
+  orderIdRaw: string,
+): Promise<CouponForCreate | null> {
+  const base = () =>
+    supabase
+      .from("coupons")
+      .select(COUPON_SELECT_FOR_CREATE)
+      .eq("user_id", userId)
+      .eq("status", "used");
+
+  const byId = async (id: string): Promise<CouponForCreate | null> => {
+    const { data, error } = await base().eq("id", id).maybeSingle();
+    if (error) {
+      console.error("[after-sales] coupon byId", error.message);
+      return null;
+    }
+    return (data as CouponForCreate) ?? null;
+  };
+
+  const byOrder = async (orderId: string): Promise<CouponForCreate | null> => {
+    const { data, error } = await base()
+      .eq("order_id", orderId)
+      .order("used_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) {
+      console.error("[after-sales] coupon byOrder", error.message);
+      return null;
+    }
+    return (data as CouponForCreate) ?? null;
+  };
+
+  const byCode = async (code: string): Promise<CouponForCreate | null> => {
+    const { data, error } = await base().eq("coupon_code", code).maybeSingle();
+    if (error) {
+      console.error("[after-sales] coupon byCode", error.message);
+      return null;
+    }
+    return (data as CouponForCreate) ?? null;
+  };
+
+  if (couponIdRaw && !LOOSE_UUID_RE.test(couponIdRaw)) {
+    const code = normalizeCouponCodeInput(couponIdRaw);
+    if (code) {
+      const c = await byCode(code);
+      if (c) return c;
+    }
+    if (orderIdRaw) return await byOrder(orderIdRaw);
+    return null;
+  }
+
+  if (couponIdRaw && LOOSE_UUID_RE.test(couponIdRaw)) {
+    const c = await byId(couponIdRaw);
+    if (c) return c;
+    if (orderIdRaw) return await byOrder(orderIdRaw);
+    return null;
+  }
+
+  if (orderIdRaw) return await byOrder(orderIdRaw);
+  return null;
+}
+
 function sanitizePath(filename: string, userId: string): string {
   const safeName = filename
     .toLowerCase()
@@ -81,6 +178,22 @@ function sanitizePath(filename: string, userId: string): string {
     .replace(/^-+|-+$/g, "")
     .slice(0, 64);
   return `user/${userId}/${Date.now()}-${crypto.randomUUID()}-${safeName || "evidence"}`;
+}
+
+/** 与 supabase/config.toml 中函数目录名一致 */
+const FUNCTION_SLUG = "after-sales-request";
+
+/**
+ * 从 URL pathname 解析函数名之后的子路径段。
+ * 线上网关 pathname 为 /functions/v1/after-sales-request/...，本地或直连可能为 /after-sales-request/...
+ */
+function routePartsFromPathname(pathname: string): string[] {
+  const p = pathname.replace(/\/+$/, "");
+  const marker = `/${FUNCTION_SLUG}`;
+  const i = p.indexOf(marker);
+  const after =
+    i >= 0 ? p.slice(i + marker.length) : p.replace(new RegExp(`^${marker}`), "");
+  return after.split("/").filter(Boolean);
 }
 
 Deno.serve(async (req) => {
@@ -115,9 +228,7 @@ Deno.serve(async (req) => {
 
   const serviceClient = createClient(supabaseUrl, serviceKey);
   const url = new URL(req.url);
-  const pathname = url.pathname.replace(/\/+$/, "");
-  const suffix = pathname.replace(/^\/after-sales-request/, "");
-  const parts = suffix.split("/").filter(Boolean);
+  const parts = routePartsFromPathname(url.pathname);
 
   if (parts[0] === "uploads" && req.method === "POST") {
     return await handleUploadSlots(serviceClient, auth, parsedBody ?? {});
@@ -197,23 +308,8 @@ async function handleCreateRequest(
     return errorResponse("Reason detail must be at least 20 characters", "invalid_detail", 400);
   }
 
-  let couponQuery = supabase
-    .from("coupons")
-    .select(
-      "id, order_id, user_id, status, used_at, merchant_id, redeemed_at_merchant_id, deal_id, deals(title), orders(id, total_amount, merchant_id)"
-    )
-    .eq("user_id", userId)
-    .eq("status", "used")
-    .limit(1);
-
-  if (couponId) {
-    couponQuery = couponQuery.eq("id", couponId);
-  } else {
-    couponQuery = couponQuery.eq("order_id", orderId);
-  }
-
-  const { data: coupon, error: couponError } = await couponQuery.single();
-  if (couponError || !coupon) {
+  const coupon = await findCouponForAfterSalesCreate(supabase, userId, couponId, orderId);
+  if (!coupon) {
     return errorResponse("Coupon not found or not redeemable", "coupon_not_found", 404);
   }
   if (!coupon.used_at) {
@@ -237,16 +333,27 @@ async function handleCreateRequest(
     );
   }
 
+  if (!coupon.order_id) {
+    return errorResponse("Order reference missing", "order_missing", 400);
+  }
+  // orders 表无 merchant_id（商家在 deals / coupons 上）；勿 select 不存在的列，否则 PostgREST 报错 → order_missing
+  const { data: orderRow, error: orderFetchError } = await supabase
+    .from("orders")
+    .select("id, total_amount")
+    .eq("id", coupon.order_id)
+    .maybeSingle();
+  if (orderFetchError || !orderRow) {
+    if (orderFetchError) {
+      console.error("[after-sales] order fetch", orderFetchError.message);
+    }
+    return errorResponse("Order reference missing", "order_missing", 400);
+  }
+  const order = orderRow as { id: string; total_amount: number };
+
   const nowIso = new Date().toISOString();
   const expiresAt = new Date(
     new Date(coupon.used_at).getTime() + WINDOW_DAYS * 24 * 60 * 60 * 1000,
   ).toISOString();
-  const order = coupon.orders as
-    | { id: string; total_amount: number; merchant_id: string }
-    | null;
-  if (!order) {
-    return errorResponse("Order reference missing", "order_missing", 400);
-  }
   const refundAmount = Number(order.total_amount);
 
   const timeline: TimelineEntry[] = appendTimeline([], {
@@ -280,7 +387,12 @@ async function handleCreateRequest(
     .single();
 
   if (insertError || !created) {
-    console.error("[after-sales] insert error", insertError?.message);
+    console.error(
+      "[after-sales] insert error",
+      insertError?.message,
+      insertError?.code,
+      insertError?.details,
+    );
     return errorResponse("Failed to submit after-sales request", "insert_failed", 500);
   }
 
@@ -298,7 +410,15 @@ async function handleCreateRequest(
 
   // 发送邮件通知（fire-and-forget）
   const requestIdShort = created.id.slice(0, 8).toUpperCase();
-  const dealTitle = (coupon as any).deals?.title as string | undefined;
+  let dealTitle: string | undefined;
+  if (coupon.deal_id) {
+    const { data: dealRow } = await supabase
+      .from("deals")
+      .select("title")
+      .eq("id", coupon.deal_id)
+      .maybeSingle();
+    dealTitle = (dealRow?.title as string | undefined) ?? undefined;
+  }
   (async () => {
     try {
       // C9：客户提交售后申请确认
