@@ -1084,7 +1084,7 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
             controller: _validityDaysController,
             label: _validityType == ValidityType.shortAfterPurchase
                 ? 'Valid for (1–7 days)'
-                : 'Valid for (8–365 days)',
+                : 'Valid for (8–90 days)',
             hint: _validityType == ValidityType.shortAfterPurchase ? 'e.g. 3' : 'e.g. 30',
             keyboardType: TextInputType.number,
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
@@ -1100,7 +1100,7 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
           context: context,
           initialDate: _endDate ?? DateTime.now().add(const Duration(days: 30)),
           firstDate: DateTime.now().add(const Duration(days: 1)),
-          lastDate: DateTime.now().add(const Duration(days: 365)),
+          lastDate: DateTime.now().add(const Duration(days: 90)), // 最�� 3 个月
           builder: (context, child) {
             return Theme(
               data: Theme.of(context).copyWith(

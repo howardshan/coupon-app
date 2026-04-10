@@ -62,6 +62,8 @@ class AuthNotifier extends Notifier<AsyncValue<UserModel?>> {
     String fullName, {
     required String username,
     required String dateOfBirth,
+    bool marketingOptIn = false,
+    bool analyticsOptIn = false,
   }) async {
     state = const AsyncValue.loading();
     state = await AsyncValue.guard(
@@ -71,6 +73,8 @@ class AuthNotifier extends Notifier<AsyncValue<UserModel?>> {
             fullName: fullName,
             username: username,
             dateOfBirth: dateOfBirth,
+            marketingOptIn: marketingOptIn,
+            analyticsOptIn: analyticsOptIn,
           ),
     );
     if (state.hasError) {

@@ -241,7 +241,7 @@ Subject to your compliance with these Terms, Crunchy Plum grants you a limited, 
 If you believe that any content on the Platform infringes your copyright, you may submit a written notice of claimed infringement to our designated DMCA agent:
 
 **DMCA Agent:** [NAME]
-**Address:** 616 Rockcrossing Ln, Allen, TX 75013
+**Address:** [ADDRESS]
 **Email:** [DMCA EMAIL]
 
 Your notice must comply with the requirements of the Digital Millennium Copyright Act (17 U.S.C. § 512) and include: (i) identification of the copyrighted work claimed to have been infringed; (ii) identification of the infringing material and its location on the Platform; (iii) your contact information; (iv) a statement of good faith belief that the use is not authorized; and (v) a statement under penalty of perjury that the information in the notice is accurate. Crunchy Plum will respond to valid DMCA notices in accordance with applicable law.
@@ -371,8 +371,7 @@ Section headings are for convenience only and shall not affect the interpretatio
 ## 23. Contact Information
 
 **Crunchy Plum, LLC**
-616 Rockcrossing Ln
-Allen, TX 75013
+[ADDRESS]
 Email: [SUPPORT EMAIL]
 Website: [WEBSITE URL]
 
