@@ -38,6 +38,12 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   // 服务条款是否勾选
   bool _tosAccepted = false;
 
+  // 营销通讯是否同意接收
+  bool _marketingOptIn = false;
+
+  // Google Analytics 数据收集是否同意
+  bool _analyticsOptIn = false;
+
   // 邮箱查重状态: null=未检查, true=已占用, false=可用
   bool? _emailTaken;
   bool _emailChecking = false;
@@ -194,6 +200,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
           _fullNameCtrl.text.trim(),
           username: _usernameCtrl.text.trim(),
           dateOfBirth: _dateOfBirth!.toIso8601String().split('T').first,
+          marketingOptIn: _marketingOptIn,
+          analyticsOptIn: _analyticsOptIn,
         );
 
     if (mounted) {
@@ -653,6 +661,74 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                             ),
                           ],
                         ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+
+                // ---- 营销通讯同意（可选） ----
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: Checkbox(
+                        value: _marketingOptIn,
+                        activeColor: AppColors.primary,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        onChanged: (val) {
+                          setState(() {
+                            _marketingOptIn = val ?? false;
+                          });
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'I would like to receive promotional emails and SMS about deals, discounts, and updates.',
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(color: AppColors.textSecondary),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+
+                // ---- Google Analytics 数据收集同意（可选） ----
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: Checkbox(
+                        value: _analyticsOptIn,
+                        activeColor: AppColors.primary,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        onChanged: (val) {
+                          setState(() {
+                            _analyticsOptIn = val ?? false;
+                          });
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'I agree to allow anonymous usage analytics to help improve the app experience.',
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(color: AppColors.textSecondary),
                       ),
                     ),
                   ],

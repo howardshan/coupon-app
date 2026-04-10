@@ -351,17 +351,92 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- ────────────────────────────────────────────────────────────
--- 7. 初始数据 — 7 个法律文档（内容待 Admin 填写）
+-- 7. 初始数据 — 8 个法律文档（内容待 Admin 填写）
 -- ────────────────────────────────────────────────────────────
 INSERT INTO legal_documents (slug, title, document_type, requires_re_consent, current_version) VALUES
-  ('terms-of-service',     'Terms of Service',      'both',     true,  0),
-  ('privacy-policy',       'Privacy Policy',        'both',     true,  0),
-  ('refund-policy',        'Refund Policy',         'user',     false, 0),
-  ('merchant-agreement',   'Merchant Agreement',    'merchant', true,  0),
-  ('payment-terms',        'Payment Terms',         'both',     false, 0),
-  ('advertising-terms',    'Advertising Terms',     'merchant', false, 0),
-  ('gift-terms',           'Gift Terms',            'user',     false, 0)
+  ('terms-of-service',      'Terms of Service',                    'both',     true,  0),
+  ('privacy-policy',        'Privacy Policy',                      'both',     true,  0),
+  ('refund-policy',         'Refund Policy',                       'user',     false, 0),
+  ('merchant-agreement',    'Merchant Agreement',                  'merchant', true,  0),
+  ('payment-terms',         'Merchant Payment and Settlement Terms','both',    false, 0),
+  ('advertising-terms',     'Advertising Terms',                   'merchant', false, 0),
+  ('gift-terms',            'Gift Terms',                          'user',     false, 0),
+  ('merchant-terms-of-use', 'Merchant Terms of Use',               'merchant', true,  0)
 ON CONFLICT (slug) DO NOTHING;
 
 -- 需要 pgcrypto 扩展（用于 SHA256 哈希）
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- ────────────────────────────────────────────────────────────
+-- 8. 商家佣金变更 → 自动触发 Merchant Agreement 重新签字
+-- ────────────────────────────────────────────────────────────
+CREATE OR REPLACE FUNCTION invalidate_merchant_agreement_on_commission_change()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_doc_id UUID;
+  v_user_id UUID;
+  v_log_id UUID;
+  v_hash TEXT;
+BEGIN
+  -- 仅在 commission_rate 实际发生变化时触发
+  IF OLD.commission_rate IS NOT DISTINCT FROM NEW.commission_rate THEN
+    RETURN NEW;
+  END IF;
+
+  -- 获取 merchant-agreement 的 document_id
+  SELECT id INTO v_doc_id FROM legal_documents WHERE slug = 'merchant-agreement';
+  IF v_doc_id IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  -- 获取商家对应的 auth user_id
+  v_user_id := NEW.user_id;
+  IF v_user_id IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  -- 将该商家的 merchant-agreement consent 版本重置为 0，触发重新签字
+  UPDATE user_consents
+  SET version = 0, consented_at = now()
+  WHERE user_id = v_user_id AND document_id = v_doc_id;
+
+  -- 同样重置 payment-terms（也引用了佣金比例）
+  UPDATE user_consents
+  SET version = 0, consented_at = now()
+  WHERE user_id = v_user_id
+    AND document_id = (SELECT id FROM legal_documents WHERE slug = 'payment-terms');
+
+  -- 写入审计日志
+  v_log_id := gen_random_uuid();
+  v_hash := encode(
+    digest(
+      v_log_id::text || v_user_id::text || 'consent_invalidated' || v_doc_id::text || now()::text,
+      'sha256'
+    ),
+    'hex'
+  );
+
+  INSERT INTO legal_audit_log (
+    id, user_id, actor_id, actor_role,
+    event_type, document_id, document_slug, document_title, document_version,
+    details, integrity_hash
+  ) VALUES (
+    v_log_id, v_user_id, v_user_id, 'system',
+    'consent_invalidated', v_doc_id, 'merchant-agreement', 'Merchant Agreement', 0,
+    jsonb_build_object(
+      'reason', 'commission_rate_changed',
+      'old_rate', OLD.commission_rate,
+      'new_rate', NEW.commission_rate,
+      'merchant_id', NEW.id
+    ),
+    v_hash
+  );
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE TRIGGER trg_merchant_commission_change_reconsent
+  AFTER UPDATE ON merchants
+  FOR EACH ROW
+  EXECUTE FUNCTION invalidate_merchant_agreement_on_commission_change();
