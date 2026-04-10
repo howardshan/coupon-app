@@ -200,6 +200,29 @@ class CouponsRepository {
     }
   }
 
+  /// 已核销券 24h 内争议退款 — submit-refund-dispute（需商家/平台审批后入账）
+  Future<Map<String, dynamic>> submitRefundDispute({
+    required String orderItemId,
+    required String reason,
+  }) async {
+    try {
+      final response = await _client.functions.invoke(
+        'submit-refund-dispute',
+        body: {
+          'orderItemId': orderItemId,
+          'reason': reason.trim(),
+        },
+      );
+      return _parseRefundResponse(response);
+    } on AppException {
+      rethrow;
+    } on FunctionException catch (e) {
+      throw AppException(_extractFunctionError(e));
+    } catch (e) {
+      throw AppException('Refund dispute failed: $e');
+    }
+  }
+
   /// V3：通过 orderItemId 直接请求退款（供 OrdersRepository/Provider 使用）
   Future<Map<String, dynamic>> requestRefundByItemId(
     String orderItemId, {
@@ -380,9 +403,10 @@ class CouponsRepository {
   /// 从 FunctionException 中提取可读的错误信息
   String _extractFunctionError(FunctionException e) {
     final details = e.details;
-    if (details is Map && details.containsKey('error')) {
-      return details['error'].toString();
+    if (details is Map) {
+      if (details['error'] != null) return details['error'].toString();
+      if (details['message'] != null) return details['message'].toString();
     }
-    return 'Refund request failed (${e.status})';
+    return 'Request failed (HTTP ${e.status}). Check network or try again.';
   }
 }

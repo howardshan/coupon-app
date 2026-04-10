@@ -13,6 +13,7 @@
 ## Task 1: 数据库迁移 — 创建 support_callbacks 表
 
 **Files:**
+
 - Create: `deal_joy/supabase/migrations/20260331000001_support_callbacks.sql`
 
 **Step 1: 编写 migration SQL**
@@ -61,11 +62,13 @@ git commit -m "feat(support): add support_callbacks table with RLS"
 ## Task 2: FAQ 数据定义 — 预设问答树
 
 **Files:**
+
 - Create: `deal_joy/lib/features/support/presentation/widgets/faq_data.dart`
 
 **Step 1: 定义问答数据结构和内容**
 
 创建 `FaqItem` 类和预设问答列表。每个 FaqItem 包含：
+
 - `id`: 唯一标识
 - `label`: 按钮显示文字
 - `keywords`: 关键词列表（用于输入匹配）
@@ -73,6 +76,7 @@ git commit -m "feat(support): add support_callbacks table with RLS"
 - `action`: 可选的后续动作类型（`showOrders`, `showRefundableOrders`, `goBack` 等）
 
 预设问题：
+
 1. **Check Order Status** — keywords: order, status, 订单 → action: `showOrders`
 2. **Request a Refund** — keywords: refund, return, 退款 → action: `showRefundableOrders`
 3. **How to Use Coupons** — keywords: coupon, use, redeem, 用券 → 纯文字回答
@@ -92,6 +96,7 @@ git commit -m "feat(support): add FAQ data definitions for chat tree"
 ## Task 3: Data 层 — CallbackRequestModel + SupportRepository
 
 **Files:**
+
 - Create: `deal_joy/lib/features/support/data/models/callback_request_model.dart`
 - Create: `deal_joy/lib/features/support/data/repositories/support_repository.dart`
 
@@ -103,6 +108,7 @@ git commit -m "feat(support): add FAQ data definitions for chat tree"
 **Step 2: 创建 SupportRepository**
 
 方法：
+
 - `submitCallbackRequest({required String phone, required String timeSlot, String? description})` → 插入 `support_callbacks` 表
 - 使用项目现有模式：`SupabaseClient` 注入，`AppException` 处理异常
 
@@ -118,6 +124,7 @@ git commit -m "feat(support): add CallbackRequestModel and SupportRepository"
 ## Task 4: Domain 层 — Riverpod Providers
 
 **Files:**
+
 - Create: `deal_joy/lib/features/support/domain/providers/support_provider.dart`
 
 **Step 1: 创建 providers**
@@ -144,11 +151,13 @@ git commit -m "feat(support): add support providers"
 ## Task 5: Call Back 表单弹窗 — CallbackSheet
 
 **Files:**
+
 - Create: `deal_joy/lib/features/support/presentation/widgets/callback_sheet.dart`
 
 **Step 1: 创建 CallbackSheet widget**
 
 底部弹窗（`showModalBottomSheet`），包含：
+
 - 标题 "Request a Call Back"
 - 电话号码输入框（`TextFormField`，预填用户已有手机号）
 - 时间段选择（`ChoiceChip` 或 `SegmentedButton`）：Morning 9am-12pm / Afternoon 12-5pm / Evening 5-9pm
@@ -168,11 +177,13 @@ git commit -m "feat(support): add CallbackSheet bottom sheet widget"
 ## Task 6: Customer Support 入口页
 
 **Files:**
+
 - Create: `deal_joy/lib/features/support/presentation/screens/customer_support_screen.dart`
 
 **Step 1: 创建 CustomerSupportScreen**
 
 页面内容：
+
 - AppBar: "Customer Support"
 - 三张卡片（纵向排列），每张包含图标 + 标题 + 描述 + 箭头：
   1. **Email Us** — icon: `Icons.email_outlined` — 点击 `url_launcher` 跳转 `mailto:support@dealjoy.com?subject=DealJoy Support Request`
@@ -193,6 +204,7 @@ git commit -m "feat(support): add CustomerSupportScreen with 3 contact options"
 ## Task 7: 问答树聊天界面 — SupportChatScreen
 
 **Files:**
+
 - Create: `deal_joy/lib/features/support/presentation/screens/support_chat_screen.dart`
 
 **Step 1: 创建 SupportChatScreen**
@@ -202,6 +214,7 @@ git commit -m "feat(support): add CustomerSupportScreen with 3 contact options"
 **状态管理**：用 `StatefulWidget` 内部维护消息列表 `List<_ChatMessage>`，每条消息包含 `text`, `isUser`, `buttons`（可选的快捷按钮列表）, `orderItems`（可选的订单列表）
 
 **UI 结构**：
+
 - AppBar: "DealJoy Support"
 - 消息列表（`ListView`）：系统消息左对齐灰色气泡，用户消息右对齐主题色气泡
 - 系统消息可附带快捷按钮（`Wrap` 中的 `ActionChip`）
@@ -209,6 +222,7 @@ git commit -m "feat(support): add CustomerSupportScreen with 3 contact options"
 - 底部输入栏：`TextField` + 发送按钮
 
 **交互逻辑**：
+
 1. 初始化时显示欢迎消息 + 6 个快捷按钮
 2. 用户点击按钮或输入文字 → 添加用户消息气泡
 3. 根据 `FaqItem.id` 或关键词匹配 → 添加系统回复气泡
@@ -229,17 +243,20 @@ git commit -m "feat(support): add SupportChatScreen with FAQ tree and order quer
 ## Task 8: 路由注册
 
 **Files:**
+
 - Modify: `deal_joy/lib/core/router/app_router.dart`
 
 **Step 1: 添加 import 和路由**
 
 在 `app_router.dart` 顶部添加 import：
+
 ```dart
 import '../../features/support/presentation/screens/customer_support_screen.dart';
 import '../../features/support/presentation/screens/support_chat_screen.dart';
 ```
 
 在路由列表中（`/chat/notifications` 路由之后、`/chat/:conversationId` 路由之前的区域）添加：
+
 ```dart
 // Customer Support
 GoRoute(
@@ -264,6 +281,7 @@ git commit -m "feat(support): register /support and /support/chat routes"
 ## Task 9: Profile 页面添加 Customer Support 入口
 
 **Files:**
+
 - Modify: `deal_joy/lib/features/profile/presentation/screens/profile_screen.dart`
 
 **Step 1: 添加 Customer Support section card**
@@ -322,11 +340,13 @@ git commit -m "feat(support): add Customer Support entry in Profile page"
 ## Task 10: AppConstants 添加客服邮箱
 
 **Files:**
+
 - Modify: `deal_joy/lib/core/constants/app_constants.dart`
 
 **Step 1: 添加客服联系邮箱常量**
 
 在 `AppConstants` 类中添加：
+
 ```dart
 /// 客服联系邮箱
 static const String supportEmail = 'support@dealjoy.com';
@@ -383,3 +403,4 @@ Task 11 (验证)            ─── 依赖全部
 - **并行组 2**: Task 3 + Task 4（依赖 Task 1）
 - **并行组 3**: Task 5 + Task 7（分别依赖 Task 4 和 Task 2+4）
 - **顺序**: Task 6 → Task 8 → Task 9 → Task 11
+

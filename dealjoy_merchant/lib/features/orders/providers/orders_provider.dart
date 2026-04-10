@@ -1,7 +1,7 @@
 // 订单管理 Riverpod Providers
 // OrdersNotifier: 订单列表分页状态
 // orderFilterProvider: 筛选条件 StateProvider
-// orderDetailProvider: 单个订单详情（AutoDispose FutureProvider）
+// orderDetailProvider: 单个订单详情（autoDispose：离开详情即释放，再进入重新拉取）
 // merchantDealsForFilterProvider: 商家 deals 列表（供筛选下拉使用）
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -100,15 +100,16 @@ class OrdersNotifier extends AsyncNotifier<List<MerchantOrder>> {
 
 // =============================================================
 // orderDetailProvider — 单个订单详情
-// AutoDispose 离开页面后自动释放缓存
+// autoDispose：无监听时释放，避免退回列表后仍展示陈旧缓存
 // =============================================================
-final orderDetailProvider = AsyncNotifierProviderFamily<
-    OrderDetailNotifier,
-    MerchantOrderDetail,
-    String>(OrderDetailNotifier.new);
+final orderDetailProvider = AsyncNotifierProvider
+    .autoDispose
+    .family<OrderDetailNotifier, MerchantOrderDetail, String>(
+  OrderDetailNotifier.new,
+);
 
 class OrderDetailNotifier
-    extends FamilyAsyncNotifier<MerchantOrderDetail, String> {
+    extends AutoDisposeFamilyAsyncNotifier<MerchantOrderDetail, String> {
   @override
   Future<MerchantOrderDetail> build(String arg) async {
     final service = ref.read(ordersServiceProvider);

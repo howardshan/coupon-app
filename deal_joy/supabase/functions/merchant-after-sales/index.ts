@@ -33,6 +33,22 @@ function errorResponse(message: string, code = "bad_request", status = 400): Res
   return jsonResponse({ error: code, message }, status);
 }
 
+/** 与 supabase/config.toml 中函数目录名一致 */
+const FUNCTION_SLUG = "merchant-after-sales";
+
+/**
+ * 从 URL pathname 解析函数名之后的子路径段。
+ * 线上网关 pathname 为 /functions/v1/merchant-after-sales/...，本地或直连可能为 /merchant-after-sales/...
+ */
+function routePartsFromPathname(pathname: string): string[] {
+  const p = pathname.replace(/\/+$/, "");
+  const marker = `/${FUNCTION_SLUG}`;
+  const i = p.indexOf(marker);
+  const after =
+    i >= 0 ? p.slice(i + marker.length) : p.replace(new RegExp(`^${marker}`), "");
+  return after.split("/").filter(Boolean);
+}
+
 function sanitizePath(filename: string, merchantId: string): string {
   const safeName = filename
     .toLowerCase()
@@ -65,9 +81,7 @@ Deno.serve(async (req) => {
   }
 
   const url = new URL(req.url);
-  const pathname = url.pathname.replace(/\/+$/, "");
-  const suffix = pathname.replace(/^\/merchant-after-sales/, "");
-  const segments = suffix.split("/").filter(Boolean);
+  const segments = routePartsFromPathname(url.pathname);
 
   let parsedBody: Record<string, unknown> | null = null;
   if (req.method === "POST") {
@@ -194,7 +208,7 @@ async function handleList(
   let query = supabase
     .from("after_sales_requests")
     .select(
-      "id, status, reason_code, reason_detail, refund_amount, user_attachments, merchant_feedback, created_at, expires_at, store_id, order_id, timeline, users:users!inner(full_name), orders(total_amount, order_number), after_sales_events(*)",
+      "id, status, reason_code, reason_detail, refund_amount, user_attachments, merchant_feedback, created_at, expires_at, store_id, order_id, user_id, timeline, orders(total_amount, order_number), after_sales_events(*)",
       { count: "exact" }
     )
     .in("merchant_id", auth.merchantIds)
@@ -214,12 +228,40 @@ async function handleList(
     return errorResponse("Failed to load after-sales requests", "db_error", 500);
   }
 
-  const hydrated = await decorateAfterSalesRequests(supabase, data ?? []);
+  const rows = data ?? [];
+  const userIds = [
+    ...new Set(
+      rows
+        .map((r: { user_id?: string | null }) => r.user_id)
+        .filter((id): id is string => typeof id === "string" && id.length > 0),
+    ),
+  ];
+  const userMap = new Map<string, { full_name: string | null }>();
+  if (userIds.length > 0) {
+    const { data: usersData, error: usersErr } = await supabase
+      .from("users")
+      .select("id, full_name")
+      .in("id", userIds);
+    if (usersErr) {
+      console.error("[merchant-after-sales] list users error", usersErr.message);
+      return errorResponse("Failed to load after-sales requests", "db_error", 500);
+    }
+    for (const u of usersData ?? []) {
+      userMap.set(u.id as string, { full_name: (u as { full_name?: string | null }).full_name ?? null });
+    }
+  }
+
+  const hydrated = await decorateAfterSalesRequests(supabase, rows);
   return jsonResponse({
-    data: hydrated.map((row) => ({
-      ...row,
-      user_display_name: maskName(row.users?.full_name ?? "Anonymous"),
-    })),
+    data: hydrated.map((row) => {
+      const u = userMap.get(String(row.user_id ?? ""));
+      const fullName = u?.full_name ?? null;
+      return {
+        ...row,
+        users: fullName != null ? { full_name: fullName } : null,
+        user_display_name: maskName(fullName ?? "Anonymous"),
+      };
+    }),
     total: count ?? 0,
     page,
     per_page: perPage,
@@ -239,9 +281,7 @@ async function handleDetail(
 ): Promise<Response> {
   const { data, error } = await supabase
     .from("after_sales_requests")
-    .select(
-      "*, users:users!inner(full_name, avatar_url), orders(*), after_sales_events(*)"
-    )
+    .select("*, orders(*), after_sales_events(*)")
     .eq("id", requestId)
     .in("merchant_id", auth.merchantIds)
     .single();
@@ -249,11 +289,34 @@ async function handleDetail(
   if (error || !data) {
     return errorResponse("Request not found", "not_found", 404);
   }
-  const hydrated = await decorateAfterSalesRequest(supabase, data);
+
+  const uid = data.user_id as string | undefined;
+  let userRow: { full_name: string | null; avatar_url: string | null } | null = null;
+  if (uid) {
+    const { data: u } = await supabase
+      .from("users")
+      .select("full_name, avatar_url")
+      .eq("id", uid)
+      .maybeSingle();
+    userRow = u
+      ? {
+        full_name: (u as { full_name?: string | null }).full_name ?? null,
+        avatar_url: (u as { avatar_url?: string | null }).avatar_url ?? null,
+      }
+      : null;
+  }
+
+  const withUser = {
+    ...data,
+    users: userRow
+      ? { full_name: userRow.full_name, avatar_url: userRow.avatar_url }
+      : null,
+  };
+  const hydrated = await decorateAfterSalesRequest(supabase, withUser);
   return jsonResponse({
     request: {
       ...hydrated,
-      user_display_name: maskName(data.users?.full_name ?? "Anonymous"),
+      user_display_name: maskName(userRow?.full_name ?? "Anonymous"),
     },
   });
 }
