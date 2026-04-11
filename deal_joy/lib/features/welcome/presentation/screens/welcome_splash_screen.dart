@@ -50,6 +50,16 @@ class _WelcomeSplashScreenState extends ConsumerState<WelcomeSplashScreen>
     final repo = ref.read(welcomeRepositoryProvider);
     final prefs = await SharedPreferences.getInstance();
 
+    // ── Step 0: 首次启动 → 先跳 Onboarding，之后再回到 /welcome 走广告流程 ──
+    final isFirstLaunch = prefs.getBool('is_first_launch') ?? true;
+    if (isFirstLaunch) {
+      debugPrint('[Splash] 首次启动 → /onboarding');
+      if (!mounted) return;
+      _navigated = true;
+      context.go('/onboarding');
+      return;
+    }
+
     // 记录 app_open 埋点（仅登录用户，user_events.user_id NOT NULL）
     _recordAppOpen();
 
@@ -144,24 +154,15 @@ class _WelcomeSplashScreenState extends ConsumerState<WelcomeSplashScreen>
     }
   }
 
-  /// 退出 Splash，根据是否首次安装决定去 Onboarding 或首页
+  /// 退出 Splash，直接进入首页
+  /// （首次安装引导已在 _loadConfig 顶部处理，这里只处理广告流程之后的跳转）
   Future<void> _navigateNext() async {
     if (_navigated) return;
     _navigated = true;
     _countdownController?.stop();
-
-    final prefs = await SharedPreferences.getInstance();
-    final isFirstLaunch = prefs.getBool('is_first_launch') ?? true;
-    debugPrint('[Splash] _navigateNext: isFirstLaunch=$isFirstLaunch');
-
     if (!mounted) return;
-    if (isFirstLaunch) {
-      debugPrint('[Splash] → /onboarding');
-      context.go('/onboarding');
-    } else {
-      debugPrint('[Splash] → /home');
-      context.go('/home');
-    }
+    debugPrint('[Splash] → /home');
+    context.go('/home');
   }
 
   /// 点击静态 slide 跳转对应链接（P6: 显式 break + external 安全校验）

@@ -19,6 +19,10 @@ dependencies:
   # 后端 - Supabase
   supabase_flutter: ^2.8.0
 
+  # 合规审计：采集设备信息和 App 版本号，写入法律文档同意事件
+  device_info_plus: ^11.1.0
+  package_info_plus: ^8.0.2
+
   # 扫码
   mobile_scanner: ^6.0.3
 

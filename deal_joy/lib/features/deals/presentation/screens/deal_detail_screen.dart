@@ -15,6 +15,7 @@ import '../../domain/providers/history_provider.dart';
 import '../../domain/providers/recommendation_provider.dart';
 import '../../../cart/domain/providers/cart_provider.dart';
 import '../../../auth/domain/providers/auth_provider.dart';
+import '../../../reviews/domain/providers/review_eligibility_provider.dart';
 
 class DealDetailScreen extends ConsumerWidget {
   final String dealId;
@@ -2748,6 +2749,8 @@ class _ReviewsSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final reviewsAsync = ref.watch(dealReviewsProvider(dealId));
+    // 当前用户是否持有该 deal 的已核销 coupon → 决定是否显示 "Write a Review" 按钮
+    final canReview = ref.watch(canReviewDealProvider(dealId)).valueOrNull ?? false;
 
     return Container(
       color: Colors.white,
@@ -2865,29 +2868,32 @@ class _ReviewsSection extends ConsumerWidget {
           ),
 
           // Write a review button
-          const SizedBox(height: 8),
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => context.push('/review/$dealId'),
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.primary),
-              ),
-              child: const Center(
-                child: Text(
-                  'Write a Review',
-                  style: TextStyle(
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
+          // 仅当用户持有该 deal 的已核销 coupon 时才显示，防止未购买用户刷评价
+          if (canReview) ...[
+            const SizedBox(height: 8),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => context.push('/review/$dealId'),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.primary),
+                ),
+                child: const Center(
+                  child: Text(
+                    'Write a Review',
+                    style: TextStyle(
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
+          ],
         ],
       ),
     );

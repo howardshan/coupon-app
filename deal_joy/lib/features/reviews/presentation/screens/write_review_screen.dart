@@ -147,6 +147,36 @@ class _WriteReviewScreenState extends ConsumerState<WriteReviewScreen> {
     setState(() => _submitting = true);
     try {
       final client = ref.read(supabaseClientProvider);
+
+      // 写评价资格前置校验：用户必须持有已核销（status=used）的 coupon
+      // 编辑模式跳过此校验（既然已经写过，说明当时已经符合资格）
+      if (!_isEditMode) {
+        final eligibleCoupon = await client
+            .from('coupons')
+            .select('id')
+            .eq('user_id', user.id)
+            .eq('deal_id', widget.dealId)
+            .eq('status', 'used')
+            .limit(1)
+            .maybeSingle();
+
+        if (eligibleCoupon == null) {
+          if (mounted) {
+            setState(() => _submitting = false);
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'You can only review a deal after purchasing and redeeming a coupon for it.',
+                ),
+                backgroundColor: AppColors.error,
+                duration: Duration(seconds: 4),
+              ),
+            );
+          }
+          return;
+        }
+      }
+
       final payload = {
         'deal_id': widget.dealId,
         // 空文字は UUID として無効のため null にする（DB が空文字を拒否するため）
