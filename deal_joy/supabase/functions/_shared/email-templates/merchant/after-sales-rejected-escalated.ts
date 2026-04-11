@@ -8,12 +8,12 @@ import { wrapInLayout, escapeHtml, buildInfoTable } from "../base-layout.ts";
 export interface M11AfterSalesRejectedData {
   merchantName: string;
   requestId: string;
-  dashboardUrl?: string;
+  /** 展示用订单号（如 DJ-xxxxx） */
+  orderNumber?: string;
 }
 
 export function buildM11Email(data: M11AfterSalesRejectedData): { subject: string; html: string } {
   const subject = `After-sales case may be escalated to platform review — request ${data.requestId}`;
-  const dashboardUrl = data.dashboardUrl ?? "https://merchant.crunchyplum.com/after-sales";
 
   const body = `
     <p style="margin:0 0 16px;font-size:22px;font-weight:700;color:#212121;">
@@ -27,6 +27,9 @@ export function buildM11Email(data: M11AfterSalesRejectedData): { subject: strin
 
     ${buildInfoTable([
       { label: "Request ID", value: `<span style="font-family:monospace;">${escapeHtml(data.requestId)}</span>` },
+      ...(data.orderNumber
+        ? [{ label: "Order", value: `<span style="font-family:monospace;">${escapeHtml(data.orderNumber)}</span>` }]
+        : []),
       { label: "Your Decision", value: '<span style="color:#C62828;font-weight:600;">Rejected</span>' },
       { label: "Next Step",     value: "Customer may escalate to CrunchyPlum platform review" },
     ])}
@@ -43,6 +46,6 @@ export function buildM11Email(data: M11AfterSalesRejectedData): { subject: strin
 
   return {
     subject,
-    html: wrapInLayout({ subject, body, cta: { label: "View Case", url: dashboardUrl } }),
+    html: wrapInLayout({ subject, body }),
   };
 }

@@ -13,6 +13,8 @@ export interface C13MerchantRepliedData {
   merchantNote?: string;
   refundAmount?: number;   // approve 时有值
   dealTitle?: string;
+  /** 展示用订单号（如 DJ-xxxxx） */
+  orderNumber?: string;
 }
 
 export function buildC13Email(data: C13MerchantRepliedData): { subject: string; html: string } {
@@ -28,6 +30,9 @@ export function buildC13Email(data: C13MerchantRepliedData): { subject: string; 
 
   const rows = [
     { label: "Request ID",   value: `<span style="font-family:monospace;">${escapeHtml(data.requestId)}</span>` },
+    ...(data.orderNumber
+      ? [{ label: "Order", value: `<span style="font-family:monospace;">${escapeHtml(data.orderNumber)}</span>` }]
+      : []),
     ...(data.dealTitle ? [{ label: "Deal", value: escapeHtml(data.dealTitle) }] : []),
     statusRow,
     ...(isApproved && data.refundAmount
@@ -41,8 +46,11 @@ export function buildC13Email(data: C13MerchantRepliedData): { subject: string; 
   const nextStep = isApproved
     ? `Your refund of <strong>${formatCurrency(data.refundAmount ?? 0)}</strong> is being processed.
        You will receive a separate notification once the refund has been issued.`
-    : `If you disagree with this decision, you can request a <strong>platform review</strong>
-       through the CrunchyPlum app. Our team will step in and make a final decision within 3 business days.`;
+    : `If you disagree with this decision, open the <strong>CrunchyPlum app</strong>, go to
+       <strong>Orders</strong>, open this order, tap <strong>Refund / After-sales</strong>, then choose
+       <strong>View after-sales status</strong> (or the same after-sales entry). On the after-sales
+       screen, tap <strong>Escalate to Crunchy Plum</strong> to request a platform review.
+       Our team will make a final decision within 3 business days.`;
 
   const body = `
     <p style="margin:0 0 16px;font-size:22px;font-weight:700;color:#212121;">

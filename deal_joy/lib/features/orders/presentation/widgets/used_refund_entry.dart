@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/errors/app_exception.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../after_sales/domain/providers/after_sales_provider.dart';
 import '../../../after_sales/presentation/pages/after_sales_screen_args.dart';
 import '../../data/models/order_item_model.dart';
 import '../../domain/providers/coupons_provider.dart';
@@ -76,51 +77,10 @@ void showUsedRefundEntry(
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text(
-              'After-sales refund',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: AppColors.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              'The 24-hour dispute window has passed. You can still submit an after-sales '
-              'request within 7 days of redemption.',
-              style: TextStyle(fontSize: 14, color: AppColors.textSecondary),
-            ),
-            const SizedBox(height: 24),
-            FilledButton(
-              onPressed: () {
-                Navigator.pop(ctx);
-                context.push(
-                  '/after-sales/${item.orderId}/request',
-                  extra: AfterSalesScreenArgs(
-                    orderId: item.orderId,
-                    couponId: couponId,
-                    dealTitle: item.dealTitle,
-                    totalAmount: item.unitPrice + item.serviceFee,
-                    merchantName: item.merchantName ?? item.redeemedMerchantName,
-                    couponCode: item.formattedCouponCode ?? item.couponCode,
-                    couponUsedAt: item.redeemedAt,
-                  ),
-                );
-              },
-              child: const Text('Continue to after-sales'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
-            ),
-          ],
-        ),
+      builder: (sheetCtx) => _AfterSalesRefundChoiceSheet(
+        parentContext: context,
+        item: item,
+        couponId: couponId,
       ),
     );
     return;
@@ -136,6 +96,133 @@ void showUsedRefundEntry(
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
+        ],
+      ),
+    );
+  }
+}
+
+/// 7 天售后窗：若该券已有售后单则只展示「查看状态」，避免重复提交
+class _AfterSalesRefundChoiceSheet extends ConsumerStatefulWidget {
+  const _AfterSalesRefundChoiceSheet({
+    required this.parentContext,
+    required this.item,
+    required this.couponId,
+  });
+
+  final BuildContext parentContext;
+  final OrderItemModel item;
+  final String couponId;
+
+  @override
+  ConsumerState<_AfterSalesRefundChoiceSheet> createState() => _AfterSalesRefundChoiceSheetState();
+}
+
+class _AfterSalesRefundChoiceSheetState extends ConsumerState<_AfterSalesRefundChoiceSheet> {
+  bool? _hasExistingForCoupon;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadExistingCase();
+  }
+
+  Future<void> _loadExistingCase() async {
+    final repo = ref.read(afterSalesRepositoryProvider);
+    try {
+      final list = await repo.fetchRequests(orderId: widget.item.orderId);
+      final cid = widget.couponId.trim();
+      final match = list.any((r) => r.couponId.trim() == cid);
+      if (!mounted) return;
+      setState(() => _hasExistingForCoupon = match);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _hasExistingForCoupon = false);
+    }
+  }
+
+  AfterSalesScreenArgs _args() {
+    final i = widget.item;
+    return AfterSalesScreenArgs(
+      orderId: i.orderId,
+      couponId: widget.couponId,
+      dealTitle: i.dealTitle,
+      totalAmount: i.unitPrice + i.serviceFee,
+      merchantName: i.merchantName ?? i.redeemedMerchantName,
+      couponCode: i.formattedCouponCode ?? i.couponCode,
+      couponUsedAt: i.redeemedAt,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final loading = _hasExistingForCoupon == null;
+    final hasCase = _hasExistingForCoupon == true;
+    final parent = widget.parentContext;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'After-sales refund',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            hasCase
+                ? 'You already have an after-sales case for this voucher. Open status to review updates or escalate if needed.'
+                : 'The 24-hour dispute window has passed. You can still submit an after-sales '
+                    'request within 7 days of redemption.',
+            style: const TextStyle(fontSize: 14, color: AppColors.textSecondary),
+          ),
+          const SizedBox(height: 24),
+          if (loading)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 20),
+              child: Center(
+                child: SizedBox(
+                  width: 28,
+                  height: 28,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            )
+          else ...[
+            if (!hasCase) ...[
+              FilledButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  parent.push(
+                    '/after-sales/${widget.item.orderId}/request',
+                    extra: _args(),
+                  );
+                },
+                child: const Text('Continue to after-sales'),
+              ),
+              const SizedBox(height: 8),
+            ],
+            OutlinedButton(
+              onPressed: () {
+                Navigator.pop(context);
+                parent.push(
+                  '/after-sales/${widget.item.orderId}',
+                  extra: _args(),
+                );
+              },
+              child: const Text('View after-sales status'),
+            ),
+          ],
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
         ],
       ),
     );
