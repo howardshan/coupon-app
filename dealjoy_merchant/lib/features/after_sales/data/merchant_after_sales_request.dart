@@ -3,20 +3,32 @@ class MerchantOrderContext {
   const MerchantOrderContext({
     this.orderId,
     this.orderNumber,
+    this.orderCreatedAt,
+    this.orderPaidAt,
+    this.dealId,
     this.dealTitle,
+    this.dealSummary,
     this.couponCodeTail,
     this.redeemedAt,
   });
 
   final String? orderId;
   final String? orderNumber;
+  final DateTime? orderCreatedAt;
+  final DateTime? orderPaidAt;
+  final String? dealId;
   final String? dealTitle;
+  final String? dealSummary;
   final String? couponCodeTail;
   final DateTime? redeemedAt;
 
   bool get hasAnyContext =>
       (orderNumber != null && orderNumber!.isNotEmpty) ||
+      orderCreatedAt != null ||
+      orderPaidAt != null ||
+      (dealId != null && dealId!.isNotEmpty) ||
       (dealTitle != null && dealTitle!.isNotEmpty) ||
+      (dealSummary != null && dealSummary!.isNotEmpty) ||
       (couponCodeTail != null && couponCodeTail!.isNotEmpty) ||
       redeemedAt != null;
 
@@ -24,7 +36,15 @@ class MerchantOrderContext {
     return MerchantOrderContext(
       orderId: json['order_id'] as String?,
       orderNumber: json['order_number'] as String?,
+      orderCreatedAt: json['order_created_at'] != null
+          ? DateTime.tryParse(json['order_created_at'] as String)
+          : null,
+      orderPaidAt: json['order_paid_at'] != null
+          ? DateTime.tryParse(json['order_paid_at'] as String)
+          : null,
+      dealId: json['deal_id'] as String?,
       dealTitle: json['deal_title'] as String?,
+      dealSummary: json['deal_summary'] as String?,
       couponCodeTail: json['coupon_code_tail'] as String?,
       redeemedAt: json['redeemed_at'] != null
           ? DateTime.tryParse(json['redeemed_at'] as String)

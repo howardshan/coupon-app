@@ -208,7 +208,7 @@ async function handleList(
   let query = supabase
     .from("after_sales_requests")
     .select(
-      "id, status, reason_code, reason_detail, refund_amount, user_attachments, merchant_feedback, created_at, expires_at, store_id, order_id, coupon_id, user_id, timeline, orders(total_amount, order_number), after_sales_events(*)",
+      "id, status, reason_code, reason_detail, refund_amount, user_attachments, merchant_feedback, created_at, expires_at, store_id, order_id, coupon_id, user_id, timeline, orders(total_amount, order_number, created_at, paid_at), after_sales_events(*)",
       { count: "exact" }
     )
     .in("merchant_id", auth.merchantIds)
@@ -293,11 +293,34 @@ function emptyMerchantOrderContext(): Record<string, unknown> {
   return {
     order_id: null,
     order_number: null,
+    order_created_at: null,
+    order_paid_at: null,
+    deal_id: null,
     deal_title: null,
+    deal_summary: null,
     coupon_code_tail: null,
     redeemed_at: null,
   };
 }
+
+/** 商家端 Deal 摘要（description + package_contents，截断） */
+function truncateDealSummary(
+  description: string | null | undefined,
+  packageContents: string | null | undefined,
+  max = 280,
+): string | null {
+  const parts = [description?.trim(), packageContents?.trim()].filter(Boolean) as string[];
+  if (!parts.length) return null;
+  const s = parts.join("\n\n");
+  if (s.length <= max) return s;
+  return `${s.slice(0, max - 1)}…`;
+}
+
+type OrdersEmbed = {
+  order_number?: string | null;
+  created_at?: string | null;
+  paid_at?: string | null;
+} | null | undefined;
 
 /** 批量组装商家可见的订单/券上下文（不含用户全名） */
 async function batchAfterSalesMerchantContext(
@@ -336,12 +359,23 @@ async function batchAfterSalesMerchantContext(
   const oiIds = new Set(
     coupons.map((c) => c.order_item_id).filter((id): id is string => typeof id === "string" && id.length > 0),
   );
-  const dealsMap = new Map<string, string | null>();
+  const dealsMap = new Map<string, { title: string | null; summary: string | null }>();
   if (dealIds.size > 0) {
-    const { data: deals } = await supabase.from("deals").select("id, title").in("id", [...dealIds]);
+    const { data: deals } = await supabase
+      .from("deals")
+      .select("id, title, description, package_contents")
+      .in("id", [...dealIds]);
     for (const d of deals ?? []) {
-      const dr = d as { id: string; title?: string | null };
-      dealsMap.set(dr.id, dr.title ?? null);
+      const dr = d as {
+        id: string;
+        title?: string | null;
+        description?: string | null;
+        package_contents?: string | null;
+      };
+      dealsMap.set(dr.id, {
+        title: dr.title ?? null,
+        summary: truncateDealSummary(dr.description, dr.package_contents),
+      });
     }
   }
   const oiRedeem = new Map<string, string | null>();
@@ -355,22 +389,30 @@ async function batchAfterSalesMerchantContext(
 
   for (const r of rows) {
     const rid = String(r.id ?? "");
-    const orders = r.orders as { order_number?: string | null } | null | undefined;
+    const orders = r.orders as OrdersEmbed;
     const orderNumber = orders?.order_number ?? null;
+    const orderCreatedAt = orders?.created_at ?? null;
+    const orderPaidAt = orders?.paid_at ?? null;
     const orderId = (r.order_id as string | null | undefined) ?? null;
     const cid = r.coupon_id as string | undefined;
     if (!cid || !couponById.has(cid)) {
       out.set(rid, {
         order_id: orderId,
         order_number: orderNumber,
+        order_created_at: orderCreatedAt,
+        order_paid_at: orderPaidAt,
+        deal_id: null,
         deal_title: null,
+        deal_summary: null,
         coupon_code_tail: null,
         redeemed_at: null,
       });
       continue;
     }
     const c = couponById.get(cid)!;
-    const dealTitle = c.deal_id ? dealsMap.get(c.deal_id) ?? null : null;
+    const dealMeta = c.deal_id ? dealsMap.get(c.deal_id) : undefined;
+    const dealTitle = dealMeta?.title ?? null;
+    const dealSummary = dealMeta?.summary ?? null;
     const codeForTail = (c.coupon_code?.trim() || c.qr_code?.trim()) || null;
     let redeemedAt: string | null = c.redeemed_at ?? null;
     if (c.order_item_id) {
@@ -380,7 +422,11 @@ async function batchAfterSalesMerchantContext(
     out.set(rid, {
       order_id: orderId,
       order_number: orderNumber,
+      order_created_at: orderCreatedAt,
+      order_paid_at: orderPaidAt,
+      deal_id: c.deal_id ?? null,
       deal_title: dealTitle,
+      deal_summary: dealSummary,
       coupon_code_tail: maskCouponTail(codeForTail),
       redeemed_at: redeemedAt,
     });
