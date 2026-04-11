@@ -231,6 +231,8 @@ serve(async (req: Request) => {
   type TimelineEvent = { event: string; timestamp: string | null; completed: boolean };
   type OrderItem = {
     id: string;
+    /** 所属订单 id，供客户端 OrderItemModel.orderId 解析（如售后路由） */
+    orderId: string;
     dealId: string | null;
     dealTitle: string;
     dealImageUrl: string | null;
@@ -299,6 +301,7 @@ serve(async (req: Request) => {
 
       return {
         id: item.id,
+        orderId,
         dealId: item.deal_id,
         dealTitle: deal?.title ?? '',
         dealImageUrl:
@@ -404,6 +407,7 @@ serve(async (req: Request) => {
     items = [
       {
         id: order.id, // 旧订单没有 item id，用 order id 代替
+        orderId,
         dealId: order.deal_id ?? null,
         dealTitle: legacyDealTitle,
         dealImageUrl: legacyDealImageUrl,

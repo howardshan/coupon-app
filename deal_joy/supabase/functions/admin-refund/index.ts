@@ -88,8 +88,10 @@ Deno.serve(async (req) => {
       let query = serviceClient
         .from('refund_requests')
         .select(`
-          id, status, refund_amount, reason, merchant_response, admin_response,
-          created_at, updated_at, responded_at, admin_decided_at,
+          id, status, refund_amount, reason, user_reason,
+          merchant_reason, merchant_decided_at, merchant_decision,
+          admin_reason, admin_decided_at, admin_decision,
+          created_at, updated_at, order_item_id,
           orders!inner(
             id, order_number, total_amount, status, created_at,
             deals!inner(id, title),
@@ -110,8 +112,16 @@ Deno.serve(async (req) => {
         return errorResponse('Failed to fetch refund requests', 'db_error', 500);
       }
 
+      // 管理端若仍读旧字段名，在此做别名
+      const rows = (data ?? []).map((row: Record<string, unknown>) => ({
+        ...row,
+        merchant_response: row.merchant_reason ?? null,
+        admin_response: row.admin_reason ?? null,
+        responded_at: row.merchant_decided_at ?? null,
+      }));
+
       return jsonResponse({
-        data: data ?? [],
+        data: rows,
         total: count ?? 0,
         page,
         per_page: perPage,
@@ -135,7 +145,7 @@ Deno.serve(async (req) => {
     // 查询申请，确认状态为 pending_admin（含退款金额、关联订单信息用于发邮件）
     const { data: refundReq, error: rrError } = await serviceClient
       .from('refund_requests')
-      .select('id, status, order_id, refund_amount, user_id, orders!inner(order_number)')
+      .select('id, status, order_id, order_item_id, refund_amount, user_id, orders!inner(order_number)')
       .eq('id', refundRequestId)
       .single();
 
@@ -176,17 +186,21 @@ Deno.serve(async (req) => {
         .from('refund_requests')
         .update({
           status: 'approved_admin',
-          admin_response: adminReason?.trim() ?? null,
+          admin_decision: 'approved',
+          admin_reason: adminReason?.trim() ?? null,
           admin_decided_at: now,
+          admin_decided_by: userId,
           updated_at: now,
         })
         .eq('id', refundRequestId);
 
-      // 更新订单状态（execute-refund 已更新，这里作为保障再更新一次）
-      await serviceClient
-        .from('orders')
-        .update({ status: 'refunded', refunded_at: now, updated_at: now })
-        .eq('id', refundReq.order_id);
+      // 单笔争议 Store Credit 不更新整单状态（避免 V3 多单混状态）
+      if (!refundReq.order_item_id) {
+        await serviceClient
+          .from('orders')
+          .update({ status: 'refunded', refunded_at: now, updated_at: now })
+          .eq('id', refundReq.order_id);
+      }
 
       return jsonResponse({ success: true, status: 'approved_admin' });
     } else {
@@ -195,23 +209,30 @@ Deno.serve(async (req) => {
         .from('refund_requests')
         .update({
           status: 'rejected_admin',
-          admin_response: adminReason?.trim() ?? null,
+          admin_decision: 'rejected',
+          admin_reason: adminReason?.trim() ?? null,
           admin_decided_at: now,
+          admin_decided_by: userId,
           updated_at: now,
         })
         .eq('id', refundRequestId);
 
-      // 更新订单状态 → refund_rejected
-      await serviceClient
-        .from('orders')
-        .update({ status: 'refund_rejected', updated_at: now })
-        .eq('id', refundReq.order_id);
+      if (!refundReq.order_item_id) {
+        await serviceClient
+          .from('orders')
+          .update({ status: 'refund_rejected', updated_at: now })
+          .eq('id', refundReq.order_id);
 
-      // 更新关联券状态 → used（恢复为已使用，不可退款）
-      await serviceClient
-        .from('coupons')
-        .update({ status: 'used' })
-        .eq('order_id', refundReq.order_id);
+        await serviceClient
+          .from('coupons')
+          .update({ status: 'used' })
+          .eq('order_id', refundReq.order_id);
+      } else {
+        await serviceClient
+          .from('coupons')
+          .update({ status: 'used', updated_at: now })
+          .eq('order_item_id', refundReq.order_item_id);
+      }
 
       // 发送 C14 管理员最终拒绝退款通知邮件
       try {

@@ -16,6 +16,15 @@ class AfterSalesRepository {
   final http.Client _http;
   static const _functionName = 'after-sales-request';
 
+  /// 仅当为合法 UUID 时才传给 Edge（与 coupons.id 一致）；否则只传 orderId，由服务端解析。
+  static bool _looksLikeCouponUuid(String raw) {
+    final s = raw.trim();
+    if (s.isEmpty) return false;
+    return RegExp(
+      r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+    ).hasMatch(s);
+  }
+
   Future<List<AfterSalesRequestModel>> fetchRequests({String? orderId}) async {
     final token = _requireToken();
     final response = await _client.functions.invoke(
@@ -52,7 +61,9 @@ class AfterSalesRepository {
       _functionName,
       body: {
         'orderId': orderId,
-        'couponId': couponId,
+        ...(_looksLikeCouponUuid(couponId)
+            ? <String, dynamic>{'couponId': couponId.trim()}
+            : <String, dynamic>{}),
         'reasonCode': reason.code,
         'reasonDetail': detail,
         'attachments': attachmentPaths,
