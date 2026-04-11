@@ -1,3 +1,58 @@
+/// 商家端可见的订单/券上下文（不含用户全名）
+class MerchantOrderContext {
+  const MerchantOrderContext({
+    this.orderId,
+    this.orderNumber,
+    this.orderCreatedAt,
+    this.orderPaidAt,
+    this.dealId,
+    this.dealTitle,
+    this.dealSummary,
+    this.couponCodeTail,
+    this.redeemedAt,
+  });
+
+  final String? orderId;
+  final String? orderNumber;
+  final DateTime? orderCreatedAt;
+  final DateTime? orderPaidAt;
+  final String? dealId;
+  final String? dealTitle;
+  final String? dealSummary;
+  final String? couponCodeTail;
+  final DateTime? redeemedAt;
+
+  bool get hasAnyContext =>
+      (orderNumber != null && orderNumber!.isNotEmpty) ||
+      orderCreatedAt != null ||
+      orderPaidAt != null ||
+      (dealId != null && dealId!.isNotEmpty) ||
+      (dealTitle != null && dealTitle!.isNotEmpty) ||
+      (dealSummary != null && dealSummary!.isNotEmpty) ||
+      (couponCodeTail != null && couponCodeTail!.isNotEmpty) ||
+      redeemedAt != null;
+
+  factory MerchantOrderContext.fromJson(Map<String, dynamic> json) {
+    return MerchantOrderContext(
+      orderId: json['order_id'] as String?,
+      orderNumber: json['order_number'] as String?,
+      orderCreatedAt: json['order_created_at'] != null
+          ? DateTime.tryParse(json['order_created_at'] as String)
+          : null,
+      orderPaidAt: json['order_paid_at'] != null
+          ? DateTime.tryParse(json['order_paid_at'] as String)
+          : null,
+      dealId: json['deal_id'] as String?,
+      dealTitle: json['deal_title'] as String?,
+      dealSummary: json['deal_summary'] as String?,
+      couponCodeTail: json['coupon_code_tail'] as String?,
+      redeemedAt: json['redeemed_at'] != null
+          ? DateTime.tryParse(json['redeemed_at'] as String)
+          : null,
+    );
+  }
+}
+
 class MerchantAfterSalesRequest {
   const MerchantAfterSalesRequest({
     required this.id,
@@ -14,6 +69,7 @@ class MerchantAfterSalesRequest {
     this.platformFeedback,
     this.expiresAt,
     this.createdAt,
+    this.merchantOrderContext,
   });
 
   final String id;
@@ -30,10 +86,14 @@ class MerchantAfterSalesRequest {
   final String? platformFeedback;
   final DateTime? expiresAt;
   final DateTime? createdAt;
+  final MerchantOrderContext? merchantOrderContext;
 
   bool get awaitingAction => status == 'pending';
   bool get awaitingPlatform => status == 'awaiting_platform';
-  bool get resolved => status == 'refunded' || status == 'platform_rejected' || status == 'closed';
+  bool get resolved =>
+      status == 'refunded' ||
+      status == 'platform_rejected' ||
+      status == 'closed';
 
   Duration? get remainingTime {
     if (expiresAt == null) return null;
@@ -42,8 +102,11 @@ class MerchantAfterSalesRequest {
 
   factory MerchantAfterSalesRequest.fromJson(Map<String, dynamic> json) {
     final timelineList = (json['timeline'] as List<dynamic>? ?? const [])
-        .map((item) => AfterSalesTimelineEntry.fromJson(item as Map<String, dynamic>))
+        .map((item) =>
+            AfterSalesTimelineEntry.fromJson(item as Map<String, dynamic>))
         .toList();
+    final ctxRaw = json['merchant_order_context'];
+    final ctxJson = ctxRaw is Map<String, dynamic> ? ctxRaw : null;
     return MerchantAfterSalesRequest(
       id: json['id'] as String? ?? '',
       status: json['status'] as String? ?? 'pending',
@@ -52,12 +115,17 @@ class MerchantAfterSalesRequest {
       refundAmount: (json['refund_amount'] as num?)?.toDouble() ?? 0,
       userDisplayName: json['user_display_name'] as String? ?? 'User',
       timeline: timelineList,
-      userAttachments:
-          (json['user_attachments'] as List<dynamic>? ?? const []).whereType<String>().toList(),
+      userAttachments: (json['user_attachments'] as List<dynamic>? ?? const [])
+          .whereType<String>()
+          .toList(),
       merchantAttachments:
-          (json['merchant_attachments'] as List<dynamic>? ?? const []).whereType<String>().toList(),
+          (json['merchant_attachments'] as List<dynamic>? ?? const [])
+              .whereType<String>()
+              .toList(),
       platformAttachments:
-          (json['platform_attachments'] as List<dynamic>? ?? const []).whereType<String>().toList(),
+          (json['platform_attachments'] as List<dynamic>? ?? const [])
+              .whereType<String>()
+              .toList(),
       merchantFeedback: json['merchant_feedback'] as String?,
       platformFeedback: json['platform_feedback'] as String?,
       expiresAt: json['expires_at'] != null
@@ -66,6 +134,8 @@ class MerchantAfterSalesRequest {
       createdAt: json['created_at'] != null
           ? DateTime.tryParse(json['created_at'] as String)
           : null,
+      merchantOrderContext:
+          ctxJson == null ? null : MerchantOrderContext.fromJson(ctxJson),
     );
   }
 }
@@ -89,10 +159,13 @@ class AfterSalesTimelineEntry {
     return AfterSalesTimelineEntry(
       status: json['status'] as String? ?? 'update',
       actor: json['actor'] as String? ?? 'system',
-      timestamp: DateTime.tryParse(json['at'] as String? ?? '') ?? DateTime.now(),
+      timestamp:
+          DateTime.tryParse(json['at'] as String? ?? '') ?? DateTime.now(),
       note: json['note'] as String?,
       attachments:
-          (json['attachments'] as List<dynamic>? ?? const []).whereType<String>().toList(),
+          (json['attachments'] as List<dynamic>? ?? const [])
+              .whereType<String>()
+              .toList(),
     );
   }
 }

@@ -1078,6 +1078,92 @@ async function handleOrderTransfers(
   }
 }
 
+/** 券码仅暴露尾部若干位 */
+function maskCouponTailRefund(code: string | null | undefined, tail = 4): string | null {
+  const normalized = String(code ?? '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+  if (!normalized.length) return null;
+  if (normalized.length <= tail) return `…${normalized}`;
+  return `…${normalized.slice(-tail)}`;
+}
+
+type OrderItemRefundEmbed = {
+  id: string;
+  redeemed_at: string | null;
+  unit_price: number | string | null;
+  selected_options: unknown;
+  coupons: {
+    coupon_code?: string | null;
+    qr_code?: string | null;
+    redeemed_at?: string | null;
+    status?: string | null;
+    expires_at?: string | null;
+  } | null;
+  deals: { id?: string; title?: string | null } | null;
+};
+
+function firstOrSelf<T>(v: T | T[] | null | undefined): T | null | undefined {
+  if (v == null) return v;
+  return Array.isArray(v) ? (v[0] as T) ?? null : v;
+}
+
+function buildRefundLineContext(oi: OrderItemRefundEmbed | undefined): Record<string, unknown> | null {
+  if (!oi) return null;
+  const cp = firstOrSelf(oi.coupons) ?? undefined;
+  const deal = firstOrSelf(oi.deals) ?? undefined;
+  const code = (cp?.coupon_code?.trim?.() || cp?.qr_code?.trim?.()) || null;
+  const redeemed = oi.redeemed_at || cp?.redeemed_at || null;
+  return {
+    deal_title: deal?.title ?? null,
+    unit_price: oi.unit_price ?? null,
+    selected_options: oi.selected_options ?? null,
+    redeemed_at: redeemed,
+    coupon_code_tail: maskCouponTailRefund(code),
+    coupon_status: cp?.status ?? null,
+    coupon_expires_at: cp?.expires_at ?? null,
+  };
+}
+
+/** 按 order_item_id 批量拉取行级券/Deal/核销时间（无用户 PII） */
+async function batchRefundLineContexts(
+  client: ReturnType<typeof createClient>,
+  rows: Record<string, unknown>[],
+): Promise<Map<string, Record<string, unknown> | null>> {
+  const out = new Map<string, Record<string, unknown> | null>();
+  const oiIds = [
+    ...new Set(
+      rows
+        .map((r) => r.order_item_id as string | undefined)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0),
+    ),
+  ];
+  if (!oiIds.length) {
+    for (const r of rows) out.set(String(r.id), null);
+    return out;
+  }
+  const { data: items, error } = await client
+    .from('order_items')
+    .select(
+      'id, redeemed_at, unit_price, selected_options, coupons(coupon_code, qr_code, status, redeemed_at, expires_at), deals(id, title)',
+    )
+    .in('id', oiIds);
+  if (error) {
+    console.error('[merchant-orders] batch order_items for refunds error:', error);
+    for (const r of rows) out.set(String(r.id), null);
+    return out;
+  }
+  const byId = new Map<string, OrderItemRefundEmbed>();
+  for (const raw of items ?? []) {
+    const oi = raw as unknown as OrderItemRefundEmbed;
+    byId.set(oi.id, oi);
+  }
+  for (const r of rows) {
+    const oid = r.order_item_id as string | undefined;
+    const ctx = oid ? buildRefundLineContext(byId.get(oid)) : null;
+    out.set(String(r.id), ctx);
+  }
+  return out;
+}
+
 // =============================================================
 // handleRefundRequestsList — 退款申请列表
 // GET /merchant-orders/refund-requests?status=pending_merchant&page=1&per_page=20
@@ -1119,11 +1205,15 @@ async function handleRefundRequestsList(
     return jsonResponse({ error: 'db_error', message: 'Failed to fetch refund requests' }, 500);
   }
 
+  const rawRows = (data ?? []) as Record<string, unknown>[];
+  const lineCtxByRr = await batchRefundLineContexts(client, rawRows);
+
   // 商家端 Flutter 仍读 merchant_response / responded_at；与 DB 列对齐
-  const rows = (data ?? []).map((row: Record<string, unknown>) => ({
+  const rows = rawRows.map((row: Record<string, unknown>) => ({
     ...row,
     merchant_response: row.merchant_reason ?? null,
     responded_at: row.merchant_decided_at ?? null,
+    refund_line_context: lineCtxByRr.get(String(row.id)) ?? null,
   }));
 
   return jsonResponse({

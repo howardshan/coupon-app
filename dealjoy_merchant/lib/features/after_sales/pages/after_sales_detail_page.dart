@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -40,6 +41,12 @@ class _AfterSalesDetailPageState extends ConsumerState<AfterSalesDetailPage> {
             padding: const EdgeInsets.all(16),
             children: [
               _SummaryCard(request: request),
+              if (request.merchantOrderContext?.hasAnyContext == true) ...[
+                const SizedBox(height: 16),
+                _MerchantOrderContextCard(
+                  contextInfo: request.merchantOrderContext!,
+                ),
+              ],
               const SizedBox(height: 16),
               _AttachmentSection(title: 'User attachments', attachments: request.userAttachments),
               if (request.merchantAttachments.isNotEmpty) ...[
@@ -293,6 +300,13 @@ class _SummaryCard extends StatelessWidget {
                       request.userDisplayName,
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Customer (masked)',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: Colors.grey.shade600,
+                          ),
+                    ),
                     const SizedBox(height: 4),
                     Text(
                       request.reasonDetail,
@@ -326,6 +340,224 @@ class _SummaryCard extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+          if (request.createdAt != null) ...[
+            const Divider(height: 28),
+            _SummaryTimeRow(
+              label: 'Request submitted',
+              dateTime: request.createdAt!,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _SummaryTimeRow extends StatelessWidget {
+  const _SummaryTimeRow({required this.label, required this.dateTime});
+
+  final String label;
+  final DateTime dateTime;
+
+  @override
+  Widget build(BuildContext context) {
+    final formatted =
+        DateFormat('MMM d, yyyy · HH:mm').format(dateTime.toLocal());
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          flex: 2,
+          child: Text(
+            label,
+            style: const TextStyle(color: Colors.black54, fontSize: 13),
+          ),
+        ),
+        Expanded(
+          flex: 3,
+          child: Text(
+            formatted,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF1A1A1A),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 订单/Deal/券上下文 + 跳转入口（不含用户全名）
+class _MerchantOrderContextCard extends StatelessWidget {
+  const _MerchantOrderContextCard({required this.contextInfo});
+
+  final MerchantOrderContext contextInfo;
+
+  static String _fmt(DateTime dt) =>
+      DateFormat('MMM d, yyyy · HH:mm').format(dt.toLocal());
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Order & voucher',
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+          ),
+          const SizedBox(height: 12),
+          if (contextInfo.orderCreatedAt != null)
+            _CtxRow(
+              label: 'Order placed',
+              value: _fmt(contextInfo.orderCreatedAt!),
+            ),
+          if (contextInfo.orderPaidAt != null)
+            _CtxRow(
+              label: 'Paid at',
+              value: _fmt(contextInfo.orderPaidAt!),
+            ),
+          if (contextInfo.orderNumber != null &&
+              contextInfo.orderNumber!.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 132,
+                    child: Text(
+                      'Order #',
+                      style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+                    ),
+                  ),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          contextInfo.orderNumber!,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            color: Color(0xFF1A1A1A),
+                          ),
+                        ),
+                        if (contextInfo.orderId != null &&
+                            contextInfo.orderId!.isNotEmpty)
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: TextButton(
+                              onPressed: () => context.push(
+                                '/orders/${contextInfo.orderId}',
+                              ),
+                              style: TextButton.styleFrom(
+                                padding: EdgeInsets.zero,
+                                minimumSize: Size.zero,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                foregroundColor: scheme.primary,
+                              ),
+                              child: const Text('View order details'),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          if ((contextInfo.dealTitle != null &&
+                  contextInfo.dealTitle!.isNotEmpty) ||
+              (contextInfo.dealId != null &&
+                  contextInfo.dealId!.isNotEmpty)) ...[
+            if (contextInfo.dealTitle != null &&
+                contextInfo.dealTitle!.isNotEmpty)
+              _CtxRow(label: 'Deal', value: contextInfo.dealTitle!),
+            if (contextInfo.dealSummary != null &&
+                contextInfo.dealSummary!.trim().isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(left: 132, bottom: 8),
+                child: Text(
+                  contextInfo.dealSummary!.trim(),
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.35,
+                    color: Colors.grey.shade800,
+                  ),
+                ),
+              ),
+            if (contextInfo.dealId != null && contextInfo.dealId!.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(left: 132, bottom: 8),
+                child: TextButton(
+                  onPressed: () =>
+                      context.push('/deals/${contextInfo.dealId}'),
+                  style: TextButton.styleFrom(
+                    padding: EdgeInsets.zero,
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    foregroundColor: scheme.primary,
+                  ),
+                  child: const Text('View deal details'),
+                ),
+              ),
+          ],
+          if (contextInfo.couponCodeTail != null &&
+              contextInfo.couponCodeTail!.isNotEmpty)
+            _CtxRow(label: 'Voucher code', value: contextInfo.couponCodeTail!),
+          if (contextInfo.redeemedAt != null)
+            _CtxRow(
+              label: 'Verified / redeemed',
+              value: _fmt(contextInfo.redeemedAt!),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CtxRow extends StatelessWidget {
+  const _CtxRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 132,
+            child: Text(
+              label,
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: Color(0xFF1A1A1A),
+              ),
+            ),
           ),
         ],
       ),
@@ -463,21 +695,7 @@ class _TimelineTile extends StatelessWidget {
                     padding: const EdgeInsets.only(top: 6),
                     child: Text(entry.note!),
                   ),
-                if (entry.attachments.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 6),
-                    child: Wrap(
-                      spacing: 8,
-                      children: entry.attachments
-                          .map(
-                            (url) => ActionChip(
-                              label: const Text('Attachment'),
-                              onPressed: () => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
-                            ),
-                          )
-                          .toList(),
-                    ),
-                  ),
+                // 附件统一在上方 User attachments 区打开，避免与 Timeline 重复入口
               ],
             ),
           ),
