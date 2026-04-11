@@ -88,7 +88,8 @@ final routerProvider = Provider<GoRouter>((ref) {
 
   return GoRouter(
     navigatorKey: rootNavigatorKey,
-    initialLocation: '/welcome',
+    // 启动时先进入 /splash（auth loading），再由 redirect 根据登录状态分发
+    initialLocation: '/splash',
     refreshListenable: notifier,
     redirect: (context, state) {
       final authState = ref.read(authStateProvider);
@@ -102,57 +103,43 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isWelcome = currentPath == '/welcome';
       final isOnboarding = currentPath == '/onboarding';
 
-      // Still resolving auth — 允许在 welcome/onboarding/splash 页面停留
+      // 认证状态解析中 — 停在 /splash 等待
       if (isLoading) {
-        if (isSplash || isWelcome || isOnboarding) return null;
+        if (isSplash) return null;
         return '/splash';
       }
 
-      // Auth resolved, not logged in — 允许浏览公开页面（首页、搜索等）
-      if (!isLoggedIn) {
-        if (isAuthRoute || isWelcome || isOnboarding) return null;
-        if (isSplash) return '/home'; // auth loading 结束跳首页，不强制登录
-
-        // 需要登录的页面：checkout、orders、profile 操作、chat
-        final needsAuth = currentPath.startsWith('/checkout') ||
-            currentPath.startsWith('/orders') ||
-            currentPath.startsWith('/coupons') ||
-            currentPath.startsWith('/my-reviews') ||
-            currentPath.startsWith('/review') ||
-            currentPath.startsWith('/chat') && currentPath != '/chat' ||
-            currentPath.startsWith('/profile/edit') ||
-            currentPath.startsWith('/voucher');
-        if (needsAuth) {
-          return '/auth/login?redirect=${Uri.encodeComponent(currentPath)}';
-        }
-
-        // 其他页面允许未登录访问（首页、deal详情、商家详情、搜索、购物车等）
-        return null;
-      }
-
-      // 密码重置 recovery session — 强制跳转重置密码页，忽略其他跳转逻辑
+      // 密码重置 recovery session — 强制跳转重置密码页（最高优先级）
       if (authValue?.event == AuthChangeEvent.passwordRecovery) {
         return currentPath == '/auth/reset-password' ? null : '/auth/reset-password';
+      }
+
+      // 未登录 — 强制登录，只允许 /auth/* 路由
+      if (!isLoggedIn) {
+        if (isAuthRoute) return null;
+        // 保留原路径作为 redirect 参数，登录后跳回
+        if (currentPath != '/' && currentPath != '/splash') {
+          return '/auth/login?redirect=${Uri.encodeComponent(currentPath)}';
+        }
+        return '/auth/login';
       }
 
       // 已登录但在重置密码页面 — 允许留在该页面
       if (currentPath == '/auth/reset-password') return null;
 
-      // 已登录 — 不再强制跳手机号页面（用户可在 Profile 里自行补充）
-
       // Welcome splash 和 Onboarding 自己控制退出，不被 redirect 干扰
       if (isWelcome || isOnboarding) return null;
 
-      // Logged in — leave auth loading splash or auth routes
+      // 已登录且在 /splash 或 /auth/* 路由 — 跳转到 /welcome（开屏广告 + onboarding 分发）
       if (isSplash || isAuthRoute) {
-        // 登录后跳回之前的页面
         final redirect = state.uri.queryParameters['redirect'];
         if (redirect != null &&
             redirect.isNotEmpty &&
-            !redirect.startsWith('/auth')) {
+            !redirect.startsWith('/auth') &&
+            redirect != '/splash') {
           return redirect;
         }
-        return '/home';
+        return '/welcome';
       }
 
       return null; // no redirect needed

@@ -33,6 +33,9 @@ class _ConsentBarrierState extends ConsumerState<ConsentBarrier> {
   /// 正在提交同意中（防止重复点击）
   bool _isSubmitting = false;
 
+  /// 已经写过 consent_prompted 事件的 slug 集合（防止重复写审计日志）
+  final Set<String> _promptedLoggedSlugs = {};
+
   /// 全部勾选后才允许点击"I Agree to All"
   bool get _allChecked =>
       _checkedSlugs.isNotEmpty &&
@@ -42,6 +45,25 @@ class _ConsentBarrierState extends ConsumerState<ConsentBarrier> {
           .valueOrNull
           ?.every((doc) => _checkedSlugs.contains(doc.slug)) ==
           true;
+
+  /// 写入 consent_prompted 审计事件（证明"我们在此时向商家展示了此文档"）
+  void _logPromptedEvents(List<PendingConsent> pendingList) {
+    final recordEvent = ref.read(recordLegalEventProvider);
+    for (final doc in pendingList) {
+      if (_promptedLoggedSlugs.contains(doc.slug)) continue;
+      _promptedLoggedSlugs.add(doc.slug);
+      recordEvent(
+        eventType: 'consent_prompted',
+        documentSlug: doc.slug,
+        details: {
+          'trigger_context': 'consent_barrier',
+          'document_version': doc.currentVersion,
+        },
+      ).catchError((_) {
+        _promptedLoggedSlugs.remove(doc.slug);
+      });
+    }
+  }
 
   /// 点击"I Agree to All" — 逐个记录同意，完成后刷新 provider
   Future<void> _handleAgreeAll(List<PendingConsent> pendingList) async {
@@ -99,6 +121,27 @@ class _ConsentBarrierState extends ConsumerState<ConsentBarrier> {
     );
 
     if (confirmed == true && mounted) {
+      // 为所有当前待签文档写 consent_declined 审计事件（证明商家明确拒绝）
+      final pendingList =
+          ref.read(pendingConsentsProvider).valueOrNull ?? const [];
+      final recordEvent = ref.read(recordLegalEventProvider);
+      for (final doc in pendingList) {
+        try {
+          await recordEvent(
+            eventType: 'consent_declined',
+            documentSlug: doc.slug,
+            details: {
+              'trigger_context': 'consent_barrier',
+              'document_version': doc.currentVersion,
+              'action': 'sign_out',
+            },
+          );
+        } catch (_) {
+          // 审计日志失败不阻塞登出流程
+        }
+      }
+
+      if (!mounted) return;
       // 商家端退出登录：直接调用 Supabase signOut，然后跳转到登录页
       await Supabase.instance.client.auth.signOut();
       if (mounted) {
@@ -129,12 +172,22 @@ class _ConsentBarrierState extends ConsumerState<ConsentBarrier> {
             ),
           ),
           data: (pendingList) {
-            // 若列表为空，外层应已关闭弹窗，此处显示加载态兜底
+            // 若列表为空，说明所有文档已同意 → 自动关闭弹窗
             if (pendingList.isEmpty) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted && Navigator.of(context).canPop()) {
+                  Navigator.of(context, rootNavigator: true).pop();
+                }
+              });
               return const Center(
                 child: CircularProgressIndicator(color: _primaryOrange),
               );
             }
+
+            // 首次拿到待签列表 → 写 consent_prompted 审计事件（fire-and-forget）
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _logPromptedEvents(pendingList);
+            });
 
             return Column(
               children: [

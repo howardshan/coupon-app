@@ -21,6 +21,7 @@ import 'features/scan/providers/scan_provider.dart';
 import 'features/menu/providers/menu_provider.dart';
 import 'features/menu/providers/category_provider.dart';
 import 'features/influencer/providers/influencer_provider.dart';
+import 'shared/providers/legal_provider.dart';
 
 // 全局禁用 overscroll 拉伸效果（Android 默认有 stretch/glow）
 class _NoOverscrollBehavior extends ScrollBehavior {
@@ -96,6 +97,7 @@ class _DealJoyMerchantAppState extends ConsumerState<DealJoyMerchantApp> {
     ref.invalidate(menuProvider);
     ref.invalidate(categoryProvider);
     ref.invalidate(influencerProvider);
+    ref.invalidate(pendingConsentsProvider); // 待签法律文档（版本升级后需重签）
   }
 
   @override
