@@ -16,9 +16,33 @@ class MainScaffold extends ConsumerStatefulWidget {
   ConsumerState<MainScaffold> createState() => _MainScaffoldState();
 }
 
-class _MainScaffoldState extends ConsumerState<MainScaffold> {
+class _MainScaffoldState extends ConsumerState<MainScaffold>
+    with WidgetsBindingObserver {
   /// 防止重复弹出 ConsentBarrier dialog 的标志
   bool _consentDialogShown = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // 注册生命周期监听，App 回到前台时重新检查待签法律文档
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // App 从后台恢复到前台 → 强制重新拉取待签法律文档列表
+    // 这样如果 Admin 在用户挂起 App 期间发布了新版本 ToS/Privacy 等，
+    // 用户回到 App 立即看到 ConsentBarrier 弹窗
+    if (state == AppLifecycleState.resumed) {
+      ref.invalidate(pendingConsentsProvider);
+    }
+  }
 
   int _locationToIndex(String location) {
     if (location.startsWith('/home')) return 0;

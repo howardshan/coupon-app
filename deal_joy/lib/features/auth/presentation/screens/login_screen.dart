@@ -86,23 +86,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const SizedBox(height: 16),
-
-                // ---- 返回浏览按钮（允许用户跳过登录） ----
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    onPressed: () => context.go('/home'),
-                    icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 16),
-                    label: const Text('Browse as Guest'),
-                    style: TextButton.styleFrom(
-                      foregroundColor: AppColors.textSecondary,
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 16),
+                const SizedBox(height: 32),
 
                 // ---- 品牌区域 ----
                 Center(

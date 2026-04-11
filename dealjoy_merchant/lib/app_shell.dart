@@ -84,33 +84,59 @@ class AppShell extends ConsumerStatefulWidget {
   ConsumerState<AppShell> createState() => _AppShellState();
 }
 
-class _AppShellState extends ConsumerState<AppShell> {
-  // 标记是否已弹出过 ConsentBarrier（避免重复弹出）
-  bool _consentChecked = false;
+class _AppShellState extends ConsumerState<AppShell>
+    with WidgetsBindingObserver {
+  // 当前是否有 ConsentBarrier dialog 正在显示（避免重复弹出）
+  bool _consentDialogVisible = false;
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // 仅在首次加载时触发一次 consent 检查
-    // 使用 addPostFrameCallback 确保在第一帧完成后再弹窗，避免 context 尚未挂载
-    if (!_consentChecked) {
-      _consentChecked = true;
+  void initState() {
+    super.initState();
+    // 注册生命周期监听，App 回到前台时重新检查待签法律文档
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // App 从后台恢复到前台 → 强制重新拉取待签法律文档列表
+    // 如果此时 Admin 已发布新版本 Merchant Agreement / ToS 等强制重签文档，
+    // 商家回到 App 会立即看到 ConsentBarrier 弹窗
+    if (state == AppLifecycleState.resumed) {
+      ref.invalidate(pendingConsentsProvider);
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _checkConsent();
       });
     }
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 首次进入 AppShell 时触发一次 consent 检查
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _checkConsent();
+    });
+  }
+
   /// 检查是否有待签法律文档，有则弹出 ConsentBarrier
   Future<void> _checkConsent() async {
+    if (_consentDialogVisible) return; // 已在显示，跳过
     // 等待 provider 数据加载完成
     final pending = await ref.read(pendingConsentsProvider.future);
-    if (pending.isNotEmpty && mounted) {
+    if (pending.isNotEmpty && mounted && !_consentDialogVisible) {
+      _consentDialogVisible = true;
       await showDialog<void>(
         context: context,
         barrierDismissible: false,
         builder: (_) => const ConsentBarrier(),
       );
+      _consentDialogVisible = false;
     }
   }
 

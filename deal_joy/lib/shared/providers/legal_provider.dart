@@ -1,9 +1,9 @@
 // 法律文档 Riverpod Providers
 // 包含：数据模型、Repository、Providers
 
-import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../services/device_context_helper.dart';
 import 'supabase_provider.dart';
 
 // ─────────────────────────────────────────────
@@ -176,6 +176,7 @@ class LegalRepository {
 
   /// 记录用户对指定法律文档的同意
   /// 调用 RPC: record_user_consent(...)
+  /// 自动采集 device_info / app_version / user_agent / platform
   Future<void> recordConsent({
     required String documentSlug,
     required String consentMethod,
@@ -184,31 +185,52 @@ class LegalRepository {
     final user = _supabase.auth.currentUser;
     if (user == null) return;
 
-    // 获取平台信息（ios / android / other）
-    String platform = 'other';
-    try {
-      if (Platform.isIOS) {
-        platform = 'ios';
-      } else if (Platform.isAndroid) {
-        platform = 'android';
-      }
-    } catch (_) {
-      // Web 或不支持 Platform 的环境
-    }
+    final ctx = await DeviceContextHelper.get();
 
     await _supabase.rpc(
       'record_user_consent',
       params: {
         'p_user_id': user.id,
         'p_document_slug': documentSlug,
-        'p_actor_role': 'customer',
+        'p_actor_role': 'user',
         'p_consent_method': consentMethod,
         'p_trigger_context': triggerContext,
+        'p_ip_address': null, // 服务端暂无可靠获取方式（pooler 屏蔽了真实 IP）
+        'p_user_agent': ctx.userAgent,
+        'p_device_info': ctx.deviceInfo,
+        'p_app_version': ctx.appVersion,
+        'p_platform': ctx.platform,
+        'p_locale': 'en',
+      },
+    );
+  }
+
+  /// 记录法律事件（非同意）：consent_prompted / consent_declined / consent_superseded
+  /// 调用 RPC: record_legal_event(...)
+  /// 仅写入 legal_audit_log，不修改 user_consents 表
+  Future<void> recordLegalEvent({
+    required String eventType,
+    required String documentSlug,
+    Map<String, dynamic>? details,
+  }) async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) return;
+
+    final ctx = await DeviceContextHelper.get();
+
+    await _supabase.rpc(
+      'record_legal_event',
+      params: {
+        'p_user_id': user.id,
+        'p_event_type': eventType,
+        'p_document_slug': documentSlug,
+        'p_actor_role': 'user',
+        'p_details': details ?? <String, dynamic>{},
         'p_ip_address': null,
-        'p_user_agent': null,
-        'p_device_info': null,
-        'p_app_version': '2.4.1',
-        'p_platform': platform,
+        'p_user_agent': ctx.userAgent,
+        'p_device_info': ctx.deviceInfo,
+        'p_app_version': ctx.appVersion,
+        'p_platform': ctx.platform,
         'p_locale': 'en',
       },
     );
@@ -226,14 +248,19 @@ final legalRepositoryProvider = Provider<LegalRepository>((ref) {
 
 /// 当前用户待同意的法律文档列表
 /// 调用 RPC: check_pending_consents
-final pendingConsentsProvider = FutureProvider<List<PendingConsent>>((ref) {
+/// autoDispose：登录 / 账号切换 / App 生命周期变化时自动重新检查
+final pendingConsentsProvider =
+    FutureProvider.autoDispose<List<PendingConsent>>((ref) {
   return ref.watch(legalRepositoryProvider).checkPendingConsents();
 });
 
 /// 按 slug 获取法律文档正文（FutureProvider.family，参数为 slug）
 /// 调用 RPC: get_legal_document_content
+/// autoDispose：关闭文档页面后缓存立即失效，下次打开一定拉取最新版本
+/// （保证 admin 发布新版本后用户能立即看到更新）
 final legalDocumentContentProvider =
-    FutureProvider.family<LegalDocumentContent?, String>((ref, slug) {
+    FutureProvider.autoDispose.family<LegalDocumentContent?, String>(
+        (ref, slug) {
   return ref.watch(legalRepositoryProvider).getDocumentContent(slug);
 });
 
@@ -255,5 +282,25 @@ final recordConsentProvider = Provider<
             documentSlug: documentSlug,
             consentMethod: consentMethod,
             triggerContext: triggerContext,
+          );
+});
+
+/// 工具函数：记录非同意类事件（prompted / declined / superseded）
+/// 调用方式：ref.read(recordLegalEventProvider)(eventType, slug, details)
+final recordLegalEventProvider = Provider<
+    Future<void> Function({
+      required String eventType,
+      required String documentSlug,
+      Map<String, dynamic>? details,
+    })>((ref) {
+  return ({
+    required String eventType,
+    required String documentSlug,
+    Map<String, dynamic>? details,
+  }) =>
+      ref.read(legalRepositoryProvider).recordLegalEvent(
+            eventType: eventType,
+            documentSlug: documentSlug,
+            details: details,
           );
 });
