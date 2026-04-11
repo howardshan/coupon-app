@@ -94,3 +94,31 @@ export function buildAfterSalesTimelineEntries(
   }
   return sortActivityTimelineAscending(out)
 }
+
+/**
+ * 订单下多条售后：优先用 DB timeline JSON（含商家拒绝等真实时间），无则退回单条「opened」摘要
+ */
+export function mergeAfterSalesRowsToTimelineEvents(
+  rows: Record<string, unknown>[]
+): AdminActivityTimelineEntry[] {
+  const merged: AdminActivityTimelineEntry[] = []
+  for (const r of rows) {
+    const tl = r.timeline as AfterSalesApiTimelineEvent[] | null | undefined
+    const fromJson = buildAfterSalesTimelineEntries(Array.isArray(tl) ? tl : null)
+    if (fromJson.length > 0) {
+      merged.push(...fromJson)
+    } else {
+      merged.push(
+        ...buildAfterSalesRequestTimelineEntries([
+          {
+            id: String(r.id ?? ''),
+            createdAt: String(r.created_at ?? ''),
+            status: String(r.status ?? ''),
+            reasonCode: (r.reason_code as string | null) ?? null,
+          },
+        ])
+      )
+    }
+  }
+  return sortActivityTimelineAscending(merged)
+}

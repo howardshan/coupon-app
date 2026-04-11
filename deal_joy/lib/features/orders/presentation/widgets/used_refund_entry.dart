@@ -115,6 +115,25 @@ void showUsedRefundEntry(
               },
               child: const Text('Continue to after-sales'),
             ),
+            const SizedBox(height: 8),
+            OutlinedButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                context.push(
+                  '/after-sales/${item.orderId}',
+                  extra: AfterSalesScreenArgs(
+                    orderId: item.orderId,
+                    couponId: couponId,
+                    dealTitle: item.dealTitle,
+                    totalAmount: item.unitPrice + item.serviceFee,
+                    merchantName: item.merchantName ?? item.redeemedMerchantName,
+                    couponCode: item.formattedCouponCode ?? item.couponCode,
+                    couponUsedAt: item.redeemedAt,
+                  ),
+                );
+              },
+              child: const Text('View after-sales status'),
+            ),
             TextButton(
               onPressed: () => Navigator.pop(ctx),
               child: const Text('Cancel'),
