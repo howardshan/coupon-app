@@ -150,14 +150,29 @@ class MerchantAfterSalesRepository {
     return MerchantAfterSalesRequest.fromJson(requestJson);
   }
 
+  /// 相册/相机图片（image_picker）
   Future<String> uploadEvidence(XFile file) async {
+    final bytes = await file.readAsBytes();
+    return uploadEvidenceBytes(
+      filename: file.name,
+      bytes: bytes,
+      mimeType: file.mimeType,
+    );
+  }
+
+  /// 通用证据上传（含 PDF），与 Edge signed URL 一致
+  Future<String> uploadEvidenceBytes({
+    required String filename,
+    required Uint8List bytes,
+    String? mimeType,
+  }) async {
     final token = _requireToken();
     final slotResponse = await _client.functions.invoke(
       '$_functionName/uploads',
       method: HttpMethod.post,
       body: {
         'files': [
-          {'filename': file.name},
+          {'filename': filename},
         ],
         'access_token': token,
       },
@@ -175,8 +190,7 @@ class MerchantAfterSalesRepository {
     }
 
     final slot = AfterSalesUploadSlot.fromJson(uploads.first as Map<String, dynamic>);
-    final bytes = await file.readAsBytes();
-    await _putSignedFile(slot, bytes, await file.mimeType);
+    await _putSignedFile(slot, bytes, mimeType);
     return slot.path;
   }
 

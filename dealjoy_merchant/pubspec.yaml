@@ -22,8 +22,9 @@ dependencies:
   # 扫码
   mobile_scanner: ^6.0.3
 
-  # 图片
+  # 图片 / 售后证据（含 PDF）
   image_picker: ^1.1.2
+  file_picker: ^8.1.7
   image_cropper: ^8.0.2
   cached_network_image: ^3.4.1
 
