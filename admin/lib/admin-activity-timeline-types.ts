@@ -20,3 +20,10 @@ export function sortActivityTimelineAscending(
 ): AdminActivityTimelineEntry[] {
   return [...entries].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())
 }
+
+/** 合并多段活动事件并按时间升序（订单详情：支付/券 + 争议 + 售后） */
+export function mergeAndSortActivityTimelineEntries(
+  ...groups: AdminActivityTimelineEntry[][]
+): AdminActivityTimelineEntry[] {
+  return sortActivityTimelineAscending(groups.flat())
+}

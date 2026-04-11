@@ -87,11 +87,12 @@ function normalizeCouponCodeInput(raw: string): string | null {
 
 /** 仅标量列，避免 PostgREST 嵌套 embed 在部分环境下报错导致整查询失败 */
 const COUPON_SELECT_FOR_CREATE =
-  "id, order_id, user_id, status, used_at, merchant_id, redeemed_at_merchant_id, deal_id";
+  "id, order_id, order_item_id, user_id, status, used_at, merchant_id, redeemed_at_merchant_id, deal_id";
 
 type CouponForCreate = {
   id: string;
   order_id: string | null;
+  order_item_id: string | null;
   user_id: string;
   status: string;
   used_at: string | null;
@@ -331,6 +332,23 @@ async function handleCreateRequest(
       "duplicate_request",
       409,
     );
+  }
+
+  // 与争议退款互斥：同一 order_item 仅一条待处理主诉求
+  if (coupon.order_item_id) {
+    const { data: pendingDispute } = await supabase
+      .from("refund_requests")
+      .select("id")
+      .eq("order_item_id", coupon.order_item_id)
+      .in("status", ["pending_merchant", "pending_admin"])
+      .maybeSingle();
+    if (pendingDispute) {
+      return errorResponse(
+        "A refund dispute is already pending for this coupon. Wait for merchant review or for automatic escalation to After-sales.",
+        "dispute_pending",
+        409,
+      );
+    }
   }
 
   if (!coupon.order_id) {

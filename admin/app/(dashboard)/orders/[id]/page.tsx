@@ -7,7 +7,6 @@ import OrderDetailPricingCard from '@/components/order-detail-pricing-card'
 import OrderDetailCustomerSidebar, {
   type OrderCustomerSummary,
 } from '@/components/order-detail-customer-sidebar'
-import OrderDetailTimelineCard from '@/components/order-detail-timeline-card'
 import AdminActivityTimelineCard from '@/components/admin-activity-timeline-card'
 import { getOrderDetailStatusTags, STATUS_STYLES, STATUS_LABELS } from '@/lib/order-display-status'
 import {
@@ -27,6 +26,11 @@ import {
   buildMergedOrderRefundDisputeTimelines,
   type RefundDisputeTimelineInput,
 } from '@/lib/refund-dispute-admin-timeline'
+import {
+  buildAfterSalesRequestTimelineEntries,
+  isActiveAfterSalesStatus,
+} from '@/lib/after-sales-admin-timeline'
+import { mergeAndSortActivityTimelineEntries } from '@/lib/admin-activity-timeline-types'
 import {
   couponCodeForClipboard,
   displayCouponCode,
@@ -58,6 +62,9 @@ const ITEM_STATUS_LABELS: Record<string, string> = {
   refund_success: 'Refunded',
   gifted: 'Gifted',
 }
+
+/** 订单上有未结案售后时额外展示（order_item 仍为 used 时的补充状态） */
+const AFTER_SALES_OPEN_STYLE = 'bg-orange-100 text-orange-800'
 
 // coupon_gifts 的 gift_status 样式
 const GIFT_STATUS_STYLES: Record<string, string> = {
@@ -393,30 +400,69 @@ export default async function OrderDetailPage({
   const { data: refundRequestRows } = await serviceClient
     .from('refund_requests')
     .select(
-      `id, status, created_at, updated_at, refund_amount, user_reason,
+      `id, status, created_at, updated_at, refund_amount, user_reason, metadata,
        merchant_decision, merchant_reason, merchant_decided_at,
        admin_decision, admin_reason, admin_decided_at, completed_at`
     )
     .eq('order_id', id)
     .order('created_at', { ascending: true })
 
-  const refundTimelineInputs: RefundDisputeTimelineInput[] = (refundRequestRows ?? []).map((r: Record<string, unknown>) => ({
-    id: r.id as string,
-    createdAt: r.created_at as string,
-    updatedAt: (r.updated_at as string | null) ?? null,
-    status: (r.status as string | null) ?? null,
-    refundAmount: Number(r.refund_amount ?? 0),
-    userReason: (r.user_reason as string | null) ?? null,
-    merchantDecision: (r.merchant_decision as string | null) ?? null,
-    merchantReason: (r.merchant_reason as string | null) ?? null,
-    merchantDecidedAt: (r.merchant_decided_at as string | null) ?? null,
-    adminDecision: (r.admin_decision as string | null) ?? null,
-    adminReason: (r.admin_reason as string | null) ?? null,
-    adminDecidedAt: (r.admin_decided_at as string | null) ?? null,
-    completedAt: (r.completed_at as string | null) ?? null,
-  }))
+  const { data: afterSalesRowsRaw } = await serviceClient
+    .from('after_sales_requests')
+    .select('id, status, created_at, reason_code, coupon_id')
+    .eq('order_id', id)
+    .order('created_at', { ascending: true })
+
+  const refundTimelineInputs: RefundDisputeTimelineInput[] = (refundRequestRows ?? []).map((r: Record<string, unknown>) => {
+    const rawMeta = r.metadata
+    const metadata =
+      rawMeta && typeof rawMeta === 'object' && !Array.isArray(rawMeta)
+        ? (rawMeta as Record<string, unknown>)
+        : null
+    return {
+      id: r.id as string,
+      createdAt: r.created_at as string,
+      updatedAt: (r.updated_at as string | null) ?? null,
+      status: (r.status as string | null) ?? null,
+      refundAmount: Number(r.refund_amount ?? 0),
+      userReason: (r.user_reason as string | null) ?? null,
+      merchantDecision: (r.merchant_decision as string | null) ?? null,
+      merchantReason: (r.merchant_reason as string | null) ?? null,
+      merchantDecidedAt: (r.merchant_decided_at as string | null) ?? null,
+      adminDecision: (r.admin_decision as string | null) ?? null,
+      adminReason: (r.admin_reason as string | null) ?? null,
+      adminDecidedAt: (r.admin_decided_at as string | null) ?? null,
+      completedAt: (r.completed_at as string | null) ?? null,
+      metadata,
+    }
+  })
 
   const refundDisputeTimelineEvents = buildMergedOrderRefundDisputeTimelines(refundTimelineInputs)
+
+  const afterSalesTimelineInputs = (afterSalesRowsRaw ?? []).map((r: Record<string, unknown>) => ({
+    id: String(r.id),
+    createdAt: r.created_at as string,
+    status: String(r.status ?? ''),
+    reasonCode: (r.reason_code as string | null) ?? null,
+  }))
+  const afterSalesTimelineEvents = buildAfterSalesRequestTimelineEntries(afterSalesTimelineInputs)
+
+  const activeAfterSalesCount = afterSalesTimelineInputs.filter((r) => isActiveAfterSalesStatus(r.status)).length
+
+  const couponIdsWithActiveAfterSales = new Set<string>()
+  for (const row of afterSalesRowsRaw ?? []) {
+    const rec = row as Record<string, unknown>
+    const st = String(rec.status ?? '')
+    if (!isActiveAfterSalesStatus(st)) continue
+    const cid = rec.coupon_id
+    if (cid != null && String(cid).length > 0) couponIdsWithActiveAfterSales.add(String(cid))
+  }
+
+  const unifiedOrderTimelineEvents = mergeAndSortActivityTimelineEntries(
+    timelineEvents,
+    refundDisputeTimelineEvents,
+    afterSalesTimelineEvents
+  )
 
   return (
     <div>
@@ -442,6 +488,13 @@ export default async function OrderDetailPage({
                   {ITEM_STATUS_LABELS[status] ?? status} ×{count}
                 </span>
               ))}
+              {activeAfterSalesCount > 0 ? (
+                <span
+                  className={`px-3 py-1 rounded-full text-sm font-medium ${AFTER_SALES_OPEN_STYLE}`}
+                >
+                  After-sales open ×{activeAfterSalesCount}
+                </span>
+              ) : null}
             </div>
           ) : (
             <>
@@ -454,6 +507,13 @@ export default async function OrderDetailPage({
                     {STATUS_LABELS[tag] ?? tag}
                   </span>
                 ))}
+                {activeAfterSalesCount > 0 ? (
+                  <span
+                    className={`px-3 py-1 rounded-full text-sm font-medium ${AFTER_SALES_OPEN_STYLE}`}
+                  >
+                    After-sales open ×{activeAfterSalesCount}
+                  </span>
+                ) : null}
                 {order.status === 'refund_requested' && (
                   <OrderRefundButtons orderId={order.id} initialStatus={order.status} />
                 )}
@@ -561,9 +621,20 @@ export default async function OrderDetailPage({
                                 <span className="text-xs text-gray-400">No coupon code</span>
                               )}
                             </div>
-                            <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium shrink-0 ${ITEM_STATUS_STYLES[item.customer_status] ?? 'bg-gray-100 text-gray-600'}`}>
-                              {ITEM_STATUS_LABELS[item.customer_status] ?? item.customer_status}
-                            </span>
+                            <div className="flex flex-wrap items-center gap-1 shrink-0 justify-end">
+                              <span
+                                className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${ITEM_STATUS_STYLES[item.customer_status] ?? 'bg-gray-100 text-gray-600'}`}
+                              >
+                                {ITEM_STATUS_LABELS[item.customer_status] ?? item.customer_status}
+                              </span>
+                              {coupon?.id && couponIdsWithActiveAfterSales.has(String(coupon.id)) ? (
+                                <span
+                                  className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${AFTER_SALES_OPEN_STYLE}`}
+                                >
+                                  After-sales
+                                </span>
+                              ) : null}
+                            </div>
                           </div>
 
                           {/* 基础信息行：过期、价格、QR */}
@@ -953,11 +1024,10 @@ export default async function OrderDetailPage({
 
         <aside className="order-2 flex w-full shrink-0 flex-col gap-4 md:sticky md:top-4 md:w-72 md:max-w-[22rem] lg:w-80">
           <OrderDetailCustomerSidebar customer={customerSummary} returnToPath={`/orders/${order.id}`} />
-          <OrderDetailTimelineCard events={timelineEvents} />
           <AdminActivityTimelineCard
-            title="Refund dispute timeline"
-            footnote="Milestones from refund_requests (post-redemption dispute flow). Timestamps reflect DB columns, not Stripe webhooks. When empty, this order has no dispute rows."
-            events={refundDisputeTimelineEvents}
+            title="Order activity timeline"
+            footnote="Merged chronology: payment & voucher events, refund disputes (refund_requests), and after-sales cases (after_sales_requests). Timestamps come from DB columns; intermediate steps may be omitted if not stored."
+            events={unifiedOrderTimelineEvents}
           />
         </aside>
       </div>
