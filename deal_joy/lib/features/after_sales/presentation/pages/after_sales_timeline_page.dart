@@ -373,13 +373,27 @@ class _AttachmentRow extends StatelessWidget {
           ),
         Wrap(
           spacing: 8,
+          runSpacing: 8,
           children: urls
               .asMap()
               .entries
               .map(
                 (entry) => ActionChip(
-                  label: Text('Attachment ${entry.key + 1}'),
+                  avatar: Icon(Icons.attach_file, size: 18, color: AppColors.textPrimary),
+                  label: Text(
+                    'Attachment ${entry.key + 1}',
+                    style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                    ),
+                  ),
                   onPressed: () => launchUrl(Uri.parse(entry.value), mode: LaunchMode.externalApplication),
+                  backgroundColor: AppColors.surfaceVariant,
+                  side: const BorderSide(color: AppColors.textHint, width: 1),
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  visualDensity: VisualDensity.compact,
                 ),
               )
               .toList(),
