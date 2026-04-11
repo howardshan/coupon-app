@@ -1,3 +1,6 @@
+import 'dart:typed_data';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -173,18 +176,80 @@ class _AfterSalesDetailPageState extends ConsumerState<AfterSalesDetailPage> {
             builder: (context, setModalState) {
               Future<void> pickEvidence() async {
                 if (attachments.length >= 3) return;
-                final file = await picker.pickImage(source: ImageSource.gallery, maxWidth: 2000);
-                if (file == null) return;
+                final sheetCtx = context;
+                final choice = await showModalBottomSheet<String>(
+                  context: sheetCtx,
+                  builder: (ctx) => SafeArea(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ListTile(
+                          leading: const Icon(Icons.photo_library_outlined),
+                          title: const Text('Photo from gallery'),
+                          onTap: () => Navigator.pop(ctx, 'image'),
+                        ),
+                        ListTile(
+                          leading: const Icon(Icons.picture_as_pdf_outlined),
+                          title: const Text('PDF document'),
+                          onTap: () => Navigator.pop(ctx, 'pdf'),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+                if (!sheetCtx.mounted) return;
+                if (choice == null) return;
+
                 final repo = ref.read(merchantAfterSalesRepositoryProvider);
-                ScaffoldMessenger.of(context).showSnackBar(
+                final messenger = ScaffoldMessenger.of(sheetCtx);
+                messenger.showSnackBar(
                   const SnackBar(content: Text('Uploading evidence…')),
                 );
                 try {
-                  final remotePath = await repo.uploadEvidence(file);
+                  late final String remotePath;
+                  if (choice == 'image') {
+                    final file = await picker.pickImage(
+                      source: ImageSource.gallery,
+                      maxWidth: 2000,
+                    );
+                    if (!sheetCtx.mounted) return;
+                    if (file == null) return;
+                    remotePath = await repo.uploadEvidence(file);
+                  } else if (choice == 'pdf') {
+                    final res = await FilePicker.platform.pickFiles(
+                      type: FileType.custom,
+                      allowedExtensions: ['pdf'],
+                      withData: true,
+                    );
+                    if (!sheetCtx.mounted) return;
+                    if (res == null || res.files.isEmpty) return;
+                    final pf = res.files.single;
+                    // withData: true 保证移动端/Web 均可拿到字节，避免依赖 dart:io（Web 构建）
+                    final Uint8List? bytes = pf.bytes;
+                    if (bytes == null || bytes.isEmpty) {
+                      if (!sheetCtx.mounted) return;
+                      messenger.showSnackBar(
+                        const SnackBar(content: Text('Could not read PDF file')),
+                      );
+                      return;
+                    }
+                    var name = pf.name.trim().isNotEmpty ? pf.name.trim() : 'evidence.pdf';
+                    if (!name.toLowerCase().endsWith('.pdf')) {
+                      name = '$name.pdf';
+                    }
+                    remotePath = await repo.uploadEvidenceBytes(
+                      filename: name,
+                      bytes: bytes,
+                      mimeType: 'application/pdf',
+                    );
+                  } else {
+                    return;
+                  }
+                  if (!sheetCtx.mounted) return;
                   setModalState(() => attachments.add(remotePath));
                 } catch (err) {
-                  if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  if (!sheetCtx.mounted) return;
+                  messenger.showSnackBar(
                     SnackBar(content: Text('Upload failed: $err')),
                   );
                 }
@@ -218,7 +283,7 @@ class _AfterSalesDetailPageState extends ConsumerState<AfterSalesDetailPage> {
                       FilledButton.tonalIcon(
                         onPressed: attachments.length >= 3 ? null : pickEvidence,
                         icon: const Icon(Icons.attachment_outlined),
-                        label: Text('Add evidence (${attachments.length}/3)'),
+                        label: Text('Add photo or PDF (${attachments.length}/3)'),
                       ),
                       const SizedBox(width: 8),
                       if (attachments.isNotEmpty)
@@ -602,7 +667,12 @@ class _AttachmentPreview extends StatelessWidget {
   Widget build(BuildContext context) {
     // signed URL 末尾是 ?token=xxx，需用 path 判断扩展名
     final path = Uri.tryParse(url)?.path ?? url;
-    final isImage = path.endsWith('.jpg') || path.endsWith('.jpeg') || path.endsWith('.png') || path.endsWith('.webp');
+    final lower = path.toLowerCase();
+    final isImage = lower.endsWith('.jpg') ||
+        lower.endsWith('.jpeg') ||
+        lower.endsWith('.png') ||
+        lower.endsWith('.webp');
+    final isPdf = lower.endsWith('.pdf');
     return GestureDetector(
       onTap: () => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
       child: Container(
@@ -620,8 +690,12 @@ class _AttachmentPreview extends StatelessWidget {
         ),
         child: isImage
             ? null
-            : const Center(
-                child: Icon(Icons.insert_drive_file_outlined, color: Colors.black54),
+            : Center(
+                child: Icon(
+                  isPdf ? Icons.picture_as_pdf_outlined : Icons.insert_drive_file_outlined,
+                  color: Colors.black54,
+                  size: 40,
+                ),
               ),
       ),
     );

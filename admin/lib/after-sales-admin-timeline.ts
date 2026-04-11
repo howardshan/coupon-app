@@ -15,6 +15,25 @@ export type AfterSalesTimelineInput = {
   reasonCode?: string | null
 }
 
+/** 售后详情 API 返回的 request.timeline（JSONB）单项 — 与 after-sales-drawer 类型对齐 */
+export type AfterSalesApiTimelineEvent = {
+  status: string
+  actor: string
+  note?: string
+  attachments?: string[]
+  at: string
+}
+
+function humanizeUnderscores(s: string): string {
+  return s.replace(/_/g, ' ').trim()
+}
+
+function sentenceCaseStatus(s: string): string {
+  const h = humanizeUnderscores(s)
+  if (!h) return 'Update'
+  return h.charAt(0).toUpperCase() + h.slice(1)
+}
+
 /** 非结案状态：与业务侧「活跃售后」一致 */
 export const AFTER_SALES_TERMINAL_STATUSES = new Set([
   'refunded',
@@ -41,6 +60,36 @@ export function buildAfterSalesRequestTimelineEntries(
       at: r.createdAt,
       title: 'After-sales case opened',
       subtitle: `Reason: ${code} · Status: ${st} · Case ${r.id.slice(0, 8).toUpperCase()}…`,
+    })
+  }
+  return sortActivityTimelineAscending(out)
+}
+
+/**
+ * 将详情接口中的 timeline JSON 转为通用活动卡片条目（升序）
+ * 标题：状态文案；副标题：Actor 与 note；附件原样交给卡片渲染
+ */
+export function buildAfterSalesTimelineEntries(
+  timeline: AfterSalesApiTimelineEvent[] | null | undefined
+): AdminActivityTimelineEntry[] {
+  if (timeline == null || timeline.length === 0) return []
+  const out: AdminActivityTimelineEntry[] = []
+  for (const ev of timeline) {
+    const at = String(ev.at ?? '').trim()
+    if (!at) continue
+    const title = sentenceCaseStatus(String(ev.status ?? ''))
+    const actorPart = humanizeUnderscores(String(ev.actor ?? 'unknown'))
+    const actorLine = `Actor: ${actorPart}`
+    const note = ev.note?.trim()
+    const subtitle = note != null && note.length > 0 ? `${actorLine}\n${note}` : actorLine
+    const attachments = (ev.attachments ?? []).filter(
+      (u) => typeof u === 'string' && u.trim().length > 0
+    )
+    out.push({
+      at,
+      title,
+      subtitle,
+      ...(attachments.length > 0 ? { attachments } : {}),
     })
   }
   return sortActivityTimelineAscending(out)
