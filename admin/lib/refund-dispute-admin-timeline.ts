@@ -22,6 +22,8 @@ export type RefundDisputeTimelineInput = {
   adminReason?: string | null
   adminDecidedAt?: string | null
   completedAt?: string | null
+  /** refund_requests.metadata（JSON）：自动合并售后、用户撤回等 */
+  metadata?: Record<string, unknown> | null
 }
 
 function truncate(s: string | null | undefined, max: number): string {
@@ -42,6 +44,42 @@ function push(
   const t = String(at).trim()
   if (!t) return
   out.push({ at: t, title, subtitle: subtitle?.trim() || undefined })
+}
+
+/** 根据 metadata 区分：系统自动关单 vs 用户撤回 */
+function cancelledDisputeCopy(row: RefundDisputeTimelineInput): { title: string; subtitle: string } {
+  const meta =
+    row.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
+      ? (row.metadata as Record<string, unknown>)
+      : {}
+  const reason = meta.cancel_reason
+  const asId = meta.after_sales_request_id
+
+  if (reason === 'superseded_by_existing_after_sales') {
+    return {
+      title: 'Refund dispute closed',
+      subtitle:
+        'Superseded by an existing after-sales case on the same coupon; the customer continues in After-sales.',
+    }
+  }
+  if (reason === 'after_sales_window_expired') {
+    return {
+      title: 'Refund dispute closed',
+      subtitle:
+        'After-sales eligibility window had expired; dispute closed without creating a new after-sales case.',
+    }
+  }
+  if (asId != null && String(asId).trim().length > 0) {
+    const idShort = String(asId).slice(0, 8).toUpperCase()
+    return {
+      title: 'Refund dispute closed (escalated to after-sales)',
+      subtitle: `Continued as after-sales request ${idShort}…`,
+    }
+  }
+  return {
+    title: 'Refund dispute cancelled',
+    subtitle: 'Withdrawn by customer',
+  }
 }
 
 /**
@@ -123,7 +161,8 @@ export function buildRefundDisputeTimeline(
   }
 
   if (row.status === 'cancelled' && row.updatedAt) {
-    push(out, row.updatedAt, 'Refund dispute cancelled', withHint('Withdrawn by customer'))
+    const { title, subtitle } = cancelledDisputeCopy(row)
+    push(out, row.updatedAt, title, withHint(subtitle))
   }
 
   return sortActivityTimelineAscending(out)

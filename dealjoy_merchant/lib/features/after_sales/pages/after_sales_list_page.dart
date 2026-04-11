@@ -62,6 +62,13 @@ class _AfterSalesListPageState extends ConsumerState<AfterSalesListPage>
     return Scaffold(
       appBar: AppBar(
         title: const Text('After-Sales Cases'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Refresh',
+            onPressed: () => ref.read(afterSalesListProvider.notifier).refresh(),
+          ),
+        ],
         bottom: TabBar(
           controller: _tabController,
           indicatorColor: const Color(0xFFFF6B35),
@@ -74,41 +81,81 @@ class _AfterSalesListPageState extends ConsumerState<AfterSalesListPage>
         data: (state) => RefreshIndicator(
           onRefresh: () => ref.read(afterSalesListProvider.notifier).refresh(),
           color: const Color(0xFFFF6B35),
-          child: state.requests.isEmpty
-              ? _EmptyState(
-                  statusLabel: _tabs[_tabController.index].label,
-                  onReset: () => ref.read(afterSalesStatusFilterProvider.notifier).state = 'pending',
+          // AlwaysScrollableScrollPhysics：条目少或空列表时仍可下拉触发刷新
+          child: CustomScrollView(
+            controller: _scrollController,
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              if (state.requests.isEmpty)
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: _EmptyState(
+                    statusLabel: _tabs[_tabController.index].label,
+                    onReset: () =>
+                        ref.read(afterSalesStatusFilterProvider.notifier).state = 'pending',
+                  ),
                 )
-              : ListView.builder(
-                  controller: _scrollController,
+              else
+                SliverPadding(
                   padding: const EdgeInsets.only(bottom: 24),
-                  itemCount: state.requests.length + (state.hasMore || isLoadingMore ? 1 : 0),
-                  itemBuilder: (context, index) {
-                    if (index >= state.requests.length) {
-                      return const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 16),
-                        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                      );
-                    }
-                    final request = state.requests[index];
-                    return _AfterSalesCard(
-                      request: request,
-                      onTap: () async {
-                        await Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => AfterSalesDetailPage(requestId: request.id),
-                          ),
+                  sliver: SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) {
+                        if (index >= state.requests.length) {
+                          return const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 16),
+                            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                          );
+                        }
+                        final request = state.requests[index];
+                        return _AfterSalesCard(
+                          request: request,
+                          onTap: () async {
+                            await Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => AfterSalesDetailPage(requestId: request.id),
+                              ),
+                            );
+                            ref.read(afterSalesListProvider.notifier).refresh();
+                          },
                         );
-                        ref.read(afterSalesListProvider.notifier).refresh();
                       },
-                    );
-                  },
+                      childCount: state.requests.length +
+                          (state.hasMore || isLoadingMore ? 1 : 0),
+                    ),
+                  ),
                 ),
+            ],
+          ),
         ),
-        loading: () => const _ListShimmer(),
-        error: (error, _) => _ErrorState(
-          message: error.toString(),
-          onRetry: () => ref.read(afterSalesListProvider.notifier).refresh(),
+        loading: () => RefreshIndicator(
+          onRefresh: () => ref.read(afterSalesListProvider.notifier).refresh(),
+          color: const Color(0xFFFF6B35),
+          child: CustomScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: const _ListShimmer(),
+              ),
+            ],
+          ),
+        ),
+        error: (error, _) => RefreshIndicator(
+          onRefresh: () => ref.read(afterSalesListProvider.notifier).refresh(),
+          color: const Color(0xFFFF6B35),
+          child: CustomScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: _ErrorState(
+                  message: error.toString(),
+                  onRetry: () => ref.read(afterSalesListProvider.notifier).refresh(),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
