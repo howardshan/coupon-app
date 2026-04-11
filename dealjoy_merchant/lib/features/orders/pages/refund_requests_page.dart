@@ -266,6 +266,9 @@ class _RefundRequestTile extends StatelessWidget {
     final createdAt = refundRequest['created_at'] as String?;
     final reason = refundRequest['reason'] as String? ?? '';
     final isPending = status == 'pending_merchant';
+    final lineCtx = refundRequest['refund_line_context'];
+    final lineMap = lineCtx is Map<String, dynamic> ? lineCtx : null;
+    final couponTail = lineMap?['coupon_code_tail'] as String?;
 
     return Card(
       elevation: 1,
@@ -316,6 +319,13 @@ class _RefundRequestTile extends StatelessWidget {
                 'Order: $orderNumber',
                 style: const TextStyle(fontSize: 12, color: Colors.grey),
               ),
+            if (couponTail != null && couponTail.isNotEmpty) ...[
+              const SizedBox(height: 2),
+              Text(
+                'Voucher: $couponTail',
+                style: const TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+            ],
             if (createdAt != null) ...[
               const SizedBox(height: 2),
               Text(

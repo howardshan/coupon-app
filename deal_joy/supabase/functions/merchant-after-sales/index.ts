@@ -208,7 +208,7 @@ async function handleList(
   let query = supabase
     .from("after_sales_requests")
     .select(
-      "id, status, reason_code, reason_detail, refund_amount, user_attachments, merchant_feedback, created_at, expires_at, store_id, order_id, user_id, timeline, orders(total_amount, order_number), after_sales_events(*)",
+      "id, status, reason_code, reason_detail, refund_amount, user_attachments, merchant_feedback, created_at, expires_at, store_id, order_id, coupon_id, user_id, timeline, orders(total_amount, order_number), after_sales_events(*)",
       { count: "exact" }
     )
     .in("merchant_id", auth.merchantIds)
@@ -251,15 +251,22 @@ async function handleList(
     }
   }
 
+  const ctxById = await batchAfterSalesMerchantContext(
+    supabase,
+    rows as Record<string, unknown>[],
+  );
   const hydrated = await decorateAfterSalesRequests(supabase, rows);
   return jsonResponse({
     data: hydrated.map((row) => {
       const u = userMap.get(String(row.user_id ?? ""));
       const fullName = u?.full_name ?? null;
+      const rid = String(row.id ?? "");
+      const ctx = ctxById.get(rid) ?? emptyMerchantOrderContext();
       return {
         ...row,
-        users: fullName != null ? { full_name: fullName } : null,
+        // 不向商家返回全名 / users 嵌套，仅脱敏展示名
         user_display_name: maskName(fullName ?? "Anonymous"),
+        merchant_order_context: ctx,
       };
     }),
     total: count ?? 0,
@@ -272,6 +279,113 @@ function maskName(name: string): string {
   if (!name) return "User";
   if (name.length === 1) return `${name[0]}*`;
   return `${name[0]}***${name[name.length - 1]}`;
+}
+
+/** 券码仅暴露尾部若干位，便于对账 */
+function maskCouponTail(code: string | null | undefined, tail = 4): string | null {
+  const normalized = String(code ?? "").replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+  if (!normalized.length) return null;
+  if (normalized.length <= tail) return `…${normalized}`;
+  return `…${normalized.slice(-tail)}`;
+}
+
+function emptyMerchantOrderContext(): Record<string, unknown> {
+  return {
+    order_id: null,
+    order_number: null,
+    deal_title: null,
+    coupon_code_tail: null,
+    redeemed_at: null,
+  };
+}
+
+/** 批量组装商家可见的订单/券上下文（不含用户全名） */
+async function batchAfterSalesMerchantContext(
+  supabase: ReturnType<typeof createClient>,
+  rows: Record<string, unknown>[],
+): Promise<Map<string, Record<string, unknown>>> {
+  const out = new Map<string, Record<string, unknown>>();
+  const couponIds = new Set<string>();
+  for (const r of rows) {
+    const cid = r.coupon_id as string | undefined;
+    if (cid) couponIds.add(cid);
+  }
+  type CouponRow = {
+    id: string;
+    coupon_code: string | null;
+    qr_code: string | null;
+    deal_id: string | null;
+    redeemed_at: string | null;
+    order_item_id: string | null;
+  };
+  let coupons: CouponRow[] = [];
+  if (couponIds.size > 0) {
+    const { data: cRows, error: cErr } = await supabase
+      .from("coupons")
+      .select("id, coupon_code, qr_code, deal_id, redeemed_at, order_item_id")
+      .in("id", [...couponIds]);
+    if (cErr) {
+      console.error("[merchant-after-sales] batch coupons error", cErr.message);
+    }
+    coupons = (cRows ?? []) as CouponRow[];
+  }
+  const couponById = new Map(coupons.map((c) => [c.id, c]));
+  const dealIds = new Set(
+    coupons.map((c) => c.deal_id).filter((id): id is string => typeof id === "string" && id.length > 0),
+  );
+  const oiIds = new Set(
+    coupons.map((c) => c.order_item_id).filter((id): id is string => typeof id === "string" && id.length > 0),
+  );
+  const dealsMap = new Map<string, string | null>();
+  if (dealIds.size > 0) {
+    const { data: deals } = await supabase.from("deals").select("id, title").in("id", [...dealIds]);
+    for (const d of deals ?? []) {
+      const dr = d as { id: string; title?: string | null };
+      dealsMap.set(dr.id, dr.title ?? null);
+    }
+  }
+  const oiRedeem = new Map<string, string | null>();
+  if (oiIds.size > 0) {
+    const { data: ois } = await supabase.from("order_items").select("id, redeemed_at").in("id", [...oiIds]);
+    for (const o of ois ?? []) {
+      const oi = o as { id: string; redeemed_at?: string | null };
+      oiRedeem.set(oi.id, oi.redeemed_at ?? null);
+    }
+  }
+
+  for (const r of rows) {
+    const rid = String(r.id ?? "");
+    const orders = r.orders as { order_number?: string | null } | null | undefined;
+    const orderNumber = orders?.order_number ?? null;
+    const orderId = (r.order_id as string | null | undefined) ?? null;
+    const cid = r.coupon_id as string | undefined;
+    if (!cid || !couponById.has(cid)) {
+      out.set(rid, {
+        order_id: orderId,
+        order_number: orderNumber,
+        deal_title: null,
+        coupon_code_tail: null,
+        redeemed_at: null,
+      });
+      continue;
+    }
+    const c = couponById.get(cid)!;
+    const dealTitle = c.deal_id ? dealsMap.get(c.deal_id) ?? null : null;
+    const codeForTail = (c.coupon_code?.trim() || c.qr_code?.trim()) || null;
+    let redeemedAt: string | null = c.redeemed_at ?? null;
+    if (c.order_item_id) {
+      const oiR = oiRedeem.get(c.order_item_id);
+      if (oiR) redeemedAt = oiR;
+    }
+    out.set(rid, {
+      order_id: orderId,
+      order_number: orderNumber,
+      deal_title: dealTitle,
+      coupon_code_tail: maskCouponTail(codeForTail),
+      redeemed_at: redeemedAt,
+    });
+  }
+  return out;
 }
 
 async function handleDetail(
@@ -291,32 +405,22 @@ async function handleDetail(
   }
 
   const uid = data.user_id as string | undefined;
-  let userRow: { full_name: string | null; avatar_url: string | null } | null = null;
+  let maskedNameSource = "Anonymous";
   if (uid) {
-    const { data: u } = await supabase
-      .from("users")
-      .select("full_name, avatar_url")
-      .eq("id", uid)
-      .maybeSingle();
-    userRow = u
-      ? {
-        full_name: (u as { full_name?: string | null }).full_name ?? null,
-        avatar_url: (u as { avatar_url?: string | null }).avatar_url ?? null,
-      }
-      : null;
+    const { data: u } = await supabase.from("users").select("full_name").eq("id", uid).maybeSingle();
+    const fn = (u as { full_name?: string | null } | null)?.full_name;
+    if (fn) maskedNameSource = fn;
   }
 
-  const withUser = {
-    ...data,
-    users: userRow
-      ? { full_name: userRow.full_name, avatar_url: userRow.avatar_url }
-      : null,
-  };
-  const hydrated = await decorateAfterSalesRequest(supabase, withUser);
+  const ctxMap = await batchAfterSalesMerchantContext(supabase, [data as Record<string, unknown>]);
+  const ctx = ctxMap.get(String(data.id)) ?? emptyMerchantOrderContext();
+
+  const hydrated = await decorateAfterSalesRequest(supabase, data);
   return jsonResponse({
     request: {
       ...hydrated,
-      user_display_name: maskName(userRow?.full_name ?? "Anonymous"),
+      user_display_name: maskName(maskedNameSource),
+      merchant_order_context: ctx,
     },
   });
 }

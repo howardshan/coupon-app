@@ -3,6 +3,8 @@
 // 同意 → 直接执行退款（自动调用 execute-refund）
 // 拒绝 → 进入管理员仲裁，需填写拒绝原因
 
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -53,6 +55,48 @@ class _RefundRequestDetailPageState
       _order?['deals'] as Map<String, dynamic>?;
   String get _dealTitle => _deal?['title'] as String? ?? 'Unknown Deal';
 
+  /// 单笔 order_item 退款时的行级上下文（Edge: refund_line_context）
+  Map<String, dynamic>? get _lineCtx {
+    final v = widget.refundRequest['refund_line_context'];
+    return v is Map<String, dynamic> ? v : null;
+  }
+
+  String? get _lineDealTitle => _lineCtx?['deal_title'] as String?;
+  String? get _couponTail => _lineCtx?['coupon_code_tail'] as String?;
+  String? get _lineRedeemedAt => _lineCtx?['redeemed_at'] as String?;
+  String? get _couponStatus => _lineCtx?['coupon_status'] as String?;
+
+  double? get _lineUnitPrice {
+    final v = _lineCtx?['unit_price'];
+    if (v == null) return null;
+    return double.tryParse(v.toString());
+  }
+
+  bool get _showAffectedVoucherSection {
+    if (_lineCtx == null) return false;
+    return (_lineDealTitle != null && _lineDealTitle!.isNotEmpty) ||
+        (_couponTail != null && _couponTail!.isNotEmpty) ||
+        (_lineRedeemedAt != null && _lineRedeemedAt!.isNotEmpty) ||
+        _lineUnitPrice != null ||
+        (_couponStatus != null && _couponStatus!.isNotEmpty) ||
+        _selectedOptionsPreview() != null;
+  }
+
+  String? _selectedOptionsPreview() {
+    final so = _lineCtx?['selected_options'];
+    if (so == null) return null;
+    try {
+      final s = const JsonEncoder.withIndent('  ').convert(so);
+      if (s.length > 220) return '${s.substring(0, 217)}…';
+      return s;
+    } catch (_) {
+      return so.toString();
+    }
+  }
+
+  bool get _isFullOrderRefund =>
+      widget.refundRequest['order_item_id'] == null;
+
   bool get _isPendingMerchant => _status == 'pending_merchant';
 
   @override
@@ -93,6 +137,69 @@ class _RefundRequestDetailPageState
               ],
             ),
             const SizedBox(height: 12),
+
+            if (_showAffectedVoucherSection) ...[
+              _SectionCard(
+                title: 'Affected voucher',
+                icon: Icons.confirmation_number_outlined,
+                iconColor: Colors.teal,
+                children: [
+                  if (_lineDealTitle != null && _lineDealTitle!.isNotEmpty)
+                    _InfoRow(label: 'Line deal', value: _lineDealTitle!),
+                  if (_lineUnitPrice != null)
+                    _InfoRow(
+                      label: 'Line price',
+                      value: NumberFormat.currency(symbol: '\$')
+                          .format(_lineUnitPrice!),
+                    ),
+                  if (_couponTail != null && _couponTail!.isNotEmpty)
+                    _InfoRow(label: 'Voucher code', value: _couponTail!),
+                  if (_couponStatus != null && _couponStatus!.isNotEmpty)
+                    _InfoRow(label: 'Voucher status', value: _couponStatus!),
+                  if (_lineRedeemedAt != null && _lineRedeemedAt!.isNotEmpty)
+                    _InfoRow(
+                      label: 'Verified / redeemed',
+                      value: _formatDate(_lineRedeemedAt!),
+                    ),
+                  if (_selectedOptionsPreview() != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Purchased options\n${_selectedOptionsPreview()!}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.black54,
+                            height: 1.35,
+                            fontFamily: 'monospace',
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 12),
+            ] else if (_isFullOrderRefund) ...[
+              _SectionCard(
+                title: 'Scope',
+                icon: Icons.info_outline,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Text(
+                      'This refund applies to the full order (not tied to a single voucher line).',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey.shade700,
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+            ],
 
             // 区块2：退款申请信息
             _SectionCard(

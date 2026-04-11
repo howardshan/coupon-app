@@ -40,6 +40,12 @@ class _AfterSalesDetailPageState extends ConsumerState<AfterSalesDetailPage> {
             padding: const EdgeInsets.all(16),
             children: [
               _SummaryCard(request: request),
+              if (request.merchantOrderContext?.hasAnyContext == true) ...[
+                const SizedBox(height: 16),
+                _MerchantOrderContextCard(
+                  contextInfo: request.merchantOrderContext!,
+                ),
+              ],
               const SizedBox(height: 16),
               _AttachmentSection(title: 'User attachments', attachments: request.userAttachments),
               if (request.merchantAttachments.isNotEmpty) ...[
@@ -293,6 +299,13 @@ class _SummaryCard extends StatelessWidget {
                       request.userDisplayName,
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Customer (masked)',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: Colors.grey.shade600,
+                          ),
+                    ),
                     const SizedBox(height: 4),
                     Text(
                       request.reasonDetail,
@@ -326,6 +339,89 @@ class _SummaryCard extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 订单号 / Deal / 券码尾部 / 核销时间（不含用户全名）
+class _MerchantOrderContextCard extends StatelessWidget {
+  const _MerchantOrderContextCard({required this.contextInfo});
+
+  final MerchantOrderContext contextInfo;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Order & voucher',
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+          ),
+          const SizedBox(height: 12),
+          if (contextInfo.orderNumber != null &&
+              contextInfo.orderNumber!.isNotEmpty)
+            _CtxRow(label: 'Order #', value: contextInfo.orderNumber!),
+          if (contextInfo.dealTitle != null &&
+              contextInfo.dealTitle!.isNotEmpty)
+            _CtxRow(label: 'Deal', value: contextInfo.dealTitle!),
+          if (contextInfo.couponCodeTail != null &&
+              contextInfo.couponCodeTail!.isNotEmpty)
+            _CtxRow(label: 'Voucher code', value: contextInfo.couponCodeTail!),
+          if (contextInfo.redeemedAt != null)
+            _CtxRow(
+              label: 'Verified / redeemed',
+              value: DateFormat('MMM d, yyyy · HH:mm')
+                  .format(contextInfo.redeemedAt!.toLocal()),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CtxRow extends StatelessWidget {
+  const _CtxRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 132,
+            child: Text(
+              label,
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: Color(0xFF1A1A1A),
+              ),
+            ),
           ),
         ],
       ),

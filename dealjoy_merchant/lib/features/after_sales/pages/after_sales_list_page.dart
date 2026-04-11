@@ -159,6 +159,39 @@ class _AfterSalesCard extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: textTheme.bodyMedium?.copyWith(color: Colors.grey.shade600),
                         ),
+                        if (request.merchantOrderContext?.orderNumber != null &&
+                            request.merchantOrderContext!.orderNumber!.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            'Order: ${request.merchantOrderContext!.orderNumber}',
+                            style: textTheme.labelMedium?.copyWith(
+                              color: Colors.grey.shade800,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                        if (request.merchantOrderContext?.dealTitle != null &&
+                            request.merchantOrderContext!.dealTitle!.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            request.merchantOrderContext!.dealTitle!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: textTheme.bodySmall?.copyWith(
+                              color: Colors.grey.shade700,
+                            ),
+                          ),
+                        ],
+                        if (request.merchantOrderContext?.couponCodeTail != null &&
+                            request.merchantOrderContext!.couponCodeTail!.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            'Voucher: ${request.merchantOrderContext!.couponCodeTail}',
+                            style: textTheme.bodySmall?.copyWith(
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),

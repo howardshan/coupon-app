@@ -13,7 +13,7 @@ void main() {
     reasonDetail: 'Customer reports food arrived cold.',
     refundAmount: 18.25,
     userDisplayName: 'J***e',
-    timeline: const [
+    timeline: [
       AfterSalesTimelineEntry(
         status: 'submitted',
         actor: 'user',
