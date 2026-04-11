@@ -79,6 +79,8 @@ class AuthRepository {
     required String fullName,
     required String username,
     required String dateOfBirth,
+    bool marketingOptIn = false,
+    bool analyticsOptIn = false,
   }) async {
     try {
       final response = await _client.auth.signUp(
@@ -88,6 +90,8 @@ class AuthRepository {
           'full_name': fullName,
           'username': username,
           'date_of_birth': dateOfBirth,
+          'marketing_opt_in': marketingOptIn,
+          'analytics_opt_in': analyticsOptIn,
         },
       );
       if (response.user == null) {

@@ -1849,7 +1849,7 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
               context: context,
               initialDate: _endDate ?? DateTime.now().add(const Duration(days: 30)),
               firstDate: DateTime.now().add(const Duration(days: 1)),
-              lastDate: DateTime.now().add(const Duration(days: 365)),
+              lastDate: DateTime.now().add(const Duration(days: 90)), // 最多 3 个月
               builder: (context, child) {
                 return Theme(
                   data: Theme.of(context).copyWith(
@@ -1899,7 +1899,7 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
     // 根据有效期类型动态调整范围提示
     final isShort = _validityType == ValidityType.shortAfterPurchase;
     final hint = isShort ? 'e.g. 3' : 'e.g. 30';
-    final rangeHint = isShort ? '1–7 days' : '8–365 days';
+    final rangeHint = isShort ? '1–7 days' : '8–90 days';
     return TextFormField(
       key: const ValueKey('deal_create_validity_days_field'),
       controller: _validityDaysController,
@@ -1914,8 +1914,8 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
             return 'Short-term: must be between 1 and 7 days';
           }
         } else {
-          if (days == null || days < 8 || days > 365) {
-            return 'Long-term: must be between 8 and 365 days';
+          if (days == null || days < 8 || days > 90) {
+            return 'Long-term: must be between 8 and 90 days';
           }
         }
         return null;

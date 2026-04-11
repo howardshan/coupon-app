@@ -136,10 +136,29 @@ class LegalRepository {
     if (doc == null) return null;
 
     // 调用 render_legal_document RPC 替换占位符
+    // 传入 merchant_id，以便使用商家独立佣金（如有）
     try {
+      String? merchantId;
+      final user = _supabase.auth.currentUser;
+      if (user != null) {
+        final mRow = await _supabase
+            .from('merchants')
+            .select('id')
+            .eq('user_id', user.id)
+            .maybeSingle();
+        merchantId = mRow?['id'] as String?;
+      }
+
+      final renderParams = <String, dynamic>{
+        'p_content_html': doc.contentHtml,
+      };
+      if (merchantId != null) {
+        renderParams['p_merchant_id'] = merchantId;
+      }
+
       final rendered = await _supabase.rpc(
         'render_legal_document',
-        params: {'p_content_html': doc.contentHtml},
+        params: renderParams,
       );
       if (rendered is String) {
         return LegalDocumentContent(
