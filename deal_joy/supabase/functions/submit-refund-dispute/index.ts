@@ -75,6 +75,7 @@ Deno.serve(async (req) => {
         id,
         order_id,
         deal_id,
+        coupon_id,
         unit_price,
         service_fee,
         tax_amount,
@@ -155,6 +156,36 @@ Deno.serve(async (req) => {
         JSON.stringify({ error: 'A refund dispute is already pending for this coupon', requestId: pending.id }),
         { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
+    }
+
+    // 与售后单互斥：同一券仅保留一条主诉求线（争议或售后，不并行）
+    let couponIdForAs = (item.coupon_id as string | null) ?? null;
+    if (!couponIdForAs) {
+      const { data: cRow } = await serviceClient
+        .from('coupons')
+        .select('id')
+        .eq('order_item_id', orderItemId.trim())
+        .maybeSingle();
+      couponIdForAs = (cRow?.id as string | undefined) ?? null;
+    }
+    if (couponIdForAs) {
+      const { data: existingAs } = await serviceClient
+        .from('after_sales_requests')
+        .select('id')
+        .eq('coupon_id', couponIdForAs)
+        .not('status', 'in', '(refunded,closed,platform_rejected)')
+        .maybeSingle();
+      if (existingAs) {
+        return new Response(
+          JSON.stringify({
+            error:
+              'An after-sales request already exists for this coupon. Continue in After-sales instead of opening a new dispute.',
+            code: 'after_sales_exists',
+            requestId: existingAs.id,
+          }),
+          { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
     }
 
     const unitPrice = Number(item.unit_price ?? 0);
