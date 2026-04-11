@@ -1,40 +1,47 @@
+/**
+ * 售后单（after_sales_requests）— Admin 活动时间线条目
+ * 注释中文；展示文案英文。
+ */
+
 import {
-  type AdminActivityTimelineEntry,
   sortActivityTimelineAscending,
+  type AdminActivityTimelineEntry,
 } from '@/lib/admin-activity-timeline-types'
 
-/** API / JSONB `timeline` 元素形状（与 platform-after-sales 详情一致） */
-export type AfterSalesTimelineRawEntry = {
+export type AfterSalesTimelineInput = {
+  id: string
+  createdAt: string
   status: string
-  actor: string
-  note?: string
-  attachments?: string[]
-  at: string
+  reasonCode?: string | null
 }
 
-function formatStatusLabel(status: string): string {
-  return status.replaceAll('_', ' ')
+/** 非结案状态：与业务侧「活跃售后」一致 */
+export const AFTER_SALES_TERMINAL_STATUSES = new Set([
+  'refunded',
+  'closed',
+  'platform_rejected',
+])
+
+export function isActiveAfterSalesStatus(status: string): boolean {
+  return !AFTER_SALES_TERMINAL_STATUSES.has(status)
 }
 
 /**
- * 将售后请求的 `timeline` JSONB 转为通用活动时间线条目（升序）
+ * 每条售后单在创建时刻生成一条时间线节点（细粒度事件见 after_sales_events，此处保持轻量）
  */
-export function buildAfterSalesTimelineEntries(
-  raw: AfterSalesTimelineRawEntry[] | null | undefined
+export function buildAfterSalesRequestTimelineEntries(
+  rows: AfterSalesTimelineInput[]
 ): AdminActivityTimelineEntry[] {
-  if (!raw?.length) return []
-  const mapped: AdminActivityTimelineEntry[] = raw.map((entry) => {
-    const parts = [`Actor: ${entry.actor}`]
-    if (entry.note?.trim()) parts.push(entry.note.trim())
-    return {
-      at: entry.at,
-      title: formatStatusLabel(entry.status),
-      subtitle: parts.join('\n'),
-      attachments:
-        entry.attachments && entry.attachments.length > 0
-          ? [...entry.attachments]
-          : undefined,
-    }
-  })
-  return sortActivityTimelineAscending(mapped)
+  if (!rows.length) return []
+  const out: AdminActivityTimelineEntry[] = []
+  for (const r of rows) {
+    const code = (r.reasonCode ?? 'other').replace(/_/g, ' ')
+    const st = r.status.replace(/_/g, ' ')
+    out.push({
+      at: r.createdAt,
+      title: 'After-sales case opened',
+      subtitle: `Reason: ${code} · Status: ${st} · Case ${r.id.slice(0, 8).toUpperCase()}…`,
+    })
+  }
+  return sortActivityTimelineAscending(out)
 }
