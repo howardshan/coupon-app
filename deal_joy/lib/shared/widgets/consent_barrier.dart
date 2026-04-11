@@ -24,6 +24,9 @@ class _ConsentBarrierState extends ConsumerState<ConsentBarrier> {
   /// 正在提交同意中（防止重复点击）
   bool _isSubmitting = false;
 
+  /// 已经写过 consent_prompted 事件的 slug 集合（防止重复写审计日志）
+  final Set<String> _promptedLoggedSlugs = {};
+
   /// 全部勾选后才允许点击"I Agree to All"
   bool get _allChecked =>
       _checkedSlugs.isNotEmpty &&
@@ -33,6 +36,28 @@ class _ConsentBarrierState extends ConsumerState<ConsentBarrier> {
           .valueOrNull
           ?.every((doc) => _checkedSlugs.contains(doc.slug)) ==
           true;
+
+  /// 写入 consent_prompted 审计事件（证明"我们在此时向用户展示了此文档"）
+  /// 对每个 slug 只写一次，避免重复日志
+  void _logPromptedEvents(List<PendingConsent> pendingList) {
+    final recordEvent = ref.read(recordLegalEventProvider);
+    for (final doc in pendingList) {
+      if (_promptedLoggedSlugs.contains(doc.slug)) continue;
+      _promptedLoggedSlugs.add(doc.slug);
+      // fire-and-forget：不阻塞 UI
+      recordEvent(
+        eventType: 'consent_prompted',
+        documentSlug: doc.slug,
+        details: {
+          'trigger_context': 'consent_barrier',
+          'document_version': doc.currentVersion,
+        },
+      ).catchError((_) {
+        // 审计日志失败不影响用户使用，但允许重试
+        _promptedLoggedSlugs.remove(doc.slug);
+      });
+    }
+  }
 
   /// 点击"I Agree to All" — 逐个记录同意，完成后刷新 provider
   Future<void> _handleAgreeAll(List<PendingConsent> pendingList) async {
@@ -47,27 +72,14 @@ class _ConsentBarrierState extends ConsumerState<ConsentBarrier> {
           triggerContext: 'consent_barrier',
         );
       }
+      // 刷新待同意列表，若已全部同意则弹窗将被上层移除
       ref.invalidate(pendingConsentsProvider);
-      // 全屏 Dialog 不会自动关闭；须主动 pop（SnackBar 也会被挡在下面）
-      if (mounted) {
-        Navigator.of(context, rootNavigator: true).pop();
-      }
     } catch (e) {
       if (mounted) {
-        await showDialog<void>(
-          context: context,
-          barrierDismissible: true,
-          builder: (ctx) => AlertDialog(
-            title: const Text('Something went wrong'),
-            content: SingleChildScrollView(
-              child: Text('Failed to record consent: $e'),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                child: const Text('OK'),
-              ),
-            ],
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to record consent: $e'),
+            backgroundColor: AppColors.error,
           ),
         );
       }
@@ -103,6 +115,27 @@ class _ConsentBarrierState extends ConsumerState<ConsentBarrier> {
     );
 
     if (confirmed == true && mounted) {
+      // 为所有当前待签文档写 consent_declined 审计事件（证明用户明确拒绝）
+      final pendingList =
+          ref.read(pendingConsentsProvider).valueOrNull ?? const [];
+      final recordEvent = ref.read(recordLegalEventProvider);
+      for (final doc in pendingList) {
+        try {
+          await recordEvent(
+            eventType: 'consent_declined',
+            documentSlug: doc.slug,
+            details: {
+              'trigger_context': 'consent_barrier',
+              'document_version': doc.currentVersion,
+              'action': 'sign_out',
+            },
+          );
+        } catch (_) {
+          // 审计日志失败不阻塞登出流程
+        }
+      }
+
+      if (!mounted) return;
       await ref.read(authNotifierProvider.notifier).signOut();
       // 退出登录后关闭全屏弹窗，让 go_router 的 auth 守卫将用户重定向至登录页
       if (mounted) {
@@ -133,17 +166,24 @@ class _ConsentBarrierState extends ConsumerState<ConsentBarrier> {
             ),
           ),
           data: (pendingList) {
-            // 列表已空：关闭全屏弹窗（兜底，例如数据在别处已同步）
+            // 若列表为空，说明所有文档已同意 → 自动关闭弹窗
+            // （之前只 invalidate provider 但不关闭对话框，会卡在 loading 状态）
             if (pendingList.isEmpty) {
               WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (!mounted) return;
-                final nav = Navigator.of(context, rootNavigator: true);
-                if (nav.canPop()) nav.pop();
+                if (mounted && Navigator.of(context).canPop()) {
+                  Navigator.of(context, rootNavigator: true).pop();
+                }
               });
               return const Center(
                 child: CircularProgressIndicator(color: AppColors.primary),
               );
             }
+
+            // 首次拿到待签列表 → 写 consent_prompted 审计事件（fire-and-forget）
+            // 在 postFrame 调用避免 build 阶段触发网络请求
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _logPromptedEvents(pendingList);
+            });
 
             return Column(
               children: [

@@ -47,11 +47,13 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     });
   }
 
-  /// 完成 Onboarding，标记为非首次安装，跳转首页
+  /// 完成 Onboarding，标记为非首次安装，回到 /welcome 继续开屏广告流程
+  /// （此时 is_first_launch 已为 false，welcome_splash_screen 会跳过 onboarding 分支，
+  ///  进入"每日竞价广告 → /home"的正常流程）
   Future<void> _completeOnboarding() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('is_first_launch', false);
-    if (mounted) context.go('/home');
+    if (mounted) context.go('/welcome');
   }
 
   @override

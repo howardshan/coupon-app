@@ -8,6 +8,7 @@ import 'features/merchant/domain/providers/merchant_provider.dart';
 import 'features/orders/domain/providers/pending_reviews_provider.dart';
 import 'features/profile/domain/providers/payment_methods_provider.dart';
 import 'features/reviews/domain/providers/my_reviews_provider.dart';
+import 'shared/providers/legal_provider.dart';
 import 'shared/services/push_notification_service.dart';
 import 'shared/services/realtime_service.dart';
 
@@ -53,6 +54,7 @@ class CrunchyPlumApp extends ConsumerWidget {
         ref.invalidate(savedMerchantIdsProvider);    // 收藏商家 ID 集合
         ref.invalidate(savedMerchantsProvider);      // 收藏商家列表
         ref.invalidate(paymentMethodsProvider);      // 已保存支付方式
+        ref.invalidate(pendingConsentsProvider);     // 待签法律文档（版本升级后需重签）
       }
     });
 
