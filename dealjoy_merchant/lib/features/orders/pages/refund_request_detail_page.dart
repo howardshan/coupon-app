@@ -7,6 +7,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../providers/orders_provider.dart';
 
@@ -48,7 +49,6 @@ class _RefundRequestDetailPageState
   String get _orderNumber => _order?['order_number'] as String? ?? '—';
   double get _orderTotal =>
       double.tryParse(_order?['total_amount']?.toString() ?? '0') ?? 0;
-  String? get _orderCreatedAt => _order?['created_at'] as String?;
 
   // 嵌套 deals 数据
   Map<String, dynamic>? get _deal =>
@@ -65,6 +65,46 @@ class _RefundRequestDetailPageState
   String? get _couponTail => _lineCtx?['coupon_code_tail'] as String?;
   String? get _lineRedeemedAt => _lineCtx?['redeemed_at'] as String?;
   String? get _couponStatus => _lineCtx?['coupon_status'] as String?;
+  String? get _lineDealSummary => _lineCtx?['deal_summary'] as String?;
+  String? get _lineDealIdFromCtx => _lineCtx?['deal_id'] as String?;
+
+  Map<String, dynamic>? get _orderCtx {
+    final v = widget.refundRequest['refund_order_context'];
+    return v is Map<String, dynamic> ? v : null;
+  }
+
+  String get _userDisplayName =>
+      widget.refundRequest['user_display_name'] as String? ?? 'User';
+
+  /// 行级 Deal 优先，否则订单级 Deal（与 Edge refund_order_context 一致）
+  String get _displayDealTitle {
+    final lt = _lineDealTitle;
+    if (lt != null && lt.isNotEmpty) return lt;
+    final ot = _orderCtx?['deal_title'] as String?;
+    if (ot != null && ot.isNotEmpty) return ot;
+    return _dealTitle;
+  }
+
+  String? get _displayDealSummary {
+    final ls = _lineDealSummary?.trim();
+    if (ls != null && ls.isNotEmpty) return ls;
+    final os = _orderCtx?['deal_summary'] as String?;
+    if (os != null && os.trim().isNotEmpty) return os.trim();
+    return null;
+  }
+
+  String? get _displayDealId {
+    final lid = _lineDealIdFromCtx?.trim();
+    if (lid != null && lid.isNotEmpty) return lid;
+    final oid = _orderCtx?['deal_id'] as String?;
+    if (oid != null && oid.isNotEmpty) return oid;
+    return _deal?['id'] as String?;
+  }
+
+  String? get _orderIdForNav =>
+      _orderCtx?['order_id'] as String? ?? _order?['id'] as String?;
+
+  bool get _hasOrderVoucherCard => _orderCtx != null || _order != null;
 
   double? get _lineUnitPrice {
     final v = _lineCtx?['unit_price'];
@@ -72,7 +112,7 @@ class _RefundRequestDetailPageState
     return double.tryParse(v.toString());
   }
 
-  bool get _showAffectedVoucherSection {
+  bool get _showLineVoucherDetail {
     if (_lineCtx == null) return false;
     return (_lineDealTitle != null && _lineDealTitle!.isNotEmpty) ||
         (_couponTail != null && _couponTail!.isNotEmpty) ||
@@ -119,130 +159,37 @@ class _RefundRequestDetailPageState
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 区块1：订单信息
-            _SectionCard(
-              title: 'Order Info',
-              icon: Icons.receipt_long_outlined,
-              children: [
-                _InfoRow(label: 'Deal', value: _dealTitle),
-                _InfoRow(label: 'Order #', value: _orderNumber),
-                _InfoRow(
-                    label: 'Order Total',
-                    value: NumberFormat.currency(symbol: '\$')
-                        .format(_orderTotal)),
-                if (_orderCreatedAt != null)
-                  _InfoRow(
-                      label: 'Ordered',
-                      value: _formatDate(_orderCreatedAt!)),
-              ],
+            _RefundSummaryCard(
+              userDisplayName: _userDisplayName,
+              reason: _reason,
+              refundAmount: _refundAmount,
+              status: _status,
+              submittedAtIso: _createdAt,
             ),
-            const SizedBox(height: 12),
-
-            if (_showAffectedVoucherSection) ...[
-              _SectionCard(
-                title: 'Affected voucher',
-                icon: Icons.confirmation_number_outlined,
-                iconColor: Colors.teal,
-                children: [
-                  if (_lineDealTitle != null && _lineDealTitle!.isNotEmpty)
-                    _InfoRow(label: 'Line deal', value: _lineDealTitle!),
-                  if (_lineUnitPrice != null)
-                    _InfoRow(
-                      label: 'Line price',
-                      value: NumberFormat.currency(symbol: '\$')
-                          .format(_lineUnitPrice!),
-                    ),
-                  if (_couponTail != null && _couponTail!.isNotEmpty)
-                    _InfoRow(label: 'Voucher code', value: _couponTail!),
-                  if (_couponStatus != null && _couponStatus!.isNotEmpty)
-                    _InfoRow(label: 'Voucher status', value: _couponStatus!),
-                  if (_lineRedeemedAt != null && _lineRedeemedAt!.isNotEmpty)
-                    _InfoRow(
-                      label: 'Verified / redeemed',
-                      value: _formatDate(_lineRedeemedAt!),
-                    ),
-                  if (_selectedOptionsPreview() != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          'Purchased options\n${_selectedOptionsPreview()!}',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.black54,
-                            height: 1.35,
-                            fontFamily: 'monospace',
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
+            const SizedBox(height: 16),
+            if (_hasOrderVoucherCard)
+              _RefundOrderVoucherCard(
+                orderCtx: _orderCtx,
+                orderCreatedAtFallback: _order?['created_at'] as String?,
+                orderPaidAtFallback: _order?['paid_at'] as String?,
+                orderNumber: _orderNumber,
+                orderId: _orderIdForNav,
+                orderTotal: _orderTotal,
+                displayDealTitle: _displayDealTitle,
+                displayDealSummary: _displayDealSummary,
+                dealId: _displayDealId,
+                showLineVoucherDetail: _showLineVoucherDetail,
+                lineDealTitle: _lineDealTitle,
+                lineUnitPrice: _lineUnitPrice,
+                couponTail: _couponTail,
+                couponStatus: _couponStatus,
+                lineRedeemedAt: _lineRedeemedAt,
+                selectedOptionsPreview: _selectedOptionsPreview(),
+                isFullOrderRefund: _isFullOrderRefund,
               ),
-              const SizedBox(height: 12),
-            ] else if (_isFullOrderRefund) ...[
-              _SectionCard(
-                title: 'Scope',
-                icon: Icons.info_outline,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: Text(
-                      'This refund applies to the full order (not tied to a single voucher line).',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey.shade700,
-                        height: 1.4,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-            ],
+            const SizedBox(height: 16),
 
-            // 区块2：退款申请信息
-            _SectionCard(
-              title: 'Refund Request',
-              icon: Icons.policy_outlined,
-              iconColor: Colors.orange,
-              children: [
-                _InfoRow(
-                  label: 'Refund Amount',
-                  value: NumberFormat.currency(symbol: '\$')
-                      .format(_refundAmount),
-                  valueColor: Colors.red,
-                  valueBold: true,
-                ),
-                if (_createdAt != null)
-                  _InfoRow(
-                      label: 'Submitted',
-                      value: _formatDate(_createdAt!)),
-              ],
-            ),
-            const SizedBox(height: 12),
-
-            // 区块3：用户填写的退款原因
-            _SectionCard(
-              title: "Customer's Reason",
-              icon: Icons.chat_bubble_outline,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: Text(
-                    _reason,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      color: Colors.black87,
-                      height: 1.5,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-
-            // 区块4：商家回应（仅已处理时显示）
+            // 商家回应（仅已处理时显示）
             if (_merchantResponse != null && _merchantResponse!.isNotEmpty) ...[
               _SectionCard(
                 title: 'Your Response',
@@ -599,6 +546,450 @@ class _RefundRequestDetailPageState
   }
 }
 
+/// 与 After-Sales 详情顶部一致：脱敏用户、理由、金额、提交时间
+class _RefundSummaryCard extends StatelessWidget {
+  const _RefundSummaryCard({
+    required this.userDisplayName,
+    required this.reason,
+    required this.refundAmount,
+    required this.status,
+    this.submittedAtIso,
+  });
+
+  final String userDisplayName;
+  final String reason;
+  final double refundAmount;
+  final String status;
+  final String? submittedAtIso;
+
+  static String _fmtCompact(String? iso) {
+    if (iso == null || iso.isEmpty) return '—';
+    try {
+      return DateFormat('MMM d, yyyy · HH:mm')
+          .format(DateTime.parse(iso).toLocal());
+    } catch (_) {
+      return iso;
+    }
+  }
+
+  String get _statusLabel {
+    switch (status) {
+      case 'pending_merchant':
+        return 'PENDING';
+      case 'approved_merchant':
+      case 'completed':
+        return 'APPROVED';
+      case 'rejected_merchant':
+      case 'pending_admin':
+        return 'ESCALATED';
+      case 'approved_admin':
+        return 'ADMIN OK';
+      case 'rejected_admin':
+        return 'REJECTED';
+      case 'cancelled':
+        return 'CANCELLED';
+      default:
+        return status.replaceAll('_', ' ').toUpperCase();
+    }
+  }
+
+  Color get _statusColor {
+    switch (status) {
+      case 'pending_merchant':
+        return const Color(0xFF0F62FE);
+      case 'approved_merchant':
+      case 'completed':
+      case 'approved_admin':
+        return Colors.green.shade700;
+      case 'rejected_merchant':
+      case 'pending_admin':
+        return Colors.deepOrange;
+      case 'rejected_admin':
+        return Colors.red;
+      default:
+        return Colors.grey.shade700;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final amountFmt = NumberFormat.simpleCurrency();
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      userDisplayName,
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Customer (masked)',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: Colors.grey.shade600,
+                          ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      reason,
+                      style: const TextStyle(color: Colors.black54),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: _statusColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: _statusColor.withValues(alpha: 0.35),
+                  ),
+                ),
+                child: Text(
+                  _statusLabel,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: _statusColor,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Refund amount',
+                      style: TextStyle(color: Colors.black54),
+                    ),
+                    Text(
+                      amountFmt.format(refundAmount),
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.red,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Request submitted',
+                      style: TextStyle(color: Colors.black54),
+                    ),
+                    Text(
+                      _fmtCompact(submittedAtIso),
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 与 After-Sales「Order & voucher」卡对齐：时间、跳转、Deal 摘要、行级券
+class _RefundOrderVoucherCard extends StatelessWidget {
+  const _RefundOrderVoucherCard({
+    required this.orderCtx,
+    required this.orderCreatedAtFallback,
+    required this.orderPaidAtFallback,
+    required this.orderNumber,
+    required this.orderId,
+    required this.orderTotal,
+    required this.displayDealTitle,
+    required this.displayDealSummary,
+    required this.dealId,
+    required this.showLineVoucherDetail,
+    required this.lineDealTitle,
+    required this.lineUnitPrice,
+    required this.couponTail,
+    required this.couponStatus,
+    required this.lineRedeemedAt,
+    required this.selectedOptionsPreview,
+    required this.isFullOrderRefund,
+  });
+
+  final Map<String, dynamic>? orderCtx;
+  final String? orderCreatedAtFallback;
+  final String? orderPaidAtFallback;
+  final String orderNumber;
+  final String? orderId;
+  final double orderTotal;
+  final String displayDealTitle;
+  final String? displayDealSummary;
+  final String? dealId;
+  final bool showLineVoucherDetail;
+  final String? lineDealTitle;
+  final double? lineUnitPrice;
+  final String? couponTail;
+  final String? couponStatus;
+  final String? lineRedeemedAt;
+  final String? selectedOptionsPreview;
+  final bool isFullOrderRefund;
+
+  static String _fmtCompact(String? iso) {
+    if (iso == null || iso.isEmpty) return '—';
+    try {
+      return DateFormat('MMM d, yyyy · HH:mm')
+          .format(DateTime.parse(iso).toLocal());
+    } catch (_) {
+      return iso;
+    }
+  }
+
+  static String _fmtDetailPage(String iso) {
+    try {
+      return DateFormat('MMM d, yyyy · h:mm a')
+          .format(DateTime.parse(iso).toLocal());
+    } catch (_) {
+      return iso;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final created = orderCtx?['order_created_at'] as String? ??
+        orderCreatedAtFallback;
+    final paid = orderCtx?['order_paid_at'] as String? ?? orderPaidAtFallback;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Order & voucher',
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+          ),
+          const SizedBox(height: 12),
+          if (created != null && created.isNotEmpty)
+            _RefundCtxRow(
+              label: 'Order placed',
+              value: _fmtCompact(created),
+            ),
+          if (paid != null && paid.isNotEmpty)
+            _RefundCtxRow(
+              label: 'Paid at',
+              value: _fmtCompact(paid),
+            ),
+          if (orderNumber.isNotEmpty && orderNumber != '—')
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 132,
+                    child: Text(
+                      'Order #',
+                      style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+                    ),
+                  ),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          orderNumber,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            color: Color(0xFF1A1A1A),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Total: ${NumberFormat.simpleCurrency().format(orderTotal)}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade700,
+                          ),
+                        ),
+                        if (orderId != null && orderId!.isNotEmpty)
+                          TextButton(
+                            onPressed: () => context.push('/orders/$orderId'),
+                            style: TextButton.styleFrom(
+                              padding: EdgeInsets.zero,
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              foregroundColor: scheme.primary,
+                            ),
+                            child: const Text('View order details'),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          if (displayDealTitle.isNotEmpty &&
+              displayDealTitle != 'Unknown Deal') ...[
+            _RefundCtxRow(label: 'Deal', value: displayDealTitle),
+            if (displayDealSummary != null &&
+                displayDealSummary!.trim().isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(left: 132, bottom: 8),
+                child: Text(
+                  displayDealSummary!.trim(),
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.35,
+                    color: Colors.grey.shade800,
+                  ),
+                ),
+              ),
+            if (dealId != null && dealId!.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(left: 132, bottom: 8),
+                child: TextButton(
+                  onPressed: () => context.push('/deals/$dealId'),
+                  style: TextButton.styleFrom(
+                    padding: EdgeInsets.zero,
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    foregroundColor: scheme.primary,
+                  ),
+                  child: const Text('View deal details'),
+                ),
+              ),
+          ],
+          if (isFullOrderRefund && !showLineVoucherDetail) ...[
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                'This refund applies to the full order (not tied to a single voucher line).',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey.shade700,
+                  height: 1.35,
+                ),
+              ),
+            ),
+          ],
+          if (showLineVoucherDetail) ...[
+            const Divider(height: 20),
+            Text(
+              'Affected voucher',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: Colors.grey.shade700,
+              ),
+            ),
+            const SizedBox(height: 8),
+            if (lineDealTitle != null && lineDealTitle!.isNotEmpty)
+              _RefundCtxRow(label: 'Line deal', value: lineDealTitle!),
+            if (lineUnitPrice != null)
+              _RefundCtxRow(
+                label: 'Line price',
+                value: NumberFormat.currency(symbol: '\$').format(lineUnitPrice!),
+              ),
+            if (couponTail != null && couponTail!.isNotEmpty)
+              _RefundCtxRow(label: 'Voucher code', value: couponTail!),
+            if (couponStatus != null && couponStatus!.isNotEmpty)
+              _RefundCtxRow(label: 'Voucher status', value: couponStatus!),
+            if (lineRedeemedAt != null && lineRedeemedAt!.isNotEmpty)
+              _RefundCtxRow(
+                label: 'Verified / redeemed',
+                value: _fmtDetailPage(lineRedeemedAt!),
+              ),
+            if (selectedOptionsPreview != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4, left: 0),
+                child: Text(
+                  'Purchased options\n$selectedOptionsPreview',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Colors.black54,
+                    height: 1.35,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _RefundCtxRow extends StatelessWidget {
+  const _RefundCtxRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 132,
+            child: Text(
+              label,
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: Color(0xFF1A1A1A),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ── 状态 Chip ──────────────────────────────────────────
 class _StatusChip extends StatelessWidget {
   final String status;
@@ -738,14 +1129,10 @@ class _InfoRow extends StatelessWidget {
   const _InfoRow({
     required this.label,
     required this.value,
-    this.valueColor,
-    this.valueBold = false,
   });
 
   final String label;
   final String value;
-  final Color? valueColor;
-  final bool valueBold;
 
   @override
   Widget build(BuildContext context) {
@@ -764,11 +1151,10 @@ class _InfoRow extends StatelessWidget {
           Expanded(
             child: Text(
               value,
-              style: TextStyle(
+              style: const TextStyle(
                 fontSize: 13,
-                fontWeight:
-                    valueBold ? FontWeight.w700 : FontWeight.w500,
-                color: valueColor ?? Colors.black87,
+                fontWeight: FontWeight.w500,
+                color: Colors.black87,
               ),
               textAlign: TextAlign.right,
             ),
