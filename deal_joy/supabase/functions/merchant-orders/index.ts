@@ -1086,6 +1086,25 @@ function maskCouponTailRefund(code: string | null | undefined, tail = 4): string
   return `…${normalized.slice(-tail)}`;
 }
 
+function maskNameRefund(name: string): string {
+  if (!name) return 'User';
+  if (name.length === 1) return `${name[0]}*`;
+  return `${name[0]}***${name[name.length - 1]}`;
+}
+
+/** Deal 摘要（与 merchant-after-sales 一致） */
+function truncateDealSummaryRefund(
+  description: string | null | undefined,
+  packageContents: string | null | undefined,
+  max = 280,
+): string | null {
+  const parts = [description?.trim(), packageContents?.trim()].filter(Boolean) as string[];
+  if (!parts.length) return null;
+  const s = parts.join('\n\n');
+  if (s.length <= max) return s;
+  return `${s.slice(0, max - 1)}…`;
+}
+
 type OrderItemRefundEmbed = {
   id: string;
   redeemed_at: string | null;
@@ -1098,7 +1117,12 @@ type OrderItemRefundEmbed = {
     status?: string | null;
     expires_at?: string | null;
   } | null;
-  deals: { id?: string; title?: string | null } | null;
+  deals: {
+    id?: string;
+    title?: string | null;
+    description?: string | null;
+    package_contents?: string | null;
+  } | null;
 };
 
 function firstOrSelf<T>(v: T | T[] | null | undefined): T | null | undefined {
@@ -1112,8 +1136,13 @@ function buildRefundLineContext(oi: OrderItemRefundEmbed | undefined): Record<st
   const deal = firstOrSelf(oi.deals) ?? undefined;
   const code = (cp?.coupon_code?.trim?.() || cp?.qr_code?.trim?.()) || null;
   const redeemed = oi.redeemed_at || cp?.redeemed_at || null;
+  const dealSummary = deal
+    ? truncateDealSummaryRefund(deal.description, deal.package_contents)
+    : null;
   return {
+    deal_id: deal?.id ?? null,
     deal_title: deal?.title ?? null,
+    deal_summary: dealSummary,
     unit_price: oi.unit_price ?? null,
     selected_options: oi.selected_options ?? null,
     redeemed_at: redeemed,
@@ -1121,6 +1150,59 @@ function buildRefundLineContext(oi: OrderItemRefundEmbed | undefined): Record<st
     coupon_status: cp?.status ?? null,
     coupon_expires_at: cp?.expires_at ?? null,
   };
+}
+
+type OrdersRefundEmbed = {
+  id?: string;
+  order_number?: string | null;
+  created_at?: string | null;
+  paid_at?: string | null;
+  deals?: unknown;
+};
+
+function buildRefundOrderContext(row: Record<string, unknown>): Record<string, unknown> | null {
+  const orders = row.orders as OrdersRefundEmbed | null | undefined;
+  if (!orders?.id) return null;
+  const d = firstOrSelf(orders.deals as {
+    id?: string;
+    title?: string | null;
+    description?: string | null;
+    package_contents?: string | null;
+  } | null) ?? undefined;
+  return {
+    order_id: orders.id,
+    order_number: orders.order_number ?? null,
+    order_created_at: orders.created_at ?? null,
+    order_paid_at: orders.paid_at ?? null,
+    deal_id: d?.id ?? null,
+    deal_title: d?.title ?? null,
+    deal_summary: d ? truncateDealSummaryRefund(d.description, d.package_contents) : null,
+  };
+}
+
+async function batchRefundUserDisplayNames(
+  client: ReturnType<typeof createClient>,
+  rows: Record<string, unknown>[],
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const userIds = [
+    ...new Set(
+      rows
+        .map((r) => r.user_id as string | undefined)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0),
+    ),
+  ];
+  if (!userIds.length) return out;
+  const { data, error } = await client.from('users').select('id, full_name').in('id', userIds);
+  if (error) {
+    console.error('[merchant-orders] refund list users error:', error);
+    return out;
+  }
+  for (const u of data ?? []) {
+    const row = u as { id: string; full_name?: string | null };
+    out.set(row.id, maskNameRefund(row.full_name ?? 'Anonymous'));
+  }
+  return out;
 }
 
 /** 按 order_item_id 批量拉取行级券/Deal/核销时间（无用户 PII） */
@@ -1143,7 +1225,7 @@ async function batchRefundLineContexts(
   const { data: items, error } = await client
     .from('order_items')
     .select(
-      'id, redeemed_at, unit_price, selected_options, coupons(coupon_code, qr_code, status, redeemed_at, expires_at), deals(id, title)',
+      'id, redeemed_at, unit_price, selected_options, coupons(coupon_code, qr_code, status, redeemed_at, expires_at), deals(id, title, description, package_contents)',
     )
     .in('id', oiIds);
   if (error) {
@@ -1184,10 +1266,11 @@ async function handleRefundRequestsList(
       id, status, refund_amount, reason, user_reason,
       merchant_reason, merchant_decided_at, merchant_decision,
       created_at, updated_at,
+      user_id,
       order_item_id,
       orders!inner(
-        id, order_number, total_amount, status, created_at,
-        deals!inner(id, title)
+        id, order_number, total_amount, status, created_at, paid_at,
+        deals!inner(id, title, description, package_contents)
       )
     `, { count: 'exact' })
     .eq('merchant_id', merchantId);
@@ -1207,14 +1290,22 @@ async function handleRefundRequestsList(
 
   const rawRows = (data ?? []) as Record<string, unknown>[];
   const lineCtxByRr = await batchRefundLineContexts(client, rawRows);
+  const userDisplayMap = await batchRefundUserDisplayNames(client, rawRows);
 
-  // 商家端 Flutter 仍读 merchant_response / responded_at；与 DB 列对齐
-  const rows = rawRows.map((row: Record<string, unknown>) => ({
-    ...row,
-    merchant_response: row.merchant_reason ?? null,
-    responded_at: row.merchant_decided_at ?? null,
-    refund_line_context: lineCtxByRr.get(String(row.id)) ?? null,
-  }));
+  // 商家端 Flutter 仍读 merchant_response / responded_at；与 DB 列对齐；不返回 user_id
+  const rows = rawRows.map((row: Record<string, unknown>) => {
+    const rid = String(row.id);
+    const uid = row.user_id as string | undefined;
+    const { user_id: _omitUserId, ...rest } = row;
+    return {
+      ...rest,
+      merchant_response: row.merchant_reason ?? null,
+      responded_at: row.merchant_decided_at ?? null,
+      refund_line_context: lineCtxByRr.get(rid) ?? null,
+      refund_order_context: buildRefundOrderContext(row),
+      user_display_name: uid ? userDisplayMap.get(uid) ?? 'User' : 'User',
+    };
+  });
 
   return jsonResponse({
     data: rows,
