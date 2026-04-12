@@ -82,7 +82,9 @@ export type AfterSalesItem = {
   reasonDetail: string
   refundAmount: number
   storeName: string | null
-  userMasked: string
+  /** 后台展示全名；与 user_id 对应 public.users */
+  userFullName: string
+  userId: string
   createdAt: string
   expiresAt: string | null
 }
@@ -233,7 +235,7 @@ async function fetchAfterSales(db: ReturnType<typeof getServiceRoleClient>, page
   const offset = (page - 1) * PER_PAGE
   const { data, count } = await db
     .from('view_merchant_after_sales_requests')
-    .select('id, status, reason_code, reason_detail, refund_amount, store_name, user_name, created_at, expires_at', { count: 'exact' })
+    .select('id, status, reason_code, reason_detail, refund_amount, store_name, user_name, user_id, created_at, expires_at', { count: 'exact' })
     .eq('status', 'awaiting_platform')
     .order('created_at', { ascending: true })
     .range(offset, offset + PER_PAGE - 1)
@@ -242,10 +244,11 @@ async function fetchAfterSales(db: ReturnType<typeof getServiceRoleClient>, page
     id: r.id,
     status: r.status,
     reasonCode: r.reason_code,
-    reasonDetail: r.reason_detail,
+    reasonDetail: r.reason_detail ?? '',
     refundAmount: Number(r.refund_amount ?? 0),
     storeName: r.store_name,
-    userMasked: maskName(r.user_name),
+    userFullName: (r.user_name as string) ?? '—',
+    userId: (r.user_id as string) ?? '',
     createdAt: r.created_at,
     expiresAt: r.expires_at,
   }))
@@ -319,7 +322,7 @@ async function fetchUnifiedAllTab(
     afterSalesIds.length
       ? db
           .from('view_merchant_after_sales_requests')
-          .select('id, status, reason_code, reason_detail, refund_amount, store_name, user_name, created_at, expires_at')
+          .select('id, status, reason_code, reason_detail, refund_amount, store_name, user_name, user_id, created_at, expires_at')
           .in('id', afterSalesIds)
       : Promise.resolve({ data: [] as unknown[] }),
   ])
@@ -413,7 +416,8 @@ async function fetchUnifiedAllTab(
       reasonDetail: (r.reason_detail as string) ?? '',
       refundAmount: Number(r.refund_amount ?? 0),
       storeName: (r.store_name as string | null) ?? null,
-      userMasked: maskName(r.user_name as string | null),
+      userFullName: (r.user_name as string) ?? '—',
+      userId: (r.user_id as string) ?? '',
       createdAt: r.created_at as string,
       expiresAt: (r.expires_at as string | null) ?? null,
     })

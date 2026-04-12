@@ -479,7 +479,7 @@ function UnifiedTableRow({
     submitter = row.data.userNameMasked
   } else {
     summary = row.data.reasonCode.replaceAll('_', ' ')
-    submitter = row.data.userMasked
+    submitter = row.data.userFullName
   }
 
   return (
