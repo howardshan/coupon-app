@@ -254,6 +254,19 @@ export default function RefundDisputeDrawer({
               </button>
             </div>
           )}
+          {/* 历史记录：与商家/团购抽屉一致，吸底提供订单详情入口 */}
+          {dispute.status && dispute.status !== 'pending_admin' && (
+            <div className="border-t border-gray-200 px-6 py-4 bg-white sticky bottom-0">
+              <a
+                href={`/orders/${dispute.orderId}`}
+                target="_blank"
+                rel="noreferrer"
+                className="block text-center text-sm text-blue-600 hover:underline"
+              >
+                Open order detail (full activity timeline) →
+              </a>
+            </div>
+          )}
         </div>
       </div>
 

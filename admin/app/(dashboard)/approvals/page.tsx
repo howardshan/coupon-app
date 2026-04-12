@@ -83,6 +83,8 @@ export type RefundDisputeItem = {
 
 export type AfterSalesItem = {
   id: string
+  /** 关联订单，用于抽屉吸底跳转（视图含 order_id） */
+  orderId: string
   status: string
   reasonCode: string
   reasonDetail: string
@@ -315,11 +317,12 @@ async function fetchRefundDisputes(
 }
 
 const AFTER_SALES_LIST_SELECT =
-  'id, status, reason_code, reason_detail, refund_amount, store_name, user_name, user_id, created_at, expires_at, refunded_at, platform_decided_at, closed_at, resolved_at'
+  'id, order_id, status, reason_code, reason_detail, refund_amount, store_name, user_name, user_id, created_at, expires_at, refunded_at, platform_decided_at, closed_at, resolved_at'
 
 function mapAfterSalesRow(r: Record<string, unknown>): AfterSalesItem {
   return {
     id: r.id as string,
+    orderId: (r.order_id as string) ?? '',
     status: (r.status as string) ?? '',
     reasonCode: (r.reason_code as string) ?? '',
     reasonDetail: (r.reason_detail as string) ?? '',
