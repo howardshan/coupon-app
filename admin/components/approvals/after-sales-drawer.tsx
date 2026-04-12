@@ -68,6 +68,19 @@ function pickEmbedded<T extends Record<string, unknown>>(
   return raw
 }
 
+/** 根据 URL 路径猜测附件类型，用于预览（签名 URL 的 query 不影响 pathname） */
+function attachmentUrlKind(url: string): 'image' | 'pdf' | 'unknown' {
+  let path = ''
+  try {
+    path = new URL(url, 'https://placeholder.local').pathname.toLowerCase()
+  } catch {
+    path = (url.split('?')[0] ?? '').toLowerCase()
+  }
+  if (/\.(jpe?g|png|gif|webp|avif|bmp|svg)(\?|$)/.test(path)) return 'image'
+  if (/\.pdf(\?|$)/.test(path)) return 'pdf'
+  return 'unknown'
+}
+
 function formatSla(expiresAt: string | null, status: string) {
   if (!expiresAt) return '—'
   const expires = new Date(expiresAt)
@@ -132,6 +145,8 @@ export default function AfterSalesDrawer({
   const [decisionNote, setDecisionNote] = useState('')
   const [decisionFiles, setDecisionFiles] = useState<File[]>([])
   const [actionLoading, setActionLoading] = useState(false)
+  /** 附件预览：点击 chip 先打开灯箱，避免直接下载 */
+  const [attachmentPreview, setAttachmentPreview] = useState<null | { url: string; title: string }>(null)
   // 乐观更新状态
   const [currentStatus, setCurrentStatus] = useState(item.status)
 
@@ -321,7 +336,13 @@ export default function AfterSalesDrawer({
             <section className="rounded-xl border border-gray-200 p-4">
               <h3 className="font-semibold text-gray-800 mb-2">Customer request</h3>
               <p className="text-sm text-gray-700 whitespace-pre-line">{customerBody}</p>
-              {req && <AttachmentLinks label="Customer attachments" urls={userAtt} />}
+              {req && (
+                <AttachmentLinks
+                  label="Customer attachments"
+                  urls={userAtt}
+                  onPreview={(url, title) => setAttachmentPreview({ url, title })}
+                />
+              )}
             </section>
 
             {/* 商家拒绝说明 + 附件 */}
@@ -333,7 +354,11 @@ export default function AfterSalesDrawer({
                 ) : (
                   <p className="text-sm text-gray-500">No written response.</p>
                 )}
-                <AttachmentLinks label="Merchant attachments" urls={merchantAtt} />
+                <AttachmentLinks
+                  label="Merchant attachments"
+                  urls={merchantAtt}
+                  onPreview={(url, title) => setAttachmentPreview({ url, title })}
+                />
               </section>
             )}
 
@@ -344,7 +369,11 @@ export default function AfterSalesDrawer({
                 {platformBody !== '' ? (
                   <p className="text-sm text-gray-700 whitespace-pre-line">{platformBody}</p>
                 ) : null}
-                <AttachmentLinks label="Platform attachments" urls={platformAtt} />
+                <AttachmentLinks
+                  label="Platform attachments"
+                  urls={platformAtt}
+                  onPreview={(url, title) => setAttachmentPreview({ url, title })}
+                />
               </section>
             )}
 
@@ -385,6 +414,15 @@ export default function AfterSalesDrawer({
           )}
         </div>
       </div>
+
+      {attachmentPreview && (
+        <AttachmentPreviewLightbox
+          key={attachmentPreview.url}
+          url={attachmentPreview.url}
+          title={attachmentPreview.title}
+          onClose={() => setAttachmentPreview(null)}
+        />
+      )}
 
       {/* 决策确认弹窗 */}
       {decisionState && (
@@ -448,7 +486,15 @@ export default function AfterSalesDrawer({
   )
 }
 
-function AttachmentLinks({ label, urls }: { label: string; urls: string[] }) {
+function AttachmentLinks({
+  label,
+  urls,
+  onPreview,
+}: {
+  label: string
+  urls: string[]
+  onPreview: (url: string, title: string) => void
+}) {
   const list = urls.filter((u) => typeof u === 'string' && u.trim().length > 0)
   if (!list.length) return null
   return (
@@ -456,16 +502,113 @@ function AttachmentLinks({ label, urls }: { label: string; urls: string[] }) {
       <p className="text-xs font-semibold text-gray-500 mb-2">{label}</p>
       <div className="flex flex-wrap gap-2">
         {list.map((url, idx) => (
-          <a
+          <button
             key={`${url}-${idx}`}
-            href={url}
-            target="_blank"
-            rel="noreferrer"
+            type="button"
+            onClick={() => onPreview(url, `${label} · Attachment ${idx + 1}`)}
             className="rounded-full border border-gray-300 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
           >
             Attachment {idx + 1}
-          </a>
+          </button>
         ))}
+      </div>
+    </div>
+  )
+}
+
+/** 全屏灯箱预览：图片内嵌、PDF iframe、其它类型引导新标签页打开 */
+function AttachmentPreviewLightbox({
+  url,
+  title,
+  onClose,
+}: {
+  url: string
+  title: string
+  onClose: () => void
+}) {
+  const kind = attachmentUrlKind(url)
+  const [imgFailed, setImgFailed] = useState(false)
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Attachment preview"
+    >
+      <button
+        type="button"
+        className="absolute inset-0 bg-black/70"
+        onClick={onClose}
+        aria-label="Close preview"
+      />
+      <div className="relative z-10 flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl bg-gray-900 shadow-2xl">
+        <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
+          <span className="truncate text-sm font-medium text-white" title={title}>
+            {title}
+          </span>
+          <div className="flex shrink-0 items-center gap-3">
+            <a
+              href={url}
+              target="_blank"
+              rel="noreferrer"
+              className="text-xs text-sky-300 hover:underline"
+            >
+              Open in new tab
+            </a>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-full p-1.5 text-white hover:bg-white/10"
+              aria-label="Close"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+        <div className="flex min-h-[200px] flex-1 items-center justify-center overflow-auto p-4">
+          {kind === 'image' && !imgFailed && (
+            // eslint-disable-next-line @next/next/no-img-element -- 动态外链（Supabase 签名 URL）
+            <img
+              src={url}
+              alt=""
+              className="max-h-[min(75vh,800px)] max-w-full rounded object-contain"
+              onError={() => setImgFailed(true)}
+            />
+          )}
+          {kind === 'image' && imgFailed && (
+            <p className="text-center text-sm text-gray-300">
+              Could not load image.{' '}
+              <a href={url} target="_blank" rel="noreferrer" className="text-sky-300 underline">
+                Open in new tab
+              </a>
+            </p>
+          )}
+          {kind === 'pdf' && (
+            <iframe title={title} src={url} className="h-[min(75vh,800px)] w-full rounded bg-white" />
+          )}
+          {kind === 'unknown' && (
+            <div className="space-y-4 text-center text-sm text-gray-300">
+              <p>No inline preview for this file type.</p>
+              <a
+                href={url}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-block rounded-lg bg-white/10 px-4 py-2 text-white hover:bg-white/20"
+              >
+                Open in new tab
+              </a>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
