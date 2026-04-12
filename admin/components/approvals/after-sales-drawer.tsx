@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useTransition } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { AfterSalesItem } from '@/app/(dashboard)/approvals/page'
 import { revalidateApprovalsPendingCount } from '@/app/actions/approvals'
@@ -12,13 +13,22 @@ type AfterSalesDetail = {
     id: string
     /** 平台 Edge 详情含 order_id，用于跳转订单页 */
     order_id?: string
+    user_id?: string
     status: string
+    created_at?: string
+    escalated_at?: string | null
     reason_code?: string
     reason_detail?: string
+    merchant_feedback?: string | null
     refund_amount?: number
     user_attachments?: string[]
     merchant_attachments?: string[]
+    platform_feedback?: string | null
     platform_attachments?: string[]
+    /** PostgREST 嵌套：单笔订单 */
+    orders?: Record<string, unknown> | Record<string, unknown>[] | null
+    /** 本单券核销时间 */
+    coupons?: { used_at?: string | null } | { used_at?: string | null }[] | null
     timeline?: Array<{
       status: string
       actor: string
@@ -41,6 +51,21 @@ const STATUS_COLORS: Record<string, string> = {
 
 function formatStatus(status: string) {
   return status.replaceAll('_', ' ')
+}
+
+function formatLocalDateTime(value: string | null | undefined): string {
+  if (value == null || String(value).trim() === '') return '—'
+  const d = new Date(value)
+  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString()
+}
+
+/** PostgREST 嵌套可能为对象或单元素数组 */
+function pickEmbedded<T extends Record<string, unknown>>(
+  raw: T | T[] | null | undefined
+): T | null {
+  if (raw == null) return null
+  if (Array.isArray(raw)) return (raw[0] as T | undefined) ?? null
+  return raw
 }
 
 function formatSla(expiresAt: string | null, status: string) {
@@ -109,6 +134,22 @@ export default function AfterSalesDrawer({
   const [actionLoading, setActionLoading] = useState(false)
   // 乐观更新状态
   const [currentStatus, setCurrentStatus] = useState(item.status)
+
+  const req = detail?.request
+  const orderRow = req ? pickEmbedded(req.orders as Record<string, unknown> | Record<string, unknown>[] | null) : null
+  const couponRow = req ? pickEmbedded(req.coupons as { used_at?: string | null } | { used_at?: string | null }[] | null) : null
+  const purchasedAt = orderRow?.created_at as string | undefined
+  const redeemedAt = couponRow?.used_at ?? undefined
+  const afterSalesOpenedAt = req?.created_at ?? item.createdAt
+  const escalatedAt = req?.escalated_at ?? undefined
+
+  const customerBody =
+    (req?.reason_detail?.trim() || item.reasonDetail?.trim() || '').trim() || '—'
+  const merchantBody = (req?.merchant_feedback?.trim() || '').trim()
+  const platformBody = (req?.platform_feedback?.trim() || '').trim()
+  const userAtt = req?.user_attachments ?? []
+  const merchantAtt = req?.merchant_attachments ?? []
+  const platformAtt = req?.platform_attachments ?? []
 
   // 加载详情
   useEffect(() => {
@@ -188,7 +229,7 @@ export default function AfterSalesDrawer({
 
           <div className="flex-1 px-6 py-6 space-y-6">
 
-            {/* 概览卡片 */}
+            {/* 概览：不含客户/商家长文本 */}
             <section className="rounded-xl border border-gray-200 p-4">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="font-semibold text-gray-800">Overview</h3>
@@ -203,7 +244,20 @@ export default function AfterSalesDrawer({
                 </div>
                 <div>
                   <dt className="text-gray-500">Customer</dt>
-                  <dd className="font-medium text-gray-900">{item.userMasked}</dd>
+                  <dd className="font-medium text-gray-900">
+                    {item.userId ? (
+                      <Link
+                        href={`/users/${item.userId}`}
+                        className="text-blue-600 hover:underline"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {item.userFullName}
+                      </Link>
+                    ) : (
+                      item.userFullName
+                    )}
+                  </dd>
                 </div>
                 <div>
                   <dt className="text-gray-500">Reason</dt>
@@ -214,44 +268,92 @@ export default function AfterSalesDrawer({
                   <dd className="font-medium text-gray-900">{formatSla(item.expiresAt, currentStatus)}</dd>
                 </div>
               </dl>
-              {item.reasonDetail && (
-                <p className="mt-3 text-sm text-gray-700 whitespace-pre-line border-t border-gray-100 pt-3">
-                  {item.reasonDetail}
-                </p>
-              )}
-              {detail?.request?.order_id && (
+              {req?.order_id && (
                 <p className="mt-3 border-t border-gray-100 pt-3 text-sm">
                   <a
-                    href={`/orders/${detail.request.order_id}`}
+                    href={`/orders/${req.order_id}`}
                     target="_blank"
                     rel="noreferrer"
                     className="font-medium text-blue-600 hover:underline"
                   >
-                    Open order detail (activity & refund dispute timelines) →
+                    Open full order detail (timelines & items) →
                   </a>
                 </p>
               )}
             </section>
 
-            {/* 懒加载详情 */}
+            {/* 订单与关键时间点 */}
+            <section className="rounded-xl border border-gray-200 p-4">
+              <h3 className="font-semibold text-gray-800 mb-3">Order & key dates</h3>
+              {detailLoading && (
+                <p className="text-sm text-gray-500">Loading order times…</p>
+              )}
+              {!detailLoading && (
+                <dl className="grid grid-cols-1 gap-y-2 text-sm sm:grid-cols-2 sm:gap-x-4">
+                  <div className="flex flex-col sm:flex-row sm:gap-2">
+                    <dt className="text-gray-500 shrink-0">Purchased</dt>
+                    <dd className="font-medium text-gray-900">{formatLocalDateTime(purchasedAt)}</dd>
+                  </div>
+                  <div className="flex flex-col sm:flex-row sm:gap-2">
+                    <dt className="text-gray-500 shrink-0">Coupon redeemed</dt>
+                    <dd className="font-medium text-gray-900">{formatLocalDateTime(redeemedAt)}</dd>
+                  </div>
+                  <div className="flex flex-col sm:flex-row sm:gap-2">
+                    <dt className="text-gray-500 shrink-0">After-sales opened</dt>
+                    <dd className="font-medium text-gray-900">{formatLocalDateTime(afterSalesOpenedAt)}</dd>
+                  </div>
+                  <div className="flex flex-col sm:flex-row sm:gap-2">
+                    <dt className="text-gray-500 shrink-0">Escalated to platform</dt>
+                    <dd className="font-medium text-gray-900">{formatLocalDateTime(escalatedAt)}</dd>
+                  </div>
+                </dl>
+              )}
+            </section>
+
             {detailLoading && (
-              <p className="text-sm text-gray-500 text-center py-4">Loading detail…</p>
+              <p className="text-sm text-gray-500 text-center py-2">Loading evidence & timeline…</p>
             )}
             {detailError && (
               <p className="text-sm text-rose-600 bg-rose-50 rounded-lg p-3">{detailError}</p>
             )}
 
-            {detail?.request && (
-              <>
-                <AttachmentBlock title="User Attachments" attachments={detail.request.user_attachments ?? []} />
-                <AttachmentBlock title="Merchant Attachments" attachments={detail.request.merchant_attachments ?? []} />
-                <AttachmentBlock title="Platform Attachments" attachments={detail.request.platform_attachments ?? []} />
-                <AdminActivityTimelineCard
-                  title="After-sales timeline"
-                  footnote="Events are stored on the after-sales request record. Older requests may have incomplete history."
-                  events={buildAfterSalesTimelineEntries(detail.request.timeline)}
-                />
-              </>
+            {/* 客户陈述 + 附件 */}
+            <section className="rounded-xl border border-gray-200 p-4">
+              <h3 className="font-semibold text-gray-800 mb-2">Customer request</h3>
+              <p className="text-sm text-gray-700 whitespace-pre-line">{customerBody}</p>
+              {req && <AttachmentLinks label="Customer attachments" urls={userAtt} />}
+            </section>
+
+            {/* 商家拒绝说明 + 附件 */}
+            {(merchantBody !== '' || merchantAtt.length > 0) && req && (
+              <section className="rounded-xl border border-gray-200 p-4">
+                <h3 className="font-semibold text-gray-800 mb-2">Merchant response</h3>
+                {merchantBody !== '' ? (
+                  <p className="text-sm text-gray-700 whitespace-pre-line">{merchantBody}</p>
+                ) : (
+                  <p className="text-sm text-gray-500">No written response.</p>
+                )}
+                <AttachmentLinks label="Merchant attachments" urls={merchantAtt} />
+              </section>
+            )}
+
+            {/* 平台已填结论（若有） */}
+            {(platformBody !== '' || platformAtt.length > 0) && req && (
+              <section className="rounded-xl border border-gray-200 p-4">
+                <h3 className="font-semibold text-gray-800 mb-2">Platform decision (recorded)</h3>
+                {platformBody !== '' ? (
+                  <p className="text-sm text-gray-700 whitespace-pre-line">{platformBody}</p>
+                ) : null}
+                <AttachmentLinks label="Platform attachments" urls={platformAtt} />
+              </section>
+            )}
+
+            {req && (
+              <AdminActivityTimelineCard
+                title="After-sales timeline"
+                footnote="Events are stored on the after-sales request record. Older requests may have incomplete history."
+                events={buildAfterSalesTimelineEntries(req.timeline)}
+              />
             )}
 
             {/* 操作反馈 */}
@@ -346,13 +448,14 @@ export default function AfterSalesDrawer({
   )
 }
 
-function AttachmentBlock({ title, attachments }: { title: string; attachments: string[] }) {
-  if (!attachments.length) return null
+function AttachmentLinks({ label, urls }: { label: string; urls: string[] }) {
+  const list = urls.filter((u) => typeof u === 'string' && u.trim().length > 0)
+  if (!list.length) return null
   return (
-    <section className="rounded-xl border border-gray-200 p-4">
-      <h3 className="font-semibold text-gray-800 mb-2">{title}</h3>
+    <div className="mt-3">
+      <p className="text-xs font-semibold text-gray-500 mb-2">{label}</p>
       <div className="flex flex-wrap gap-2">
-        {attachments.map((url, idx) => (
+        {list.map((url, idx) => (
           <a
             key={`${url}-${idx}`}
             href={url}
@@ -364,7 +467,7 @@ function AttachmentBlock({ title, attachments }: { title: string; attachments: s
           </a>
         ))}
       </div>
-    </section>
+    </div>
   )
 }
 

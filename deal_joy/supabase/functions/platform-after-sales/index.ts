@@ -225,7 +225,7 @@ async function handleDetail(
   // 不嵌套 users(*)：user_id 指向 auth.users，PostgREST 易失败；与 merchant-after-sales 一致
   const { data, error } = await supabase
     .from("after_sales_requests")
-    .select("*, orders(*), after_sales_events(*)")
+    .select("*, orders(*), coupons(used_at), after_sales_events(*)")
     .eq("id", requestId)
     .single();
   if (error) {
