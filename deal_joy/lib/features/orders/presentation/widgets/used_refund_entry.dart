@@ -1,5 +1,7 @@
 // 已核销券退款入口：24h 争议 / 7d After-sales / 超窗提示
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -119,25 +121,55 @@ class _AfterSalesRefundChoiceSheet extends ConsumerStatefulWidget {
 }
 
 class _AfterSalesRefundChoiceSheetState extends ConsumerState<_AfterSalesRefundChoiceSheet> {
+  static const Duration _fetchExistingTimeout = Duration(seconds: 12);
+
+  /// null 且 [_loadError] 为 null 表示加载中；非 null 表示已成功并可知是否已有售后单
   bool? _hasExistingForCoupon;
+
+  /// 非 null 表示失败，展示文案 + Retry
+  String? _loadError;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _loadExistingCase();
+    });
+  }
+
+  void _retry() {
+    setState(() {
+      _loadError = null;
+      _hasExistingForCoupon = null;
+    });
     _loadExistingCase();
   }
 
   Future<void> _loadExistingCase() async {
     final repo = ref.read(afterSalesRepositoryProvider);
     try {
-      final list = await repo.fetchRequests(orderId: widget.item.orderId);
+      final list = await repo
+          .fetchRequests(orderId: widget.item.orderId)
+          .timeout(_fetchExistingTimeout);
       final cid = widget.couponId.trim();
       final match = list.any((r) => r.couponId.trim() == cid);
       if (!mounted) return;
-      setState(() => _hasExistingForCoupon = match);
+      setState(() {
+        _hasExistingForCoupon = match;
+        _loadError = null;
+      });
+    } on TimeoutException {
+      if (!mounted) return;
+      setState(() {
+        _loadError =
+            'Request timed out. Check your connection and tap Retry.';
+      });
     } catch (_) {
       if (!mounted) return;
-      setState(() => _hasExistingForCoupon = false);
+      setState(() {
+        _loadError = 'Could not load status. Tap Retry.';
+      });
     }
   }
 
@@ -156,7 +188,8 @@ class _AfterSalesRefundChoiceSheetState extends ConsumerState<_AfterSalesRefundC
 
   @override
   Widget build(BuildContext context) {
-    final loading = _hasExistingForCoupon == null;
+    final hasError = _loadError != null;
+    final loading = !hasError && _hasExistingForCoupon == null;
     final hasCase = _hasExistingForCoupon == true;
     final parent = widget.parentContext;
 
@@ -176,11 +209,16 @@ class _AfterSalesRefundChoiceSheetState extends ConsumerState<_AfterSalesRefundC
           ),
           const SizedBox(height: 12),
           Text(
-            hasCase
-                ? 'You already have an after-sales case for this voucher. Open status to review updates or escalate if needed.'
-                : 'The 24-hour dispute window has passed. You can still submit an after-sales '
-                    'request within 7 days of redemption.',
-            style: const TextStyle(fontSize: 14, color: AppColors.textSecondary),
+            hasError
+                ? _loadError!
+                : hasCase
+                    ? 'You already have an after-sales case for this voucher. Open status to review updates or escalate if needed.'
+                    : 'The 24-hour dispute window has passed. You can still submit an after-sales '
+                        'request within 7 days of redemption.',
+            style: TextStyle(
+              fontSize: 14,
+              color: hasError ? AppColors.error : AppColors.textSecondary,
+            ),
           ),
           const SizedBox(height: 24),
           if (loading)
@@ -194,7 +232,12 @@ class _AfterSalesRefundChoiceSheetState extends ConsumerState<_AfterSalesRefundC
                 ),
               ),
             )
-          else ...[
+          else if (hasError) ...[
+            FilledButton(
+              onPressed: _retry,
+              child: const Text('Retry'),
+            ),
+          ] else ...[
             if (!hasCase) ...[
               FilledButton(
                 onPressed: () {
