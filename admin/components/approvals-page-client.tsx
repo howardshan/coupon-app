@@ -27,8 +27,8 @@ type Props = {
   tab: string
   page: number
   perPage: number
-  /** After-Sales Tab：待办 / 历史（queue 查询参数） */
-  afterSalesQueue: 'pending' | 'history'
+  /** Merchants / Deals / Refund / After-Sales：待办 / 历史（queue 查询参数） */
+  approvalQueue: 'pending' | 'history'
   counts: Counts
   merchants: MerchantItem[]
   merchantsTotal: number
@@ -98,7 +98,7 @@ export default function ApprovalsPageClient({
   tab,
   page,
   perPage,
-  afterSalesQueue,
+  approvalQueue,
   counts,
   merchants,
   merchantsTotal,
@@ -137,14 +137,15 @@ export default function ApprovalsPageClient({
     setSelectedDealIds(new Set())
     if (key === 'all') {
       navigate({ tab: undefined, page: undefined, queue: undefined })
-    } else if (key === 'after-sales') {
-      navigate({ tab: key, page: undefined })
     } else {
       navigate({ tab: key, page: undefined, queue: undefined })
     }
   }
 
-  const afterSalesHistoryMode = tab === 'after-sales' && afterSalesQueue === 'history'
+  const QUEUE_TABS = ['merchants', 'deals', 'refund-disputes', 'after-sales'] as const
+  const showQueueToggle = (QUEUE_TABS as readonly string[]).includes(tab)
+  const historyColumnMode = showQueueToggle && approvalQueue === 'history'
+  const dealsPendingMode = tab === 'deals' && approvalQueue === 'pending'
 
   const onPageChange = (p: number) => navigate({ page: p === 1 ? undefined : String(p) })
 
@@ -175,7 +176,8 @@ export default function ApprovalsPageClient({
   const toggleDeal = (id: string) => {
     setSelectedDealIds(prev => {
       const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
       return next
     })
   }
@@ -252,14 +254,14 @@ export default function ApprovalsPageClient({
         })}
       </div>
 
-      {/* ── After-Sales：待办 / 历史 ── */}
-      {tab === 'after-sales' && (
+      {/* ── 待办 / 历史（除 All 外四类审批） ── */}
+      {showQueueToggle && (
         <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5">
           <button
             type="button"
             onClick={() => navigate({ queue: undefined, page: undefined })}
             className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-              afterSalesQueue === 'pending'
+              approvalQueue === 'pending'
                 ? 'bg-white text-gray-900 shadow-sm'
                 : 'text-gray-600 hover:text-gray-900'
             }`}
@@ -270,7 +272,7 @@ export default function ApprovalsPageClient({
             type="button"
             onClick={() => navigate({ queue: 'history', page: undefined })}
             className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-              afterSalesQueue === 'history'
+              approvalQueue === 'history'
                 ? 'bg-white text-gray-900 shadow-sm'
                 : 'text-gray-600 hover:text-gray-900'
             }`}
@@ -281,7 +283,7 @@ export default function ApprovalsPageClient({
       )}
 
       {/* ── Deal 批量操作栏 ── */}
-      {tab === 'deals' && (
+      {dealsPendingMode && (
         <div className="flex items-center gap-3">
           <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
             <input
@@ -322,12 +324,12 @@ export default function ApprovalsPageClient({
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200 text-gray-600">
             <tr>
-              {tab === 'deals' && <th className="px-4 py-3 w-8" />}
+              {dealsPendingMode && <th className="px-4 py-3 w-8" />}
               {tab === 'all' && <th className="px-4 py-3 text-left font-medium">Type</th>}
               <th className="px-4 py-3 text-left font-medium">Summary</th>
               <th className="px-4 py-3 text-left font-medium">Submitter</th>
               <th className="px-4 py-3 text-left font-medium">Submitted</th>
-              {afterSalesHistoryMode && (
+              {historyColumnMode && (
                 <>
                   <th className="px-4 py-3 text-left font-medium">Status</th>
                   <th className="px-4 py-3 text-left font-medium">Resolved</th>
@@ -352,8 +354,14 @@ export default function ApprovalsPageClient({
               const row: UnifiedRow = { kind: 'merchant', data: m }
               return (
                 <UnifiedTableRow
-                  key={m.id} row={row} showType={false} showCheckbox={false}
-                  checked={false} onToggle={() => {}} onReview={() => setDrawerRow(row)}
+                  key={m.id}
+                  row={row}
+                  showType={false}
+                  showCheckbox={false}
+                  checked={false}
+                  onToggle={() => {}}
+                  onReview={() => setDrawerRow(row)}
+                  approvalColumnMode={historyColumnMode ? 'history' : 'default'}
                 />
               )
             })}
@@ -361,10 +369,14 @@ export default function ApprovalsPageClient({
               const row: UnifiedRow = { kind: 'deal', data: d }
               return (
                 <UnifiedTableRow
-                  key={d.id} row={row} showType={false} showCheckbox
+                  key={d.id}
+                  row={row}
+                  showType={false}
+                  showCheckbox={dealsPendingMode}
                   checked={selectedDealIds.has(d.id)}
                   onToggle={() => toggleDeal(d.id)}
                   onReview={() => setDrawerRow(row)}
+                  approvalColumnMode={historyColumnMode ? 'history' : 'default'}
                 />
               )
             })}
@@ -372,8 +384,14 @@ export default function ApprovalsPageClient({
               const row: UnifiedRow = { kind: 'refund', data: r }
               return (
                 <UnifiedTableRow
-                  key={r.id} row={row} showType={false} showCheckbox={false}
-                  checked={false} onToggle={() => {}} onReview={() => setDrawerRow(row)}
+                  key={r.id}
+                  row={row}
+                  showType={false}
+                  showCheckbox={false}
+                  checked={false}
+                  onToggle={() => {}}
+                  onReview={() => setDrawerRow(row)}
+                  approvalColumnMode={historyColumnMode ? 'history' : 'default'}
                 />
               )
             })}
@@ -388,7 +406,7 @@ export default function ApprovalsPageClient({
                   checked={false}
                   onToggle={() => {}}
                   onReview={() => setDrawerRow(row)}
-                  afterSalesColumnMode={afterSalesHistoryMode ? 'history' : 'default'}
+                  approvalColumnMode={historyColumnMode ? 'history' : 'default'}
                 />
               )
             })}
@@ -398,8 +416,14 @@ export default function ApprovalsPageClient({
         {/* 空状态 */}
         {currentTotal === 0 && (
           <div className="py-12 text-center text-gray-400">
-            {tab === 'after-sales' && afterSalesQueue === 'history'
-              ? 'No After-Sales records in history for this filter.'
+            {approvalQueue === 'history'
+              ? (
+                  tab === 'merchants' ? 'No merchant applications in history.' :
+                  tab === 'deals' ? 'No deal reviews in history.' :
+                  tab === 'refund-disputes' ? 'No refund disputes in history.' :
+                  tab === 'after-sales' ? 'No After-Sales records in history.' :
+                  'No records.'
+                )
               : 'No pending approvals in this category.'}
           </div>
         )}
@@ -519,6 +543,30 @@ const AFTER_SALES_STATUS_BADGE: Record<string, string> = {
   closed: 'bg-gray-200 text-gray-700',
 }
 
+const MERCHANT_STATUS_BADGE: Record<string, string> = {
+  pending: 'bg-yellow-100 text-yellow-800',
+  approved: 'bg-emerald-100 text-emerald-800',
+  rejected: 'bg-rose-100 text-rose-800',
+}
+
+const DEAL_STATUS_BADGE: Record<string, string> = {
+  pending: 'bg-yellow-100 text-yellow-800',
+  active: 'bg-emerald-100 text-emerald-800',
+  inactive: 'bg-gray-200 text-gray-700',
+  rejected: 'bg-rose-100 text-rose-800',
+}
+
+const REFUND_STATUS_BADGE: Record<string, string> = {
+  pending_merchant: 'bg-yellow-100 text-yellow-800',
+  approved_merchant: 'bg-blue-100 text-blue-800',
+  rejected_merchant: 'bg-orange-100 text-orange-800',
+  pending_admin: 'bg-blue-100 text-blue-800',
+  approved_admin: 'bg-indigo-100 text-indigo-800',
+  rejected_admin: 'bg-rose-100 text-rose-800',
+  completed: 'bg-emerald-100 text-emerald-800',
+  cancelled: 'bg-gray-200 text-gray-700',
+}
+
 function UnifiedTableRow({
   row,
   showType,
@@ -526,7 +574,7 @@ function UnifiedTableRow({
   checked,
   onToggle,
   onReview,
-  afterSalesColumnMode = 'default',
+  approvalColumnMode = 'default',
 }: {
   row: UnifiedRow
   showType: boolean
@@ -534,9 +582,9 @@ function UnifiedTableRow({
   checked: boolean
   onToggle: () => void
   onReview: () => void
-  afterSalesColumnMode?: 'default' | 'history'
+  approvalColumnMode?: 'default' | 'history'
 }) {
-  const historyCols = row.kind === 'after-sales' && afterSalesColumnMode === 'history'
+  const historyCols = approvalColumnMode === 'history'
   const overdue =
     !historyCols && isOverdue(row.data.createdAt)
 
@@ -586,6 +634,54 @@ function UnifiedTableRow({
         </span>
         {overdue && <span className="ml-1" title="Overdue (>24h)">⚠️</span>}
       </td>
+      {historyCols && row.kind === 'merchant' && (
+        <>
+          <td className="px-4 py-3">
+            <span
+              className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold capitalize ${
+                MERCHANT_STATUS_BADGE[row.data.status] ?? 'bg-gray-100 text-gray-700'
+              }`}
+            >
+              {formatStatusLabel(row.data.status)}
+            </span>
+          </td>
+          <td className="px-4 py-3 text-gray-600 whitespace-nowrap text-xs">
+            {formatResolvedAt(row.data.updatedAt)}
+          </td>
+        </>
+      )}
+      {historyCols && row.kind === 'deal' && (
+        <>
+          <td className="px-4 py-3">
+            <span
+              className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold capitalize ${
+                DEAL_STATUS_BADGE[row.data.dealStatus ?? ''] ?? 'bg-gray-100 text-gray-700'
+              }`}
+            >
+              {formatStatusLabel(row.data.dealStatus ?? '—')}
+            </span>
+          </td>
+          <td className="px-4 py-3 text-gray-600 whitespace-nowrap text-xs">
+            {formatResolvedAt(row.data.publishedAt ?? row.data.updatedAt)}
+          </td>
+        </>
+      )}
+      {historyCols && row.kind === 'refund' && (
+        <>
+          <td className="px-4 py-3">
+            <span
+              className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold capitalize ${
+                REFUND_STATUS_BADGE[row.data.status] ?? 'bg-gray-100 text-gray-700'
+              }`}
+            >
+              {formatStatusLabel(row.data.status)}
+            </span>
+          </td>
+          <td className="px-4 py-3 text-gray-600 whitespace-nowrap text-xs">
+            {formatResolvedAt(row.data.resolvedAt)}
+          </td>
+        </>
+      )}
       {historyCols && row.kind === 'after-sales' && (
         <>
           <td className="px-4 py-3">
