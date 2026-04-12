@@ -339,10 +339,10 @@ export default function AfterSalesDrawer({
                   <dd className="font-medium text-gray-900">{formatSla(item.expiresAt, currentStatus)}</dd>
                 </div>
               </dl>
-              {req?.order_id && (
+              {(item.orderId || req?.order_id) && (
                 <p className="mt-3 border-t border-gray-100 pt-3 text-sm">
                   <a
-                    href={`/orders/${req.order_id}`}
+                    href={`/orders/${req?.order_id ?? item.orderId}`}
                     target="_blank"
                     rel="noreferrer"
                     className="font-medium text-blue-600 hover:underline"
@@ -466,8 +466,31 @@ export default function AfterSalesDrawer({
               >
                 Reject with Evidence
               </button>
+              {item.orderId ? (
+                <a
+                  href={`/orders/${item.orderId}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="block text-center text-sm text-gray-500 hover:text-gray-800"
+                >
+                  Open order detail (full activity timeline) →
+                </a>
+              ) : null}
             </div>
           )}
+          {/* 非平台待裁状态：与退款争议抽屉一致，吸底提供订单详情入口 */}
+          {currentStatus !== 'awaiting_platform' && item.orderId ? (
+            <div className="border-t border-gray-200 px-6 py-4 bg-white sticky bottom-0">
+              <a
+                href={`/orders/${item.orderId}`}
+                target="_blank"
+                rel="noreferrer"
+                className="block text-center text-sm text-blue-600 hover:underline"
+              >
+                Open order detail (full activity timeline) →
+              </a>
+            </div>
+          ) : null}
         </div>
       </div>
 

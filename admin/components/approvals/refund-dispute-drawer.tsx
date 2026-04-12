@@ -220,12 +220,12 @@ export default function RefundDisputeDrawer({
             {/* 双方陈述 */}
             <section className="space-y-3">
               <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
-                <h3 className="font-semibold text-blue-800 mb-2">Customer's Reason</h3>
+                <h3 className="font-semibold text-blue-800 mb-2">Customer&apos;s Reason</h3>
                 <p className="text-sm text-blue-900 whitespace-pre-line">{dispute.userReason}</p>
               </div>
               {dispute.merchantReason && (
                 <div className="rounded-xl border border-red-200 bg-red-50 p-4">
-                  <h3 className="font-semibold text-red-800 mb-2">Merchant's Rejection Reason</h3>
+                  <h3 className="font-semibold text-red-800 mb-2">Merchant&apos;s Rejection Reason</h3>
                   <p className="text-sm text-red-900 whitespace-pre-line">{dispute.merchantReason}</p>
                 </div>
               )}
@@ -233,25 +233,40 @@ export default function RefundDisputeDrawer({
 
           </div>
 
-          {/* 仲裁操作区 */}
-          <div className="border-t border-gray-200 px-6 py-4 space-y-3 bg-white sticky bottom-0">
-            <button
-              type="button"
-              onClick={() => setShowApproveModal(true)}
-              disabled={isPending}
-              className="w-full rounded-lg bg-emerald-600 px-4 py-2.5 font-semibold text-white hover:bg-emerald-700 transition-colors text-sm disabled:opacity-50"
-            >
-              Approve & Refund ${dispute.refundAmount.toFixed(2)}
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowRejectModal(true)}
-              disabled={isPending}
-              className="w-full rounded-lg border border-rose-400 px-4 py-2.5 font-semibold text-rose-700 hover:bg-rose-50 transition-colors text-sm disabled:opacity-50"
-            >
-              Final Rejection
-            </button>
-          </div>
+          {/* 仲裁操作区：仅 pending_admin；历史记录只读 */}
+          {dispute.status === 'pending_admin' && (
+            <div className="border-t border-gray-200 px-6 py-4 space-y-3 bg-white sticky bottom-0">
+              <button
+                type="button"
+                onClick={() => setShowApproveModal(true)}
+                disabled={isPending}
+                className="w-full rounded-lg bg-emerald-600 px-4 py-2.5 font-semibold text-white hover:bg-emerald-700 transition-colors text-sm disabled:opacity-50"
+              >
+                Approve & Refund ${dispute.refundAmount.toFixed(2)}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowRejectModal(true)}
+                disabled={isPending}
+                className="w-full rounded-lg border border-rose-400 px-4 py-2.5 font-semibold text-rose-700 hover:bg-rose-50 transition-colors text-sm disabled:opacity-50"
+              >
+                Final Rejection
+              </button>
+            </div>
+          )}
+          {/* 历史记录：与商家/团购抽屉一致，吸底提供订单详情入口 */}
+          {dispute.status && dispute.status !== 'pending_admin' && (
+            <div className="border-t border-gray-200 px-6 py-4 bg-white sticky bottom-0">
+              <a
+                href={`/orders/${dispute.orderId}`}
+                target="_blank"
+                rel="noreferrer"
+                className="block text-center text-sm text-blue-600 hover:underline"
+              >
+                Open order detail (full activity timeline) →
+              </a>
+            </div>
+          )}
         </div>
       </div>
 

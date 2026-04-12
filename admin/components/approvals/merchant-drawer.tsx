@@ -244,30 +244,44 @@ export default function MerchantDrawer({
             )}
           </div>
 
-          {/* 审批操作区 */}
-          <div className="border-t border-gray-200 px-6 py-4 space-y-3 bg-white sticky bottom-0">
-            <ApproveButton
-              merchantId={merchant.id}
-              merchantUserId={detail?.user_id ?? null}
-              onSuccess={() => { onClose(); router.refresh() }}
-            />
-            <button
-              type="button"
-              onClick={() => setShowRejectModal(true)}
-              disabled={isPending}
-              className="w-full rounded-lg border border-rose-400 px-4 py-2.5 font-semibold text-rose-700 hover:bg-rose-50 transition-colors text-sm disabled:opacity-50"
-            >
-              Reject Application
-            </button>
-            <a
-              href={`/merchants/${merchant.id}`}
-              target="_blank"
-              rel="noreferrer"
-              className="block text-center text-sm text-gray-500 hover:text-gray-800"
-            >
-              Open merchant detail (full activity timeline) →
-            </a>
-          </div>
+          {/* 审批操作区：仅待审核；历史记录只读 */}
+          {!loading && detail?.status === 'pending' && (
+            <div className="border-t border-gray-200 px-6 py-4 space-y-3 bg-white sticky bottom-0">
+              <ApproveButton
+                merchantId={merchant.id}
+                merchantUserId={detail?.user_id ?? null}
+                onSuccess={() => { onClose(); router.refresh() }}
+              />
+              <button
+                type="button"
+                onClick={() => setShowRejectModal(true)}
+                disabled={isPending}
+                className="w-full rounded-lg border border-rose-400 px-4 py-2.5 font-semibold text-rose-700 hover:bg-rose-50 transition-colors text-sm disabled:opacity-50"
+              >
+                Reject Application
+              </button>
+              <a
+                href={`/merchants/${merchant.id}`}
+                target="_blank"
+                rel="noreferrer"
+                className="block text-center text-sm text-gray-500 hover:text-gray-800"
+              >
+                Open merchant detail (full activity timeline) →
+              </a>
+            </div>
+          )}
+          {!loading && detail?.status && detail.status !== 'pending' && (
+            <div className="border-t border-gray-200 px-6 py-4 bg-white sticky bottom-0">
+              <a
+                href={`/merchants/${merchant.id}`}
+                target="_blank"
+                rel="noreferrer"
+                className="block text-center text-sm text-blue-600 hover:underline"
+              >
+                Open merchant detail (full activity timeline) →
+              </a>
+            </div>
+          )}
         </div>
       </div>
 
