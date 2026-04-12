@@ -93,7 +93,7 @@ class _AfterSalesTimelinePageState extends ConsumerState<AfterSalesTimelinePage>
               label: 'Escalate to Crunchy Plum',
               icon: Icons.flag_outlined,
               isLoading: _isEscalating,
-              onPressed: _isEscalating ? null : () => _escalate(request.id),
+              onPressed: _isEscalating ? null : () => _confirmEscalate(request.id),
             ),
           if (!request.completed) ...[
             const SizedBox(height: 12),
@@ -112,6 +112,33 @@ class _AfterSalesTimelinePageState extends ConsumerState<AfterSalesTimelinePage>
         ],
       ),
     );
+  }
+
+  /// 升级至平台前先确认，避免误触
+  Future<void> _confirmEscalate(String requestId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Escalate to Crunchy Plum?'),
+        content: const Text(
+          'This sends your refund case to the Crunchy Plum team for review. '
+          'We typically respond within 24 hours. Tap Escalate only if you want to proceed.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Escalate'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      await _escalate(requestId);
+    }
   }
 
   Future<void> _escalate(String requestId) async {
