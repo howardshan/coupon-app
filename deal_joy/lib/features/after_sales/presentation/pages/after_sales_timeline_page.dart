@@ -68,7 +68,6 @@ class _AfterSalesTimelinePageState extends ConsumerState<AfterSalesTimelinePage>
   }
 
   Widget _buildTimeline(BuildContext context, AfterSalesRequestModel request) {
-    final theme = Theme.of(context);
     return RefreshIndicator(
       onRefresh: () async {
         ref.invalidate(afterSalesRequestProvider(widget.args.orderId));
@@ -108,14 +107,7 @@ class _AfterSalesTimelinePageState extends ConsumerState<AfterSalesTimelinePage>
               isOutlined: true,
               onPressed: () => Navigator.of(context).pop(),
             ),
-          const SizedBox(height: 32),
-          Text(
-            'Events',
-            style: theme.textTheme.titleMedium,
-          ),
-          const SizedBox(height: 8),
-          _EventsList(events: request.events),
-          const SizedBox(height: 48),
+          const SizedBox(height: 24),
         ],
       ),
     );
@@ -271,7 +263,7 @@ class _TimelineCard extends StatelessWidget {
             style: TextStyle(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 12),
-          ...entries.map((entry) => _TimelineEntryTile(entry: entry)).toList(),
+          ...entries.map((entry) => _TimelineEntryTile(entry: entry)),
         ],
       ),
     );
@@ -285,14 +277,6 @@ class _TimelineEntryTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final subtitle = <Widget>[];
-    if (entry.note?.isNotEmpty == true) {
-      subtitle.add(Text(entry.note!, style: const TextStyle(color: AppColors.textSecondary)));
-    }
-    if (entry.attachments.isNotEmpty) {
-      subtitle.add(const SizedBox(height: 6));
-      subtitle.add(_AttachmentRow(urls: entry.attachments));
-    }
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
@@ -313,7 +297,10 @@ class _TimelineEntryTile extends StatelessWidget {
                   '${entry.actor} · ${DateFormat('MMM d, h:mm a').format(entry.timestamp.toLocal())}',
                   style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
                 ),
-                if (subtitle.isNotEmpty) ...subtitle,
+                if (entry.note?.isNotEmpty == true) ...[
+                  const SizedBox(height: 6),
+                  Text(entry.note!, style: const TextStyle(color: AppColors.textSecondary)),
+                ],
               ],
             ),
           ),
@@ -403,48 +390,6 @@ class _AttachmentRow extends StatelessWidget {
   }
 }
 
-class _EventsList extends StatelessWidget {
-  const _EventsList({required this.events});
-
-  final List<AfterSalesEventModel> events;
-
-  @override
-  Widget build(BuildContext context) {
-    if (events.isEmpty) {
-      return const Text('No logged events yet.', style: TextStyle(color: AppColors.textSecondary));
-    }
-    return Column(
-      children: events
-          .map(
-            (event) => ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text(event.action.replaceAll('_', ' ')),
-              subtitle: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '${event.actorRole} · ${event.createdAt.toLocal()}',
-                    style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                  ),
-                  if (event.note?.isNotEmpty == true)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text(event.note!),
-                    ),
-                  if (event.attachments.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: _AttachmentRow(urls: event.attachments),
-                    ),
-                ],
-              ),
-            ),
-          )
-          .toList(),
-    );
-  }
-}
-
 class _ErrorView extends StatelessWidget {
   const _ErrorView({required this.error, required this.onRetry});
 
@@ -463,30 +408,6 @@ class _ErrorView extends StatelessWidget {
           const SizedBox(height: 8),
           AppButton(label: 'Retry', onPressed: onRetry, isOutlined: true),
         ],
-      ),
-    );
-  }
-}
-
-/// 时间线状态标签 chip
-class _TimelineStatusChip extends StatelessWidget {
-  const _TimelineStatusChip({required this.label, this.color});
-
-  final String label;
-  final Color? color;
-
-  @override
-  Widget build(BuildContext context) {
-    final chipColor = color ?? AppColors.textSecondary;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: chipColor.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: chipColor),
       ),
     );
   }
