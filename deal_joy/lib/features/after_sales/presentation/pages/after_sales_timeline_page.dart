@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -342,6 +343,138 @@ class _FeedbackCard extends StatelessWidget {
   }
 }
 
+/// 根据 URL 路径后缀判断是否适合用内嵌图片预览（忽略 query）
+bool _isLikelyImageUrl(String raw) {
+  try {
+    final uri = Uri.parse(raw);
+    final path = uri.path.toLowerCase();
+    const exts = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.heic', '.heif'];
+    return exts.any(path.endsWith);
+  } catch (_) {
+    return false;
+  }
+}
+
+Future<void> _openAttachmentUrlExternal(String url) async {
+  final uri = Uri.tryParse(url);
+  if (uri == null) return;
+  if (await canLaunchUrl(uri)) {
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+}
+
+/// 先预览；图片全屏缩放查看，其它类型引导用浏览器打开
+Future<void> _showAfterSalesAttachmentPreview(
+  BuildContext context,
+  String url,
+  int attachmentNumber,
+) async {
+  final label = 'Attachment $attachmentNumber';
+  if (!_isLikelyImageUrl(url)) {
+    if (!context.mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(label, style: Theme.of(ctx).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                const Text(
+                  'In-app preview is not available for this file. You can open it in your browser to view or save.',
+                  style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
+                ),
+                const SizedBox(height: 20),
+                FilledButton(
+                  onPressed: () async {
+                    Navigator.pop(ctx);
+                    await _openAttachmentUrlExternal(url);
+                  },
+                  child: const Text('Open in browser'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Close'),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    return;
+  }
+
+  if (!context.mounted) return;
+  final mq = MediaQuery.sizeOf(context);
+  final dpr = MediaQuery.devicePixelRatioOf(context);
+  final memW = (mq.width * dpr).round();
+
+  await Navigator.of(context).push<void>(
+    MaterialPageRoute<void>(
+      fullscreenDialog: true,
+      builder: (ctx) {
+        return Scaffold(
+          backgroundColor: Colors.black,
+          appBar: AppBar(
+            backgroundColor: Colors.black,
+            foregroundColor: Colors.white,
+            iconTheme: const IconThemeData(color: Colors.white),
+            title: Text(label, style: const TextStyle(color: Colors.white)),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.open_in_browser),
+                tooltip: 'Open in browser',
+                onPressed: () => _openAttachmentUrlExternal(url),
+              ),
+            ],
+          ),
+          body: Center(
+            child: InteractiveViewer(
+              minScale: 0.5,
+              maxScale: 5,
+              child: CachedNetworkImage(
+                imageUrl: url,
+                fit: BoxFit.contain,
+                memCacheWidth: memW,
+                placeholder: (c, _) => const Padding(
+                  padding: EdgeInsets.all(32),
+                  child: CircularProgressIndicator(color: Colors.white54, strokeWidth: 2),
+                ),
+                errorWidget: (c, u, _) => Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.broken_image_outlined, color: Colors.white54, size: 56),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'Could not load preview.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.white70),
+                      ),
+                      const SizedBox(height: 16),
+                      FilledButton(
+                        onPressed: () => _openAttachmentUrlExternal(url),
+                        child: const Text('Open in browser'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    ),
+  );
+}
+
 class _AttachmentRow extends StatelessWidget {
   const _AttachmentRow({this.title, required this.urls});
 
@@ -375,7 +508,7 @@ class _AttachmentRow extends StatelessWidget {
                       fontSize: 13,
                     ),
                   ),
-                  onPressed: () => launchUrl(Uri.parse(entry.value), mode: LaunchMode.externalApplication),
+                  onPressed: () => _showAfterSalesAttachmentPreview(context, entry.value, entry.key + 1),
                   backgroundColor: AppColors.surfaceVariant,
                   side: const BorderSide(color: AppColors.textHint, width: 1),
                   padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
