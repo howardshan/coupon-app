@@ -53,20 +53,43 @@ class _MerchantLoginPageState extends State<MerchantLoginPage> {
         return;
       }
 
-      // 校验 users.role：非 merchant 不允许登录商家端
+      // 校验 users.role：仅允许 merchant（门店 owner）和 admin（品牌管理员）登录商家端
       final roleRow = await Supabase.instance.client
           .from('users')
           .select('role')
           .eq('id', user.id)
           .maybeSingle();
       final role = roleRow?['role'] as String?;
-      if (role != 'merchant') {
+      if (role != 'merchant' && role != 'admin') {
         await Supabase.instance.client.auth.signOut();
         if (!mounted) return;
         setState(() => _error = 'Your account is not a merchant account.');
         return;
       }
 
+      // 品牌管理员（role='admin'）：不需要 merchants 记录，直接通过
+      if (role == 'admin') {
+        // 检查 brand_admins 确认确实是品牌管理员
+        final brandAdmin = await Supabase.instance.client
+            .from('brand_admins')
+            .select('brand_id')
+            .eq('user_id', user.id)
+            .maybeSingle();
+
+        if (!mounted) return;
+
+        if (brandAdmin == null) {
+          await Supabase.instance.client.auth.signOut();
+          setState(() => _error = 'Your account is not a merchant account.');
+          return;
+        }
+        // 品牌管理员标记为 approved，跳转门店选择页
+        MerchantStatusCache.setStatus('approved', user.id, roleType: 'brand_admin');
+        context.go('/store-selector');
+        return;
+      }
+
+      // 门店 owner（role='merchant'）：需要 merchants 记录
       final data = await Supabase.instance.client
           .from('merchants')
           .select('status')

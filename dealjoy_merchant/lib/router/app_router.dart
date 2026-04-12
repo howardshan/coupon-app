@@ -196,16 +196,20 @@ class MerchantStatusCache {
   }
 
   /// 手动设置状态（登录后已知状态时直接缓存，避免多余查询）
-  static void setStatus(String status, String userId) {
+  /// [roleType] 可选，品牌管理员传 'brand_admin'，不传则不覆盖
+  static void setStatus(String status, String userId, {String? roleType}) {
     _cachedStatus = status;
     _cachedUserId = userId;
+    if (roleType != null) _cachedRoleType = roleType;
   }
 }
 
 final _authNotifier = _AuthChangeNotifier();
 
 // 不需要登录的公开路由前缀
-const _publicRoutes = ['/auth/login', '/auth/register', '/auth/review', '/store-selector'];
+// 注意：/store-selector 需要登录（调用 Edge Function），不能放在公开路由里，
+// 否则 session 过期后用户会停在 StoreSelectorPage 看到 "Failed to load stores"
+const _publicRoutes = ['/auth/login', '/auth/register', '/auth/review'];
 
 final appRouter = GoRouter(
   initialLocation: '/dashboard',
