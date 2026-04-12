@@ -5,10 +5,10 @@ import {
   appendTimeline,
   decorateAfterSalesRequest,
   decorateAfterSalesRequests,
-  issueAfterSalesRefund,
   normalizeAttachmentKeys,
   recordAfterSalesEvent,
 } from "../_shared/after-sales.ts";
+import { issueAfterSalesRefund } from "../_shared/after-sales-refund.ts";
 import { sendEmail, getAdminRecipients } from "../_shared/email.ts";
 import { buildC10Email } from "../_shared/email-templates/customer/after-sales-approved.ts";
 import { buildC11Email } from "../_shared/email-templates/customer/after-sales-rejected.ts";
@@ -34,6 +34,21 @@ function errorResponse(message: string, code = "bad_request", status = 400): Res
 
 type AdminContext = { userId: string; role: string };
 
+/** 与 config.toml 目录名一致；线上 pathname 为 /functions/v1/platform-after-sales/... */
+const FUNCTION_SLUG = "platform-after-sales";
+
+/**
+ * 从 URL pathname 解析函数名之后的子路径段（与 after-sales-request / merchant-after-sales 一致）
+ */
+function routePartsFromPathname(pathname: string): string[] {
+  const p = pathname.replace(/\/+$/, "");
+  const marker = `/${FUNCTION_SLUG}`;
+  const i = p.indexOf(marker);
+  const after =
+    i >= 0 ? p.slice(i + marker.length) : p.replace(new RegExp(`^${marker}`), "");
+  return after.split("/").filter(Boolean);
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -50,9 +65,7 @@ Deno.serve(async (req) => {
   }
 
   const url = new URL(req.url);
-  const pathname = url.pathname.replace(/\/+$/, "");
-  const suffix = pathname.replace(/^\/platform-after-sales/, "");
-  const segments = suffix.split("/").filter(Boolean);
+  const segments = routePartsFromPathname(url.pathname);
 
   let body: Record<string, unknown> | null = null;
   if (req.method === "POST") {
@@ -182,7 +195,7 @@ async function handleList(
   let query = supabase
     .from("after_sales_requests")
     .select(
-      "id, status, reason_code, reason_detail, refund_amount, merchant_feedback, platform_feedback, created_at, escalated_at, user_id, merchant_id, orders(order_number, total_amount), users(full_name), after_sales_events(*)",
+      "id, status, reason_code, reason_detail, refund_amount, merchant_feedback, platform_feedback, created_at, escalated_at, user_id, merchant_id, orders(order_number, total_amount), after_sales_events(*)",
       { count: "exact" }
     )
     .order("created_at", { ascending: false })
@@ -209,12 +222,17 @@ async function handleDetail(
   supabase: ReturnType<typeof createClient>,
   requestId: string
 ): Promise<Response> {
+  // 不嵌套 users(*)：user_id 指向 auth.users，PostgREST 易失败；与 merchant-after-sales 一致
   const { data, error } = await supabase
     .from("after_sales_requests")
-    .select("*, orders(*), users(*), after_sales_events(*)")
+    .select("*, orders(*), after_sales_events(*)")
     .eq("id", requestId)
     .single();
-  if (error || !data) {
+  if (error) {
+    console.error("[platform-after-sales] detail query", error.message);
+    return errorResponse("Request not found", "not_found", 404);
+  }
+  if (!data) {
     return errorResponse("Request not found", "not_found", 404);
   }
   const hydrated = await decorateAfterSalesRequest(supabase, data);

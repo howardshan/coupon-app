@@ -5,10 +5,10 @@ import {
   appendTimeline,
   decorateAfterSalesRequest,
   decorateAfterSalesRequests,
-  issueAfterSalesRefund,
   normalizeAttachmentKeys,
   recordAfterSalesEvent,
 } from "../_shared/after-sales.ts";
+import { issueAfterSalesRefund } from "../_shared/after-sales-refund.ts";
 import { resolveAuth, requirePermission } from "../_shared/auth.ts";
 import { sendEmail } from "../_shared/email.ts";
 import { buildC13Email } from "../_shared/email-templates/customer/after-sales-merchant-replied.ts";
