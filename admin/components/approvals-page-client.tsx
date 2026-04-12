@@ -27,6 +27,8 @@ type Props = {
   tab: string
   page: number
   perPage: number
+  /** After-Sales Tab：待办 / 历史（queue 查询参数） */
+  afterSalesQueue: 'pending' | 'history'
   counts: Counts
   merchants: MerchantItem[]
   merchantsTotal: number
@@ -82,10 +84,21 @@ const TYPE_LABELS: Record<string, string> = {
 }
 
 // ─── Component ───────────────────────────────────────────────────────────
+function formatResolvedAt(iso: string | null | undefined): string {
+  if (iso == null || String(iso).trim() === '') return '—'
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString()
+}
+
+function formatStatusLabel(status: string) {
+  return status.replaceAll('_', ' ')
+}
+
 export default function ApprovalsPageClient({
   tab,
   page,
   perPage,
+  afterSalesQueue,
   counts,
   merchants,
   merchantsTotal,
@@ -122,8 +135,16 @@ export default function ApprovalsPageClient({
 
   const onTabChange = (key: string) => {
     setSelectedDealIds(new Set())
-    navigate({ tab: key === 'all' ? undefined : key, page: undefined })
+    if (key === 'all') {
+      navigate({ tab: undefined, page: undefined, queue: undefined })
+    } else if (key === 'after-sales') {
+      navigate({ tab: key, page: undefined })
+    } else {
+      navigate({ tab: key, page: undefined, queue: undefined })
+    }
   }
+
+  const afterSalesHistoryMode = tab === 'after-sales' && afterSalesQueue === 'history'
 
   const onPageChange = (p: number) => navigate({ page: p === 1 ? undefined : String(p) })
 
@@ -231,6 +252,34 @@ export default function ApprovalsPageClient({
         })}
       </div>
 
+      {/* ── After-Sales：待办 / 历史 ── */}
+      {tab === 'after-sales' && (
+        <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5">
+          <button
+            type="button"
+            onClick={() => navigate({ queue: undefined, page: undefined })}
+            className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+              afterSalesQueue === 'pending'
+                ? 'bg-white text-gray-900 shadow-sm'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Pending
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate({ queue: 'history', page: undefined })}
+            className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+              afterSalesQueue === 'history'
+                ? 'bg-white text-gray-900 shadow-sm'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            History
+          </button>
+        </div>
+      )}
+
       {/* ── Deal 批量操作栏 ── */}
       {tab === 'deals' && (
         <div className="flex items-center gap-3">
@@ -278,6 +327,12 @@ export default function ApprovalsPageClient({
               <th className="px-4 py-3 text-left font-medium">Summary</th>
               <th className="px-4 py-3 text-left font-medium">Submitter</th>
               <th className="px-4 py-3 text-left font-medium">Submitted</th>
+              {afterSalesHistoryMode && (
+                <>
+                  <th className="px-4 py-3 text-left font-medium">Status</th>
+                  <th className="px-4 py-3 text-left font-medium">Resolved</th>
+                </>
+              )}
               <th className="px-4 py-3 w-24" />
             </tr>
           </thead>
@@ -326,8 +381,14 @@ export default function ApprovalsPageClient({
               const row: UnifiedRow = { kind: 'after-sales', data: a }
               return (
                 <UnifiedTableRow
-                  key={a.id} row={row} showType={false} showCheckbox={false}
-                  checked={false} onToggle={() => {}} onReview={() => setDrawerRow(row)}
+                  key={a.id}
+                  row={row}
+                  showType={false}
+                  showCheckbox={false}
+                  checked={false}
+                  onToggle={() => {}}
+                  onReview={() => setDrawerRow(row)}
+                  afterSalesColumnMode={afterSalesHistoryMode ? 'history' : 'default'}
                 />
               )
             })}
@@ -337,7 +398,9 @@ export default function ApprovalsPageClient({
         {/* 空状态 */}
         {currentTotal === 0 && (
           <div className="py-12 text-center text-gray-400">
-            No pending approvals in this category.
+            {tab === 'after-sales' && afterSalesQueue === 'history'
+              ? 'No After-Sales records in history for this filter.'
+              : 'No pending approvals in this category.'}
           </div>
         )}
       </div>
@@ -449,6 +512,13 @@ export default function ApprovalsPageClient({
 }
 
 // ─── 统一行组件 ──────────────────────────────────────────────────────────
+const AFTER_SALES_STATUS_BADGE: Record<string, string> = {
+  refunded: 'bg-emerald-100 text-emerald-800',
+  platform_rejected: 'bg-rose-100 text-rose-800',
+  platform_approved: 'bg-indigo-100 text-indigo-800',
+  closed: 'bg-gray-200 text-gray-700',
+}
+
 function UnifiedTableRow({
   row,
   showType,
@@ -456,6 +526,7 @@ function UnifiedTableRow({
   checked,
   onToggle,
   onReview,
+  afterSalesColumnMode = 'default',
 }: {
   row: UnifiedRow
   showType: boolean
@@ -463,8 +534,11 @@ function UnifiedTableRow({
   checked: boolean
   onToggle: () => void
   onReview: () => void
+  afterSalesColumnMode?: 'default' | 'history'
 }) {
-  const overdue = isOverdue(row.data.createdAt)
+  const historyCols = row.kind === 'after-sales' && afterSalesColumnMode === 'history'
+  const overdue =
+    !historyCols && isOverdue(row.data.createdAt)
 
   let summary = ''
   let submitter = ''
@@ -512,13 +586,29 @@ function UnifiedTableRow({
         </span>
         {overdue && <span className="ml-1" title="Overdue (>24h)">⚠️</span>}
       </td>
+      {historyCols && row.kind === 'after-sales' && (
+        <>
+          <td className="px-4 py-3">
+            <span
+              className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold capitalize ${
+                AFTER_SALES_STATUS_BADGE[row.data.status] ?? 'bg-gray-100 text-gray-700'
+              }`}
+            >
+              {formatStatusLabel(row.data.status)}
+            </span>
+          </td>
+          <td className="px-4 py-3 text-gray-600 whitespace-nowrap text-xs">
+            {formatResolvedAt(row.data.resolvedAt)}
+          </td>
+        </>
+      )}
       <td className="px-4 py-3 text-right">
         <button
           type="button"
           onClick={onReview}
           className="inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-lg border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
         >
-          Review
+          {historyCols ? 'View' : 'Review'}
         </button>
       </td>
     </tr>
