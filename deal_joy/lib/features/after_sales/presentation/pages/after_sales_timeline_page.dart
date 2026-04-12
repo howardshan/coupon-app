@@ -11,6 +11,43 @@ import '../../data/models/after_sales_request_model.dart';
 import '../../domain/providers/after_sales_provider.dart';
 import '../pages/after_sales_screen_args.dart';
 
+/// 将后端 `after_sale_status` 等枚举转为用户可读英文（summary chip 与时间线标题共用）
+String _afterSalesStatusLabel(String raw) {
+  switch (raw) {
+    case 'pending':
+      return 'Awaiting merchant review';
+    case 'merchant_approved':
+      return 'Approved by merchant';
+    case 'merchant_rejected':
+      return 'Declined by merchant';
+    case 'awaiting_platform':
+      return 'Under team review';
+    case 'platform_approved':
+      return 'Approved by platform';
+    case 'platform_rejected':
+      return 'Not approved';
+    case 'refunded':
+      return 'Refunded';
+    case 'closed':
+      return 'Closed';
+    default:
+      return _afterSalesStatusLabelFallback(raw);
+  }
+}
+
+/// 未知状态：下划线拆词并首字母大写
+String _afterSalesStatusLabelFallback(String raw) {
+  final trimmed = raw.trim();
+  if (trimmed.isEmpty) return '—';
+  final parts = trimmed.split('_').where((p) => p.isNotEmpty).toList();
+  if (parts.isEmpty) return trimmed;
+  return parts.map((p) {
+    final lower = p.toLowerCase();
+    if (lower.isEmpty) return '';
+    return lower[0].toUpperCase() + (lower.length > 1 ? lower.substring(1) : '');
+  }).join(' ');
+}
+
 class AfterSalesTimelinePage extends ConsumerStatefulWidget {
   const AfterSalesTimelinePage({super.key, required this.args});
 
@@ -225,7 +262,7 @@ class _SummaryCard extends StatelessWidget {
             spacing: 8,
             runSpacing: 6,
             children: [
-              _StatusChip(label: request.status.toUpperCase(), color: _statusColor(request.status)),
+              _StatusChip(label: _afterSalesStatusLabel(request.status), color: _statusColor(request.status)),
               _StatusChip(label: request.reason?.label ?? request.reasonCode),
             ],
           ),
@@ -319,8 +356,10 @@ class _TimelineEntryTile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(entry.status.replaceAll('_', ' ').toUpperCase(),
-                    style: const TextStyle(fontWeight: FontWeight.w600)),
+                Text(
+                  _afterSalesStatusLabel(entry.status),
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
                 Text(
                   '${entry.actor} · ${DateFormat('MMM d, h:mm a').format(entry.timestamp.toLocal())}',
                   style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
