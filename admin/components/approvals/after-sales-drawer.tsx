@@ -7,6 +7,7 @@ import type { AfterSalesItem } from '@/app/(dashboard)/approvals/page'
 import { revalidateApprovalsPendingCount } from '@/app/actions/approvals'
 import AdminActivityTimelineCard from '@/components/admin-activity-timeline-card'
 import { buildAfterSalesTimelineEntries } from '@/lib/after-sales-admin-timeline'
+import { toast } from 'sonner'
 
 type AfterSalesDetail = {
   request: {
@@ -42,6 +43,7 @@ type AfterSalesDetail = {
 const STATUS_COLORS: Record<string, string> = {
   pending: 'bg-yellow-100 text-yellow-800',
   awaiting_platform: 'bg-blue-100 text-blue-800',
+  platform_approved: 'bg-indigo-100 text-indigo-800',
   merchant_rejected: 'bg-rose-100 text-rose-800',
   merchant_approved: 'bg-emerald-100 text-emerald-800',
   platform_rejected: 'bg-rose-100 text-rose-800',
@@ -166,6 +168,20 @@ export default function AfterSalesDrawer({
   const merchantAtt = req?.merchant_attachments ?? []
   const platformAtt = req?.platform_attachments ?? []
 
+  /** 从服务端重新拉详情并同步状态徽章与操作区（提交失败后避免 UI 与库不一致） */
+  async function syncDetailFromServer() {
+    try {
+      const res = await fetch(`/api/platform-after-sales/${item.id}`)
+      if (!res.ok) return
+      const data = (await res.json()) as AfterSalesDetail
+      setDetail(data)
+      const st = data.request?.status
+      if (typeof st === 'string' && st) setCurrentStatus(st)
+    } catch {
+      /* 静默：仅尽力同步 */
+    }
+  }
+
   // 加载详情
   useEffect(() => {
     setDetail(null)
@@ -179,7 +195,12 @@ export default function AfterSalesDrawer({
         }
         return res.json()
       })
-      .then((data) => setDetail(data as AfterSalesDetail))
+      .then((data) => {
+        const d = data as AfterSalesDetail
+        setDetail(d)
+        const st = d.request?.status
+        if (typeof st === 'string' && st) setCurrentStatus(st)
+      })
       .catch((err) => setDetailError(err.message))
       .finally(() => setDetailLoading(false))
   }, [item.id])
@@ -190,9 +211,17 @@ export default function AfterSalesDrawer({
     try {
       let attachments: string[] = []
       if (action === 'reject') {
-        attachments = await uploadEvidence(decisionFiles)
+        try {
+          attachments = await uploadEvidence(decisionFiles)
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : 'Upload failed'
+          toast.error(msg)
+          setActionMessage(msg)
+          return
+        }
         if (!attachments.length) {
-          throw new Error('At least one attachment is required for rejection')
+          toast.error('At least one attachment is required for rejection')
+          return
         }
       }
       const response = await fetch(`/api/platform-after-sales/${item.id}`, {
@@ -200,19 +229,46 @@ export default function AfterSalesDrawer({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action, note: decisionNote, attachments }),
       })
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}))
-        throw new Error(body?.message ?? 'Failed to submit decision')
+      const payload = (await response.json().catch(() => ({}))) as {
+        message?: string
+        request?: AfterSalesDetail['request']
       }
-      setActionMessage(action === 'approve' ? 'Request approved' : 'Request rejected')
+      if (!response.ok) {
+        const msg = typeof payload?.message === 'string' ? payload.message : 'Failed to submit decision'
+        toast.error(msg)
+        setDecisionState(null)
+        setDecisionNote('')
+        setDecisionFiles([])
+        await syncDetailFromServer()
+        setActionMessage(msg)
+        return
+      }
+      const successMsg =
+        action === 'approve'
+          ? `Refund approved ($${item.refundAmount.toFixed(2)})`
+          : 'Platform rejection recorded'
+      toast.success(successMsg)
+      setActionMessage(null)
       setDecisionState(null)
       setDecisionNote('')
       setDecisionFiles([])
-      setCurrentStatus(action === 'approve' ? 'refunded' : 'platform_rejected')
+      if (payload?.request && typeof payload.request === 'object') {
+        setDetail({ request: payload.request })
+        const st = payload.request.status
+        if (typeof st === 'string' && st) setCurrentStatus(st)
+      } else {
+        setCurrentStatus(action === 'approve' ? 'refunded' : 'platform_rejected')
+      }
       await revalidateApprovalsPendingCount()
       startTransition(() => { router.refresh() })
     } catch (err) {
-      setActionMessage((err as Error).message)
+      const msg = err instanceof Error ? err.message : 'Action failed'
+      toast.error(msg)
+      setDecisionState(null)
+      setDecisionNote('')
+      setDecisionFiles([])
+      await syncDetailFromServer()
+      setActionMessage(msg)
     } finally {
       setActionLoading(false)
     }
@@ -385,9 +441,9 @@ export default function AfterSalesDrawer({
               />
             )}
 
-            {/* 操作反馈 */}
+            {/* 操作失败时抽屉内保留说明（成功仅用 toast，避免与弹窗叠两层提示） */}
             {actionMessage && (
-              <p className={`text-sm rounded-lg p-3 ${actionMessage.includes('approved') || actionMessage.includes('rejected') ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+              <p className="text-sm rounded-lg border border-rose-100 bg-rose-50 p-3 text-rose-800">
                 {actionMessage}
               </p>
             )}
