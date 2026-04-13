@@ -20,6 +20,7 @@ import '../../data/models/order_item_model.dart';
 import '../../domain/providers/aggregated_deal_voucher_detail_provider.dart';
 import '../../domain/providers/orders_provider.dart';
 import '../../domain/providers/coupons_provider.dart';
+import '../widgets/customer_redemption_success_dialog.dart';
 import '../widgets/gift_bottom_sheet.dart';
 import '../widgets/used_refund_entry.dart';
 
@@ -33,6 +34,7 @@ void showUnusedQrSheet(
   bool aggregateByDeal = false,
   Set<String> aggregatedOrderItemIds = const {},
 }) {
+  final hostContext = context;
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
@@ -41,6 +43,7 @@ void showUnusedQrSheet(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
     builder: (_) => _UnusedQrSheet(
+      hostContext: hostContext,
       orderId: orderId,
       dealId: dealId,
       aggregateByDeal: aggregateByDeal,
@@ -50,12 +53,15 @@ void showUnusedQrSheet(
 }
 
 class _UnusedQrSheet extends ConsumerStatefulWidget {
+  /// 打开 QR 弹层的页面 context，用于关闭弹层后展示全屏成功与再次打开弹层
+  final BuildContext hostContext;
   final String orderId;
   final String dealId;
   final bool aggregateByDeal;
   final Set<String> aggregatedOrderItemIds;
 
   const _UnusedQrSheet({
+    required this.hostContext,
     required this.orderId,
     required this.dealId,
     this.aggregateByDeal = false,
@@ -69,8 +75,9 @@ class _UnusedQrSheet extends ConsumerStatefulWidget {
 class _UnusedQrSheetState extends ConsumerState<_UnusedQrSheet> {
   late final PageController _pageController;
   int _currentPage = 0;
-  int? _prevUnusedCount;
+  Set<String>? _prevUnusedItemIds;
   bool _didAutoPopForEmptyOpen = false;
+  bool _redemptionSuccessFlowScheduled = false;
   Timer? _pollTimer;
 
   @override
@@ -98,12 +105,18 @@ class _UnusedQrSheetState extends ConsumerState<_UnusedQrSheet> {
     super.dispose();
   }
 
-  /// 检测 unused 数量下降 → 核销成功提示；首张即 0 则提示已核销并关闭
-  void _handleUnusedCountChanged(int newCount, BuildContext sheetContext) {
-    final prev = _prevUnusedCount;
-    if (prev == null) {
-      _prevUnusedCount = newCount;
-      if (newCount == 0 && !_didAutoPopForEmptyOpen) {
+  /// 根据未使用 order_item id 集合变化检测核销：全屏成功 → 多张时关闭后再打开 QR
+  void _onDealItemsUpdated({
+    required List<OrderItemModel> dealItems,
+    required List<OrderItemModel> unusedItems,
+    required BuildContext sheetContext,
+  }) {
+    final currentIds = unusedItems.map((e) => e.id).toSet();
+    final prevIds = _prevUnusedItemIds;
+
+    if (prevIds == null) {
+      _prevUnusedItemIds = currentIds;
+      if (unusedItems.isEmpty && !_didAutoPopForEmptyOpen) {
         _didAutoPopForEmptyOpen = true;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
@@ -118,28 +131,52 @@ class _UnusedQrSheetState extends ConsumerState<_UnusedQrSheet> {
       }
       return;
     }
-    if (newCount >= prev) {
-      _prevUnusedCount = newCount;
+
+    if (currentIds.length >= prevIds.length) {
+      _prevUnusedItemIds = currentIds;
       return;
     }
-    _prevUnusedCount = newCount;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final messenger = ScaffoldMessenger.maybeOf(sheetContext);
-      if (newCount == 0) {
-        messenger?.showSnackBar(
-          const SnackBar(
-            content: Text('Successfully redeemed!'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-        if (Navigator.canPop(sheetContext)) Navigator.pop(sheetContext);
-      } else {
-        messenger?.showSnackBar(
-          const SnackBar(
-            content: Text('Voucher redeemed'),
-            behavior: SnackBarBehavior.floating,
-          ),
+
+    if (_redemptionSuccessFlowScheduled) return;
+    _redemptionSuccessFlowScheduled = true;
+    _prevUnusedItemIds = currentIds;
+
+    final redeemedIdList = prevIds.difference(currentIds).toList();
+    OrderItemModel? redeemedItem;
+    for (final rid in redeemedIdList) {
+      for (final i in dealItems) {
+        if (i.id == rid) {
+          redeemedItem = i;
+          break;
+        }
+      }
+      if (redeemedItem != null) break;
+    }
+
+    final dealTitle = redeemedItem?.dealTitle ?? 'Deal';
+    final redeemedAt = redeemedItem?.redeemedAt ?? DateTime.now();
+    final hasMoreUnused = unusedItems.isNotEmpty;
+    final host = widget.hostContext;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!sheetContext.mounted) return;
+      Navigator.of(sheetContext).pop();
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      if (!host.mounted) return;
+      await showCustomerRedemptionSuccessDialog(
+        context: host,
+        dealTitle: dealTitle,
+        redeemedAt: redeemedAt,
+        primaryButtonLabel: hasMoreUnused ? 'Continue' : 'Done',
+      );
+      if (!host.mounted) return;
+      if (hasMoreUnused) {
+        showUnusedQrSheet(
+          host,
+          orderId: widget.orderId,
+          dealId: widget.dealId,
+          aggregateByDeal: widget.aggregateByDeal,
+          aggregatedOrderItemIds: widget.aggregatedOrderItemIds,
         );
       }
     });
@@ -296,7 +333,11 @@ class _UnusedQrSheetState extends ConsumerState<_UnusedQrSheet> {
             .where((i) => i.customerStatus == CustomerItemStatus.unused)
             .toList();
 
-        _handleUnusedCountChanged(unusedItems.length, context);
+        _onDealItemsUpdated(
+          dealItems: dealItems,
+          unusedItems: unusedItems,
+          sheetContext: context,
+        );
 
         if (unusedItems.isNotEmpty && _currentPage >= unusedItems.length) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -308,6 +349,18 @@ class _UnusedQrSheetState extends ConsumerState<_UnusedQrSheet> {
         }
 
         if (unusedItems.isEmpty) {
+          if (_redemptionSuccessFlowScheduled) {
+            return const Padding(
+              padding: EdgeInsets.fromLTRB(24, 48, 24, 48),
+              child: Center(
+                child: SizedBox(
+                  height: 48,
+                  width: 48,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            );
+          }
           return const Padding(
             padding: EdgeInsets.fromLTRB(24, 48, 24, 48),
             child: Center(
