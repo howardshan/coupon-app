@@ -1,6 +1,8 @@
 // 订单详情页 — 美团风格重写
 // 布局从上到下：状态横幅 → Deal摘要卡片 → 券状态展开行 → Order Info → 底部操作栏
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -15,6 +17,7 @@ import '../../../cart/domain/providers/cart_provider.dart';
 import '../../../deals/domain/providers/deals_provider.dart';
 import '../../data/models/order_detail_model.dart';
 import '../../data/models/order_item_model.dart';
+import '../../domain/providers/aggregated_deal_voucher_detail_provider.dart';
 import '../../domain/providers/orders_provider.dart';
 import '../../domain/providers/coupons_provider.dart';
 import '../widgets/gift_bottom_sheet.dart';
@@ -22,7 +25,14 @@ import '../widgets/used_refund_entry.dart';
 
 // ── 未使用券 QR 码弹窗 ────────────────────────────
 
-void showUnusedQrSheet(BuildContext context, List<OrderItemModel> items) {
+/// 出示未使用券 QR；内容订阅 Provider，商家核销后自动刷新；定时 invalidate 兜底 Realtime 断线
+void showUnusedQrSheet(
+  BuildContext context, {
+  required String orderId,
+  required String dealId,
+  bool aggregateByDeal = false,
+  Set<String> aggregatedOrderItemIds = const {},
+}) {
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
@@ -30,46 +40,121 @@ void showUnusedQrSheet(BuildContext context, List<OrderItemModel> items) {
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
-    builder: (_) => _UnusedQrSheet(items: items),
+    builder: (_) => _UnusedQrSheet(
+      orderId: orderId,
+      dealId: dealId,
+      aggregateByDeal: aggregateByDeal,
+      aggregatedOrderItemIds: aggregatedOrderItemIds,
+    ),
   );
 }
 
-class _UnusedQrSheet extends StatefulWidget {
-  final List<OrderItemModel> items;
-  const _UnusedQrSheet({required this.items});
+class _UnusedQrSheet extends ConsumerStatefulWidget {
+  final String orderId;
+  final String dealId;
+  final bool aggregateByDeal;
+  final Set<String> aggregatedOrderItemIds;
+
+  const _UnusedQrSheet({
+    required this.orderId,
+    required this.dealId,
+    this.aggregateByDeal = false,
+    this.aggregatedOrderItemIds = const {},
+  });
+
   @override
-  State<_UnusedQrSheet> createState() => _UnusedQrSheetState();
+  ConsumerState<_UnusedQrSheet> createState() => _UnusedQrSheetState();
 }
 
-class _UnusedQrSheetState extends State<_UnusedQrSheet> {
+class _UnusedQrSheetState extends ConsumerState<_UnusedQrSheet> {
   late final PageController _pageController;
   int _currentPage = 0;
+  int? _prevUnusedCount;
+  bool _didAutoPopForEmptyOpen = false;
+  Timer? _pollTimer;
 
   @override
   void initState() {
     super.initState();
     _pageController = PageController();
+    // 定期拉取，避免 Realtime 1002 等导致长时间停在旧 QR
+    _pollTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (!mounted) return;
+      ref.invalidate(userCouponsProvider);
+      if (widget.aggregateByDeal && widget.aggregatedOrderItemIds.isNotEmpty) {
+        final key = aggregatedDealVoucherCacheKey(
+            widget.dealId, widget.aggregatedOrderItemIds);
+        ref.invalidate(aggregatedDealVoucherDetailProvider(key));
+      } else {
+        ref.invalidate(userOrderDetailProvider(widget.orderId));
+      }
+    });
   }
 
   @override
   void dispose() {
+    _pollTimer?.cancel();
     _pageController.dispose();
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final items = widget.items;
-    final hasMultiple = items.length > 1;
+  /// 检测 unused 数量下降 → 核销成功提示；首张即 0 则提示已核销并关闭
+  void _handleUnusedCountChanged(int newCount, BuildContext sheetContext) {
+    final prev = _prevUnusedCount;
+    if (prev == null) {
+      _prevUnusedCount = newCount;
+      if (newCount == 0 && !_didAutoPopForEmptyOpen) {
+        _didAutoPopForEmptyOpen = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          ScaffoldMessenger.maybeOf(sheetContext)?.showSnackBar(
+            const SnackBar(
+              content: Text('This voucher has already been redeemed.'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          if (Navigator.canPop(sheetContext)) Navigator.pop(sheetContext);
+        });
+      }
+      return;
+    }
+    if (newCount >= prev) {
+      _prevUnusedCount = newCount;
+      return;
+    }
+    _prevUnusedCount = newCount;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.maybeOf(sheetContext);
+      if (newCount == 0) {
+        messenger?.showSnackBar(
+          const SnackBar(
+            content: Text('Successfully redeemed!'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        if (Navigator.canPop(sheetContext)) Navigator.pop(sheetContext);
+      } else {
+        messenger?.showSnackBar(
+          const SnackBar(
+            content: Text('Voucher redeemed'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    });
+  }
 
+  Widget _buildQrBody(BuildContext context, List<OrderItemModel> items) {
+    final hasMultiple = items.length > 1;
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 16, 24, 40),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // 拖拽指示条
           Container(
-            width: 40, height: 4,
+            width: 40,
+            height: 4,
             decoration: BoxDecoration(
               color: AppColors.textHint,
               borderRadius: BorderRadius.circular(2),
@@ -83,8 +168,6 @@ class _UnusedQrSheetState extends State<_UnusedQrSheet> {
             style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 16),
-
-          // QR 码区域（支持左右滑动多张券）
           SizedBox(
             height: 340,
             child: PageView.builder(
@@ -95,11 +178,9 @@ class _UnusedQrSheetState extends State<_UnusedQrSheet> {
                 final item = items[i];
                 final qrData = item.couponQrCode ?? item.couponCode ?? '';
                 final formattedCode = item.formattedCouponCode;
-
                 return Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // QR 码
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
@@ -121,13 +202,12 @@ class _UnusedQrSheetState extends State<_UnusedQrSheet> {
                               backgroundColor: Colors.white,
                             )
                           : const SizedBox(
-                              width: 200, height: 200,
+                              width: 200,
+                              height: 200,
                               child: Center(child: Text('QR code unavailable')),
                             ),
                     ),
                     const SizedBox(height: 16),
-
-                    // 券码（可复制）
                     if (formattedCode != null)
                       GestureDetector(
                         onTap: () {
@@ -141,7 +221,8 @@ class _UnusedQrSheetState extends State<_UnusedQrSheet> {
                           );
                         },
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 10),
                           decoration: BoxDecoration(
                             color: AppColors.surfaceVariant,
                             borderRadius: BorderRadius.circular(10),
@@ -170,27 +251,117 @@ class _UnusedQrSheetState extends State<_UnusedQrSheet> {
               },
             ),
           ),
-
-          // 多张券时显示分页指示器
           if (hasMultiple) ...[
             const SizedBox(height: 12),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(items.length, (i) => Container(
-                width: i == _currentPage ? 20 : 8,
-                height: 8,
-                margin: const EdgeInsets.symmetric(horizontal: 3),
-                decoration: BoxDecoration(
-                  color: i == _currentPage
-                      ? AppColors.primary
-                      : AppColors.textHint.withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              )),
+              children: List.generate(
+                  items.length,
+                  (i) => Container(
+                        width: i == _currentPage ? 20 : 8,
+                        height: 8,
+                        margin: const EdgeInsets.symmetric(horizontal: 3),
+                        decoration: BoxDecoration(
+                          color: i == _currentPage
+                              ? AppColors.primary
+                              : AppColors.textHint.withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      )),
             ),
           ],
-
         ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final aggKey = widget.aggregateByDeal &&
+            widget.aggregatedOrderItemIds.isNotEmpty
+        ? aggregatedDealVoucherCacheKey(
+            widget.dealId, widget.aggregatedOrderItemIds)
+        : null;
+
+    final detailAsync = aggKey != null
+        ? ref.watch(aggregatedDealVoucherDetailProvider(aggKey))
+        : ref.watch(userOrderDetailProvider(widget.orderId));
+
+    return detailAsync.when(
+      skipLoadingOnReload: true,
+      data: (detail) {
+        final dealItems =
+            detail.items.where((i) => i.dealId == widget.dealId).toList();
+        final unusedItems = dealItems
+            .where((i) => i.customerStatus == CustomerItemStatus.unused)
+            .toList();
+
+        _handleUnusedCountChanged(unusedItems.length, context);
+
+        if (unusedItems.isNotEmpty && _currentPage >= unusedItems.length) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted || !_pageController.hasClients) return;
+            final target = unusedItems.length - 1;
+            _pageController.jumpToPage(target);
+            setState(() => _currentPage = target);
+          });
+        }
+
+        if (unusedItems.isEmpty) {
+          return const Padding(
+            padding: EdgeInsets.fromLTRB(24, 48, 24, 48),
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text(
+                    'Updating…',
+                    style: TextStyle(color: AppColors.textSecondary),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return _buildQrBody(context, unusedItems);
+      },
+      loading: () => const Padding(
+        padding: EdgeInsets.all(48),
+        child: Center(child: CircularProgressIndicator()),
+      ),
+      error: (e, _) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 24, 24, 40),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Failed to load voucher',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              e.toString(),
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                  fontSize: 13, color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 16),
+            TextButton(
+              onPressed: () {
+                ref.invalidate(userCouponsProvider);
+                if (aggKey != null) {
+                  ref.invalidate(aggregatedDealVoucherDetailProvider(aggKey));
+                } else {
+                  ref.invalidate(userOrderDetailProvider(widget.orderId));
+                }
+              },
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -534,7 +705,11 @@ class _DealSummaryCard extends ConsumerWidget {
               color: const Color(0xFF00C853),
               items: unusedItems,
               isExpanded: false,
-              onToggle: () => showUnusedQrSheet(context, unusedItems),
+              onToggle: () => showUnusedQrSheet(
+                    context,
+                    orderId: orderId,
+                    dealId: first.dealId,
+                  ),
               onRefreshOrder: onRefreshOrder,
               orderId: orderId,
               paymentIntentId: paymentIntentId,

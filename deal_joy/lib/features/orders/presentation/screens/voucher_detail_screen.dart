@@ -65,6 +65,9 @@ class VoucherDetailScreen extends ConsumerWidget {
           detail: detail,
           dealId: dealId,
           onRefreshDetail: refreshDetail,
+          routeOrderId: orderId,
+          aggregateByDeal: useAggregate,
+          aggregatedOrderItemIds: aggregatedOrderItemIds,
         ),
         loading: () => Scaffold(
           backgroundColor: const Color(0xFFF5F5F5),
@@ -138,11 +141,18 @@ class _VoucherDetailBody extends ConsumerStatefulWidget {
   final OrderDetailModel detail;
   final String dealId;
   final VoidCallback onRefreshDetail;
+  /// 路由入参 orderId（聚合模式下仍为列表传入的 id，QR 弹层用聚合 Provider）
+  final String routeOrderId;
+  final bool aggregateByDeal;
+  final Set<String> aggregatedOrderItemIds;
 
   const _VoucherDetailBody({
     required this.detail,
     required this.dealId,
     required this.onRefreshDetail,
+    required this.routeOrderId,
+    this.aggregateByDeal = false,
+    this.aggregatedOrderItemIds = const {},
   });
 
   @override
@@ -257,6 +267,10 @@ class _VoucherDetailBodyState extends ConsumerState<_VoucherDetailBody> {
                 paymentIntentId: detail.paymentIntentIdMasked,
                 storeCreditUsed: detail.storeCreditUsed,
                 orderTotalAmount: detail.totalAmount,
+                orderId: widget.routeOrderId,
+                dealId: widget.dealId,
+                aggregateByDeal: widget.aggregateByDeal,
+                aggregatedOrderItemIds: widget.aggregatedOrderItemIds,
                 onToggleExpand: () {
                   setState(() {
                     _isExpanded = !_isExpanded;
@@ -322,12 +336,20 @@ class _VoucherDealCard extends ConsumerWidget {
   final String? paymentIntentId;
   final double storeCreditUsed;
   final double orderTotalAmount;
+  final String orderId;
+  final String dealId;
+  final bool aggregateByDeal;
+  final Set<String> aggregatedOrderItemIds;
 
   const _VoucherDealCard({
     required this.dealItems,
     required this.isExpanded,
     required this.onToggleExpand,
     required this.onRefreshOrder,
+    required this.orderId,
+    required this.dealId,
+    this.aggregateByDeal = false,
+    this.aggregatedOrderItemIds = const {},
     this.paymentIntentId,
     this.storeCreditUsed = 0.0,
     this.orderTotalAmount = 0.0,
@@ -473,7 +495,13 @@ class _VoucherDealCard extends ConsumerWidget {
               color: const Color(0xFF00C853),
               items: unusedItems,
               isExpanded: false,
-              onToggle: () => showUnusedQrSheet(context, unusedItems),
+              onToggle: () => showUnusedQrSheet(
+                    context,
+                    orderId: orderId,
+                    dealId: dealId,
+                    aggregateByDeal: aggregateByDeal,
+                    aggregatedOrderItemIds: aggregatedOrderItemIds,
+                  ),
               onRefreshOrder: onRefreshOrder,
               paymentIntentId: paymentIntentId,
               storeCreditUsed: storeCreditUsed,
