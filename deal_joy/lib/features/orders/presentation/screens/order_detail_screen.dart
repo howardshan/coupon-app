@@ -10,6 +10,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/widgets/back_or_home_app_bar_leading.dart';
 import '../../../cart/domain/providers/cart_provider.dart';
 import '../../../deals/domain/providers/deals_provider.dart';
 import '../../data/models/order_detail_model.dart';
@@ -219,7 +220,11 @@ class OrderDetailScreen extends ConsumerWidget {
           body: Center(child: CircularProgressIndicator()),
         ),
         error: (e, _) => Scaffold(
-          appBar: AppBar(title: const Text('Order Detail')),
+          appBar: AppBar(
+            title: const Text('Order Detail'),
+            leading: backOrHomeAppBarLeading(context),
+            automaticallyImplyLeading: false,
+          ),
           body: _ErrorBody(
             onRetry: () => ref.invalidate(userOrderDetailProvider(orderId)),
             error: e,
@@ -302,10 +307,12 @@ class _MeituanOrderBodyState extends ConsumerState<_MeituanOrderBody> {
         // 主滚动区域
         CustomScrollView(
           slivers: [
-            // 顶部 AppBar
-            const SliverAppBar(
+            // 顶部 AppBar（显式返回：go 进页时栈上无上一屏也能回首页）
+            SliverAppBar(
               pinned: true,
-              title: Text(
+              leading: backOrHomeAppBarLeading(context),
+              automaticallyImplyLeading: false,
+              title: const Text(
                 'Order Detail',
                 style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
               ),

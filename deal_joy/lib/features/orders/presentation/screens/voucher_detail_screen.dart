@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/widgets/back_or_home_app_bar_leading.dart';
 import '../../../cart/domain/providers/cart_provider.dart';
 import '../../../deals/domain/providers/deals_provider.dart';
 import '../../data/models/order_detail_model.dart';
@@ -65,11 +66,21 @@ class VoucherDetailScreen extends ConsumerWidget {
           dealId: dealId,
           onRefreshDetail: refreshDetail,
         ),
-        loading: () => const Scaffold(
-          body: Center(child: CircularProgressIndicator()),
+        loading: () => Scaffold(
+          backgroundColor: const Color(0xFFF5F5F5),
+          appBar: AppBar(
+            title: const Text('Voucher Detail'),
+            leading: backOrHomeAppBarLeading(context),
+            automaticallyImplyLeading: false,
+          ),
+          body: const Center(child: CircularProgressIndicator()),
         ),
         error: (e, _) => Scaffold(
-          appBar: AppBar(title: const Text('Voucher Detail')),
+          appBar: AppBar(
+            title: const Text('Voucher Detail'),
+            leading: backOrHomeAppBarLeading(context),
+            automaticallyImplyLeading: false,
+          ),
           body: _ErrorBody(
             onRetry: refreshDetail,
             error: e,
@@ -156,6 +167,8 @@ class _VoucherDetailBodyState extends ConsumerState<_VoucherDetailBody> {
       return Scaffold(
         appBar: AppBar(
           title: const Text('Voucher Detail'),
+          leading: backOrHomeAppBarLeading(context),
+          automaticallyImplyLeading: false,
           backgroundColor: Colors.white,
           foregroundColor: AppColors.textPrimary,
           elevation: 0.5,
@@ -225,6 +238,8 @@ class _VoucherDetailBodyState extends ConsumerState<_VoucherDetailBody> {
             // 顶部 AppBar
             SliverAppBar(
               pinned: true,
+              leading: backOrHomeAppBarLeading(context),
+              automaticallyImplyLeading: false,
               title: const Text(
                 'Voucher Detail',
                 style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
@@ -1943,6 +1958,8 @@ class _UsedVoucherBody extends ConsumerWidget {
           slivers: [
             SliverAppBar(
               pinned: true,
+              leading: backOrHomeAppBarLeading(context),
+              automaticallyImplyLeading: false,
               title: const Text(
                 'Voucher Detail',
                 style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
@@ -2078,6 +2095,8 @@ class _RefundedVoucherBody extends ConsumerWidget {
           slivers: [
             SliverAppBar(
               pinned: true,
+              leading: backOrHomeAppBarLeading(context),
+              automaticallyImplyLeading: false,
               title: const Text(
                 'Voucher Detail',
                 style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
@@ -2191,6 +2210,8 @@ class _ExpiredVoucherBody extends ConsumerWidget {
           slivers: [
             SliverAppBar(
               pinned: true,
+              leading: backOrHomeAppBarLeading(context),
+              automaticallyImplyLeading: false,
               title: const Text(
                 'Voucher Detail',
                 style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),

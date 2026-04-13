@@ -126,7 +126,8 @@ class OrderSuccessScreen extends ConsumerWidget {
                 const SizedBox(height: 32),
                 AppButton(
                   label: voucherCount > 1 ? 'View My Vouchers' : 'View My Voucher',
-                  onPressed: () => context.go('/order/$orderId'),
+                  // push 保留成功页在栈中，订单页可返回继续看确认信息
+                  onPressed: () => context.push('/order/$orderId'),
                   icon: Icons.qr_code_2,
                 ),
                 const SizedBox(height: 16),
@@ -185,7 +186,7 @@ class OrderSuccessScreen extends ConsumerWidget {
                 const SizedBox(height: 40),
                 AppButton(
                   label: 'View My Coupon',
-                  onPressed: () => context.go('/order/$orderId'),
+                  onPressed: () => context.push('/order/$orderId'),
                   icon: Icons.qr_code_2,
                 ),
                 const SizedBox(height: 16),
