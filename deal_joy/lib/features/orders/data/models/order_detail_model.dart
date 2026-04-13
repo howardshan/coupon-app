@@ -179,14 +179,6 @@ class OrderDetailModel {
   factory OrderDetailModel.fromJson(Map<String, dynamic> json) {
     final timelineJson = json['timeline'] as List<dynamic>? ?? [];
 
-    // V3：解析 items 列表（Edge Function 将 items 放在 json['order']['items'] 或顶层 json['items']）
-    // 顶层直接传入时用 json['items']，通过 order 包装时调用方应先解包 json['order']
-    final rawItems = json['items'] as List?;
-    final items = rawItems
-            ?.map((e) => OrderItemModel.fromJson(e as Map<String, dynamic>))
-            .toList() ??
-        const <OrderItemModel>[];
-
     // 辅助函数：同时尝试 snake_case 和 camelCase 字段名
     T? pick<T>(String snake, String camel) =>
         (json[snake] ?? json[camel]) as T?;
@@ -195,9 +187,25 @@ class OrderDetailModel {
       return v != null ? DateTime.tryParse(v as String) : null;
     }
 
+    final orderNum = pick<String>('order_number', 'orderNumber') ?? '';
+    // V3：解析 items；把订单号写入每条 item 便于聚合页按单展示
+    final rawItems = json['items'] as List?;
+    final items = rawItems
+            ?.map((e) {
+              final m = Map<String, dynamic>.from(e as Map<String, dynamic>);
+              if (orderNum.isNotEmpty &&
+                  m['order_number'] == null &&
+                  m['orderNumber'] == null) {
+                m['order_number'] = orderNum;
+              }
+              return OrderItemModel.fromJson(m);
+            })
+            .toList() ??
+        const <OrderItemModel>[];
+
     return OrderDetailModel(
       id: pick<String>('id', 'id') ?? '',
-      orderNumber: pick<String>('order_number', 'orderNumber') ?? '',
+      orderNumber: orderNum,
       status: pick<String>('status', 'status') ?? 'unused',
       dealId: pick<String>('deal_id', 'dealId') ?? '',
       dealTitle: pick<String>('deal_title', 'dealTitle') ?? '',

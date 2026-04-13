@@ -91,6 +91,8 @@ enum MerchantItemStatus {
 class OrderItemModel {
   final String id;
   final String orderId;
+  /// 所属订单号（展示用；聚合多笔订单时由 Provider 写入）
+  final String? orderNumber;
   final String dealId;
 
   /// 关联的券 ID（可为 null，DB trigger 自动生成）
@@ -174,6 +176,7 @@ class OrderItemModel {
   const OrderItemModel({
     required this.id,
     required this.orderId,
+    this.orderNumber,
     required this.dealId,
     this.couponId,
     this.couponCode,
@@ -314,6 +317,7 @@ class OrderItemModel {
     return OrderItemModel(
       id: json['id'] as String? ?? '',
       orderId: pick<String>('order_id', 'orderId') ?? '',
+      orderNumber: pick<String>('order_number', 'orderNumber'),
       dealId: pick<String>('deal_id', 'dealId') ?? '',
       couponId: pick<String>('coupon_id', 'couponId') ?? couponsObj?['id'] as String?,
       couponCode: couponsObj?['coupon_code'] as String? ??
