@@ -454,7 +454,8 @@ class _StatsSection extends StatelessWidget {
           value: '${stats.todayRedemptions}',
           icon: Icons.check_circle_outline,
           color: const Color(0xFF4CAF50),
-          onTap: () => context.push('/orders?tab=3'),
+          // Tab 顺序见 OrdersListPage._tabs: 0 All, 1 Unused, 2 Redeemed, 3 Settled, 4 Refunded
+          onTap: () => context.push('/orders?tab=2'),
         ),
         StatsCard(
           title: 'Revenue',
