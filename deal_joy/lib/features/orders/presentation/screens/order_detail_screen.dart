@@ -303,9 +303,21 @@ class _MeituanOrderBodyState extends ConsumerState<_MeituanOrderBody> {
         CustomScrollView(
           slivers: [
             // 顶部 AppBar
-            const SliverAppBar(
+            SliverAppBar(
               pinned: true,
-              title: Text(
+              // 显式返回按钮：从 order-success 进入时路由栈已被替换，
+              // canPop() 为 false，此时回退到 /orders 列表
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new, size: 20),
+                onPressed: () {
+                  if (context.canPop()) {
+                    context.pop();
+                  } else {
+                    context.go('/orders');
+                  }
+                },
+              ),
+              title: const Text(
                 'Order Detail',
                 style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
               ),
@@ -1117,8 +1129,17 @@ class _OrderInfoSection extends StatelessWidget {
             _SimpleRow('Service Fee (\$0.99 × ${detail.items.length})',
                 amountFmt.format(totalServiceFee)),
 
-          // Tax（从 items 的 taxAmount 汇总，或从 detail 读取）
-          // 如果 detail 有 tax 相关字段可以展示
+          // Tax（从 detail 或 items 汇总，老订单税为 0 时自动隐藏）
+          if (detail.taxAmount > 0 ||
+              detail.items.fold<double>(0, (s, i) => s + i.taxAmount) > 0)
+            _SimpleRow(
+              'Tax',
+              amountFmt.format(
+                detail.taxAmount > 0
+                    ? detail.taxAmount
+                    : detail.items.fold<double>(0, (s, i) => s + i.taxAmount),
+              ),
+            ),
 
           const Divider(height: 16, color: Color(0xFFF0F0F0)),
 

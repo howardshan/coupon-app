@@ -225,16 +225,17 @@ async function handleTransactions(
     const rows = Array.isArray(data) ? data : [];
     const totalCount = rows.length > 0 ? parseInt(rows[0].total_count ?? '0') : 0;
 
-    // 聚合合计行（含 stripe_fee + brand_fee）
+    // 聚合合计行（含 stripe_fee + brand_fee + tax_amount）
     const totals = rows.reduce(
-      (acc: { amount: number; platform_fee: number; brand_fee: number; stripe_fee: number; net_amount: number }, row: any) => ({
+      (acc: { amount: number; tax_amount: number; platform_fee: number; brand_fee: number; stripe_fee: number; net_amount: number }, row: any) => ({
         amount: acc.amount + parseFloat(row.amount ?? '0'),
+        tax_amount: acc.tax_amount + parseFloat(row.tax_amount ?? '0'),
         platform_fee: acc.platform_fee + parseFloat(row.platform_fee ?? '0'),
         brand_fee: acc.brand_fee + parseFloat(row.brand_fee ?? '0'),
         stripe_fee: acc.stripe_fee + parseFloat(row.stripe_fee ?? '0'),
         net_amount: acc.net_amount + parseFloat(row.net_amount ?? '0'),
       }),
-      { amount: 0, platform_fee: 0, brand_fee: 0, stripe_fee: 0, net_amount: 0 },
+      { amount: 0, tax_amount: 0, platform_fee: 0, brand_fee: 0, stripe_fee: 0, net_amount: 0 },
     );
 
     return jsonResponse({
@@ -243,6 +244,7 @@ async function handleTransactions(
         deal_title:        row.deal_title ?? '',
         validity_type:     row.validity_type ?? 'fixed_date',
         amount:            parseFloat(row.amount ?? '0'),
+        tax_amount:        parseFloat(row.tax_amount ?? '0'),
         platform_fee_rate: parseFloat(row.platform_fee_rate ?? '0'),
         platform_fee:      parseFloat(row.platform_fee ?? '0'),
         brand_fee_rate:    parseFloat(row.brand_fee_rate ?? '0'),
@@ -260,6 +262,7 @@ async function handleTransactions(
       },
       totals: {
         amount:       Math.round(totals.amount * 100) / 100,
+        tax_amount:   Math.round(totals.tax_amount * 100) / 100,
         platform_fee: Math.round(totals.platform_fee * 100) / 100,
         brand_fee:    Math.round(totals.brand_fee * 100) / 100,
         stripe_fee:   Math.round(totals.stripe_fee * 100) / 100,

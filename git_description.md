@@ -469,3 +469,46 @@
 
 #### Edge Function
 - **merchant-deals/index.ts**: POST 创建时写入 detail_images；PATCH updatableFields 和 cloneFields 白名单新增 detail_images
+
+---
+
+## 2026-04-12 — Sales Tax 全链路
+
+### DB Migrations
+- **20260413000001_tax_revenue_report.sql**: `order_items` 新增 `tax_metro_area text` 快照字段 + 历史回填 + 索引；新增 RPC `get_tax_revenue_report(p_year_month)` 按 city 月度聚合 commission / tax / gross revenue
+- **20260413000002_merchant_tx_with_tax.sql**: 重建 `get_merchant_transactions` RPC，返回值加 `tax_amount` 列（commission base 仍为 unit_price，税费独立）
+
+### Edge Functions
+- **create-order-v3**: 服务端重新计算 per-item 税费并写入 `tax_metro_area` 快照（之前依赖前端传值，现在不再可伪造）
+- **merchant-earnings**: `/transactions` 响应追加 `tax_amount` 字段，totals 也含税合计
+
+### 客户端 deal_joy
+- **Models**: OrderModel / OrderItemModel / CouponModel / OrderDetailModel 全部新增 `taxAmount` + `taxRate` 字段（null-safe fromJson）
+- **MerchantSummary / CartItemModel**: 新增 `metroArea` 字段，cart_items 查询 join `merchants.metro_area`，deals_repository 所有 merchants select 加 metro_area
+- **Tax Preview**: tax_rate_provider.dart 新增 `metroTaxRatesProvider` / `cartTaxEstimateProvider` / `singleDealTaxEstimateProvider` — 一次性拉 metro_tax_rates 表本地计算，避免 N+1
+- **checkout_screen.dart**: Price breakdown 展示 `Tax (est.)`；点 Pay 后接收 backend `totalTax` 刷新 `_lastBackendTotalTax`；前后端差 > $0.50 弹 SnackBar 提示
+- **checkout_repository.dart**: `checkoutCart` / `checkoutSingleDeal` 新增 `onPaymentBreakdown` 回调，后端返回后把权威金额传给 UI
+- **order_success_screen**: 价格明细加 Subtotal / Tax 行
+- **order_detail_screen**: Price Breakdown 加 Tax 行（检查 `detail.taxAmount > 0` 或 items 汇总 > 0 才显示）
+- **coupon_screen**: 退款详情 Refund Amount 改为 `unitPrice + taxAmount`；新增 "Including Tax" 行
+- **refund_request_screen**: 退款金额卡片下拆分展示 Subtotal + Tax 两行
+
+### 商家端 dealjoy_merchant
+- **EarningsTransaction / TransactionTotals**: 新增 `taxAmount` 字段
+- **transaction_tile.dart**: 每行交易加 "Tax: $X.XX" 小灰字（仅 > 0 时显示）；合计行也加 Tax 行
+- **transactions_page.dart**: totals row 传入 taxAmount
+
+### Admin 管理端
+- **sidebar.tsx**: Finance 从 link 改为 group，含 Withdrawals / Tax Revenue 子项
+- **app/(dashboard)/finance/tax-revenue/page.tsx**: 服务端页面 + 月份切换
+- **finance/tax-revenue/tax-revenue-table.tsx**: 客户端交互表格 + CSV 导出按钮
+- **app/actions/tax-revenue.ts**: `getTaxRevenueReport(yearMonth)` / `exportTaxRevenueCsv(yearMonth)` server actions
+
+### 历史数据兼容
+- 所有 UI Tax 行均判断 `taxAmount > 0` 才显示，老订单（tax_amount = 0）自动隐藏
+- create-order-v3 新订单会自动从 merchants.metro_area 拿 metro 快照
+
+### 待人工处理
+- **Supabase CLI 未登录**，`create-order-v3` + `merchant-earnings` edge functions 需要手动部署（`/opt/homebrew/bin/supabase functions deploy <name> --no-verify-jwt --project-ref kqyolvmgrdekybjrwizx`，或在 Dashboard 更新）
+- **merchants.metro_area 全部为 NULL**：所有 11 个商家需要在 admin 里设置 `metro_area`（如 'Dallas'），否则 checkout 税费为 0 且报表归入 "Unknown" 城市
+- **metro_tax_rates** 已有 Dallas 8.25%，其他城市需要按需添加

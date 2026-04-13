@@ -193,6 +193,17 @@ class _AmountColumn extends StatelessWidget {
             ),
           ),
         ],
+        // Tax 代收（仅 tax > 0 时显示，老订单隐藏）
+        if (transaction.taxAmount > 0) ...[
+          const SizedBox(height: 1),
+          Text(
+            'Tax: \$${transaction.taxAmount.toStringAsFixed(2)}',
+            style: TextStyle(
+              fontSize: 10,
+              color: Colors.grey.shade400,
+            ),
+          ),
+        ],
         const SizedBox(height: 2),
         // 商家实收（绿色）
         Text(
@@ -259,6 +270,7 @@ class _StatusBadge extends StatelessWidget {
 // =============================================================
 class TransactionTotalsRow extends StatelessWidget {
   final double totalAmount;
+  final double totalTaxAmount;
   final double totalPlatformFee;
   final double totalStripeFee;
   final double totalNetAmount;
@@ -267,6 +279,7 @@ class TransactionTotalsRow extends StatelessWidget {
   const TransactionTotalsRow({
     super.key,
     required this.totalAmount,
+    this.totalTaxAmount = 0.0,
     required this.totalPlatformFee,
     required this.totalStripeFee,
     required this.totalNetAmount,
@@ -308,6 +321,11 @@ class TransactionTotalsRow extends StatelessWidget {
                 if (totalStripeFee > 0)
                   Text(
                     'Stripe fee: \$${totalStripeFee.toStringAsFixed(2)}',
+                    style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                  ),
+                if (totalTaxAmount > 0)
+                  Text(
+                    'Tax: \$${totalTaxAmount.toStringAsFixed(2)}',
                     style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
                   ),
               ],

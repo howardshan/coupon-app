@@ -83,27 +83,65 @@ class _RefundRequestScreenState extends ConsumerState<RefundRequestScreen> {
               border:
                   Border.all(color: AppColors.success.withValues(alpha: 0.3)),
             ),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.account_balance_wallet_outlined,
-                    color: AppColors.success, size: 28),
-                const SizedBox(width: 12),
-                Text(
-                  '\$${order.totalAmount.toStringAsFixed(2)}',
-                  style: const TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.success,
-                  ),
+                Row(
+                  children: [
+                    const Icon(Icons.account_balance_wallet_outlined,
+                        color: AppColors.success, size: 28),
+                    const SizedBox(width: 12),
+                    Text(
+                      '\$${order.totalAmount.toStringAsFixed(2)}',
+                      style: const TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.success,
+                      ),
+                    ),
+                    const Spacer(),
+                    const Text(
+                      'Full Refund',
+                      style: TextStyle(
+                        color: AppColors.success,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                 ),
-                const Spacer(),
-                const Text(
-                  'Full Refund',
-                  style: TextStyle(
-                    color: AppColors.success,
-                    fontWeight: FontWeight.w600,
+                // 税费明细（老订单 tax = 0 时隐藏整段）
+                if (order.taxAmount > 0) ...[
+                  const SizedBox(height: 10),
+                  const Divider(height: 1),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      const Text(
+                        'Subtotal',
+                        style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                      ),
+                      const Spacer(),
+                      Text(
+                        '\$${(order.totalAmount - order.taxAmount).toStringAsFixed(2)}',
+                        style: const TextStyle(fontSize: 13, color: AppColors.textPrimary),
+                      ),
+                    ],
                   ),
-                ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      const Text(
+                        'Tax',
+                        style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                      ),
+                      const Spacer(),
+                      Text(
+                        '\$${order.taxAmount.toStringAsFixed(2)}',
+                        style: const TextStyle(fontSize: 13, color: AppColors.textPrimary),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),

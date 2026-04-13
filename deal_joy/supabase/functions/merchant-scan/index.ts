@@ -361,15 +361,20 @@ async function handleRedeem(
     return errorResponse('server_error', 'Failed to redeem voucher', undefined, 500);
   }
 
-  // V3: 更新 order_items 双状态（customer_status='used', merchant_status='unpaid'）
+  // V3: 更新 order_items 双状态
+  // Phase 2C（软性 Reserve 释放）：
+  //   redeemed_at 设置后，merchant-withdrawal 的余额计算才会将此笔金额纳入可提现范围
+  //   这是 Path B 软性 Reserve 的"释放"时刻（无 Stripe Reserves API 时的替代机制）
+  //   待 Stripe Radar for Platforms (Reserves API) 申请通过后，此处需额外调用 Stripe API 释放硬性冻结
+  //   详见：/Users/howardshansmac/.claude/plans/stripe-reserves-api-upgrade.md
   if (coupon.order_item_id) {
     const { error: itemUpdateError } = await supabase
       .from('order_items')
       .update({
         customer_status: 'used',
-        merchant_status: 'unpaid',
+        merchant_status: 'unpaid',  // unpaid = 已核销但尚未结算打款（T+7 后可提现）
         redeemed_merchant_id: merchantId,
-        redeemed_at: now,
+        redeemed_at: now,           // 软性 Reserve 释放时间戳
         redeemed_by: actorUserId,
       })
       .eq('id', coupon.order_item_id);

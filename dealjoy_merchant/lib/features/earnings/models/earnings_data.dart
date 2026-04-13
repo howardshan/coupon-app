@@ -73,6 +73,8 @@ class EarningsTransaction {
   final String dealTitle;       // Deal 标题
   final String validityType;    // 'fixed_date' | 'short_after_purchase' | 'long_after_purchase'
   final double amount;          // 原始金额（含平台手续费）
+  /// 税费（按购买时 merchant 所在 metro 代收的销售税额）
+  final double taxAmount;
   final double platformFeeRate; // 本笔实际费率（0 表示免费期）
   final double platformFee;     // 平台手续费
   final double brandFeeRate;    // 品牌佣金费率
@@ -87,6 +89,7 @@ class EarningsTransaction {
     required this.dealTitle,
     required this.validityType,
     required this.amount,
+    this.taxAmount = 0.0,
     required this.platformFeeRate,
     required this.platformFee,
     this.brandFeeRate = 0.0,
@@ -104,6 +107,7 @@ class EarningsTransaction {
       dealTitle:       json['deal_title'] as String? ?? '',
       validityType:    json['validity_type'] as String? ?? 'fixed_date',
       amount:          (json['amount'] as num?)?.toDouble() ?? 0.0,
+      taxAmount:       (json['tax_amount'] as num?)?.toDouble() ?? 0.0,
       platformFeeRate: (json['platform_fee_rate'] as num?)?.toDouble() ?? 0.0,
       platformFee:     (json['platform_fee'] as num?)?.toDouble() ?? 0.0,
       brandFeeRate:    (json['brand_fee_rate'] as num?)?.toDouble() ?? 0.0,
@@ -154,12 +158,14 @@ class EarningsTransaction {
 // =============================================================
 class TransactionTotals {
   final double amount;
+  final double taxAmount;
   final double platformFee;
   final double stripeFee;
   final double netAmount;
 
   const TransactionTotals({
     required this.amount,
+    this.taxAmount = 0.0,
     required this.platformFee,
     required this.stripeFee,
     required this.netAmount,
@@ -168,6 +174,7 @@ class TransactionTotals {
   factory TransactionTotals.fromJson(Map<String, dynamic> json) {
     return TransactionTotals(
       amount:      (json['amount'] as num?)?.toDouble() ?? 0.0,
+      taxAmount:   (json['tax_amount'] as num?)?.toDouble() ?? 0.0,
       platformFee: (json['platform_fee'] as num?)?.toDouble() ?? 0.0,
       stripeFee:   (json['stripe_fee'] as num?)?.toDouble() ?? 0.0,
       netAmount:   (json['net_amount'] as num?)?.toDouble() ?? 0.0,
@@ -177,6 +184,7 @@ class TransactionTotals {
   factory TransactionTotals.zero() {
     return const TransactionTotals(
       amount: 0.0,
+      taxAmount: 0.0,
       platformFee: 0.0,
       stripeFee: 0.0,
       netAmount: 0.0,

@@ -93,6 +93,10 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   // 支付处理中
   bool _isProcessing = false;
 
+  // 后端权威税费（create-payment-intent 返回后刷新）
+  // 非空时表示已从后端拿到真实税费金额，UI 不再显示 "(est.)" 标注
+  double? _lastBackendTotalTax;
+
   // 账单地址 — 多地址管理
   List<BillingAddressModel> _savedAddresses = [];
   String? _selectedAddressId;       // 选中的已保存地址 ID，null 表示新增模式
@@ -344,9 +348,13 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       final cartItemIds = items.map((e) => e.id).where((id) => id.isNotEmpty).toList();
 
       // 计算 Store Credit 实际抵扣金额
+      // 税费使用前端预估（cartTaxEstimateProvider），真实税费由后端 create-payment-intent 重算
+      // 若预估偏小导致 creditUsed 多申请，后端会用真实 totalAmount cap 回退
       final serviceFee = items.length * 0.99;
       final subtotal = items.fold<double>(0, (sum, e) => sum + e.unitPrice);
-      final totalAmount = subtotal + serviceFee;
+      final estimatedTax =
+          ref.read(cartTaxEstimateProvider(items)).valueOrNull?.totalTax ?? 0.0;
+      final totalAmount = subtotal + serviceFee + estimatedTax;
       final creditUsed = _useStoreCredit ? min(_storeCreditBalance, totalAmount) : 0.0;
 
       // 构建 billing details（信用卡支付时携带账单地址）
@@ -380,6 +388,26 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
             : null,
         // 新卡支付时，用户勾选了保存卡片才传 true
         saveCard: !_usingSavedCard && _saveCardForFuture,
+        onPaymentBreakdown: (subtotal, svcFee, totalTax, total) {
+          // 后端返回权威金额后，刷新 UI 的 Tax 行和 Total 行
+          // 这样 Stripe PaymentSheet 弹出前 UI 金额与实际扣款一致
+          if (mounted) {
+            final estimated = estimatedTax;
+            final diff = (totalTax - estimated).abs();
+            setState(() {
+              _lastBackendTotalTax = totalTax;
+            });
+            // 前后端税差超过 $0.50 时提示用户
+            if (diff > 0.50) {
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text(
+                  'Total updated: tax recalculated to \$${totalTax.toStringAsFixed(2)}',
+                ),
+                duration: const Duration(seconds: 3),
+              ));
+            }
+          }
+        },
       );
 
       // 支付成功后异步保存 billing address（fire-and-forget）
@@ -491,6 +519,11 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
             : null,
         // 新卡支付时，用户勾选了保存卡片才传 true
         saveCard: !_usingSavedCard && _saveCardForFuture,
+        onPaymentBreakdown: (_, __, totalTax, ___) {
+          if (mounted) {
+            setState(() => _lastBackendTotalTax = totalTax);
+          }
+        },
       );
 
       // 支付成功后异步保存 billing address（fire-and-forget）
@@ -630,7 +663,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     final dealAsync = ref.watch(dealDetailProvider(widget.dealId!));
     return dealAsync.when(
       data: (deal) {
-        // 将 deal 转为 cart item 格式
+        // 将 deal 转为 cart item 格式（带 metro_area 给税费预览用）
         final cartItems = List.generate(_quantity, (_) => CartItemModel(
           id: '',
           userId: '',
@@ -642,6 +675,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
           originalPrice: deal.originalPrice,
           merchantName: deal.merchant?.name ?? '',
           merchantId: deal.merchant?.id,
+          merchantMetroArea: deal.merchant?.metroArea,
           maxPerAccount: deal.maxPerAccount,
           createdAt: DateTime.now(),
         ));
@@ -662,15 +696,15 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     // 保存当前 items 供 _payCart 使用（Buy Now 模式下 widget.cartItems 为 null）
     _currentItems = items;
 
-    // 动态查询购物车第一个 item 对应 merchant 的税率
-    final cartMerchantId = items.first.purchasedMerchantId ?? items.first.merchantId ?? '';
-    final cartTaxRateAsync = ref.watch(taxRateByMerchantProvider(cartMerchantId));
-    final cartTaxRate = cartTaxRateAsync.valueOrNull ?? 0.0;
-
     // 每张券收 $0.99 service fee
     final serviceFee = items.length * 0.99;
     final subtotal = items.fold<double>(0, (sum, e) => sum + e.unitPrice);
-    final cartTax = (subtotal * cartTaxRate * 100).roundToDouble() / 100;
+
+    // 使用 cartTaxEstimateProvider 按每个 item 的 merchant metro_area 独立算税
+    // 后端落单时会用真实税率再算一次作为权威值，前端仅用于预览
+    final cartTaxAsync = ref.watch(cartTaxEstimateProvider(items));
+    final cartTax = cartTaxAsync.valueOrNull?.totalTax ?? _lastBackendTotalTax ?? 0.0;
+    final taxIsEstimate = _lastBackendTotalTax == null;
     final totalAmount = subtotal + serviceFee + cartTax;
 
     return Scaffold(
@@ -800,8 +834,11 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                     ],
                   ),
                 ),
-              const SizedBox(height: 16),
-              _buildBillingAddressForm(),
+              // 选已保存卡时账单地址跟随卡片，无需再显示选择表单
+              if (!_usingSavedCard) ...[
+                const SizedBox(height: 16),
+                _buildBillingAddressForm(),
+              ],
             ],
             const SizedBox(height: 20),
 
@@ -827,7 +864,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                   if (cartTax > 0) ...[
                     const SizedBox(height: 8),
                     _PriceRow(
-                      'Tax (${(cartTaxRate * 100).toStringAsFixed(2)}%)',
+                      taxIsEstimate ? 'Tax (est.)' : 'Tax',
                       '\$${cartTax.toStringAsFixed(2)}',
                     ),
                   ],
@@ -1300,8 +1337,11 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                         ],
                       ),
                     ),
-                  const SizedBox(height: 16),
-                  _buildBillingAddressForm(),
+                  // 选已保存卡时账单地址跟随卡片，无需再显示选择表单
+                  if (!_usingSavedCard) ...[
+                    const SizedBox(height: 16),
+                    _buildBillingAddressForm(),
+                  ],
                 ],
                 const SizedBox(height: 20),
 
@@ -1507,133 +1547,135 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
             style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
           ),
           const SizedBox(height: 10),
-          // 已保存卡片列表
-          ..._savedCards.map((card) {
+          // 已保存卡片列表（每张选中的卡片下方紧跟 CVV 输入框）
+          ..._savedCards.expand((card) {
             final isSelected = _usingSavedCard && _selectedSavedCard?.id == card.id;
-            return GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () {
-                setState(() {
-                  _selectedSavedCard = card;
-                  _usingSavedCard = true;
-                  _cardComplete = false; // 不再需要 CardField 完整
-                  _fillAddressFromCard(card);
-                });
-              },
-              child: Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                decoration: BoxDecoration(
-                  color: isSelected
-                      ? AppColors.primary.withValues(alpha: 0.05)
-                      : Colors.white,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: isSelected ? AppColors.primary : AppColors.surfaceVariant,
-                    width: isSelected ? 2 : 1,
+            return [
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  setState(() {
+                    _selectedSavedCard = card;
+                    _usingSavedCard = true;
+                    _cardComplete = false; // 不再需要 CardField 完整
+                    _fillAddressFromCard(card);
+                  });
+                },
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? AppColors.primary.withValues(alpha: 0.05)
+                        : Colors.white,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: isSelected ? AppColors.primary : AppColors.surfaceVariant,
+                      width: isSelected ? 2 : 1,
+                    ),
                   ),
-                ),
-                child: Row(
-                  children: [
-                    // 选中圆圈
-                    Container(
-                      width: 20,
-                      height: 20,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: isSelected ? AppColors.primary : AppColors.textHint,
-                          width: 2,
-                        ),
-                      ),
-                      child: isSelected
-                          ? Center(
-                              child: Container(
-                                width: 10,
-                                height: 10,
-                                decoration: const BoxDecoration(
-                                  color: AppColors.primary,
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                            )
-                          : null,
-                    ),
-                    const SizedBox(width: 10),
-                    Icon(card.brandIcon, size: 22, color: AppColors.textSecondary),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        '${card.brandDisplayName} •••• ${card.last4}  (Expires ${card.expiryText})',
-                        style: const TextStyle(fontSize: 13, color: AppColors.textPrimary),
-                      ),
-                    ),
-                    if (card.isDefault)
+                  child: Row(
+                    children: [
+                      // 选中圆圈
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        width: 20,
+                        height: 20,
                         decoration: BoxDecoration(
-                          color: AppColors.primary.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: const Text(
-                          'Default',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.primary,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: isSelected ? AppColors.primary : AppColors.textHint,
+                            width: 2,
                           ),
                         ),
+                        child: isSelected
+                            ? Center(
+                                child: Container(
+                                  width: 10,
+                                  height: 10,
+                                  decoration: const BoxDecoration(
+                                    color: AppColors.primary,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                              )
+                            : null,
                       ),
-                  ],
+                      const SizedBox(width: 10),
+                      Icon(card.brandIcon, size: 22, color: AppColors.textSecondary),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          '${card.brandDisplayName} •••• ${card.last4}  (Expires ${card.expiryText})',
+                          style: const TextStyle(fontSize: 13, color: AppColors.textPrimary),
+                        ),
+                      ),
+                      if (card.isDefault)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: const Text(
+                            'Default',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ),
-            );
-          }),
-          // 选中已保存卡时显示 CVV 输入框
-          if (_usingSavedCard && _selectedSavedCard != null)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Row(
-                children: [
-                  const SizedBox(width: 30), // 与卡片信息对齐
-                  const Icon(Icons.lock_outline, size: 16, color: AppColors.textHint),
-                  const SizedBox(width: 8),
-                  SizedBox(
-                    width: 80,
-                    child: TextField(
-                      controller: _cvcCtrl,
-                      keyboardType: TextInputType.number,
-                      obscureText: true,
-                      maxLength: 4,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                      onChanged: (_) => setState(() {}),
-                      decoration: const InputDecoration(
-                        hintText: 'CVV',
-                        hintStyle: TextStyle(fontSize: 13, color: AppColors.textHint),
-                        counterText: '', // 隐藏字符计数
-                        isDense: true,
-                        contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                        border: OutlineInputBorder(),
-                        enabledBorder: OutlineInputBorder(
-                          borderSide: BorderSide(color: AppColors.surfaceVariant),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderSide: BorderSide(color: AppColors.primary),
+              // 选中的卡片下方紧跟 CVV 输入框
+              if (isSelected)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Row(
+                    children: [
+                      const SizedBox(width: 30), // 与卡片信息对齐
+                      const Icon(Icons.lock_outline, size: 16, color: AppColors.textHint),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        width: 80,
+                        child: TextField(
+                          controller: _cvcCtrl,
+                          keyboardType: TextInputType.number,
+                          obscureText: true,
+                          maxLength: 4,
+                          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                          onChanged: (_) => setState(() {}),
+                          decoration: const InputDecoration(
+                            hintText: 'CVV',
+                            hintStyle: TextStyle(fontSize: 13, color: AppColors.textHint),
+                            counterText: '', // 隐藏字符计数
+                            isDense: true,
+                            contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            border: OutlineInputBorder(),
+                            enabledBorder: OutlineInputBorder(
+                              borderSide: BorderSide(color: AppColors.surfaceVariant),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderSide: BorderSide(color: AppColors.primary),
+                            ),
+                          ),
+                          style: const TextStyle(fontSize: 14, letterSpacing: 2),
                         ),
                       ),
-                      style: const TextStyle(fontSize: 14, letterSpacing: 2),
-                    ),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          'Required for security',
+                          style: TextStyle(fontSize: 11, color: AppColors.textHint),
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  const Expanded(
-                    child: Text(
-                      'Required for security',
-                      style: TextStyle(fontSize: 11, color: AppColors.textHint),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+                ),
+            ];
+          }),
           // "Use a new card" 选项
           GestureDetector(
             behavior: HitTestBehavior.opaque,

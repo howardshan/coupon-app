@@ -28,7 +28,7 @@ class CartRepository {
       max_per_account,
       stock_limit,
       total_sold,
-      merchants(id, name)
+      merchants(id, name, metro_area)
     )
   ''';
 

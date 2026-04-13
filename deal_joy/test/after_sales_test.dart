@@ -39,7 +39,7 @@ void main() {
       reasonCode: 'bad_experience',
       reasonDetail: 'Customer reported cold food.',
       refundAmount: 12.5,
-      timeline: const [
+      timeline: [
         AfterSalesTimelineEntry(
           status: 'submitted',
           actor: 'user',

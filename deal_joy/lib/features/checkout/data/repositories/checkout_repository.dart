@@ -62,6 +62,10 @@ class CheckoutRepository {
     String? savedPaymentMethodId, // 已保存卡的 PM ID
     String? savedCardCvc, // 已保存卡重新输入的 CVV
     bool saveCard = false, // 是否保存新卡片供下次使用
+    // create-payment-intent 返回后的回调，用于把后端权威税费金额同步给 UI
+    // 签名：(subtotal, serviceFee, totalTax, totalAmount)
+    void Function(double subtotal, double serviceFee, double totalTax, double totalAmount)?
+        onPaymentBreakdown,
   }) async {
     if (userId.isEmpty) {
       throw const PaymentException('User not authenticated', code: 'unauthenticated');
@@ -95,6 +99,9 @@ class CheckoutRepository {
     final subtotal = (piResponse['subtotal'] as num?)?.toDouble() ?? 0.0;
     final totalAmount = (piResponse['totalAmount'] as num?)?.toDouble() ?? 0.0;
     final totalTax = (piResponse['totalTax'] as num?)?.toDouble() ?? 0.0;
+
+    // 通知 UI 最终权威金额（用于刷新 Tax 行和 Total 行，以便 Stripe PaymentSheet 弹出前 UI 值一致）
+    onPaymentBreakdown?.call(subtotal, serviceFeeTotal, totalTax, totalAmount);
 
     // 检查 Store Credit 是否全额覆盖（后端返回特殊标记）
     final fullyCovered = piResponse['fullyCoveredByCredit'] as bool? ?? false;
@@ -173,6 +180,9 @@ class CheckoutRepository {
     String? savedPaymentMethodId, // 已保存卡的 PM ID
     String? savedCardCvc, // 已保存卡重新输入的 CVV
     bool saveCard = false, // 是否保存新卡片供下次使用
+    // create-payment-intent 返回后的回调，用于把后端权威税费金额同步给 UI
+    void Function(double subtotal, double serviceFee, double totalTax, double totalAmount)?
+        onPaymentBreakdown,
   }) async {
     if (userId.isEmpty) {
       throw const PaymentException('User not authenticated', code: 'unauthenticated');
@@ -199,6 +209,9 @@ class CheckoutRepository {
     final serviceFeeTotal = (piResponse['serviceFee'] as num?)?.toDouble() ?? 0.99;
     final subtotal = (piResponse['subtotal'] as num?)?.toDouble() ?? unitPrice * quantity;
     final singleTotalTax = (piResponse['totalTax'] as num?)?.toDouble() ?? 0.0;
+
+    // 通知 UI 最终权威金额
+    onPaymentBreakdown?.call(subtotal, serviceFeeTotal, singleTotalTax, totalAmount);
 
     // 检查 Store Credit 是否全额覆盖
     final fullyCovered = piResponse['fullyCoveredByCredit'] as bool? ?? false;

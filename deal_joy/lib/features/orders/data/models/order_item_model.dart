@@ -105,11 +105,17 @@ class OrderItemModel {
   final String? couponStatus;
   final DateTime? couponExpiresAt;
 
-  /// 单价（不含 service fee）
+  /// 单价（不含 service fee、不含税）
   final double unitPrice;
 
   /// service fee 金额
   final double serviceFee;
+
+  /// 税额（快照，按购买时 merchant.metro_area 对应税率计算）
+  final double taxAmount;
+
+  /// 税率快照（如 0.0825 表示 8.25%）
+  final double? taxRate;
 
   /// 购买时关联的商家 ID 快照
   final String? purchasedMerchantId;
@@ -182,6 +188,8 @@ class OrderItemModel {
     this.couponExpiresAt,
     required this.unitPrice,
     required this.serviceFee,
+    this.taxAmount = 0.0,
+    this.taxRate,
     this.purchasedMerchantId,
     this.purchasedMerchantName,
     this.applicableStoreIds = const [],
@@ -329,6 +337,8 @@ class OrderItemModel {
           : null,
       unitPrice: (pick<num>('unit_price', 'unitPrice'))?.toDouble() ?? 0.0,
       serviceFee: (pick<num>('service_fee', 'serviceFee'))?.toDouble() ?? 0.0,
+      taxAmount: (pick<num>('tax_amount', 'taxAmount'))?.toDouble() ?? 0.0,
+      taxRate: (pick<num>('tax_rate', 'taxRate'))?.toDouble(),
       purchasedMerchantId: pick<String>('purchased_merchant_id', 'purchasedMerchantId'),
       purchasedMerchantName: pick<String>('purchased_merchant_name', 'purchasedMerchantName'),
       applicableStoreIds: applicableStoreIds,

@@ -552,16 +552,25 @@ class _UsedStatusSection extends StatelessWidget {
                       value: dateFmt.format(coupon.expiresAt.toLocal()),
                     ),
                   const SizedBox(height: 8),
-                  // 退款金额
+                  // 退款金额（含税）
                   _DetailRow(
                     icon: Icons.attach_money,
                     label: 'Refund Amount',
                     value: coupon.refundAmount != null
                         ? '\$${coupon.refundAmount!.toStringAsFixed(2)}'
                         : coupon.unitPrice != null
-                            ? '\$${coupon.unitPrice!.toStringAsFixed(2)}'
+                            ? '\$${(coupon.unitPrice! + coupon.taxAmount).toStringAsFixed(2)}'
                             : 'N/A',
                   ),
+                  // 税费单独展示（老订单 tax = 0 时隐藏）
+                  if (coupon.taxAmount > 0) ...[
+                    const SizedBox(height: 8),
+                    _DetailRow(
+                      icon: Icons.receipt_long_outlined,
+                      label: 'Including Tax',
+                      value: '\$${coupon.taxAmount.toStringAsFixed(2)}',
+                    ),
+                  ],
                   const SizedBox(height: 8),
                   // 退款去向
                   _DetailRow(
