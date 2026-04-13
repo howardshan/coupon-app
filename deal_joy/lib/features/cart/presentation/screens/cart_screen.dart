@@ -33,15 +33,22 @@ class _CartScreenState extends ConsumerState<CartScreen> {
     // 按 dealId 分组
     final groups = _groupByDeal(allItems);
     final allDealIds = groups.map((g) => g.first.dealId).toSet();
+    final unpurchasableDealIds = groups
+        .where((g) => g.first.isDealUnpurchasable)
+        .map((g) => g.first.dealId)
+        .toSet();
+    final purchasableDealIds =
+        allDealIds.difference(unpurchasableDealIds);
 
-    // 首次加载完成后默认全选
+    // 首次加载完成后默认只勾选仍可购买的 deal
     if (!_initialized && allItems.isNotEmpty) {
-      _selectedDealIds.addAll(allDealIds);
+      _selectedDealIds.addAll(purchasableDealIds);
       _initialized = true;
     }
 
-    // 清理已不存在的 dealId（删除后残留）
+    // 清理已不存在的 dealId；已过期的 deal 自动取消勾选
     _selectedDealIds.retainAll(allDealIds);
+    _selectedDealIds.removeWhere(unpurchasableDealIds.contains);
 
     // 计算选中项
     final selectedItems = allItems
@@ -51,8 +58,8 @@ class _CartScreenState extends ConsumerState<CartScreen> {
     final selectedPrice =
         selectedItems.fold(0.0, (sum, item) => sum + item.unitPrice);
     final selectedServiceFee = 0.99 * selectedCount;
-    final isAllSelected =
-        allDealIds.isNotEmpty && _selectedDealIds.length == allDealIds.length;
+    final isAllSelected = purchasableDealIds.isNotEmpty &&
+        purchasableDealIds.every(_selectedDealIds.contains);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -123,12 +130,16 @@ class _CartScreenState extends ConsumerState<CartScreen> {
                     itemBuilder: (context, index) {
                       final group = dataGroups[index];
                       final dealId = group.first.dealId;
-                      final isSelected = _selectedDealIds.contains(dealId);
+                      final unpurchasable = group.first.isDealUnpurchasable;
+                      final isSelected =
+                          !unpurchasable && _selectedDealIds.contains(dealId);
 
                       return _DealGroup(
                         items: group,
                         isSelected: isSelected,
+                        unpurchasable: unpurchasable,
                         onSelectionChanged: (selected) {
+                          if (unpurchasable) return;
                           setState(() {
                             if (selected) {
                               _selectedDealIds.add(dealId);
@@ -154,9 +165,9 @@ class _CartScreenState extends ConsumerState<CartScreen> {
                 onSelectAll: (selectAll) {
                   setState(() {
                     if (selectAll) {
-                      _selectedDealIds.addAll(allDealIds);
+                      _selectedDealIds.addAll(purchasableDealIds);
                     } else {
-                      _selectedDealIds.clear();
+                      _selectedDealIds.removeWhere(purchasableDealIds.contains);
                     }
                   });
                 },
@@ -254,11 +265,14 @@ class _EmptyCart extends StatelessWidget {
 class _DealGroup extends ConsumerWidget {
   final List<CartItemModel> items;
   final bool isSelected;
+  /// 已过期或下架：灰显、不可勾选、强调移除
+  final bool unpurchasable;
   final ValueChanged<bool> onSelectionChanged;
 
   const _DealGroup({
     required this.items,
     required this.isSelected,
+    required this.unpurchasable,
     required this.onSelectionChanged,
   });
 
@@ -288,8 +302,11 @@ class _DealGroup extends ConsumerWidget {
       },
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: unpurchasable ? AppColors.surfaceVariant.withValues(alpha: 0.5) : Colors.white,
           borderRadius: BorderRadius.circular(12),
+          border: unpurchasable
+              ? Border.all(color: Colors.orange.shade200, width: 1)
+              : null,
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.04),
@@ -302,16 +319,20 @@ class _DealGroup extends ConsumerWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 勾选框
+            // 勾选框（不可用 deal 禁用）
             GestureDetector(
-              onTap: () => onSelectionChanged(!isSelected),
+              onTap: unpurchasable ? null : () => onSelectionChanged(!isSelected),
               child: Padding(
                 padding: const EdgeInsets.only(right: 6, top: 20),
                 child: Icon(
-                  isSelected
-                      ? Icons.check_circle
-                      : Icons.radio_button_unchecked,
-                  color: isSelected ? AppColors.primary : AppColors.textHint,
+                  unpurchasable
+                      ? Icons.block
+                      : (isSelected
+                          ? Icons.check_circle
+                          : Icons.radio_button_unchecked),
+                  color: unpurchasable
+                      ? AppColors.textHint
+                      : (isSelected ? AppColors.primary : AppColors.textHint),
                   size: 20,
                 ),
               ),
@@ -336,14 +357,34 @@ class _DealGroup extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (unpurchasable) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      margin: const EdgeInsets.only(bottom: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade50,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        'No longer available',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.orange.shade900,
+                        ),
+                      ),
+                    ),
+                  ],
                   Text(
                     first.dealTitle,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
-                      color: AppColors.textPrimary,
+                      color: unpurchasable
+                          ? AppColors.textSecondary
+                          : AppColors.textPrimary,
                     ),
                   ),
                   const SizedBox(height: 4),
@@ -358,10 +399,11 @@ class _DealGroup extends ConsumerWidget {
                   // 单价
                   Text(
                     '\$${first.unitPrice.toStringAsFixed(2)}',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
-                      color: AppColors.primary,
+                      color:
+                          unpurchasable ? AppColors.textSecondary : AppColors.primary,
                     ),
                   ),
                 ],
@@ -380,13 +422,14 @@ class _DealGroup extends ConsumerWidget {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // 减少按钮
+                      // 减少 / 删除（不可用商品高亮删除入口）
                       _QtyBtn(
                         icon: quantity > 1
                             ? Icons.remove
                             : Icons.delete_outline,
                         color:
                             quantity > 1 ? AppColors.textPrimary : Colors.red,
+                        emphasize: unpurchasable && quantity <= 1,
                         onTap: () {
                           // 移除该 deal 组的最后一个 cart_item
                           ref
@@ -409,8 +452,24 @@ class _DealGroup extends ConsumerWidget {
                       // 增加按钮
                       _QtyBtn(
                         icon: Icons.add,
-                        color: AppColors.primary,
+                        color: unpurchasable
+                            ? AppColors.textHint
+                            : AppColors.primary,
                         onTap: () async {
+                          if (unpurchasable) {
+                            final ctx = context;
+                            if (ctx.mounted) {
+                              ScaffoldMessenger.of(ctx).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'This listing has ended and cannot be added.',
+                                  ),
+                                  behavior: SnackBarBehavior.floating,
+                                ),
+                              );
+                            }
+                            return;
+                          }
                           // 购物车中当前 deal 已有数量（含本组）
                           final cartCount = quantity; // quantity = items.length
                           final maxPerAccount = first.maxPerAccount;
@@ -503,21 +562,34 @@ class _QtyBtn extends StatelessWidget {
   final IconData icon;
   final Color color;
   final VoidCallback onTap;
+  /// 不可用商品时突出删除按钮
+  final bool emphasize;
 
-  const _QtyBtn(
-      {required this.icon, required this.color, required this.onTap});
+  const _QtyBtn({
+    required this.icon,
+    required this.color,
+    required this.onTap,
+    this.emphasize = false,
+  });
 
   @override
   Widget build(BuildContext context) {
+    Widget child = Container(
+      width: 32,
+      height: 32,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: emphasize ? Colors.red.shade50 : null,
+        border: emphasize
+            ? Border.all(color: Colors.red.shade400, width: 1.5)
+            : null,
+      ),
+      child: Icon(icon, size: 18, color: color),
+    );
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
-      child: Container(
-        width: 32,
-        height: 32,
-        decoration: const BoxDecoration(shape: BoxShape.circle),
-        child: Icon(icon, size: 18, color: color),
-      ),
+      child: child,
     );
   }
 }

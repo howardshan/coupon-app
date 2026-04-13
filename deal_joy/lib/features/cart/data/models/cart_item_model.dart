@@ -28,6 +28,10 @@ class CartItemModel {
   final int stockLimit;
   // 该 deal 全局已售出数量（由触发器维护，不受 RLS 限制）
   final int totalSold;
+  // 上架截止时间（join deals.expires_at，用于加车后过期检测）
+  final DateTime? dealExpiresAt;
+  // deals.is_active；下架后不可购买
+  final bool dealIsActive;
 
   const CartItemModel({
     required this.id,
@@ -46,7 +50,14 @@ class CartItemModel {
     this.maxPerAccount = -1,
     this.stockLimit = -1,
     this.totalSold = 0,
+    this.dealExpiresAt,
+    this.dealIsActive = true,
   });
+
+  /// 已过期或已下架，不可勾选结账（与 DealModel.isExpired 判定一致：当前时刻晚于 expires_at）
+  bool get isDealUnpurchasable =>
+      !dealIsActive ||
+      (dealExpiresAt != null && DateTime.now().isAfter(dealExpiresAt!));
 
   /// 从 Supabase 查询结果解析（含 deals join merchants 嵌套）
   factory CartItemModel.fromJson(Map<String, dynamic> json) {
@@ -84,6 +95,10 @@ class CartItemModel {
       maxPerAccount: deal['max_per_account'] as int? ?? -1,
       stockLimit: deal['stock_limit'] as int? ?? -1,
       totalSold: deal['total_sold'] as int? ?? 0,
+      dealExpiresAt: deal['expires_at'] != null
+          ? DateTime.tryParse(deal['expires_at'] as String? ?? '')
+          : null,
+      dealIsActive: deal['is_active'] as bool? ?? true,
     );
   }
 }
