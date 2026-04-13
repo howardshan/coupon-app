@@ -129,19 +129,6 @@ void main() {
       );
     });
 
-    test('revert() 成功后 state 重置为 AsyncData(null)', () async {
-      when(() => mockService.revertRedemption('coupon-uuid-001'))
-          .thenAnswer((_) async {});
-
-      await container
-          .read(scanNotifierProvider.notifier)
-          .revert('coupon-uuid-001');
-
-      expect(
-        container.read(scanNotifierProvider),
-        equals(const AsyncData<CouponInfo?>(null)),
-      );
-    });
   });
 
   // =============================================================

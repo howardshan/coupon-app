@@ -225,7 +225,7 @@ void main() {
       final redeemedAt = DateTime(2026, 3, 3, 14, 30, 0);
 
       // 直接测试成功页文字，不需要导航
-      // 注意：RedemptionSuccessPage 需要 ScanNotifier 用于 Undo/reset
+      // 注意：完整成功页需 ProviderScope + go_router；此处仅校验文案占位
       await tester.pumpWidget(
         ProviderScope(
           overrides: [

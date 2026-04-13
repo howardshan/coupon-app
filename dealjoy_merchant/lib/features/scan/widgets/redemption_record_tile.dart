@@ -1,6 +1,5 @@
 // 单条核销记录组件
 // 显示: Deal名/用户名/券码/核销时间/已撤销状态
-// 可选: 10分钟内显示 Undo 按钮
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -10,18 +9,15 @@ class RedemptionRecordTile extends StatelessWidget {
   const RedemptionRecordTile({
     super.key,
     required this.record,
-    this.onUndo,
   });
 
   final RedemptionRecord record;
 
-  /// 撤销回调，null 表示不显示 Undo 按钮
-  final VoidCallback? onUndo;
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final timeStr = DateFormat('MMM d, yyyy h:mm a').format(record.redeemedAt.toLocal());
+    final timeStr =
+        DateFormat('MMM d, yyyy h:mm a').format(record.redeemedAt.toLocal());
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -33,7 +29,6 @@ class RedemptionRecordTile extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 左侧图标
             Container(
               width: 40,
               height: 40,
@@ -55,12 +50,10 @@ class RedemptionRecordTile extends StatelessWidget {
             ),
             const SizedBox(width: 12),
 
-            // 中间信息区域
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Deal 名称 + 撤销 badge
                   Row(
                     children: [
                       Expanded(
@@ -75,7 +68,6 @@ class RedemptionRecordTile extends StatelessWidget {
                       ),
                       if (record.isReverted) ...[
                         const SizedBox(width: 8),
-                        // 已撤销 badge
                         Container(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 8, vertical: 2),
@@ -96,7 +88,6 @@ class RedemptionRecordTile extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
 
-                  // 用户名
                   Text(
                     record.userName,
                     style: theme.textTheme.bodySmall?.copyWith(
@@ -105,7 +96,6 @@ class RedemptionRecordTile extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
 
-                  // 券码 — 等宽字体便于阅读
                   Text(
                     record.couponCode,
                     style: theme.textTheme.bodySmall?.copyWith(
@@ -116,30 +106,12 @@ class RedemptionRecordTile extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
 
-                  // 核销时间
                   Text(
                     timeStr,
                     style: theme.textTheme.labelSmall?.copyWith(
                       color: Colors.grey.shade400,
                     ),
                   ),
-
-                  // Undo 按钮（10分钟内且未撤销）
-                  if (record.canRevert && onUndo != null) ...[
-                    const SizedBox(height: 6),
-                    GestureDetector(
-                      onTap: onUndo,
-                      child: Text(
-                        'Undo Redemption',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: Colors.red.shade400,
-                          fontWeight: FontWeight.w600,
-                          decoration: TextDecoration.underline,
-                          decorationColor: Colors.red.shade400,
-                        ),
-                      ),
-                    ),
-                  ],
                 ],
               ),
             ),
