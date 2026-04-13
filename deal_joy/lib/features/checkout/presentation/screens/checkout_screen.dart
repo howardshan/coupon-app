@@ -93,6 +93,9 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   // 支付处理中
   bool _isProcessing = false;
 
+  /// 购物车模式：已从服务端校验 deal 仍可购买后才展示结账 UI
+  bool _cartEntryValidated = false;
+
   // 账单地址 — 多地址管理
   List<BillingAddressModel> _savedAddresses = [];
   String? _selectedAddressId;       // 选中的已保存地址 ID，null 表示新增模式
@@ -119,6 +122,49 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   // 新卡支付时的保存选项
   bool _saveCardForFuture = false;  // 勾选：保存卡片供下次使用
   bool _setAsDefaultCard = false;   // 勾选：设为默认支付方式
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.isCartMode) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _validateCartDealsOnEntry());
+    } else {
+      _cartEntryValidated = true;
+    }
+  }
+
+  /// 防止加车后过期的 deal 仍进入结账页
+  Future<void> _validateCartDealsOnEntry() async {
+    final items = widget.cartItems;
+    if (items == null || items.isEmpty) {
+      if (mounted) setState(() => _cartEntryValidated = true);
+      return;
+    }
+    final bad =
+        await ref.read(checkoutRepositoryProvider).validateCartDealsPurchasable(items);
+    if (!mounted) return;
+    if (bad.isNotEmpty) {
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Unable to checkout'),
+          content: Text(
+            'These listings are no longer available for purchase:\n\n• ${bad.join('\n• ')}',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+      if (mounted) context.pop();
+      return;
+    }
+    setState(() => _cartEntryValidated = true);
+  }
 
   @override
   void dispose() {
@@ -341,6 +387,31 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     try {
       final repo = ref.read(checkoutRepositoryProvider);
       final items = _currentItems ?? widget.cartItems!;
+      // 用户在结账页停留过久时 listing 可能刚过期，支付前再校验一次
+      if (widget.isCartMode) {
+        final bad = await repo.validateCartDealsPurchasable(items);
+        if (bad.isNotEmpty) {
+          if (mounted) {
+            await showDialog<void>(
+              context: context,
+              barrierDismissible: false,
+              builder: (ctx) => AlertDialog(
+                title: const Text('Unable to complete purchase'),
+                content: Text(
+                  'These listings are no longer available:\n\n• ${bad.join('\n• ')}',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    child: const Text('OK'),
+                  ),
+                ],
+              ),
+            );
+          }
+          return;
+        }
+      }
       final cartItemIds = items.map((e) => e.id).where((id) => id.isNotEmpty).toList();
 
       // 计算 Store Credit 实际抵扣金额
@@ -624,6 +695,13 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     }
     // 统一入口：Buy Now 也走 cart checkout（把单 deal 转成 cart items）
     if (widget.isCartMode) {
+      if (!_cartEntryValidated) {
+        return Scaffold(
+          backgroundColor: AppColors.background,
+          appBar: AppBar(title: const Text('Checkout')),
+          body: const Center(child: CircularProgressIndicator()),
+        );
+      }
       return _buildCartCheckout();
     }
     // Buy Now 模式：用 dealDetailProvider 加载后转为 cart items
@@ -644,6 +722,8 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
           merchantId: deal.merchant?.id,
           maxPerAccount: deal.maxPerAccount,
           createdAt: DateTime.now(),
+          dealExpiresAt: deal.expiresAt,
+          dealIsActive: true,
         ));
         return _buildCartCheckout(overrideItems: cartItems);
       },

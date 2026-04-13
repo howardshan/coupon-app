@@ -52,6 +52,48 @@ class CheckoutRepository {
   /// 2. 弹出 Stripe 支付表单
   /// 3. 调 create-order-v3 Edge Function 写入订单
   /// 4. 返回 [CheckoutResult]
+  /// 购物车结账入口：检查 deal 是否仍上架且未过 listing 截止时间；返回不可购买的标题（按 deal 去重）
+  Future<List<String>> validateCartDealsPurchasable(
+    List<CartItemModel> items,
+  ) async {
+    if (items.isEmpty) return [];
+    final dealIds = items.map((e) => e.dealId).toSet().toList();
+    final res = await _client
+        .from('deals')
+        .select('id, title, expires_at, is_active')
+        .inFilter('id', dealIds);
+    final rows = (res as List)
+        .map((e) => e as Map<String, dynamic>)
+        .toList();
+    final byId = <String, Map<String, dynamic>>{};
+    for (final r in rows) {
+      final id = r['id'] as String?;
+      if (id != null && id.isNotEmpty) byId[id] = r;
+    }
+    final bad = <String>[];
+    final seen = <String>{};
+    for (final id in dealIds) {
+      if (id.isEmpty) continue;
+      final row = byId[id];
+      if (row == null) {
+        final match = items.where((i) => i.dealId == id).firstOrNull;
+        final title = match?.dealTitle ?? '';
+        if (seen.add(id)) bad.add(title.isNotEmpty ? title : 'Deal');
+        continue;
+      }
+      final active = row['is_active'] as bool? ?? false;
+      final expStr = row['expires_at'] as String?;
+      final exp =
+          expStr != null && expStr.isNotEmpty ? DateTime.tryParse(expStr) : null;
+      final expired = exp != null && DateTime.now().isAfter(exp);
+      if (!active || expired) {
+        final title = row['title'] as String? ?? '';
+        if (seen.add(id)) bad.add(title.isNotEmpty ? title : 'Deal');
+      }
+    }
+    return bad;
+  }
+
   Future<CheckoutResult> checkoutCart({
     required String userId,
     required List<CartItemModel> cartItems,

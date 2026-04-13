@@ -28,6 +28,8 @@ class CartRepository {
       max_per_account,
       stock_limit,
       total_sold,
+      expires_at,
+      is_active,
       merchants(id, name)
     )
   ''';
