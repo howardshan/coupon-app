@@ -88,6 +88,14 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
 
   // 当前渲染的 items（Buy Now 模式下由 deal 转换生成）
   List<CartItemModel>? _currentItems;
+
+  // Buy Now 模式专用缓存：用于稳定 cartTaxEstimateProvider 的 key
+  // FutureProvider.family 用 == 比较参数；List 默认引用相等，每次 build 都是新实例。
+  // 只有当 deal 或 quantity 真正变化时才重建这个 List，确保 provider 能正常缓存。
+  List<CartItemModel>? _cachedBuyNowItems;
+  String? _cachedBuyNowDealId;
+  double? _cachedBuyNowPrice;
+  int? _cachedBuyNowQuantity;
   bool _storeCreditLoaded = false;
 
   // 支付处理中
@@ -663,23 +671,33 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     final dealAsync = ref.watch(dealDetailProvider(widget.dealId!));
     return dealAsync.when(
       data: (deal) {
-        // 将 deal 转为 cart item 格式（带 metro_area 给税费预览用）
-        final cartItems = List.generate(_quantity, (_) => CartItemModel(
-          id: '',
-          userId: '',
-          dealId: deal.id,
-          unitPrice: deal.discountPrice,
-          purchasedMerchantId: widget.purchasedMerchantId,
-          dealTitle: deal.title,
-          dealImageUrl: deal.imageUrls.isNotEmpty ? deal.imageUrls.first : '',
-          originalPrice: deal.originalPrice,
-          merchantName: deal.merchant?.name ?? '',
-          merchantId: deal.merchant?.id,
-          merchantMetroArea: deal.merchant?.metroArea,
-          maxPerAccount: deal.maxPerAccount,
-          createdAt: DateTime.now(),
-        ));
-        return _buildCartCheckout(overrideItems: cartItems);
+        // 只有当 deal 或 quantity 真正变化时才重建 List，避免每次 build 创建新实例
+        // 导致 cartTaxEstimateProvider(items) 因引用不等而永远不命中缓存
+        final needsRebuild = _cachedBuyNowItems == null ||
+            _cachedBuyNowDealId != deal.id ||
+            _cachedBuyNowPrice != deal.discountPrice ||
+            _cachedBuyNowQuantity != _quantity;
+        if (needsRebuild) {
+          _cachedBuyNowDealId = deal.id;
+          _cachedBuyNowPrice = deal.discountPrice;
+          _cachedBuyNowQuantity = _quantity;
+          _cachedBuyNowItems = List.generate(_quantity, (_) => CartItemModel(
+            id: '',
+            userId: '',
+            dealId: deal.id,
+            unitPrice: deal.discountPrice,
+            purchasedMerchantId: widget.purchasedMerchantId,
+            dealTitle: deal.title,
+            dealImageUrl: deal.imageUrls.isNotEmpty ? deal.imageUrls.first : '',
+            originalPrice: deal.originalPrice,
+            merchantName: deal.merchant?.name ?? '',
+            merchantId: deal.merchant?.id,
+            merchantMetroArea: deal.merchant?.metroArea,
+            maxPerAccount: deal.maxPerAccount,
+            createdAt: DateTime.now(),
+          ));
+        }
+        return _buildCartCheckout(overrideItems: _cachedBuyNowItems!);
       },
       loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
       error: (e, _) => Scaffold(
