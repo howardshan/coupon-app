@@ -13,6 +13,16 @@ class RealtimeService {
 
   RealtimeService(this._ref);
 
+  /// 核销/退款等会更新 DB，券详情页使用 [couponDetailProvider]；仅 invalidate 列表会导致详情仍显示旧 QR
+  void _invalidateCouponDetailIfPresent(dynamic row, {required String idKey}) {
+    if (row is! Map) return;
+    final map = Map<String, dynamic>.from(row);
+    final raw = map[idKey];
+    final id = raw?.toString().trim();
+    if (id == null || id.isEmpty) return;
+    _ref.invalidate(couponDetailProvider(id));
+  }
+
   /// 开始监听（用户登录成功后调用）
   void startListening(String userId) {
     // 先取消已有订阅，避免重复
@@ -29,6 +39,10 @@ class RealtimeService {
             debugPrint('[Realtime] order_items updated: ${payload.newRecord}');
             _ref.invalidate(userOrdersProvider);
             _ref.invalidate(userCouponsProvider);
+            _invalidateCouponDetailIfPresent(
+              payload.newRecord,
+              idKey: 'coupon_id',
+            );
           },
         )
         .onPostgresChanges(
@@ -36,9 +50,13 @@ class RealtimeService {
           schema: 'public',
           table: 'coupons',
           callback: (payload) {
-            // coupons 状态变化（如退款）→ 刷新券列表
+            // coupons 状态变化（如退款、核销）→ 刷新券列表与当前券详情
             debugPrint('[Realtime] coupons updated: ${payload.newRecord}');
             _ref.invalidate(userCouponsProvider);
+            _invalidateCouponDetailIfPresent(
+              payload.newRecord,
+              idKey: 'id',
+            );
           },
         )
         .onPostgresChanges(
