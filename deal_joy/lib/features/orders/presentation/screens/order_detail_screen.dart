@@ -105,6 +105,38 @@ class _UnusedQrSheetState extends ConsumerState<_UnusedQrSheet> {
     super.dispose();
   }
 
+  /// 与 QR 内容区一致的外壳，避免 isScrollControlled 下 Center 撑满整屏
+  Widget _buildSheetChrome({
+    required Widget child,
+    String? title,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 40),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: AppColors.textHint,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: 16),
+          if (title != null) ...[
+            Text(
+              title,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 16),
+          ],
+          child,
+        ],
+      ),
+    );
+  }
+
   /// 根据未使用 order_item id 集合变化检测核销：全屏成功 → 多张时关闭后再打开 QR
   void _onDealItemsUpdated({
     required List<OrderItemModel> dealItems,
@@ -350,30 +382,36 @@ class _UnusedQrSheetState extends ConsumerState<_UnusedQrSheet> {
 
         if (unusedItems.isEmpty) {
           if (_redemptionSuccessFlowScheduled) {
-            return const Padding(
-              padding: EdgeInsets.fromLTRB(24, 48, 24, 48),
-              child: Center(
-                child: SizedBox(
-                  height: 48,
-                  width: 48,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+            return _buildSheetChrome(
+              title: 'Scan to Redeem',
+              child: const SizedBox(
+                height: 200,
+                child: Center(
+                  child: SizedBox(
+                    height: 48,
+                    width: 48,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
                 ),
               ),
             );
           }
-          return const Padding(
-            padding: EdgeInsets.fromLTRB(24, 48, 24, 48),
-            child: Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 16),
-                  Text(
-                    'Updating…',
-                    style: TextStyle(color: AppColors.textSecondary),
-                  ),
-                ],
+          return _buildSheetChrome(
+            title: 'Scan to Redeem',
+            child: const SizedBox(
+              height: 200,
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 16),
+                    Text(
+                      'Updating…',
+                      style: TextStyle(color: AppColors.textSecondary),
+                    ),
+                  ],
+                ),
               ),
             ),
           );
@@ -381,39 +419,45 @@ class _UnusedQrSheetState extends ConsumerState<_UnusedQrSheet> {
 
         return _buildQrBody(context, unusedItems);
       },
-      loading: () => const Padding(
-        padding: EdgeInsets.all(48),
-        child: Center(child: CircularProgressIndicator()),
+      loading: () => _buildSheetChrome(
+        title: 'Scan to Redeem',
+        child: const SizedBox(
+          height: 320,
+          child: Center(child: CircularProgressIndicator()),
+        ),
       ),
-      error: (e, _) => Padding(
-        padding: const EdgeInsets.fromLTRB(24, 24, 24, 40),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Failed to load voucher',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              e.toString(),
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                  fontSize: 13, color: AppColors.textSecondary),
-            ),
-            const SizedBox(height: 16),
-            TextButton(
-              onPressed: () {
-                ref.invalidate(userCouponsProvider);
-                if (aggKey != null) {
-                  ref.invalidate(aggregatedDealVoucherDetailProvider(aggKey));
-                } else {
-                  ref.invalidate(userOrderDetailProvider(widget.orderId));
-                }
-              },
-              child: const Text('Retry'),
-            ),
-          ],
+      error: (e, _) => _buildSheetChrome(
+        title: 'Scan to Redeem',
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Failed to load voucher',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                e.toString(),
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    fontSize: 13, color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 16),
+              TextButton(
+                onPressed: () {
+                  ref.invalidate(userCouponsProvider);
+                  if (aggKey != null) {
+                    ref.invalidate(aggregatedDealVoucherDetailProvider(aggKey));
+                  } else {
+                    ref.invalidate(userOrderDetailProvider(widget.orderId));
+                  }
+                },
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
         ),
       ),
     );
