@@ -1,5 +1,5 @@
 // 核销历史记录页
-// 分页列表，顶部筛选（日期范围 + Deal），支持撤销（10分钟内）
+// 分页列表，顶部筛选（日期范围 + Deal）
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -106,12 +106,7 @@ class RedemptionHistoryPage extends ConsumerWidget {
             }
 
             final record = records[index];
-            return RedemptionRecordTile(
-              record: record,
-              onUndo: record.canRevert
-                  ? () => _handleUndo(context, ref, record)
-                  : null,
-            );
+            return RedemptionRecordTile(record: record);
           },
         ),
       ),
@@ -189,65 +184,6 @@ class RedemptionHistoryPage extends ConsumerWidget {
     );
   }
 
-  /// 处理撤销按钮点击
-  void _handleUndo(
-    BuildContext context,
-    WidgetRef ref,
-    RedemptionRecord record,
-  ) {
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text(
-          'Undo Redemption',
-          style: TextStyle(fontWeight: FontWeight.w600),
-        ),
-        content: Text(
-          'Are you sure you want to undo the redemption of "${record.dealTitle}" for ${record.userName}?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(ctx);
-              try {
-                await ref
-                    .read(redemptionHistoryProvider.notifier)
-                    .revert(record.couponId);
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Redemption reverted successfully.'),
-                      backgroundColor: Color(0xFF34C759),
-                      behavior: SnackBarBehavior.floating,
-                    ),
-                  );
-                }
-              } on ScanException catch (e) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(e.message),
-                      backgroundColor: Colors.red.shade600,
-                      behavior: SnackBarBehavior.floating,
-                    ),
-                  );
-                }
-              }
-            },
-            child: Text(
-              'Undo',
-              style: TextStyle(color: Colors.red.shade500),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 // =============================================================

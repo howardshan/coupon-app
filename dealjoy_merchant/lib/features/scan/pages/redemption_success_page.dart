@@ -1,12 +1,10 @@
 // 核销成功页
-// 大 checkmark 动画 + 核销时间 + Scan Another 按钮
-// P1: 10分钟内显示 Undo Redemption 按钮
+// 大 checkmark 动画 + 核销时间 + Scan Another / 回仪表盘
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
-import '../models/coupon_info.dart';
 import '../providers/scan_provider.dart';
 import '../../orders/providers/orders_provider.dart';
 
@@ -20,6 +18,7 @@ class RedemptionSuccessPage extends ConsumerStatefulWidget {
 
   final DateTime redeemedAt;
   final String dealTitle;
+  /// 保留参数供路由/深链兼容，当前页不再发起撤销等请求
   final String couponId;
 
   @override
@@ -30,12 +29,9 @@ class RedemptionSuccessPage extends ConsumerStatefulWidget {
 class _RedemptionSuccessPageState
     extends ConsumerState<RedemptionSuccessPage>
     with SingleTickerProviderStateMixin {
-  // 动画控制器 — checkmark 缩放进场
   late final AnimationController _animController;
   late final Animation<double> _scaleAnim;
   late final Animation<double> _fadeAnim;
-
-  bool _isReverting = false;
 
   @override
   void initState() {
@@ -55,9 +51,7 @@ class _RedemptionSuccessPageState
       curve: const Interval(0.3, 1.0, curve: Curves.easeIn),
     );
 
-    // 页面进入时播放动画
     _animController.forward();
-    // 避免在 initState 里直接触发 provider 依赖，改为首帧后刷新列表
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       ref.invalidate(ordersNotifierProvider);
@@ -70,55 +64,10 @@ class _RedemptionSuccessPageState
     super.dispose();
   }
 
-  /// 撤销核销（P1）
-  Future<void> _undoRedemption() async {
-    setState(() => _isReverting = true);
-    try {
-      await ref
-          .read(scanNotifierProvider.notifier)
-          .revert(widget.couponId);
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Redemption reverted successfully.'),
-          backgroundColor: Color(0xFF34C759),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-      // 撤销成功后回到扫码页
-      context.go('/scan');
-    } on ScanException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.message),
-          backgroundColor: Colors.red.shade600,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Failed to revert. Please try again.'),
-          backgroundColor: Colors.red.shade600,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _isReverting = false);
-    }
-  }
-
-  /// 是否仍在10分钟内（Undo 按钮可见条件）
-  bool get _canUndo {
-    return DateTime.now().difference(widget.redeemedAt).inMinutes < 10;
-  }
-
   @override
   Widget build(BuildContext context) {
-    final timeStr = DateFormat('MMM d, yyyy h:mm a').format(widget.redeemedAt.toLocal());
+    final timeStr =
+        DateFormat('MMM d, yyyy h:mm a').format(widget.redeemedAt.toLocal());
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -130,7 +79,6 @@ class _RedemptionSuccessPageState
             children: [
               const Spacer(flex: 2),
 
-              // 大 checkmark 动画
               ScaleTransition(
                 scale: _scaleAnim,
                 child: Container(
@@ -156,7 +104,6 @@ class _RedemptionSuccessPageState
               ),
               const SizedBox(height: 32),
 
-              // 成功标题
               FadeTransition(
                 opacity: _fadeAnim,
                 child: const Text(
@@ -171,7 +118,6 @@ class _RedemptionSuccessPageState
               ),
               const SizedBox(height: 12),
 
-              // Deal 名称
               FadeTransition(
                 opacity: _fadeAnim,
                 child: Text(
@@ -188,7 +134,6 @@ class _RedemptionSuccessPageState
               ),
               const SizedBox(height: 8),
 
-              // 核销时间
               FadeTransition(
                 opacity: _fadeAnim,
                 child: Text(
@@ -203,7 +148,6 @@ class _RedemptionSuccessPageState
 
               const Spacer(flex: 2),
 
-              // Scan Another 按钮
               SizedBox(
                 width: double.infinity,
                 height: 52,
@@ -232,7 +176,6 @@ class _RedemptionSuccessPageState
               ),
               const SizedBox(height: 12),
 
-              // 返回仪表盘（不依赖底部 Tab）
               SizedBox(
                 width: double.infinity,
                 height: 52,
@@ -258,30 +201,6 @@ class _RedemptionSuccessPageState
                   ),
                 ),
               ),
-              const SizedBox(height: 12),
-
-              // Undo Redemption 按钮（P1: 10分钟内显示）
-              if (_canUndo)
-                TextButton(
-                  onPressed: _isReverting ? null : _undoRedemption,
-                  child: _isReverting
-                      ? SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.red.shade400,
-                          ),
-                        )
-                      : Text(
-                          'Undo Redemption',
-                          style: TextStyle(
-                            fontSize: 15,
-                            color: Colors.red.shade400,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                ),
 
               const SizedBox(height: 24),
             ],
