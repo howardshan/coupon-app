@@ -158,8 +158,29 @@ Deno.serve(async (req) => {
 
     let stripeCustomerId: string | null = userData?.stripe_customer_id ?? null;
 
+    // 校验 DB 里存的 customer 是否在当前 Stripe 账户下真实存在
+    // 切换 Stripe 账户后旧的 cus_xxx 在新账户查不到，会抛 resource_missing，此时自动重建
+    if (stripeCustomerId) {
+      try {
+        const existing = await stripe.customers.retrieve(stripeCustomerId);
+        // retrieve 被删除的 customer 时返回 { deleted: true }，也视作无效
+        if ((existing as { deleted?: boolean }).deleted) {
+          stripeCustomerId = null;
+        }
+      } catch (err) {
+        const code = (err as { code?: string }).code;
+        if (code === 'resource_missing') {
+          console.log(`Stripe customer ${stripeCustomerId} 在当前账户不存在，重新创建`);
+          stripeCustomerId = null;
+        } else {
+          // 其他错误（网络、权限等）直接抛出
+          throw err;
+        }
+      }
+    }
+
     if (!stripeCustomerId) {
-      // 首次支付：在 Stripe 创建 Customer 并保存到 DB
+      // 首次支付 / 旧 customer 失效：在 Stripe 创建 Customer 并保存到 DB
       const customer = await stripe.customers.create({
         email: userData?.email ?? undefined,
         name: userData?.full_name ?? undefined,
@@ -356,7 +377,7 @@ Deno.serve(async (req) => {
     // 查询 merchants 的 metro_area、stripe_account_id、commission_rate
     const { data: merchantsData } = await supabase
       .from('merchants')
-      .select('id, metro_area, stripe_account_id, commission_rate')
+      .select('id, metro_area, stripe_account_id, stripe_account_status, commission_rate')
       .in('id', merchantIds);
 
     // 查询全局 commission_rate（兜底，默认 15%）
@@ -373,7 +394,8 @@ Deno.serve(async (req) => {
     const merchantCommissionRateMap = new Map<string, number>();       // 有效 commission_rate
     for (const m of (merchantsData ?? [])) {
       if (m.metro_area) merchantMetroMap.set(m.id, m.metro_area);
-      merchantConnectMap.set(m.id, m.stripe_account_id ?? null);
+      // 只有 stripe_account_status === 'connected' 的账户才路由，避免付款分账到未完成入驻的子账户
+      merchantConnectMap.set(m.id, m.stripe_account_status === 'connected' ? (m.stripe_account_id ?? null) : null);
       // 商家专属费率优先；NULL 则用全局默认
       merchantCommissionRateMap.set(
         m.id,

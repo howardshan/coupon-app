@@ -477,6 +477,67 @@ async function handleDisputeCreated(dispute: Stripe.Dispute): Promise<void> {
   }
 }
 
+// ─── Connect 子账户事件处理 ───────────────────────────────────────────────────
+
+/**
+ * account.updated — 商家 Connect 账户状态变更
+ * 当商家完成 Stripe Connect 入驻（或状态变更）时自动触发
+ * 将 stripe_account_status 同步到 merchants 表
+ */
+async function handleAccountUpdated(account: Stripe.Account): Promise<void> {
+  const accountId = account.id;
+  const chargesEnabled = account.charges_enabled ?? false;
+  const payoutsEnabled = account.payouts_enabled ?? false;
+  const disabledReason = account.requirements?.disabled_reason ?? null;
+
+  // 判断入驻完成状态
+  const status = (chargesEnabled && payoutsEnabled)
+    ? 'connected'
+    : disabledReason
+    ? 'restricted'
+    : 'pending';
+
+  console.log(`[account.updated] acct=${accountId} charges=${chargesEnabled} payouts=${payoutsEnabled} → status=${status}`);
+
+  const { error } = await supabase
+    .from('merchants')
+    .update({
+      stripe_account_status: status,
+      stripe_account_email: account.email ?? null,
+    })
+    .eq('stripe_account_id', accountId);
+
+  if (error) {
+    console.error(`[account.updated] 更新 merchants 失败 acct=${accountId}:`, error);
+    // 不抛出：状态同步失败不应阻断 webhook 响应（Stripe 否则会重试）
+  }
+}
+
+/**
+ * payout.paid — 商家 Connect 账户成功出金到银行
+ * 记录日志，可选更新 withdrawals 表状态
+ */
+async function handlePayoutPaid(payout: Stripe.Payout, connectedAccountId: string): Promise<void> {
+  const amount = payout.amount / 100;
+  console.log(`[payout.paid] acct=${connectedAccountId} amount=${amount} payout=${payout.id}`);
+
+  // 若 withdrawal 记录存储了 stripe_transfer_id，可在此更新状态为 payout_completed
+  // 暂时只记录日志，后续按需扩展
+}
+
+/**
+ * payout.failed — 商家 Connect 账户出金失败
+ * 记录告警，TODO：可发送邮件/Slack 通知运营团队
+ */
+async function handlePayoutFailed(payout: Stripe.Payout, connectedAccountId: string): Promise<void> {
+  const amount = payout.amount / 100;
+  console.error(
+    `[payout.failed] acct=${connectedAccountId} amount=${amount} payout=${payout.id}` +
+    ` reason=${payout.failure_message ?? payout.failure_code ?? 'unknown'}`,
+  );
+  // TODO: 生产环境在此处发送运营告警（邮件/Slack）
+}
+
 // ─── 主处理器 ────────────────────────────────────────────────────────────────
 Deno.serve(async (req) => {
   // 处理 CORS preflight（Stripe 实际不会发 OPTIONS，但保持一致）
@@ -489,9 +550,10 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: 'Method not allowed' }, 405);
   }
 
-  // 读取 Webhook Secret
-  const webhookSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET');
-  if (!webhookSecret) {
+  // 读取 Webhook Secrets（平台账户 + Connect 子账户各一个）
+  const platformSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET');
+  const connectSecret = Deno.env.get('STRIPE_CONNECT_WEBHOOK_SECRET');
+  if (!platformSecret) {
     console.error('[stripe-webhook] STRIPE_WEBHOOK_SECRET 未配置');
     return jsonResponse({ error: 'Webhook secret not configured' }, 500);
   }
@@ -512,21 +574,28 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: 'Failed to read request body' }, 400);
   }
 
-  // 验证 Stripe 签名
+  // 验证 Stripe 签名：先尝试平台 secret，失败则尝试 Connect secret
+  // 两个 webhook endpoint 指向同一 URL，通过 secret 区分来源
   let event: Stripe.Event;
+  let isConnectEvent = false;
   try {
-    event = await stripe.webhooks.constructEventAsync(
-      rawBody,
-      sigHeader,
-      webhookSecret,
-    );
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : 'Signature verification failed';
-    console.warn(`[stripe-webhook] 签名验证失败: ${msg}`);
-    return jsonResponse({ error: msg }, 400);
+    event = await stripe.webhooks.constructEventAsync(rawBody, sigHeader, platformSecret);
+  } catch (_platformErr) {
+    if (!connectSecret) {
+      console.warn('[stripe-webhook] 平台签名验证失败且未配置 STRIPE_CONNECT_WEBHOOK_SECRET');
+      return jsonResponse({ error: 'Signature verification failed' }, 400);
+    }
+    try {
+      event = await stripe.webhooks.constructEventAsync(rawBody, sigHeader, connectSecret);
+      isConnectEvent = true;
+    } catch (connectErr) {
+      const msg = connectErr instanceof Error ? connectErr.message : 'Signature verification failed';
+      console.warn(`[stripe-webhook] 两个 secret 均验签失败: ${msg}`);
+      return jsonResponse({ error: msg }, 400);
+    }
   }
 
-  console.log(`[stripe-webhook] 收到事件 type=${event.type} id=${event.id}`);
+  console.log(`[stripe-webhook] 收到事件 type=${event.type} id=${event.id} isConnect=${isConnectEvent}`);
 
   // 路由到对应处理函数
   try {
@@ -545,6 +614,25 @@ Deno.serve(async (req) => {
 
       case 'charge.dispute.created':
         await handleDisputeCreated(event.data.object as Stripe.Dispute);
+        break;
+
+      // ── Connect 子账户事件 ────────────────────────────────────────────
+      case 'account.updated':
+        if (isConnectEvent) {
+          await handleAccountUpdated(event.data.object as Stripe.Account);
+        }
+        break;
+
+      case 'payout.paid':
+        if (isConnectEvent) {
+          await handlePayoutPaid(event.data.object as Stripe.Payout, event.account ?? '');
+        }
+        break;
+
+      case 'payout.failed':
+        if (isConnectEvent) {
+          await handlePayoutFailed(event.data.object as Stripe.Payout, event.account ?? '');
+        }
         break;
 
       default:

@@ -22,7 +22,9 @@ class CartItemModel {
   final double? originalPrice;
   final String merchantName;
   final String? merchantId;
-  // 商家所在 metro 区域（用于 checkout 本地税费预览）
+  // 商家所在 city（用于 checkout 本地税费预览，通过 city_metro_map 映射到 metro 再查税率）
+  final String? merchantCity;
+  // 商家所在 metro 区域（兼容字段，优先用 merchantCity）
   final String? merchantMetroArea;
   // 每账号限购数量快照，-1 表示无限制
   final int maxPerAccount;
@@ -49,6 +51,7 @@ class CartItemModel {
     this.originalPrice,
     required this.merchantName,
     this.merchantId,
+    this.merchantCity,
     this.merchantMetroArea,
     this.maxPerAccount = -1,
     this.stockLimit = -1,
@@ -95,6 +98,7 @@ class CartItemModel {
       originalPrice: (deal['original_price'] as num?)?.toDouble(),
       merchantName: merchant['name'] as String? ?? '',
       merchantId: merchant['id'] as String?,
+      merchantCity: merchant['city'] as String?,
       merchantMetroArea: merchant['metro_area'] as String?,
       maxPerAccount: deal['max_per_account'] as int? ?? -1,
       stockLimit: deal['stock_limit'] as int? ?? -1,

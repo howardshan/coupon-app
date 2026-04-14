@@ -34,6 +34,7 @@ final taxRateByMerchantProvider =
 
 /// 一次性把所有活跃 metro 税率拉回来缓存，供 checkout 本地计算税费使用
 /// 返回 `{ metroArea → rate }`，如 Dallas → 0.0825
+/// 保留以兼容旧代码，优先使用 cityTaxRatesProvider
 final metroTaxRatesProvider = FutureProvider<Map<String, double>>((ref) async {
   final client = ref.watch(supabaseClientProvider);
   final rows = await client
@@ -47,6 +48,36 @@ final metroTaxRatesProvider = FutureProvider<Map<String, double>>((ref) async {
     final rate = (row['tax_rate'] as num?)?.toDouble();
     if (metro != null && rate != null) {
       map[metro] = rate;
+    }
+  }
+  return map;
+});
+
+/// City → tax rate 映射（通过 city_metro_map 映射到 metro 再查税率）
+/// 返回 `{ city (lower-case) → rate }`，如 Frisco → 0.0825（Frisco 属于 Dallas metro）
+/// key 一律 lower-case，查询时也要 toLowerCase() 避免大小写不一致
+final cityTaxRatesProvider = FutureProvider<Map<String, double>>((ref) async {
+  final client = ref.watch(supabaseClientProvider);
+  // 用嵌套 select 一次拿到所有 city + 对应 metro 的 tax_rate
+  final rows = await client
+      .from('city_metro_map')
+      .select('city, metro_area, metro_tax_rates!inner(tax_rate, is_active)');
+
+  final map = <String, double>{};
+  for (final row in (rows as List)) {
+    final city = (row as Map<String, dynamic>)['city'] as String?;
+    final metroRates = row['metro_tax_rates'];
+    double? rate;
+    if (metroRates is Map<String, dynamic>) {
+      final active = metroRates['is_active'] as bool? ?? false;
+      if (active) rate = (metroRates['tax_rate'] as num?)?.toDouble();
+    } else if (metroRates is List && metroRates.isNotEmpty) {
+      final first = metroRates.first as Map<String, dynamic>;
+      final active = first['is_active'] as bool? ?? false;
+      if (active) rate = (first['tax_rate'] as num?)?.toDouble();
+    }
+    if (city != null && city.isNotEmpty && rate != null) {
+      map[city.toLowerCase()] = rate;
     }
   }
   return map;
@@ -73,32 +104,83 @@ class TaxEstimate {
   static const TaxEstimate zero = TaxEstimate(totalTax: 0);
 }
 
-/// 根据购物车 items 本地计算税费（不调 Edge Function）
-/// items 由 CartItemModel 提供，每项已 join 到 merchant.metro_area
-final cartTaxEstimateProvider =
-    FutureProvider.family<TaxEstimate, List<CartItemModel>>((ref, items) async {
-  if (items.isEmpty) return TaxEstimate.zero;
+/// cartTaxEstimateProvider 的参数包装
+/// 支持可选的 [serviceFeePerItem]，按每张券分摊后与 unitPrice 一起计入税基
+class CartTaxInput {
+  final List<CartItemModel> items;
+  final double serviceFeePerItem;
 
-  final rateMap = await ref.watch(metroTaxRatesProvider.future);
+  const CartTaxInput({
+    required this.items,
+    this.serviceFeePerItem = 0,
+  });
+
+  @override
+  bool operator ==(Object other) {
+    if (other is! CartTaxInput) return false;
+    if (other.items.length != items.length) return false;
+    if (other.serviceFeePerItem != serviceFeePerItem) return false;
+    for (var i = 0; i < items.length; i++) {
+      // 按 dealId + unitPrice + city 近似判等，避免 List 引用相等问题
+      if (other.items[i].dealId != items[i].dealId) return false;
+      if (other.items[i].unitPrice != items[i].unitPrice) return false;
+      if (other.items[i].merchantCity != items[i].merchantCity) return false;
+      if (other.items[i].merchantMetroArea != items[i].merchantMetroArea) return false;
+    }
+    return true;
+  }
+
+  @override
+  int get hashCode {
+    var h = serviceFeePerItem.hashCode;
+    for (final it in items) {
+      h = Object.hash(h, it.dealId, it.unitPrice, it.merchantCity, it.merchantMetroArea);
+    }
+    return h;
+  }
+}
+
+/// 根据购物车 items 本地计算税费（不调 Edge Function）
+/// 查税逻辑：item.merchantCity → city_metro_map → metro_tax_rates → rate
+/// merchant.metro_area 不再直接用，city 是真正的 source of truth
+/// 每张券的税基 = unitPrice + serviceFeePerItem（service fee 也要交税）
+final cartTaxEstimateProvider =
+    FutureProvider.family<TaxEstimate, CartTaxInput>((ref, input) async {
+  if (input.items.isEmpty) return TaxEstimate.zero;
+
+  final cityRates = await ref.watch(cityTaxRatesProvider.future);
 
   double total = 0;
   final breakdown = <String, double>{};
   var hasUnknown = false;
 
-  for (final item in items) {
-    final metro = item.merchantMetroArea;
-    if (metro == null || metro.isEmpty) {
+  for (final item in input.items) {
+    // 优先用 merchantCity 查；没有则回落到 merchantMetroArea（向后兼容旧 cart item）
+    final city = item.merchantCity?.trim();
+    double? rate;
+    String bucketKey = '';
+    if (city != null && city.isNotEmpty) {
+      rate = cityRates[city.toLowerCase()];
+      bucketKey = city;
+    }
+    if (rate == null) {
+      final metro = item.merchantMetroArea?.trim();
+      if (metro != null && metro.isNotEmpty) {
+        // fallback：metro 自身也当作一个 city key 查一遍
+        rate = cityRates[metro.toLowerCase()];
+        bucketKey = metro;
+      }
+    }
+    if (rate == null) {
       hasUnknown = true;
       continue;
     }
-    final rate = rateMap[metro];
-    if (rate == null || rate == 0) {
-      // 税率为 0 的城市也视为已知（不触发 unknown 标记）
-      continue;
-    }
-    final itemTax = (item.unitPrice * rate * 100).round() / 100;
+    if (rate == 0) continue;
+    // 每张券的可税金额 = 券价 + 分摊的 service fee
+    final taxableAmount = item.unitPrice + input.serviceFeePerItem;
+    final itemTax = (taxableAmount * rate * 100).round() / 100;
     total += itemTax;
-    breakdown[metro] = (breakdown[metro] ?? 0) + itemTax;
+    breakdown[bucketKey] = (breakdown[bucketKey] ?? 0) + itemTax;
   }
 
   return TaxEstimate(

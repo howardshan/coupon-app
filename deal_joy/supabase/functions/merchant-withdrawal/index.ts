@@ -767,10 +767,48 @@ async function handleCreateConnectLink(
 
   let stripeAccountId = merchant.stripe_account_id as string | null;
 
-  // 若没有，则先在 Stripe 创建 Express 账户
+  // 校验已存在的 Stripe 账户在当前平台下是否仍可访问
+  // 切换 Stripe 平台账户后，旧账户 ID 会抛 "does not have access" / account_invalid，
+  // 此时清空 DB 字段让下方 create 分支生成带 controller.losses 的新账户
+  if (stripeAccountId) {
+    try {
+      const existing = await stripe.accounts.retrieve(stripeAccountId);
+      if ((existing as { deleted?: boolean }).deleted) {
+        stripeAccountId = null;
+      }
+    } catch (err) {
+      const code = (err as { code?: string }).code;
+      const msg  = String((err as { message?: string }).message ?? "");
+      const isStale =
+        code === "account_invalid" ||
+        code === "resource_missing" ||
+        msg.includes("does not have access to account") ||
+        msg.includes("Application access may have been revoked");
+      if (!isStale) throw err;
+      console.log(`[Connect] stale merchant stripe_account_id=${stripeAccountId}, clearing and recreating`);
+      await admin
+        .from("merchants")
+        .update({ stripe_account_id: null, stripe_account_status: "not_connected" })
+        .eq("id", merchantId);
+      stripeAccountId = null;
+    }
+  }
+
+  // 若没有，则先在 Stripe 创建 Connect 账户（controller 模式，平台承担损失）
+  // controller.losses.payments=application 让平台拥有 loss liability，
+  // 才能调用 Reserves Preview 写接口（POST /v1/reserve/holds）
   if (!stripeAccountId) {
     const account = await stripe.accounts.create({
-      type: "express",
+      controller: {
+        losses:                 { payments: "application" },
+        fees:                   { payer: "application" },
+        stripe_dashboard:       { type: "express" },
+        requirement_collection: "stripe",
+      },
+      capabilities: {
+        card_payments: { requested: true },
+        transfers:     { requested: true },
+      },
       metadata: { merchant_id: merchantId, merchant_name: merchant.name },
     });
     stripeAccountId = account.id;
@@ -821,12 +859,53 @@ async function handleRefreshConnectStatus(
     return errorResponse("No Stripe account linked. Please connect first.", 400);
   }
 
-  // 从 Stripe 获取最新账户信息
-  const account = await stripe.accounts.retrieve(stripeAccountId);
+  // 从 Stripe 获取最新账户信息；若账户失效（切换平台后的典型情况）则清空重连
+  let account;
+  try {
+    account = await stripe.accounts.retrieve(stripeAccountId);
+  } catch (err) {
+    const code = (err as { code?: string }).code;
+    const msg  = String((err as { message?: string }).message ?? "");
+    const isStale =
+      code === "account_invalid" ||
+      code === "resource_missing" ||
+      msg.includes("does not have access to account") ||
+      msg.includes("Application access may have been revoked");
+    if (!isStale) throw err;
+    console.log(`[Connect] stale merchant stripe_account_id=${stripeAccountId} in /refresh, clearing`);
+    await admin
+      .from("merchants")
+      .update({ stripe_account_id: null, stripe_account_status: "not_connected" })
+      .eq("id", merchantId);
+    return jsonResponse({
+      stripe_account_id:     null,
+      stripe_account_status: "not_connected",
+      charges_enabled:       false,
+      payouts_enabled:       false,
+      needs_reconnect:       true,
+    });
+  }
+
+  // 补请求缺失的 capabilities（修复历史账户未传 capabilities 导致受限）
+  const caps = (account as any).capabilities ?? {};
+  if (caps.card_payments === undefined || caps.transfers === undefined) {
+    try {
+      await stripe.accounts.update(stripeAccountId, {
+        capabilities: {
+          card_payments: { requested: true },
+          transfers:     { requested: true },
+        },
+      } as any);
+    } catch (capErr) {
+      console.error("[Connect] 补请求 capabilities 失败:", capErr);
+    }
+  }
 
   // 判断账户状态
   const isConnected = account.charges_enabled && account.payouts_enabled;
-  const accountStatus = isConnected ? "connected" : "restricted";
+  const accountStatus = isConnected ? "connected"
+    : account.requirements?.disabled_reason ? "restricted"
+    : "pending";
 
   // 提取银行账户信息（external_accounts 中第一个 bank_account）
   let bankName: string | null = null;

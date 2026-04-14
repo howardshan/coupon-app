@@ -207,7 +207,7 @@ class BrandEarningsService {
   // =============================================================
   Future<String> fetchStripeConnectUrl() async {
     final response = await _supabase.functions.invoke(
-      '$_fn/stripe/connect',
+      '$_fn/connect',
       method: HttpMethod.post,
       headers: StoreService.merchantIdHeaders,
     );
@@ -227,7 +227,7 @@ class BrandEarningsService {
   // =============================================================
   Future<BrandStripeAccount> refreshStripeStatus() async {
     final response = await _supabase.functions.invoke(
-      '$_fn/stripe/refresh',
+      '$_fn/connect/refresh',
       method: HttpMethod.post,
       headers: StoreService.merchantIdHeaders,
     );
@@ -243,7 +243,7 @@ class BrandEarningsService {
   // =============================================================
   Future<String> fetchStripeDashboardUrl() async {
     final response = await _supabase.functions.invoke(
-      '$_fn/stripe/dashboard',
+      '$_fn/connect/dashboard',
       method: HttpMethod.get,
       headers: StoreService.merchantIdHeaders,
     );
@@ -264,7 +264,7 @@ class BrandEarningsService {
   Future<BrandStripeAccount> fetchStripeAccount() async {
     try {
       final response = await _supabase.functions.invoke(
-        '$_fn/stripe/account',
+        '$_fn/account',
         method: HttpMethod.get,
         headers: StoreService.merchantIdHeaders,
       );

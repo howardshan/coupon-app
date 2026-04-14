@@ -20,7 +20,7 @@ class DealsRepository {
       // 不再依赖 deals.address 文本匹配，避免 address 为空或格式不一致漏掉 deal）
       final merchantSelect = (city != null && city.isNotEmpty)
           ? 'merchants!inner(id, name, logo_url, phone, homepage_cover_url, brand_id, metro_area, brands(name, logo_url), city)'
-          : 'merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, metro_area, brands(name, logo_url))';
+          : 'merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, city, metro_area, brands(name, logo_url))';
 
       var query = _client
           .from('deals')
@@ -129,7 +129,7 @@ class DealsRepository {
             final existingIds = results.map((d) => d.id).toSet();
             final extraData = await _client
                 .from('deals')
-                .select('*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, metro_area, brands(name, logo_url))')
+                .select('*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, city, metro_area, brands(name, logo_url))')
                 .eq('is_active', true)
                 .gt('expires_at', DateTime.now().toIso8601String())
                 .inFilter('merchant_id', merchantIds.toList())
@@ -162,7 +162,7 @@ class DealsRepository {
       // 有城市过滤时用 !inner join，确保只返回 merchant.city 匹配的 deal
       final merchantSelect = (city != null && city.isNotEmpty)
           ? 'merchants!inner(id, name, logo_url, phone, homepage_cover_url, brand_id, metro_area, brands(name, logo_url), city)'
-          : 'merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, metro_area, brands(name, logo_url))';
+          : 'merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, city, metro_area, brands(name, logo_url))';
       var query = _client
           .from('deals')
           .select('*, $merchantSelect')
@@ -222,7 +222,7 @@ class DealsRepository {
     try {
       final data = await _client
           .from('deals')
-          .select('*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, metro_area, brands(name, logo_url)), deal_option_groups(*, deal_option_items(*))')
+          .select('*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, city, metro_area, brands(name, logo_url)), deal_option_groups(*, deal_option_items(*))')
           .eq('id', dealId)
           .single();
       return DealModel.fromJson(data);
@@ -261,7 +261,7 @@ class DealsRepository {
     try {
       var query = _client
           .from('deals')
-          .select('*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, metro_area, brands(name, logo_url))')
+          .select('*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, city, metro_area, brands(name, logo_url))')
           .eq('merchant_id', merchantId)
           .eq('is_active', true)
           .gt('expires_at', DateTime.now().toIso8601String());
@@ -300,7 +300,7 @@ class DealsRepository {
     try {
       final data = await _client
           .from('deals')
-          .select('*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, metro_area, brands(name, logo_url))')
+          .select('*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, city, metro_area, brands(name, logo_url))')
           .inFilter('id', ids);
       final map = {
         for (final d in data as List)
@@ -316,7 +316,7 @@ class DealsRepository {
     try {
       final data = await _client
           .from('saved_deals')
-          .select('deals(*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, metro_area, brands(name, logo_url)))')
+          .select('deals(*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, city, metro_area, brands(name, logo_url)))')
           .eq('user_id', userId);
       return (data as List)
           .map(
@@ -386,7 +386,7 @@ class DealsRepository {
     try {
       var query = _client
           .from('deals')
-          .select('*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, metro_area, brands(name, logo_url))')
+          .select('*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, city, metro_area, brands(name, logo_url))')
           .eq('is_active', true)
           .gt('expires_at', DateTime.now().toIso8601String());
 
