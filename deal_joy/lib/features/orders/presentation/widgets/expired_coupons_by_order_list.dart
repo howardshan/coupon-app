@@ -264,6 +264,22 @@ class _ExpiredOrderCardState extends State<_ExpiredOrderCard> {
               ),
             ),
           ),
+          // 与展开区域分离，避免与 InkWell 抢手势
+          Padding(
+            padding: const EdgeInsets.only(left: 8, right: 14),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () => context.push('/order/$orderId'),
+                icon: Icon(
+                  Icons.open_in_new,
+                  size: 16,
+                  color: AppColors.primary,
+                ),
+                label: const Text('Order details'),
+              ),
+            ),
+          ),
           if (_expanded) ...[
             const Divider(height: 16, indent: 14, endIndent: 14),
             Padding(

@@ -1,4 +1,4 @@
-// Used 标签：按订单分组展示已核销券；视觉与 Unused 商家分组卡片、券行对齐
+// Refunded 标签：按订单分组展示已退款券；布局与 Expired / Used 订单卡片一致
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,49 +6,46 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../../../core/theme/app_colors.dart';
-import '../../../deals/data/models/review_model.dart';
-import '../../../reviews/domain/providers/my_reviews_provider.dart';
 import '../../data/models/coupon_model.dart';
 import '../../domain/providers/coupons_repository_provider.dart';
 
 String _formatDate(DateTime dt) =>
     DateFormat('MMM d, yyyy').format(dt.toLocal());
 
-/// 核销时间：日期 + 时分（与 coupons_provider Unused 统计规则一致）
-String _formatUsedAt(DateTime dt) =>
+String _formatDateTime(DateTime dt) =>
     DateFormat('MMM d, yyyy · h:mm a').format(dt.toLocal());
 
-/// 将已使用券按 orderId 分组，组内按 usedAt 降序；订单组按组内最近 usedAt 降序
-List<List<CouponModel>> groupUsedCouponsByOrder(List<CouponModel> coupons) {
+/// 将已退款券按 orderId 分组；组内按 refundedAt 新→旧；订单组按组内最近退款时间排序
+List<List<CouponModel>> groupRefundedCouponsByOrder(List<CouponModel> coupons) {
   final map = <String, List<CouponModel>>{};
   for (final c in coupons) {
     map.putIfAbsent(c.orderId, () => []).add(c);
   }
   for (final list in map.values) {
     list.sort((a, b) {
-      final ta = a.usedAt;
-      final tb = b.usedAt;
-      if (ta == null && tb == null) return 0;
-      if (ta == null) return 1;
-      if (tb == null) return -1;
-      return tb.compareTo(ta);
+      final ra = a.refundedAt;
+      final rb = b.refundedAt;
+      if (ra == null && rb == null) return b.createdAt.compareTo(a.createdAt);
+      if (ra == null) return 1;
+      if (rb == null) return -1;
+      return rb.compareTo(ra);
     });
   }
 
-  DateTime? latestUsedInGroup(List<CouponModel> cs) {
+  DateTime? latestRefundInGroup(List<CouponModel> cs) {
     DateTime? best;
     for (final c in cs) {
-      final u = c.usedAt;
-      if (u == null) continue;
-      if (best == null || u.isAfter(best)) best = u;
+      final r = c.refundedAt;
+      if (r == null) continue;
+      if (best == null || r.isAfter(best)) best = r;
     }
     return best;
   }
 
   final entries = map.entries.toList()
     ..sort((a, b) {
-      final la = latestUsedInGroup(a.value);
-      final lb = latestUsedInGroup(b.value);
+      final la = latestRefundInGroup(a.value);
+      final lb = latestRefundInGroup(b.value);
       if (la == null && lb == null) return 0;
       if (la == null) return 1;
       if (lb == null) return -1;
@@ -58,8 +55,7 @@ List<List<CouponModel>> groupUsedCouponsByOrder(List<CouponModel> coupons) {
   return entries.map((e) => e.value).toList();
 }
 
-/// 订单抬头展示用：优先可读订单号，否则缩短 UUID
-String orderTitleForGroup(List<CouponModel> group) {
+String orderTitleForRefundedGroup(List<CouponModel> group) {
   if (group.isEmpty) return 'Order';
   final num = group.first.orderNumber?.trim();
   if (num != null && num.isNotEmpty) return 'Order $num';
@@ -74,23 +70,22 @@ bool _multiMerchant(List<CouponModel> group) {
   return group.any((c) => c.merchantId != first);
 }
 
-/// Used Tab 主体：每个订单一张可展开卡片（未使用张数由 RPC 按订单查询）
-class UsedCouponsByOrderList extends ConsumerStatefulWidget {
+/// Refunded Tab 主体
+class RefundedCouponsByOrderList extends ConsumerStatefulWidget {
   final List<CouponModel> coupons;
-  final List<ReviewModel> myReviews;
 
-  const UsedCouponsByOrderList({
+  const RefundedCouponsByOrderList({
     super.key,
     required this.coupons,
-    required this.myReviews,
   });
 
   @override
-  ConsumerState<UsedCouponsByOrderList> createState() =>
-      _UsedCouponsByOrderListState();
+  ConsumerState<RefundedCouponsByOrderList> createState() =>
+      _RefundedCouponsByOrderListState();
 }
 
-class _UsedCouponsByOrderListState extends ConsumerState<UsedCouponsByOrderList> {
+class _RefundedCouponsByOrderListState
+    extends ConsumerState<RefundedCouponsByOrderList> {
   Map<String, int> _unusedByOrderId = {};
 
   @override
@@ -100,7 +95,7 @@ class _UsedCouponsByOrderListState extends ConsumerState<UsedCouponsByOrderList>
   }
 
   @override
-  void didUpdateWidget(covariant UsedCouponsByOrderList oldWidget) {
+  void didUpdateWidget(covariant RefundedCouponsByOrderList oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.coupons.length != widget.coupons.length ||
         oldWidget.coupons.map((c) => c.id).join(',') !=
@@ -122,37 +117,33 @@ class _UsedCouponsByOrderListState extends ConsumerState<UsedCouponsByOrderList>
 
   @override
   Widget build(BuildContext context) {
-    final groups = groupUsedCouponsByOrder(widget.coupons);
+    final groups = groupRefundedCouponsByOrder(widget.coupons);
     return ListView.separated(
       padding: const EdgeInsets.all(16),
       itemCount: groups.length,
       separatorBuilder: (_, _) => const SizedBox(height: 12),
-      itemBuilder: (_, i) => _UsedOrderCard(
+      itemBuilder: (_, i) => _RefundedOrderCard(
         orderCoupons: groups[i],
         unusedByOrderId: _unusedByOrderId,
-        myReviews: widget.myReviews,
       ),
     );
   }
 }
 
-/// 与 Unused `_MerchantCouponGroup` 一致：白底圆角阴影 + 抬头行 + Divider + 内容区
-class _UsedOrderCard extends StatefulWidget {
+class _RefundedOrderCard extends StatefulWidget {
   final List<CouponModel> orderCoupons;
   final Map<String, int> unusedByOrderId;
-  final List<ReviewModel> myReviews;
 
-  const _UsedOrderCard({
+  const _RefundedOrderCard({
     required this.orderCoupons,
     required this.unusedByOrderId,
-    required this.myReviews,
   });
 
   @override
-  State<_UsedOrderCard> createState() => _UsedOrderCardState();
+  State<_RefundedOrderCard> createState() => _RefundedOrderCardState();
 }
 
-class _UsedOrderCardState extends State<_UsedOrderCard> {
+class _RefundedOrderCardState extends State<_RefundedOrderCard> {
   bool _expanded = false;
 
   @override
@@ -164,9 +155,9 @@ class _UsedOrderCardState extends State<_UsedOrderCard> {
         .reduce((a, b) => a.isBefore(b) ? a : b);
     final multi = _multiMerchant(orderCoupons);
     final merchantLine = first.merchantName ?? 'Merchant';
-    final orderTitle = orderTitleForGroup(orderCoupons);
+    final orderTitle = orderTitleForRefundedGroup(orderCoupons);
     final orderId = first.orderId;
-    final usedCount = orderCoupons.length;
+    final refundedCount = orderCoupons.length;
     final unusedCount = widget.unusedByOrderId[orderId] ?? 0;
 
     return Container(
@@ -224,7 +215,7 @@ class _UsedOrderCardState extends State<_UsedOrderCard> {
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
                           Text(
-                            'Used vouchers: $usedCount',
+                            'Refunded vouchers: $refundedCount',
                             style: const TextStyle(
                               fontSize: 11,
                               color: AppColors.textHint,
@@ -311,13 +302,7 @@ class _UsedOrderCardState extends State<_UsedOrderCard> {
                 children: [
                   for (var i = 0; i < orderCoupons.length; i++) ...[
                     if (i > 0) const SizedBox(height: 4),
-                    _UsedCouponTile(
-                      coupon: orderCoupons[i],
-                      writtenReview: matchWrittenReviewForCoupon(
-                        orderCoupons[i],
-                        widget.myReviews,
-                      ),
-                    ),
+                    _RefundedCouponTile(coupon: orderCoupons[i]),
                   ],
                 ],
               ),
@@ -330,146 +315,93 @@ class _UsedOrderCardState extends State<_UsedOrderCard> {
   }
 }
 
-/// 与 Unused `_CouponRow` 对齐：48 图 + 标题/辅文 + 右侧 chevron
-class _UsedCouponTile extends StatelessWidget {
+class _RefundedCouponTile extends StatelessWidget {
   final CouponModel coupon;
-  final ReviewModel? writtenReview;
 
-  const _UsedCouponTile({
-    required this.coupon,
-    required this.writtenReview,
-  });
+  const _RefundedCouponTile({required this.coupon});
 
   static const double _thumb = 48;
   static const double _gap = 10;
-  static const double _textInset = _thumb + _gap;
 
   @override
   Widget build(BuildContext context) {
-    final showWriteHint = writtenReview == null;
-    final usedLine = coupon.usedAt != null
-        ? 'Used ${_formatUsedAt(coupon.usedAt!)}'
-        : 'Used';
     final imageUrl = coupon.dealImageUrl;
     final priceLine = coupon.unitPrice != null
         ? '\$${(coupon.unitPrice! + coupon.taxAmount).toStringAsFixed(2)}'
         : null;
+    final refundedLine = coupon.refundedAt != null
+        ? 'Refunded ${_formatDateTime(coupon.refundedAt!)}'
+        : 'Refunded';
+    final expiresLine = 'Deal valid until ${_formatDateTime(coupon.expiresAt)}';
 
     return InkWell(
       onTap: () => context.push('/coupon/${coupon.id}'),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: imageUrl != null && imageUrl.isNotEmpty
-                      ? Image.network(
-                          imageUrl,
-                          width: _thumb,
-                          height: _thumb,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) => _dealPlaceholder(),
-                        )
-                      : _dealPlaceholder(),
-                ),
-                const SizedBox(width: _gap),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        coupon.dealTitle ?? 'Deal Coupon',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        usedLine,
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: AppColors.textHint,
-                        ),
-                      ),
-                      if (priceLine != null) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          priceLine,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                const Icon(
-                  Icons.chevron_right,
-                  size: 18,
-                  color: AppColors.textHint,
-                ),
-              ],
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: imageUrl != null && imageUrl.isNotEmpty
+                  ? Image.network(
+                      imageUrl,
+                      width: _thumb,
+                      height: _thumb,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => _dealPlaceholder(),
+                    )
+                  : _dealPlaceholder(),
             ),
-            if (writtenReview != null) ...[
-              Padding(
-                padding: const EdgeInsets.only(left: _textInset, top: 6),
-                child: Row(
-                  children: [
-                    ...List.generate(5, (idx) {
-                      final stars = writtenReview!.ratingOverall > 0
-                          ? writtenReview!.ratingOverall
-                          : writtenReview!.rating;
-                      return Icon(
-                        idx < stars ? Icons.star : Icons.star_border,
-                        size: 14,
-                        color: AppColors.warning,
-                      );
-                    }),
-                    const SizedBox(width: 6),
+            const SizedBox(width: _gap),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    coupon.dealTitle ?? 'Deal Coupon',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    refundedLine,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    expiresLine,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppColors.textHint,
+                    ),
+                  ),
+                  if (priceLine != null) ...[
+                    const SizedBox(height: 2),
                     Text(
-                      'Reviewed',
-                      style: TextStyle(
-                        fontSize: 11,
+                      priceLine,
+                      style: const TextStyle(
+                        fontSize: 12,
                         fontWeight: FontWeight.w600,
-                        color: AppColors.success,
+                        color: AppColors.textPrimary,
                       ),
                     ),
                   ],
-                ),
+                ],
               ),
-            ] else if (showWriteHint && coupon.status == 'used') ...[
-              Padding(
-                padding: const EdgeInsets.only(left: _textInset, top: 6),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.rate_review_outlined,
-                      size: 14,
-                      color: AppColors.primary.withValues(alpha: 0.85),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      'Write a review',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.primary.withValues(alpha: 0.9),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+            ),
+            const Icon(
+              Icons.chevron_right,
+              size: 18,
+              color: AppColors.textHint,
+            ),
           ],
         ),
       ),
