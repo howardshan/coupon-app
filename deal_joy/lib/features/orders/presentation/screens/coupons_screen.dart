@@ -11,6 +11,7 @@ import '../../data/models/coupon_model.dart';
 import '../../domain/providers/coupons_provider.dart';
 import '../widgets/coupon_card.dart';
 import '../widgets/pending_reviews_list.dart';
+import '../widgets/used_coupons_by_order_list.dart';
 
 /// 多笔订单合并行进入券详情：携带 order_item id，避免只加载单笔订单
 void _pushVoucherForMergedDealRow(
@@ -277,20 +278,9 @@ class _CouponList extends StatelessWidget {
             ref.invalidate(userCouponsProvider);
             ref.invalidate(myWrittenReviewsProvider);
           },
-          child: ListView.separated(
-            padding: const EdgeInsets.all(16),
-            itemCount: coupons.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 12),
-            itemBuilder: (_, i) {
-              final c = coupons[i];
-              final matched = matchWrittenReviewForCoupon(c, myReviews);
-              return CouponCard(
-                coupon: c,
-                writtenReview: matched,
-                showWriteReviewHint: matched == null,
-                onTap: () => context.push('/coupon/${c.id}'),
-              );
-            },
+          child: UsedCouponsByOrderList(
+            coupons: coupons,
+            myReviews: myReviews,
           ),
         ),
       );
