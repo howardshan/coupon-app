@@ -56,7 +56,7 @@ async function createReserveHold(
       method: 'POST',
       headers: {
         Authorization: `Bearer ${stripeKey}`,
-        'Stripe-Version': '2025-12-15.preview',
+        'Stripe-Version': '2025-08-27.preview',
         'Stripe-Account': connectedAccountId,
         'Content-Type': 'application/x-www-form-urlencoded',
       },
@@ -333,6 +333,7 @@ Deno.serve(async (req) => {
         tax_rate: taxRate,
         tax_metro_area: metroArea,       // 快照下单时的税归属地，防止 merchant.metro_area 后续变更
         commission_amount: commissionAmount, // 快照佣金金额，用于退款精确计算
+        promo_discount: Number(item.promoDiscount ?? 0),  // 快照促销折扣，用于退款时精确计算 merchant_net
         purchased_merchant_id: item.purchasedMerchantId ?? null,
         selected_options: item.selectedOptions ?? null,
         customer_status: 'unused',
@@ -343,7 +344,7 @@ Deno.serve(async (req) => {
     const { data: insertedItems, error: itemsError } = await serviceClient
       .from('order_items')
       .insert(orderItemsPayload)
-      .select('id, unit_price, commission_amount, purchased_merchant_id');
+      .select('id, unit_price, commission_amount, promo_discount, purchased_merchant_id');
 
     if (itemsError) {
       console.error('Insert order_items error:', itemsError);
@@ -385,16 +386,15 @@ Deno.serve(async (req) => {
 
       // 为每个 item 创建 ReserveHold（并行，不阻断主流程）
       const reserveResults = await Promise.allSettled(
-        (insertedItems as any[]).map(async (dbItem: { id: string; unit_price: number; commission_amount: number; purchased_merchant_id?: string | null }, idx: number) => {
+        (insertedItems as any[]).map(async (dbItem: { id: string; unit_price: number; commission_amount: number; promo_discount?: number; purchased_merchant_id?: string | null }, idx: number) => {
           const connectId = dbItem.purchased_merchant_id
             ? reserveMerchantConnectMap.get(dbItem.purchased_merchant_id)
             : null;
           if (!connectId) return; // 商家无 Connect 账户，跳过
 
-          // merchant_net = unit_price - promoDiscount - commission_amount
-          const originalItem = items[idx] as { promoDiscount?: number };
+          // merchant_net = unit_price - promo_discount - commission_amount（均已快照到 order_items）
           const merchantNetCents = Math.round(
-            (dbItem.unit_price - (Number(originalItem?.promoDiscount ?? 0)) - dbItem.commission_amount) * 100,
+            (dbItem.unit_price - (dbItem.promo_discount ?? 0) - dbItem.commission_amount) * 100,
           );
           if (merchantNetCents <= 0) return;
 

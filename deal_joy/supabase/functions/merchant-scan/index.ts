@@ -53,6 +53,44 @@ function maskUserName(fullName: string | null): string {
 // ─── Stripe Reserves API 辅助函数 ────────────────────────────────────────────
 
 /**
+ * 在 connected account 上创建 ReserveHold（冻结资金）
+ * 撤销核销后需重建 Hold，防止商家在 revert 后仍能提现
+ */
+async function createReserveHold(
+  connectedAccountId: string,
+  amountCents: number,
+  stripeKey: string,
+): Promise<string | null> {
+  const body = new URLSearchParams({
+    amount: String(amountCents),
+    currency: 'usd',
+  });
+  try {
+    const res = await fetch('https://api.stripe.com/v1/reserve/holds', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${stripeKey}`,
+        'Stripe-Version': '2025-08-27.preview',
+        'Stripe-Account': connectedAccountId,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: body.toString(),
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error(`[ReserveHold] 创建失败 acct=${connectedAccountId}:`, errText);
+      return null;
+    }
+    const json = await res.json();
+    console.log(`[ReserveHold] 创建成功 hold=${json.id} acct=${connectedAccountId}`);
+    return (json.id as string) ?? null;
+  } catch (err) {
+    console.error(`[ReserveHold] 网络异常 acct=${connectedAccountId}:`, err);
+    return null;
+  }
+}
+
+/**
  * 释放 connected account 上的 ReserveHold
  * 核销后商家 merchant_net 解冻，可进入提现流程
  */
@@ -67,7 +105,7 @@ async function releaseReserveHold(
       method: 'POST',
       headers: {
         Authorization: `Bearer ${stripeKey}`,
-        'Stripe-Version': '2025-12-15.preview',
+        'Stripe-Version': '2025-08-27.preview',
         'Stripe-Account': connectedAccountId,
         'Content-Type': 'application/x-www-form-urlencoded',
       },
@@ -429,14 +467,17 @@ async function handleRedeem(
     const itemMerchantId = (itemData as any)?.purchased_merchant_id as string | null;
 
     if (holdId && itemMerchantId) {
-      // 查询商家 Connect 账户 ID
+      // 查询商家 Connect 账户 ID 及入驻状态
       const { data: merchantData } = await supabase
         .from('merchants')
-        .select('stripe_account_id')
+        .select('stripe_account_id, stripe_account_status')
         .eq('id', itemMerchantId)
         .maybeSingle();
 
-      const connectId = (merchantData as any)?.stripe_account_id as string | null;
+      // 只对已完成 Connect 入驻的商家执行 Hold 释放
+      const connectId = (merchantData as any)?.stripe_account_status === 'connected'
+        ? (merchantData as any)?.stripe_account_id as string | null
+        : null;
       if (connectId) {
         const stripeKey = Deno.env.get('STRIPE_SECRET_KEY') ?? '';
         // fire-and-forget：释放失败不阻断核销响应
@@ -537,10 +578,10 @@ async function handleRevert(
     return errorResponse('invalid_request', 'coupon_id is required');
   }
 
-  // 查询券状态
+  // 查询券状态（含 order_item_id，用于 revert 后回滚 order_items 及重建 ReserveHold）
   const { data: coupon, error: queryError } = await supabase
     .from('coupons')
-    .select('id, status, merchant_id, redeemed_at, redeemed_by_merchant_id, redeemed_at_merchant_id')
+    .select('id, status, merchant_id, redeemed_at, redeemed_by_merchant_id, redeemed_at_merchant_id, order_item_id')
     .eq('id', couponId)
     .single();
 
@@ -589,6 +630,66 @@ async function handleRevert(
   if (updateError) {
     console.error('revert update error:', updateError);
     return errorResponse('server_error', 'Failed to revert redemption', undefined, 500);
+  }
+
+  // ── 回滚 order_items 核销状态 + 重建 ReserveHold ──────────────────────────
+  // revert 让券回到「未核销」状态，order_items 和 Hold 也需同步回滚
+  const orderItemId = (coupon as any).order_item_id as string | null;
+  if (orderItemId) {
+    // 回滚 order_items，并取回重建 Hold 所需的字段
+    const { data: rolledBackItem } = await supabase
+      .from('order_items')
+      .update({
+        customer_status: 'unused',
+        merchant_status: 'unused',
+        redeemed_at: null,
+        redeemed_merchant_id: null,
+        redeemed_by: null,
+        stripe_reserve_hold_id: null, // 旧 hold 已在核销时释放，清空等待重建
+      })
+      .eq('id', orderItemId)
+      .select('unit_price, commission_amount, promo_discount, purchased_merchant_id')
+      .maybeSingle();
+
+    // 重建 ReserveHold（冻结恢复）
+    if (rolledBackItem) {
+      const itemMerchantId = (rolledBackItem as any).purchased_merchant_id as string | null;
+      if (itemMerchantId) {
+        const { data: merchantConnectData } = await supabase
+          .from('merchants')
+          .select('stripe_account_id, stripe_account_status')
+          .eq('id', itemMerchantId)
+          .maybeSingle();
+
+        // 只对已完成 Connect 入驻的商家重建 Hold
+        const revertConnectId = (merchantConnectData as any)?.stripe_account_status === 'connected'
+          ? (merchantConnectData as any)?.stripe_account_id as string | null
+          : null;
+
+        if (revertConnectId) {
+          const unitPrice = Number((rolledBackItem as any).unit_price ?? 0);
+          const promoDiscount = Number((rolledBackItem as any).promo_discount ?? 0);
+          const commAmount = Number((rolledBackItem as any).commission_amount ?? 0);
+          const merchantNetCents = Math.round((unitPrice - promoDiscount - commAmount) * 100);
+
+          if (merchantNetCents > 0) {
+            const stripeKey = Deno.env.get('STRIPE_SECRET_KEY') ?? '';
+            // fire-and-forget：重建失败不阻断 revert 响应
+            createReserveHold(revertConnectId, merchantNetCents, stripeKey).then(async (newHoldId) => {
+              if (newHoldId) {
+                await supabase
+                  .from('order_items')
+                  .update({ stripe_reserve_hold_id: newHoldId })
+                  .eq('id', orderItemId);
+                console.log(`[Revert] ReserveHold 重建成功 item=${orderItemId} hold=${newHoldId}`);
+              }
+            }).catch(err => {
+              console.error(`[Revert] ReserveHold 重建失败 item=${orderItemId}:`, err);
+            });
+          }
+        }
+      }
+    }
   }
 
   // 写入撤销日志

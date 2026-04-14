@@ -68,7 +68,7 @@ async function releaseReserveHold(
       method: 'POST',
       headers: {
         Authorization: `Bearer ${stripeKey}`,
-        'Stripe-Version': '2025-12-15.preview',
+        'Stripe-Version': '2025-08-27.preview',
         'Stripe-Account': connectedAccountId,
         'Content-Type': 'application/x-www-form-urlencoded',
       },

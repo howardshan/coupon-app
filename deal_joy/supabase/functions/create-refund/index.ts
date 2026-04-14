@@ -36,7 +36,7 @@ async function releaseReserveHold(
       method: 'POST',
       headers: {
         Authorization: `Bearer ${stripeKey}`,
-        'Stripe-Version': '2025-12-15.preview',
+        'Stripe-Version': '2025-08-27.preview',
         'Stripe-Account': connectedAccountId,
         'Content-Type': 'application/x-www-form-urlencoded',
       },
@@ -126,6 +126,7 @@ Deno.serve(async (req) => {
         service_fee,
         tax_amount,
         commission_amount,
+        promo_discount,
         purchased_merchant_id,
         stripe_reserve_hold_id,
         customer_status,
@@ -198,6 +199,7 @@ Deno.serve(async (req) => {
     const taxAmount = Number(item.tax_amount ?? 0);
     // commission_amount：下单时快照的佣金，退款时退还给商家（via reverse_transfer）
     const commissionAmount = Number((item as any).commission_amount ?? 0);
+    const promoDiscount = Number((item as any).promo_discount ?? 0);
     const now = new Date().toISOString();
 
     // 查询商家的 Stripe Connect 账户（用于 reverse_transfer）
@@ -253,8 +255,8 @@ Deno.serve(async (req) => {
           const transferId = typeof transfer === 'string' ? transfer : transfer?.id;
 
           if (transferId) {
-            // 回撤 merchant_net = unit_price - commission_amount
-            const merchantNetCents = Math.round((unitPrice - commissionAmount) * 100);
+            // merchant_net = unit_price - promo_discount - commission_amount（commission 基数已扣促销，故需再减）
+            const merchantNetCents = Math.round((unitPrice - promoDiscount - commissionAmount) * 100);
             if (merchantNetCents > 0) {
               await stripe.transfers.createReversal(transferId, {
                 amount: merchantNetCents,
