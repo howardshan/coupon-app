@@ -12,6 +12,7 @@ import '../../domain/providers/coupons_provider.dart';
 import '../widgets/coupon_card.dart';
 import '../widgets/pending_reviews_list.dart';
 import '../widgets/used_coupons_by_order_list.dart';
+import '../widgets/expired_coupons_by_order_list.dart';
 
 /// 多笔订单合并行进入券详情：携带 order_item id，避免只加载单笔订单
 void _pushVoucherForMergedDealRow(
@@ -283,6 +284,17 @@ class _CouponList extends StatelessWidget {
             allCoupons: ref.watch(userCouponsProvider).value ?? const [],
             myReviews: myReviews,
           ),
+        ),
+      );
+    }
+
+    // Expired tab：按订单分组（与 Used 一致）
+    if (status == 'expired') {
+      return RefreshIndicator(
+        onRefresh: () async => ref.invalidate(userCouponsProvider),
+        child: ExpiredCouponsByOrderList(
+          coupons: coupons,
+          allCoupons: ref.watch(userCouponsProvider).value ?? const [],
         ),
       );
     }
