@@ -101,6 +101,19 @@ class OrderSuccessScreen extends ConsumerWidget {
                         'Vouchers',
                         '$voucherCount',
                       ),
+                      // 税费拆分展示（tax_amount = 0 的老订单隐藏整行）
+                      if (order.taxAmount > 0) ...[
+                        const Divider(height: 16),
+                        _DetailRow(
+                          'Subtotal',
+                          '\$${(order.totalAmount - order.taxAmount).toStringAsFixed(2)}',
+                        ),
+                        const Divider(height: 16),
+                        _DetailRow(
+                          'Tax',
+                          '\$${order.taxAmount.toStringAsFixed(2)}',
+                        ),
+                      ],
                       const Divider(height: 16),
                       _DetailRow(
                         'Amount Paid',

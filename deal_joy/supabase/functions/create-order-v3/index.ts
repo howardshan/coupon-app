@@ -208,26 +208,89 @@ Deno.serve(async (req) => {
     // ----------------------------------------------------------------
     // 6. INSERT order_items（每个 item 一行）
     //    每张券固定收取 $0.99 service fee
+    //    税费由服务端根据 deal → merchant.metro_area 重算并快照到 order_items
+    //    （防止前端伪造，也保证 tax_metro_area 与 tax_amount 一致）
     // ----------------------------------------------------------------
+
+    // 查询 deals → merchant_id
+    const dealIdList = [...new Set(items.map((it: { dealId: string }) => it.dealId))] as string[];
+    const { data: dealRows } = await serviceClient
+      .from('deals')
+      .select('id, merchant_id')
+      .in('id', dealIdList);
+    const dealMerchantMap = new Map<string, string>(
+      (dealRows ?? []).map((d: { id: string; merchant_id: string }) => [d.id, d.merchant_id]),
+    );
+
+    // 查询 merchants → metro_area + commission_rate
+    const merchantIdList = [...new Set(Array.from(dealMerchantMap.values()))];
+    const { data: merchantRows } = await serviceClient
+      .from('merchants')
+      .select('id, metro_area, commission_rate')
+      .in('id', merchantIdList);
+    const merchantMetroMap = new Map<string, string | null>(
+      (merchantRows ?? []).map((m: { id: string; metro_area: string | null; commission_rate: number | null }) => [m.id, m.metro_area]),
+    );
+
+    // 查询全局 commission_rate（兜底，默认 15%）
+    const { data: globalCfg } = await serviceClient
+      .from('platform_commission_config')
+      .select('commission_rate')
+      .limit(1)
+      .single();
+    const globalCommRate = Number(globalCfg?.commission_rate ?? 0.15);
+
+    // 构建 merchantId → commission_rate 映射（商家专属优先，NULL 时用全局默认）
+    const merchantCommRateMap = new Map<string, number>(
+      (merchantRows ?? []).map((m: { id: string; commission_rate: number | null }) => [
+        m.id,
+        m.commission_rate != null ? Number(m.commission_rate) : globalCommRate,
+      ]),
+    );
+
+    // 查询 metro_tax_rates → rate
+    const metroAreaList = [...new Set(
+      Array.from(merchantMetroMap.values()).filter((v): v is string => !!v),
+    )];
+    const metroRateMap = new Map<string, number>();
+    if (metroAreaList.length > 0) {
+      const { data: taxRows } = await serviceClient
+        .from('metro_tax_rates')
+        .select('metro_area, tax_rate')
+        .in('metro_area', metroAreaList)
+        .eq('is_active', true);
+      for (const row of (taxRows ?? []) as Array<{ metro_area: string; tax_rate: number }>) {
+        metroRateMap.set(row.metro_area, Number(row.tax_rate));
+      }
+    }
 
     const orderItemsPayload = items.map((item: {
       dealId: string;
       unitPrice: number;
+      promoDiscount?: number;
       selectedOptions: unknown;
       purchasedMerchantId: string;
-      taxRate?: number;    // 新增：单项税率（可选，由前端从 create-payment-intent 返回值中传入）
-      taxAmount?: number;  // 新增：单项税额（可选，优先使用前端计算值）
     }) => {
-      // 优先使用前端传入的 taxRate/taxAmount，否则回退到 0
-      const itemTaxRate = item.taxRate ?? 0;
-      const itemTaxAmount = item.taxAmount ?? Math.round(item.unitPrice * itemTaxRate * 100) / 100;
+      const merchantId = dealMerchantMap.get(item.dealId) ?? null;
+      const metroArea = merchantId ? merchantMetroMap.get(merchantId) ?? null : null;
+      const taxRate = metroArea ? metroRateMap.get(metroArea) ?? 0 : 0;
+      const itemTaxAmount = Math.round(item.unitPrice * taxRate * 100) / 100;
+
+      // 快照 commission_amount：基于 (unit_price - promoDiscount) × commission_rate
+      // 仅成功核销后最终归平台；退款/过期时退还
+      const commRate = merchantId ? (merchantCommRateMap.get(merchantId) ?? globalCommRate) : globalCommRate;
+      const effectivePrice = item.unitPrice - (Number(item.promoDiscount ?? 0));
+      const commissionAmount = Math.round(effectivePrice * commRate * 100) / 100;
+
       return {
         order_id: orderId,
         deal_id: item.dealId,
         unit_price: item.unitPrice,
         service_fee: SERVICE_FEE_PER_COUPON,
-        tax_amount: itemTaxAmount,   // 新增：单项税额
-        tax_rate: itemTaxRate,       // 新增：单项税率
+        tax_amount: itemTaxAmount,
+        tax_rate: taxRate,
+        tax_metro_area: metroArea,       // 快照下单时的税归属地，防止 merchant.metro_area 后续变更
+        commission_amount: commissionAmount, // 快照佣金金额，用于退款精确计算
         purchased_merchant_id: item.purchasedMerchantId ?? null,
         selected_options: item.selectedOptions ?? null,
         customer_status: 'unused',

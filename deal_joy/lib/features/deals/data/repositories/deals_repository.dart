@@ -16,18 +16,25 @@ class DealsRepository {
     int page = 0,
   }) async {
     try {
+      // 用 merchants!inner 做 join 过滤（city 字段权威来源于 merchants.city，
+      // 不再依赖 deals.address 文本匹配，避免 address 为空或格式不一致漏掉 deal）
+      final merchantSelect = (city != null && city.isNotEmpty)
+          ? 'merchants!inner(id, name, logo_url, phone, homepage_cover_url, brand_id, metro_area, brands(name, logo_url), city)'
+          : 'merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, metro_area, brands(name, logo_url))';
+
       var query = _client
           .from('deals')
-          .select('*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, brands(name, logo_url))')
+          .select('*, $merchantSelect')
           .eq('is_active', true)
           .gt('expires_at', DateTime.now().toIso8601String());
 
       if (city != null && city.isNotEmpty) {
-        query = query.ilike('address', '%$city%');
+        query = query.eq('merchants.city', city);
       }
 
-      // 分类筛选：通过 merchant_categories 关联表
-      // 先查出属于该分类的商家 ID 列表，再过滤 deals
+      // 分类筛选：优先用 deals.category 直接匹配（每个 deal 自带 category 字段），
+      // 退回到 merchant_categories 关联表查询，取并集。
+      // 之前仅靠 merchant_categories 的老逻辑会遗漏未被维护进该表的商家。
       if (category != null && category != 'All') {
         final catData = await _client
             .from('merchant_categories')
@@ -37,8 +44,16 @@ class DealsRepository {
             .map((e) => e['merchant_id'] as String)
             .toSet()
             .toList();
-        if (merchantIds.isEmpty) return [];
-        query = query.inFilter('merchant_id', merchantIds);
+        if (merchantIds.isEmpty) {
+          // 没有关联的商家时，只按 deals.category 过滤
+          query = query.ilike('category', category);
+        } else {
+          // OR：要么 deal 自身 category 匹配，要么 merchant 在该分类下
+          final idsCsv = merchantIds.map((id) => '"$id"').join(',');
+          query = query.or(
+            'category.ilike.$category,merchant_id.in.($idsCsv)',
+          );
+        }
       }
 
       if (search != null && search.isNotEmpty) {
@@ -46,6 +61,7 @@ class DealsRepository {
         query = query.or(
           'title.ilike.$pattern,'
           'description.ilike.$pattern,'
+          'short_name.ilike.$pattern,'
           'category.ilike.$pattern,'
           'address.ilike.$pattern',
         );
@@ -113,7 +129,7 @@ class DealsRepository {
             final existingIds = results.map((d) => d.id).toSet();
             final extraData = await _client
                 .from('deals')
-                .select('*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, brands(name, logo_url))')
+                .select('*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, metro_area, brands(name, logo_url))')
                 .eq('is_active', true)
                 .gt('expires_at', DateTime.now().toIso8601String())
                 .inFilter('merchant_id', merchantIds.toList())
@@ -145,8 +161,8 @@ class DealsRepository {
     try {
       // 有城市过滤时用 !inner join，确保只返回 merchant.city 匹配的 deal
       final merchantSelect = (city != null && city.isNotEmpty)
-          ? 'merchants!inner(id, name, logo_url, phone, homepage_cover_url, brand_id, brands(name, logo_url), city)'
-          : 'merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, brands(name, logo_url))';
+          ? 'merchants!inner(id, name, logo_url, phone, homepage_cover_url, brand_id, metro_area, brands(name, logo_url), city)'
+          : 'merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, metro_area, brands(name, logo_url))';
       var query = _client
           .from('deals')
           .select('*, $merchantSelect')
@@ -206,7 +222,7 @@ class DealsRepository {
     try {
       final data = await _client
           .from('deals')
-          .select('*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, brands(name, logo_url)), deal_option_groups(*, deal_option_items(*))')
+          .select('*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, metro_area, brands(name, logo_url)), deal_option_groups(*, deal_option_items(*))')
           .eq('id', dealId)
           .single();
       return DealModel.fromJson(data);
@@ -245,7 +261,7 @@ class DealsRepository {
     try {
       var query = _client
           .from('deals')
-          .select('*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, brands(name, logo_url))')
+          .select('*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, metro_area, brands(name, logo_url))')
           .eq('merchant_id', merchantId)
           .eq('is_active', true)
           .gt('expires_at', DateTime.now().toIso8601String());
@@ -284,7 +300,7 @@ class DealsRepository {
     try {
       final data = await _client
           .from('deals')
-          .select('*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, brands(name, logo_url))')
+          .select('*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, metro_area, brands(name, logo_url))')
           .inFilter('id', ids);
       final map = {
         for (final d in data as List)
@@ -300,7 +316,7 @@ class DealsRepository {
     try {
       final data = await _client
           .from('saved_deals')
-          .select('deals(*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, brands(name, logo_url)))')
+          .select('deals(*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, metro_area, brands(name, logo_url)))')
           .eq('user_id', userId);
       return (data as List)
           .map(
@@ -370,7 +386,7 @@ class DealsRepository {
     try {
       var query = _client
           .from('deals')
-          .select('*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, brands(name, logo_url))')
+          .select('*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, metro_area, brands(name, logo_url))')
           .eq('is_active', true)
           .gt('expires_at', DateTime.now().toIso8601String());
 

@@ -60,6 +60,10 @@ class CouponModel {
 
   // 退款信息（来自 order_items join）
   final double? unitPrice;
+  /// 税额快照（来自 order_items.tax_amount）
+  final double taxAmount;
+  /// 税率快照（来自 order_items.tax_rate，如 0.0825）
+  final double? taxRate;
   final DateTime? refundedAt;
   final double? refundAmount;
   final String? refundMethod; // 'original_payment' | 'store_credit'
@@ -101,6 +105,8 @@ class CouponModel {
     this.applicableStoreIds,
     this.orderNumber,
     this.unitPrice,
+    this.taxAmount = 0.0,
+    this.taxRate,
     this.refundedAt,
     this.refundAmount,
     this.refundMethod,
@@ -214,6 +220,8 @@ class CouponModel {
           .toList(),
       // 退款信息（从 order_items join 获取）
       unitPrice: (orderItems?['unit_price'] as num?)?.toDouble(),
+      taxAmount: (orderItems?['tax_amount'] as num?)?.toDouble() ?? 0.0,
+      taxRate: (orderItems?['tax_rate'] as num?)?.toDouble(),
       refundedAt: orderItems?['refunded_at'] != null
           ? DateTime.parse(orderItems!['refunded_at'] as String)
           : null,
@@ -297,6 +305,8 @@ class CouponModel {
       applicableStoreIds: applicableStoreIds,
       orderNumber: orderNumber,
       unitPrice: unitPrice,
+      taxAmount: taxAmount,
+      taxRate: taxRate,
       refundedAt: refundedAt,
       refundAmount: refundAmount,
       refundMethod: refundMethod,

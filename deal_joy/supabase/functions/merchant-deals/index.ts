@@ -767,6 +767,23 @@ async function handleToggleStatus(
     );
   }
 
+  // Stripe Connect 检查：上架前必须完成 Connect Express onboarding
+  // 确保付款时 merchant net 可以路由到商家账户（Agent 定位要求）
+  if (isActive) {
+    const { data: merchantData } = await admin
+      .from("merchants")
+      .select("stripe_account_id, stripe_account_status")
+      .eq("id", merchantId)
+      .single();
+
+    if (!merchantData?.stripe_account_id || merchantData.stripe_account_status !== "connected") {
+      return errorResponse(
+        "Stripe Connect account required. Please complete payment account setup before activating deals.",
+        400
+      );
+    }
+  }
+
   const newStatus = isActive ? "active" : "inactive";
 
   const updatePayload: Record<string, unknown> = {
