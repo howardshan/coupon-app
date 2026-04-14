@@ -67,8 +67,12 @@ class CheckoutScreen extends ConsumerStatefulWidget {
 }
 
 class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
-  // 支付方式（默认：iOS=Apple Pay, Android=Google Pay）
+  // 支付方式（默认：iOS=Apple Pay, Android=Google Pay，不支持时切到 card）
   String _selectedPayment = Platform.isIOS ? 'apple' : 'google';
+
+  // 当前设备是否支持 Apple/Google Pay（emulator 常不支持）
+  // null = 尚未检测；false = 不支持，UI 不显示对应选项
+  bool? _platformPaySupported;
 
   // 信用卡输入是否完整（CardField 回调）
   bool _cardComplete = false;
@@ -100,6 +104,10 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
 
   // 支付处理中
   bool _isProcessing = false;
+
+  // 后端最近一次返回的 totalTax（create-payment-intent 的精确值）
+  // null 表示尚未从后端取到，此时 UI 上显示前端估算值 + "Estimate" 标记
+  double? _lastBackendTotalTax;
 
   /// 购物车模式：已从服务端校验 deal 仍可购买后才展示结账 UI
   bool _cartEntryValidated = false;
@@ -139,6 +147,40 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     } else {
       _cartEntryValidated = true;
     }
+    _detectPlatformPaySupport();
+  }
+
+  /// 预检 Apple/Google Pay 是否可用（模拟器通常不支持）
+  /// 不支持时自动把默认支付方式切到 Credit Card，UI 隐藏 platform pay 选项
+  Future<void> _detectPlatformPaySupport() async {
+    try {
+      final supported = await Stripe.instance.isPlatformPaySupported();
+      if (!mounted) return;
+      setState(() {
+        _platformPaySupported = supported;
+        if (!supported && (_selectedPayment == 'apple' || _selectedPayment == 'google')) {
+          _selectedPayment = 'card';
+        }
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _platformPaySupported = false;
+        if (_selectedPayment == 'apple' || _selectedPayment == 'google') {
+          _selectedPayment = 'card';
+        }
+      });
+    }
+  }
+
+  /// 当前设备可用的支付方式列表（根据 platform pay 支持情况过滤）
+  List<Map<String, Object>> get _availablePaymentMethods {
+    if (_platformPaySupported == false) {
+      return _paymentMethods
+          .where((m) => m['id'] != 'apple' && m['id'] != 'google')
+          .toList();
+    }
+    return _paymentMethods;
   }
 
   /// 防止加车后过期的 deal 仍进入结账页
@@ -427,8 +469,15 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       // 若预估偏小导致 creditUsed 多申请，后端会用真实 totalAmount cap 回退
       final serviceFee = items.length * 0.99;
       final subtotal = items.fold<double>(0, (sum, e) => sum + e.unitPrice);
-      final estimatedTax =
-          ref.read(cartTaxEstimateProvider(items)).valueOrNull?.totalTax ?? 0.0;
+      // service fee 也要交税，按每张券 $0.99 加到税基里
+      final estimatedTax = ref
+              .read(cartTaxEstimateProvider(CartTaxInput(
+                items: items,
+                serviceFeePerItem: 0.99,
+              )))
+              .valueOrNull
+              ?.totalTax ??
+          0.0;
       final totalAmount = subtotal + serviceFee + estimatedTax;
       final creditUsed = _useStoreCredit ? min(_storeCreditBalance, totalAmount) : 0.0;
 
@@ -746,6 +795,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     return dealAsync.when(
       data: (deal) {
         // 将 deal 转为 cart item 格式
+        // merchantMetroArea 必须带上，否则 cartTaxEstimateProvider 会把整条 item 跳过，税费显示 0
         final cartItems = List.generate(_quantity, (_) => CartItemModel(
           id: '',
           userId: '',
@@ -757,6 +807,8 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
           originalPrice: deal.originalPrice,
           merchantName: deal.merchant?.name ?? '',
           merchantId: deal.merchant?.id,
+          merchantCity: deal.merchantCity,
+          merchantMetroArea: deal.merchant?.metroArea,
           maxPerAccount: deal.maxPerAccount,
           createdAt: DateTime.now(),
           dealExpiresAt: deal.expiresAt,
@@ -783,9 +835,13 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     final serviceFee = items.length * 0.99;
     final subtotal = items.fold<double>(0, (sum, e) => sum + e.unitPrice);
 
-    // 使用 cartTaxEstimateProvider 按每个 item 的 merchant metro_area 独立算税
+    // 使用 cartTaxEstimateProvider 按每个 item 的 merchant city → metro 独立算税
+    // service fee 也要交税，按每张券 $0.99 分摊加到税基
     // 后端落单时会用真实税率再算一次作为权威值，前端仅用于预览
-    final cartTaxAsync = ref.watch(cartTaxEstimateProvider(items));
+    final cartTaxAsync = ref.watch(cartTaxEstimateProvider(CartTaxInput(
+      items: items,
+      serviceFeePerItem: 0.99,
+    )));
     final cartTax = cartTaxAsync.valueOrNull?.totalTax ?? _lastBackendTotalTax ?? 0.0;
     final taxIsEstimate = _lastBackendTotalTax == null;
     final totalAmount = subtotal + serviceFee + cartTax;
@@ -872,7 +928,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                     color: AppColors.textSecondary,
                     letterSpacing: 0.8)),
             const SizedBox(height: 10),
-            ...(_paymentMethods.map((method) {
+            ...(_availablePaymentMethods.map((method) {
               final isSelected = _selectedPayment == method['id'];
               return GestureDetector(
                 behavior: HitTestBehavior.opaque,
@@ -1375,7 +1431,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                         color: AppColors.textSecondary,
                         letterSpacing: 0.8)),
                 const SizedBox(height: 10),
-                ...(_paymentMethods.map((method) {
+                ...(_availablePaymentMethods.map((method) {
                   final isSelected = _selectedPayment == method['id'];
                   return GestureDetector(
                     behavior: HitTestBehavior.opaque,

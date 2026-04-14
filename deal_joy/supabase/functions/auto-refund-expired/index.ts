@@ -179,6 +179,7 @@ Deno.serve(async (req) => {
       service_fee: number;
       tax_amount: number;
       commission_amount: number | null;
+      promo_discount: number;
       purchased_merchant_id: string | null;
       stripe_reserve_hold_id: string | null;
       coupon_id: string;
@@ -206,6 +207,7 @@ Deno.serve(async (req) => {
           tax_amount,
           commission_amount,
           purchased_merchant_id,
+          promo_discount,
           stripe_reserve_hold_id,
           coupon_id,
           coupons!inner ( id, expires_at ),
@@ -232,6 +234,7 @@ Deno.serve(async (req) => {
           // tax_amount：购买时收取的税款，退款时需要一并退还
           tax_amount: (row.tax_amount ?? 0) as number,
           commission_amount: row.commission_amount != null ? Number(row.commission_amount) : null,
+          promo_discount: Number(row.promo_discount ?? 0),
           purchased_merchant_id: (row.purchased_merchant_id ?? null) as string | null,
           stripe_reserve_hold_id: (row.stripe_reserve_hold_id ?? null) as string | null,
           coupon_id: (coupon?.id ?? row.coupon_id ?? '') as string,
@@ -389,7 +392,8 @@ Deno.serve(async (req) => {
 
               // 退款前先释放 ReserveHold（解冻商家资金，确保 reverse_transfer 能成功执行）
               const holdIdExp = item.stripe_reserve_hold_id as string | null ?? null;
-              if (holdIdExp && itemConnectId) {
+              const reservesEnabledExp = Deno.env.get('STRIPE_RESERVES_ENABLED') !== 'false';
+              if (holdIdExp && itemConnectId && reservesEnabledExp) {
                 await releaseReserveHold(itemConnectId, holdIdExp, Deno.env.get('STRIPE_SECRET_KEY') ?? '');
               }
 

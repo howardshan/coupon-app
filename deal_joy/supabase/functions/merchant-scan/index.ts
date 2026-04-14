@@ -61,9 +61,11 @@ async function createReserveHold(
   amountCents: number,
   stripeKey: string,
 ): Promise<string | null> {
+  const releaseAfter = Math.floor(Date.now() / 1000) + 180 * 24 * 3600;
   const body = new URLSearchParams({
     amount: String(amountCents),
     currency: 'usd',
+    'release_schedule[release_after]': String(releaseAfter),
   });
   try {
     const res = await fetch('https://api.stripe.com/v1/reserve/holds', {
@@ -478,7 +480,8 @@ async function handleRedeem(
       const connectId = (merchantData as any)?.stripe_account_status === 'connected'
         ? (merchantData as any)?.stripe_account_id as string | null
         : null;
-      if (connectId) {
+      const reservesEnabled = Deno.env.get('STRIPE_RESERVES_ENABLED') !== 'false';
+      if (connectId && reservesEnabled) {
         const stripeKey = Deno.env.get('STRIPE_SECRET_KEY') ?? '';
         // fire-and-forget：释放失败不阻断核销响应
         releaseReserveHold(connectId, holdId, stripeKey).catch(err => {

@@ -354,17 +354,22 @@ Deno.serve(async (req) => {
     }
 
     // ----------------------------------------------------------------
-    // 6.5. 为每个 order_item 在 merchant Connect 账户创建 ReserveHold
-    //      冻结 merchant_net（Path A 硬性 Reserve）
-    //      失败不阻断订单流程（支付已成功），仅记录错误日志
+    // 6.5. Stripe Connect 分账 + ReserveHold
+    //   A. 多商家订单：通过 Transfer API 手动将 merchant_net 路由到各商家 Connect 账户
+    //      （单商家时 PI 已含 transfer_data，无需重复操作）
+    //   B. ReserveHold：冻结 merchant_net，防止核销前提现
+    //      STRIPE_RESERVES_ENABLED=false 时跳过（降级到软性检查）
+    //      失败时回滚订单并退款（硬性保障）
     // ----------------------------------------------------------------
-    const stripeKeyForReserve = Deno.env.get('STRIPE_SECRET_KEY') ?? '';
-    if (insertedItems && insertedItems.length > 0 && stripeKeyForReserve) {
-      // 批量查询各商家的 stripe_account_id
+    const stripeKey = Deno.env.get('STRIPE_SECRET_KEY') ?? '';
+    const reservesEnabled = Deno.env.get('STRIPE_RESERVES_ENABLED') !== 'false';
+
+    if (insertedItems && insertedItems.length > 0 && stripeKey) {
+      // 查询各商家的 Stripe Connect 账户信息
       const merchantIdsForReserve = [
         ...new Set(
           (insertedItems as any[])
-            .map((i: { purchased_merchant_id?: string | null }) => i.purchased_merchant_id)
+            .map((i: any) => i.purchased_merchant_id as string | null)
             .filter((id): id is string => !!id),
         ),
       ];
@@ -377,48 +382,189 @@ Deno.serve(async (req) => {
           .in('id', merchantIdsForReserve);
 
         reserveMerchantConnectMap = new Map(
-          (merchantConnectRows ?? []).map((m: { id: string; stripe_account_id?: string | null; stripe_account_status?: string | null }) => [
+          (merchantConnectRows ?? []).map((m: any) => [
             m.id,
             m.stripe_account_status === 'connected' ? (m.stripe_account_id ?? null) : null,
           ]),
         );
       }
 
-      // 为每个 item 创建 ReserveHold（并行，不阻断主流程）
-      const reserveResults = await Promise.allSettled(
-        (insertedItems as any[]).map(async (dbItem: { id: string; unit_price: number; commission_amount: number; promo_discount?: number; purchased_merchant_id?: string | null }, idx: number) => {
-          const connectId = dbItem.purchased_merchant_id
-            ? reserveMerchantConnectMap.get(dbItem.purchased_merchant_id)
-            : null;
-          if (!connectId) return; // 商家无 Connect 账户，跳过
+      // ── A. 多商家手动分账（PI 无 transfer_data，需 Transfer API 路由资金）──
+      // successfulTransfers: connectId → transferId（用于回滚时 reversal）
+      const successfulTransfers = new Map<string, string>();
+      // transferFailedConnectIds: 分账失败的商家（Hold 将跳过，避免触发不必要的回滚）
+      const transferFailedConnectIds = new Set<string>();
 
-          // merchant_net = unit_price - promo_discount - commission_amount（均已快照到 order_items）
-          const merchantNetCents = Math.round(
-            (dbItem.unit_price - (dbItem.promo_discount ?? 0) - dbItem.commission_amount) * 100,
-          );
-          if (merchantNetCents <= 0) return;
+      if (merchantIdsForReserve.length > 1 && !skipStripeVerification) {
+        const chargeId = typeof (paymentIntent as any).latest_charge === 'string'
+          ? (paymentIntent as any).latest_charge as string
+          : null;
 
-          const holdId = await createReserveHold(connectId, merchantNetCents, stripeKeyForReserve);
-          if (holdId) {
+        if (chargeId) {
+          // 按 Connect 账户汇总 merchant_net
+          const merchantNetMap = new Map<string, number>();
+          for (const dbItem of (insertedItems as any[])) {
+            const mid = dbItem.purchased_merchant_id as string | null;
+            const connectId = mid ? reserveMerchantConnectMap.get(mid) : null;
+            if (!mid || !connectId) continue;
+            const net = Math.round(
+              (dbItem.unit_price - (dbItem.promo_discount ?? 0) - dbItem.commission_amount) * 100,
+            );
+            if (net > 0) merchantNetMap.set(connectId, (merchantNetMap.get(connectId) ?? 0) + net);
+          }
+
+          for (const [connectId, amountCents] of merchantNetMap) {
+            try {
+              const transferRes = await fetch('https://api.stripe.com/v1/transfers', {
+                method: 'POST',
+                headers: {
+                  Authorization: `Bearer ${stripeKey}`,
+                  'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: new URLSearchParams({
+                  amount: String(amountCents),
+                  currency: 'usd',
+                  destination: connectId,
+                  source_transaction: chargeId,
+                  transfer_group: orderId,
+                }).toString(),
+              });
+              if (!transferRes.ok) {
+                console.error(`[Transfer] 分账失败 dest=${connectId} amount=${amountCents}:`, await transferRes.text());
+                transferFailedConnectIds.add(connectId); // 标记失败，后续跳过 Hold
+              } else {
+                const transferData = await transferRes.json();
+                successfulTransfers.set(connectId, (transferData as any).id);
+                console.log(`[Transfer] 分账成功 dest=${connectId} transfer=${(transferData as any).id}`);
+              }
+            } catch (err) {
+              console.error(`[Transfer] 网络异常 dest=${connectId}:`, err);
+              transferFailedConnectIds.add(connectId);
+            }
+          }
+
+          if (transferFailedConnectIds.size > 0) {
+            console.error(`[Transfer] 以下商家分账失败，需人工补 Transfer: ${[...transferFailedConnectIds].join(',')}`);
+          }
+        } else {
+          console.warn('[Transfer] 多商家订单无法获取 chargeId，跳过分账（需人工处理）');
+        }
+      }
+
+      // ── B. ReserveHold（STRIPE_RESERVES_ENABLED=true 时强制，失败则回滚）──
+      if (reservesEnabled) {
+        const holdFailures: string[] = [];
+        // createdHolds：已成功创建的 Hold，回滚时需要释放（Fix 2）
+        const createdHolds: Array<{ connectId: string; holdId: string }> = [];
+
+        await Promise.allSettled(
+          (insertedItems as any[]).map(async (dbItem: any) => {
+            const connectId = dbItem.purchased_merchant_id
+              ? reserveMerchantConnectMap.get(dbItem.purchased_merchant_id)
+              : null;
+            if (!connectId) return; // 商家无 Connect 账户，跳过（非失败）
+
+            // Fix 5：Transfer 失败的商家跳过 Hold（资金未在 Connect 账户）
+            if (transferFailedConnectIds.has(connectId)) {
+              console.warn(`[ReserveHold] 跳过 item=${dbItem.id}（Transfer 失败，资金未到 Connect）`);
+              return;
+            }
+
+            const merchantNetCents = Math.round(
+              (dbItem.unit_price - (dbItem.promo_discount ?? 0) - dbItem.commission_amount) * 100,
+            );
+            if (merchantNetCents <= 0) return;
+
+            const holdId = await createReserveHold(connectId, merchantNetCents, stripeKey);
+            if (!holdId) {
+              holdFailures.push(dbItem.id);
+              return;
+            }
+
+            // Fix 2：先记录已创建的 Hold，再写库；无论写库是否成功都能在回滚时清理
+            createdHolds.push({ connectId, holdId });
+
             const { error: holdUpdateErr } = await serviceClient
               .from('order_items')
               .update({ stripe_reserve_hold_id: holdId })
               .eq('id', dbItem.id);
             if (holdUpdateErr) {
-              console.error(`[ReserveHold] 写入 order_items 失败 item=${dbItem.id}:`, holdUpdateErr);
+              // Fix 3：DB 写库失败也进 holdFailures，触发回滚
+              console.error(`[ReserveHold] 写入失败 item=${dbItem.id}:`, holdUpdateErr);
+              holdFailures.push(dbItem.id);
             } else {
-              console.log(`[ReserveHold] 创建成功 item=${dbItem.id} hold=${holdId} net=${merchantNetCents / 100}`);
+              console.log(`[ReserveHold] 创建成功 item=${dbItem.id} hold=${holdId}`);
+            }
+          }),
+        );
+
+        if (holdFailures.length > 0) {
+          console.error(`[ReserveHold] Hold 失败，回滚订单 items=${holdFailures.join(',')}`);
+
+          // Fix 2：释放所有已成功创建的 Hold
+          for (const { connectId, holdId } of createdHolds) {
+            try {
+              await fetch('https://api.stripe.com/v1/reserve/releases', {
+                method: 'POST',
+                headers: {
+                  Authorization: `Bearer ${stripeKey}`,
+                  'Stripe-Version': '2025-08-27.preview',
+                  'Stripe-Account': connectId,
+                  'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: new URLSearchParams({ reserve_hold: holdId }).toString(),
+              });
+            } catch (err) {
+              console.error(`[ReserveHold] 回滚释放失败 hold=${holdId}，需人工处理:`, err);
             }
           }
-        }),
-      );
 
-      // 记录失败情况（不阻断）
-      reserveResults.forEach((r, i) => {
-        if (r.status === 'rejected') {
-          console.error(`[ReserveHold] item[${i}] 异常:`, r.reason);
+          // Fix 1：Reverse 所有已成功的 Transfer（确保资金回到平台再退款）
+          for (const [, transferId] of successfulTransfers) {
+            try {
+              const revRes = await fetch(`https://api.stripe.com/v1/transfers/${transferId}/reversals`, {
+                method: 'POST',
+                headers: {
+                  Authorization: `Bearer ${stripeKey}`,
+                  'Content-Type': 'application/x-www-form-urlencoded',
+                },
+              });
+              if (!revRes.ok) {
+                console.error(`[Transfer] Reversal 失败 transfer=${transferId}，需人工处理:`, await revRes.text());
+              } else {
+                console.log(`[Transfer] Reversal 成功 transfer=${transferId}`);
+              }
+            } catch (err) {
+              console.error(`[Transfer] Reversal 网络异常 transfer=${transferId}，需人工处理:`, err);
+            }
+          }
+
+          // 退款（Store Credit 全额覆盖时无 Stripe PI，跳过）
+          if (!skipStripeVerification) {
+            try {
+              const refundRes = await fetch('https://api.stripe.com/v1/refunds', {
+                method: 'POST',
+                headers: {
+                  Authorization: `Bearer ${stripeKey}`,
+                  'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: new URLSearchParams({ payment_intent: paymentIntentId }).toString(),
+              });
+              if (!refundRes.ok) {
+                console.error('[ReserveHold] 退款调用失败，需人工处理:', await refundRes.text());
+              } else {
+                console.log('[ReserveHold] 退款成功 pi=', paymentIntentId);
+              }
+            } catch (err) {
+              console.error('[ReserveHold] 退款网络异常，需人工处理:', err);
+            }
+          }
+
+          // 删除订单（级联删除 order_items）
+          await serviceClient.from('orders').delete().eq('id', orderId);
+          return jsonResponse({ error: 'ReserveHold 创建失败，订单已取消，支付已退款' }, 500);
         }
-      });
+      }
     }
 
     // ----------------------------------------------------------------

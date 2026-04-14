@@ -238,14 +238,15 @@ Deno.serve(async (req) => {
 
       // 退款前先释放 ReserveHold（解冻商家资金，确保 reverse_transfer 能成功执行）
       const holdIdSC = (item as any).stripe_reserve_hold_id as string | null;
-      if (holdIdSC && merchantStripeAccountId) {
+      const reservesEnabledSC = Deno.env.get('STRIPE_RESERVES_ENABLED') !== 'false';
+      if (holdIdSC && merchantStripeAccountId && reservesEnabledSC) {
         await releaseReserveHold(merchantStripeAccountId, holdIdSC, Deno.env.get('STRIPE_SECRET_KEY') ?? '');
       }
 
-      // Stripe Connect 分账路径（Phase 1B 后的订单）：
-      // Store Credit 由平台垫付，需从商家 Connect 账户回撤 merchant_net，以平衡资金
-      // merchant_net = unit_price - commission（commission 归平台，此处也回撤）
-      if (hasConnectRouting && order.payment_intent_id && !order.payment_intent_id.startsWith('store_credit_')) {
+      // Stripe Connect 分账路径：Store Credit 由平台垫付，需从商家 Connect 账户回撤 merchant_net，以平衡资金
+      // 注意：此处不依赖 hasConnectRouting（避免因商家状态不是 'connected' 而漏掉逆向）
+      // 直接从 PI latest_charge.transfer 判断是否存在 Transfer，有则逆向
+      if (order.payment_intent_id && !order.payment_intent_id.startsWith('store_credit_')) {
         try {
           // 获取 PaymentIntent 找到关联 transfer ID
           const pi = await stripe.paymentIntents.retrieve(order.payment_intent_id, {
@@ -435,16 +436,28 @@ Deno.serve(async (req) => {
           }
           // 退款前先释放 ReserveHold（解冻商家资金，确保 reverse_transfer 能成功执行）
           const holdIdOP = (item as any).stripe_reserve_hold_id as string | null;
-          if (holdIdOP && merchantStripeAccountId) {
+          const reservesEnabledOP = Deno.env.get('STRIPE_RESERVES_ENABLED') !== 'false';
+          if (holdIdOP && merchantStripeAccountId && reservesEnabledOP) {
             await releaseReserveHold(merchantStripeAccountId, holdIdOP, Deno.env.get('STRIPE_SECRET_KEY') ?? '');
           }
 
-          // Stripe Connect 分账路径（Phase 1B 后的订单）：
-          //   reverse_transfer: true → 从商家 Connect 账户拉回 merchant_net 用于退款
-          //   refund_application_fee: false（默认）→ 平台保留 service_fee，退还 commission 部分
-          //   Stripe 会按比例从 Connect 账户反转转账，近似值符合业务规则
-          if (hasConnectRouting) {
-            refundParams.reverse_transfer = true;
+          // Stripe Connect 分账路径：确认 PI 上存在 Transfer 再加 reverse_transfer: true
+          // 不依赖 hasConnectRouting（避免因商家状态不是 'connected' 而漏掉逆向）
+          // 直接从 latest_charge.transfer 判断：如果没有 transfer，盲目加 reverse_transfer 会导致 Stripe 报错中断退款
+          if (order.payment_intent_id && !order.payment_intent_id.startsWith('store_credit_')) {
+            try {
+              const piForCheck = await stripe.paymentIntents.retrieve(order.payment_intent_id, {
+                expand: ['latest_charge.transfer'],
+              });
+              const transferForCheck = (piForCheck as any).latest_charge?.transfer;
+              const transferIdForCheck = typeof transferForCheck === 'string' ? transferForCheck : transferForCheck?.id;
+              if (transferIdForCheck) {
+                refundParams.reverse_transfer = true;
+              }
+            } catch (piErr) {
+              // 查询失败时降级：不加 reverse_transfer，防止阻断退款主流程
+              console.error('[create-refund] 原路退款 transfer 检测失败（降级不加 reverse_transfer）:', piErr);
+            }
           }
           const refund = await stripe.refunds.create(refundParams as any);
           stripeRefundId = refund.id;
