@@ -557,8 +557,9 @@ class _MeituanOrderBody extends ConsumerStatefulWidget {
 }
 
 class _MeituanOrderBodyState extends ConsumerState<_MeituanOrderBody> {
-  // 每个 deal 分组的展开状态（key = dealId）
-  final Map<String, bool> _expandedGroups = {};
+  // 每个 deal 下 Used / Gifted 区块各自展开（与 Unused sheet 互不抢占）
+  final Map<String, bool> _expandedUsedByDeal = {};
+  final Map<String, bool> _expandedGiftedByDeal = {};
 
   OrderDetailModel get detail => widget.detail;
 
@@ -593,21 +594,28 @@ class _MeituanOrderBodyState extends ConsumerState<_MeituanOrderBody> {
             ...groupMap.entries.map((entry) {
               final dealId = entry.key;
               final items = entry.value;
-              final isExpanded = _expandedGroups[dealId] ?? false;
+              final usedExpanded = _expandedUsedByDeal[dealId] ?? false;
+              final giftedExpanded = _expandedGiftedByDeal[dealId] ?? false;
 
               return SliverToBoxAdapter(
                 child: _DealSummaryCard(
                   dealItems: items,
-                  isExpanded: isExpanded,
+                  isUsedExpanded: usedExpanded,
+                  onToggleUsedExpand: () {
+                    setState(() {
+                      _expandedUsedByDeal[dealId] = !usedExpanded;
+                    });
+                  },
+                  isGiftedExpanded: giftedExpanded,
+                  onToggleGiftedExpand: () {
+                    setState(() {
+                      _expandedGiftedByDeal[dealId] = !giftedExpanded;
+                    });
+                  },
                   orderId: widget.orderId,
                   paymentIntentId: detail.paymentIntentIdMasked,
                   storeCreditUsed: detail.storeCreditUsed,
                   orderTotalAmount: detail.totalAmount,
-                  onToggleExpand: () {
-                    setState(() {
-                      _expandedGroups[dealId] = !isExpanded;
-                    });
-                  },
                   onRefreshOrder: () =>
                       ref.invalidate(userOrderDetailProvider(widget.orderId)),
                 ),
@@ -645,8 +653,10 @@ class _MeituanOrderBodyState extends ConsumerState<_MeituanOrderBody> {
 
 class _DealSummaryCard extends ConsumerWidget {
   final List<OrderItemModel> dealItems;
-  final bool isExpanded;
-  final VoidCallback onToggleExpand;
+  final bool isUsedExpanded;
+  final VoidCallback onToggleUsedExpand;
+  final bool isGiftedExpanded;
+  final VoidCallback onToggleGiftedExpand;
   final VoidCallback onRefreshOrder;
   final String? paymentIntentId;
   final String orderId;
@@ -657,8 +667,10 @@ class _DealSummaryCard extends ConsumerWidget {
 
   const _DealSummaryCard({
     required this.dealItems,
-    required this.isExpanded,
-    required this.onToggleExpand,
+    required this.isUsedExpanded,
+    required this.onToggleUsedExpand,
+    required this.isGiftedExpanded,
+    required this.onToggleGiftedExpand,
     required this.onRefreshOrder,
     required this.orderId,
     this.paymentIntentId,
@@ -819,8 +831,8 @@ class _DealSummaryCard extends ConsumerWidget {
               count: usedItems.length,
               color: const Color(0xFF2979FF),
               items: usedItems,
-              isExpanded: isExpanded && unusedItems.isEmpty,
-              onToggle: unusedItems.isEmpty ? onToggleExpand : null,
+              isExpanded: isUsedExpanded,
+              onToggle: onToggleUsedExpand,
               onRefreshOrder: onRefreshOrder,
               orderId: orderId,
               paymentIntentId: paymentIntentId,
@@ -833,8 +845,8 @@ class _DealSummaryCard extends ConsumerWidget {
               count: giftedItems.length,
               color: AppColors.secondary,
               items: giftedItems,
-              isExpanded: isExpanded && unusedItems.isEmpty && usedItems.isEmpty,
-              onToggle: unusedItems.isEmpty && usedItems.isEmpty ? onToggleExpand : null,
+              isExpanded: isGiftedExpanded,
+              onToggle: onToggleGiftedExpand,
               onRefreshOrder: onRefreshOrder,
               orderId: orderId,
               paymentIntentId: paymentIntentId,
