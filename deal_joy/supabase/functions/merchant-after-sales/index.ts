@@ -5,10 +5,10 @@ import {
   appendTimeline,
   decorateAfterSalesRequest,
   decorateAfterSalesRequests,
-  issueAfterSalesRefund,
   normalizeAttachmentKeys,
   recordAfterSalesEvent,
 } from "../_shared/after-sales.ts";
+import { issueAfterSalesRefund } from "../_shared/after-sales-refund.ts";
 import { resolveAuth, requirePermission } from "../_shared/auth.ts";
 import { sendEmail } from "../_shared/email.ts";
 import { buildC13Email } from "../_shared/email-templates/customer/after-sales-merchant-replied.ts";
@@ -31,6 +31,16 @@ function jsonResponse(data: unknown, status = 200): Response {
 
 function errorResponse(message: string, code = "bad_request", status = 400): Response {
   return jsonResponse({ error: code, message }, status);
+}
+
+/** 嵌套 orders 上的 order_number（PostgREST 多为单对象） */
+function orderNumberFromAfterSalesEmailRow(row: unknown): string | undefined {
+  const raw = (row as { orders?: { order_number?: string } | { order_number?: string }[] | null })
+    ?.orders;
+  if (raw == null) return undefined;
+  const one = Array.isArray(raw) ? raw[0] : raw;
+  const n = one?.order_number;
+  return typeof n === "string" && n.trim() ? n.trim() : undefined;
 }
 
 /** 与 supabase/config.toml 中函数目录名一致 */
@@ -579,13 +589,14 @@ async function handleApprove(
       try {
         const { data: reqInfo } = await supabase
           .from("after_sales_requests")
-          .select("user_id, coupons(deal_id, deals(title))")
+          .select("user_id, orders(order_number), coupons(deal_id, deals(title))")
           .eq("id", requestId)
           .single();
         const { data: merchantInfo } = await supabase
           .from("merchants").select("name").eq("id", auth.merchantId).single();
         const merchantName = merchantInfo?.name ?? "";
         const dealTitle = (reqInfo as any)?.coupons?.deals?.title as string | undefined;
+        const orderNumber = orderNumberFromAfterSalesEmailRow(reqInfo);
         const requestIdShort = requestId.slice(0, 8).toUpperCase();
         const refundAmount = Number(updated.refund_amount ?? 0);
 
@@ -595,7 +606,7 @@ async function handleApprove(
           if (customerUser?.email) {
             const { subject: c13Subject, html: c13Html } = buildC13Email({
               requestId: requestIdShort, merchantName, decision: "approved",
-              merchantNote: note, refundAmount, dealTitle,
+              merchantNote: note, refundAmount, dealTitle, orderNumber,
             });
             await sendEmail(supabase, {
               to: customerUser.email, subject: c13Subject, htmlBody: c13Html,
@@ -732,13 +743,14 @@ async function handleReject(
     try {
       const { data: reqInfo } = await supabase
         .from("after_sales_requests")
-        .select("user_id, coupons(deal_id, deals(title))")
+        .select("user_id, orders(order_number), coupons(deal_id, deals(title))")
         .eq("id", requestId)
         .single();
       const { data: merchantInfo } = await supabase
         .from("merchants").select("name").eq("id", auth.merchantId).single();
       const merchantName = merchantInfo?.name ?? "";
       const dealTitle = (reqInfo as any)?.coupons?.deals?.title as string | undefined;
+      const orderNumber = orderNumberFromAfterSalesEmailRow(reqInfo);
       const requestIdShort = requestId.slice(0, 8).toUpperCase();
 
       if (reqInfo?.user_id) {
@@ -747,7 +759,7 @@ async function handleReject(
         if (customerUser?.email) {
           const { subject: c13Subject, html: c13Html } = buildC13Email({
             requestId: requestIdShort, merchantName, decision: "rejected",
-            merchantNote: note, dealTitle,
+            merchantNote: note, dealTitle, orderNumber,
           });
           await sendEmail(supabase, {
             to: customerUser.email, subject: c13Subject, htmlBody: c13Html,
@@ -761,7 +773,7 @@ async function handleReject(
         .from("users").select("email").eq("id", auth.userId).single();
       if (merchantUser?.email) {
         const { subject: m11Subject, html: m11Html } = buildM11Email({
-          merchantName, requestId: requestIdShort,
+          merchantName, requestId: requestIdShort, orderNumber,
         });
         await sendEmail(supabase, {
           to: merchantUser.email, subject: m11Subject, htmlBody: m11Html,

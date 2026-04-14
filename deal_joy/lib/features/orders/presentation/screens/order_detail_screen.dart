@@ -1,6 +1,8 @@
 // 订单详情页 — 美团风格重写
 // 布局从上到下：状态横幅 → Deal摘要卡片 → 券状态展开行 → Order Info → 底部操作栏
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,18 +12,29 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/widgets/back_or_home_app_bar_leading.dart';
 import '../../../cart/domain/providers/cart_provider.dart';
 import '../../../deals/domain/providers/deals_provider.dart';
 import '../../data/models/order_detail_model.dart';
 import '../../data/models/order_item_model.dart';
+import '../../domain/providers/aggregated_deal_voucher_detail_provider.dart';
 import '../../domain/providers/orders_provider.dart';
 import '../../domain/providers/coupons_provider.dart';
+import '../widgets/customer_redemption_success_dialog.dart';
 import '../widgets/gift_bottom_sheet.dart';
 import '../widgets/used_refund_entry.dart';
 
 // ── 未使用券 QR 码弹窗 ────────────────────────────
 
-void showUnusedQrSheet(BuildContext context, List<OrderItemModel> items) {
+/// 出示未使用券 QR；内容订阅 Provider，商家核销后自动刷新；定时 invalidate 兜底 Realtime 断线
+void showUnusedQrSheet(
+  BuildContext context, {
+  required String orderId,
+  required String dealId,
+  bool aggregateByDeal = false,
+  Set<String> aggregatedOrderItemIds = const {},
+}) {
+  final hostContext = context;
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
@@ -29,46 +42,188 @@ void showUnusedQrSheet(BuildContext context, List<OrderItemModel> items) {
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
-    builder: (_) => _UnusedQrSheet(items: items),
+    builder: (_) => _UnusedQrSheet(
+      hostContext: hostContext,
+      orderId: orderId,
+      dealId: dealId,
+      aggregateByDeal: aggregateByDeal,
+      aggregatedOrderItemIds: aggregatedOrderItemIds,
+    ),
   );
 }
 
-class _UnusedQrSheet extends StatefulWidget {
-  final List<OrderItemModel> items;
-  const _UnusedQrSheet({required this.items});
+class _UnusedQrSheet extends ConsumerStatefulWidget {
+  /// 打开 QR 弹层的页面 context，用于关闭弹层后展示全屏成功与再次打开弹层
+  final BuildContext hostContext;
+  final String orderId;
+  final String dealId;
+  final bool aggregateByDeal;
+  final Set<String> aggregatedOrderItemIds;
+
+  const _UnusedQrSheet({
+    required this.hostContext,
+    required this.orderId,
+    required this.dealId,
+    this.aggregateByDeal = false,
+    this.aggregatedOrderItemIds = const {},
+  });
+
   @override
-  State<_UnusedQrSheet> createState() => _UnusedQrSheetState();
+  ConsumerState<_UnusedQrSheet> createState() => _UnusedQrSheetState();
 }
 
-class _UnusedQrSheetState extends State<_UnusedQrSheet> {
+class _UnusedQrSheetState extends ConsumerState<_UnusedQrSheet> {
   late final PageController _pageController;
   int _currentPage = 0;
+  Set<String>? _prevUnusedItemIds;
+  bool _didAutoPopForEmptyOpen = false;
+  bool _redemptionSuccessFlowScheduled = false;
+  Timer? _pollTimer;
 
   @override
   void initState() {
     super.initState();
     _pageController = PageController();
+    // 定期拉取，避免 Realtime 1002 等导致长时间停在旧 QR
+    _pollTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (!mounted) return;
+      ref.invalidate(userCouponsProvider);
+      if (widget.aggregateByDeal && widget.aggregatedOrderItemIds.isNotEmpty) {
+        final key = aggregatedDealVoucherCacheKey(
+            widget.dealId, widget.aggregatedOrderItemIds);
+        ref.invalidate(aggregatedDealVoucherDetailProvider(key));
+      } else {
+        ref.invalidate(userOrderDetailProvider(widget.orderId));
+      }
+    });
   }
 
   @override
   void dispose() {
+    _pollTimer?.cancel();
     _pageController.dispose();
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final items = widget.items;
-    final hasMultiple = items.length > 1;
-
+  /// 与 QR 内容区一致的外壳，避免 isScrollControlled 下 Center 撑满整屏
+  Widget _buildSheetChrome({
+    required Widget child,
+    String? title,
+  }) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 16, 24, 40),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // 拖拽指示条
           Container(
-            width: 40, height: 4,
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: AppColors.textHint,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: 16),
+          if (title != null) ...[
+            Text(
+              title,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 16),
+          ],
+          child,
+        ],
+      ),
+    );
+  }
+
+  /// 根据未使用 order_item id 集合变化检测核销：全屏成功 → 多张时关闭后再打开 QR
+  void _onDealItemsUpdated({
+    required List<OrderItemModel> dealItems,
+    required List<OrderItemModel> unusedItems,
+    required BuildContext sheetContext,
+  }) {
+    final currentIds = unusedItems.map((e) => e.id).toSet();
+    final prevIds = _prevUnusedItemIds;
+
+    if (prevIds == null) {
+      _prevUnusedItemIds = currentIds;
+      if (unusedItems.isEmpty && !_didAutoPopForEmptyOpen) {
+        _didAutoPopForEmptyOpen = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          ScaffoldMessenger.maybeOf(sheetContext)?.showSnackBar(
+            const SnackBar(
+              content: Text('This voucher has already been redeemed.'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          if (Navigator.canPop(sheetContext)) Navigator.pop(sheetContext);
+        });
+      }
+      return;
+    }
+
+    if (currentIds.length >= prevIds.length) {
+      _prevUnusedItemIds = currentIds;
+      return;
+    }
+
+    if (_redemptionSuccessFlowScheduled) return;
+    _redemptionSuccessFlowScheduled = true;
+    _prevUnusedItemIds = currentIds;
+
+    final redeemedIdList = prevIds.difference(currentIds).toList();
+    OrderItemModel? redeemedItem;
+    for (final rid in redeemedIdList) {
+      for (final i in dealItems) {
+        if (i.id == rid) {
+          redeemedItem = i;
+          break;
+        }
+      }
+      if (redeemedItem != null) break;
+    }
+
+    final dealTitle = redeemedItem?.dealTitle ?? 'Deal';
+    final redeemedAt = redeemedItem?.redeemedAt ?? DateTime.now();
+    final hasMoreUnused = unusedItems.isNotEmpty;
+    final host = widget.hostContext;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!sheetContext.mounted) return;
+      Navigator.of(sheetContext).pop();
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      if (!host.mounted) return;
+      await showCustomerRedemptionSuccessDialog(
+        context: host,
+        dealTitle: dealTitle,
+        redeemedAt: redeemedAt,
+        primaryButtonLabel: hasMoreUnused ? 'Continue' : 'Done',
+      );
+      if (!host.mounted) return;
+      if (hasMoreUnused) {
+        showUnusedQrSheet(
+          host,
+          orderId: widget.orderId,
+          dealId: widget.dealId,
+          aggregateByDeal: widget.aggregateByDeal,
+          aggregatedOrderItemIds: widget.aggregatedOrderItemIds,
+        );
+      }
+    });
+  }
+
+  Widget _buildQrBody(BuildContext context, List<OrderItemModel> items) {
+    final hasMultiple = items.length > 1;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 40),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 40,
+            height: 4,
             decoration: BoxDecoration(
               color: AppColors.textHint,
               borderRadius: BorderRadius.circular(2),
@@ -82,8 +237,6 @@ class _UnusedQrSheetState extends State<_UnusedQrSheet> {
             style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 16),
-
-          // QR 码区域（支持左右滑动多张券）
           SizedBox(
             height: 340,
             child: PageView.builder(
@@ -94,11 +247,9 @@ class _UnusedQrSheetState extends State<_UnusedQrSheet> {
                 final item = items[i];
                 final qrData = item.couponQrCode ?? item.couponCode ?? '';
                 final formattedCode = item.formattedCouponCode;
-
                 return Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // QR 码
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
@@ -120,13 +271,12 @@ class _UnusedQrSheetState extends State<_UnusedQrSheet> {
                               backgroundColor: Colors.white,
                             )
                           : const SizedBox(
-                              width: 200, height: 200,
+                              width: 200,
+                              height: 200,
                               child: Center(child: Text('QR code unavailable')),
                             ),
                     ),
                     const SizedBox(height: 16),
-
-                    // 券码（可复制）
                     if (formattedCode != null)
                       GestureDetector(
                         onTap: () {
@@ -140,7 +290,8 @@ class _UnusedQrSheetState extends State<_UnusedQrSheet> {
                           );
                         },
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 10),
                           decoration: BoxDecoration(
                             color: AppColors.surfaceVariant,
                             borderRadius: BorderRadius.circular(10),
@@ -169,27 +320,145 @@ class _UnusedQrSheetState extends State<_UnusedQrSheet> {
               },
             ),
           ),
-
-          // 多张券时显示分页指示器
           if (hasMultiple) ...[
             const SizedBox(height: 12),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(items.length, (i) => Container(
-                width: i == _currentPage ? 20 : 8,
-                height: 8,
-                margin: const EdgeInsets.symmetric(horizontal: 3),
-                decoration: BoxDecoration(
-                  color: i == _currentPage
-                      ? AppColors.primary
-                      : AppColors.textHint.withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              )),
+              children: List.generate(
+                  items.length,
+                  (i) => Container(
+                        width: i == _currentPage ? 20 : 8,
+                        height: 8,
+                        margin: const EdgeInsets.symmetric(horizontal: 3),
+                        decoration: BoxDecoration(
+                          color: i == _currentPage
+                              ? AppColors.primary
+                              : AppColors.textHint.withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      )),
             ),
           ],
-
         ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final aggKey = widget.aggregateByDeal &&
+            widget.aggregatedOrderItemIds.isNotEmpty
+        ? aggregatedDealVoucherCacheKey(
+            widget.dealId, widget.aggregatedOrderItemIds)
+        : null;
+
+    final detailAsync = aggKey != null
+        ? ref.watch(aggregatedDealVoucherDetailProvider(aggKey))
+        : ref.watch(userOrderDetailProvider(widget.orderId));
+
+    return detailAsync.when(
+      skipLoadingOnReload: true,
+      data: (detail) {
+        final dealItems =
+            detail.items.where((i) => i.dealId == widget.dealId).toList();
+        final unusedItems = dealItems
+            .where((i) => i.customerStatus == CustomerItemStatus.unused)
+            .toList();
+
+        _onDealItemsUpdated(
+          dealItems: dealItems,
+          unusedItems: unusedItems,
+          sheetContext: context,
+        );
+
+        if (unusedItems.isNotEmpty && _currentPage >= unusedItems.length) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted || !_pageController.hasClients) return;
+            final target = unusedItems.length - 1;
+            _pageController.jumpToPage(target);
+            setState(() => _currentPage = target);
+          });
+        }
+
+        if (unusedItems.isEmpty) {
+          if (_redemptionSuccessFlowScheduled) {
+            return _buildSheetChrome(
+              title: 'Scan to Redeem',
+              child: const SizedBox(
+                height: 200,
+                child: Center(
+                  child: SizedBox(
+                    height: 48,
+                    width: 48,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              ),
+            );
+          }
+          return _buildSheetChrome(
+            title: 'Scan to Redeem',
+            child: const SizedBox(
+              height: 200,
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 16),
+                    Text(
+                      'Updating…',
+                      style: TextStyle(color: AppColors.textSecondary),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
+
+        return _buildQrBody(context, unusedItems);
+      },
+      loading: () => _buildSheetChrome(
+        title: 'Scan to Redeem',
+        child: const SizedBox(
+          height: 320,
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      ),
+      error: (e, _) => _buildSheetChrome(
+        title: 'Scan to Redeem',
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Failed to load voucher',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                e.toString(),
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    fontSize: 13, color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 16),
+              TextButton(
+                onPressed: () {
+                  ref.invalidate(userCouponsProvider);
+                  if (aggKey != null) {
+                    ref.invalidate(aggregatedDealVoucherDetailProvider(aggKey));
+                  } else {
+                    ref.invalidate(userOrderDetailProvider(widget.orderId));
+                  }
+                },
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -219,7 +488,11 @@ class OrderDetailScreen extends ConsumerWidget {
           body: Center(child: CircularProgressIndicator()),
         ),
         error: (e, _) => Scaffold(
-          appBar: AppBar(title: const Text('Order Detail')),
+          appBar: AppBar(
+            title: const Text('Order Detail'),
+            leading: backOrHomeAppBarLeading(context),
+            automaticallyImplyLeading: false,
+          ),
           body: _ErrorBody(
             onRetry: () => ref.invalidate(userOrderDetailProvider(orderId)),
             error: e,
@@ -302,21 +575,11 @@ class _MeituanOrderBodyState extends ConsumerState<_MeituanOrderBody> {
         // 主滚动区域
         CustomScrollView(
           slivers: [
-            // 顶部 AppBar
+            // 顶部 AppBar（显式返回：go 进页时栈上无上一屏也能回首页）
             SliverAppBar(
               pinned: true,
-              // 显式返回按钮：从 order-success 进入时路由栈已被替换，
-              // canPop() 为 false，此时回退到 /orders 列表
-              leading: IconButton(
-                icon: const Icon(Icons.arrow_back_ios_new, size: 20),
-                onPressed: () {
-                  if (context.canPop()) {
-                    context.pop();
-                  } else {
-                    context.go('/orders');
-                  }
-                },
-              ),
+              leading: backOrHomeAppBarLeading(context),
+              automaticallyImplyLeading: false,
               title: const Text(
                 'Order Detail',
                 style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
@@ -539,7 +802,11 @@ class _DealSummaryCard extends ConsumerWidget {
               color: const Color(0xFF00C853),
               items: unusedItems,
               isExpanded: false,
-              onToggle: () => showUnusedQrSheet(context, unusedItems),
+              onToggle: () => showUnusedQrSheet(
+                    context,
+                    orderId: orderId,
+                    dealId: first.dealId,
+                  ),
               onRefreshOrder: onRefreshOrder,
               orderId: orderId,
               paymentIntentId: paymentIntentId,

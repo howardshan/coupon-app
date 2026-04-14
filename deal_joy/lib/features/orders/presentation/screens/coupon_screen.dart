@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/errors/app_exception.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/widgets/back_or_home_app_bar_leading.dart';
 import '../../../reviews/domain/providers/my_reviews_provider.dart';
 import '../../data/models/coupon_model.dart';
 import '../../data/models/coupon_gift_model.dart';
@@ -37,16 +38,8 @@ class CouponScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () {
-            if (context.canPop()) {
-              Navigator.of(context).pop();
-            } else {
-              context.go('/home');
-            }
-          },
-        ),
+        leading: backOrHomeAppBarLeading(context),
+        automaticallyImplyLeading: false,
         title: const Text('Your Coupon'),
       ),
       body: couponAsync.when(

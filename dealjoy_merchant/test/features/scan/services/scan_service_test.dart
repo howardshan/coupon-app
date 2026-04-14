@@ -1,5 +1,5 @@
 // ScanService 单元测试
-// 覆盖: verifyCoupon / redeemCoupon / revertRedemption / fetchRedemptionHistory
+// 覆盖: verifyCoupon / redeemCoupon / fetchRedemptionHistory
 // 使用 mocktail mock SupabaseClient 的 functions 调用
 
 import 'package:flutter_test/flutter_test.dart';
@@ -222,55 +222,6 @@ void main() {
         () => service.redeemCoupon('coupon-uuid-001'),
         throwsA(isA<ScanException>()
             .having((e) => e.error, 'error', ScanError.alreadyUsed)),
-      );
-    });
-  });
-
-  // =============================================================
-  // revertRedemption 测试组
-  // =============================================================
-  group('revertRedemption', () {
-    test('成功撤销时正常返回', () async {
-      when(() => mockFunctions.invoke(
-            any(),
-            method: any(named: 'method'),
-            body: any(named: 'body'),
-          )).thenAnswer(
-        (_) async => FunctionResponse(
-          data: {
-            'reverted_at': DateTime.now().toIso8601String(),
-            'coupon_id': 'coupon-uuid-001',
-          },
-          status: 200,
-        ),
-      );
-
-      // 不应抛出异常
-      await expectLater(
-        service.revertRedemption('coupon-uuid-001'),
-        completes,
-      );
-    });
-
-    test('抛出 ScanException(revertExpired) 当超过10分钟', () async {
-      when(() => mockFunctions.invoke(
-            any(),
-            method: any(named: 'method'),
-            body: any(named: 'body'),
-          )).thenAnswer(
-        (_) async => FunctionResponse(
-          data: {
-            'error': 'revert_expired',
-            'message': 'Cannot revert after 10 minutes',
-          },
-          status: 400,
-        ),
-      );
-
-      expect(
-        () => service.revertRedemption('coupon-uuid-001'),
-        throwsA(isA<ScanException>()
-            .having((e) => e.error, 'error', ScanError.revertExpired)),
       );
     });
   });

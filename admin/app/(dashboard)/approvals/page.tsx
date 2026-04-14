@@ -12,6 +12,8 @@ const PER_PAGE = 20
 type SearchParams = {
   tab?: string
   page?: string
+  /** Merchants / Deals / Refund / After-Sales：pending=待办；history=已离开待办队列 */
+  queue?: string
 }
 
 // ─── 数据类型定义 ────────────────────────────────────────────────────────
@@ -24,6 +26,8 @@ export type MerchantItem = {
   contactEmail: string | null
   phone: string | null
   createdAt: string
+  status: string
+  updatedAt: string | null
 }
 
 export type DealItem = {
@@ -73,18 +77,57 @@ export type RefundDisputeItem = {
   orderId: string
   merchantName: string
   userNameMasked: string
+  /** 列表排序/「Resolved」展示：completed_at → admin_decided_at → updated_at */
+  resolvedAt: string | null
 }
 
 export type AfterSalesItem = {
   id: string
+  /** 关联订单，用于抽屉吸底跳转（视图含 order_id） */
+  orderId: string
   status: string
   reasonCode: string
   reasonDetail: string
   refundAmount: number
   storeName: string | null
-  userMasked: string
+  /** 后台展示全名；与 user_id 对应 public.users */
+  userFullName: string
+  userId: string
   createdAt: string
   expiresAt: string | null
+  /** 以下字段历史队列由视图提供，待办队列可为 null */
+  refundedAt?: string | null
+  platformDecidedAt?: string | null
+  closedAt?: string | null
+  resolvedAt?: string | null
+}
+
+/** 平台售后历史：非待办状态（含 platform_approved 卡单） */
+const AFTER_SALES_HISTORY_STATUSES = [
+  'refunded',
+  'platform_rejected',
+  'platform_approved',
+  'closed',
+] as const
+
+const MERCHANT_HISTORY_STATUSES = ['approved', 'rejected'] as const
+
+/** 已离开「待审核」的 Deal（含下架） */
+const DEAL_HISTORY_STATUSES = ['active', 'inactive', 'rejected'] as const
+
+/** 管理员已裁定或流程终结（不含仍待商家/待用户升级的中间态） */
+const REFUND_HISTORY_STATUSES = [
+  'completed',
+  'rejected_admin',
+  'approved_admin',
+  'cancelled',
+] as const
+
+function refundResolvedAtFromRow(r: Record<string, unknown>): string | null {
+  const c = r.completed_at as string | null | undefined
+  const a = r.admin_decided_at as string | null | undefined
+  const u = r.updated_at as string | null | undefined
+  return c ?? a ?? u ?? null
 }
 
 /** All Tab 列表行（全局时间序分页，与抽屉数据一致） */
@@ -112,14 +155,28 @@ async function fetchCounts(db: ReturnType<typeof getServiceRoleClient>) {
 
 // ─── 各 tab 数据查询 ─────────────────────────────────────────────────────
 
-async function fetchMerchants(db: ReturnType<typeof getServiceRoleClient>, page: number) {
+async function fetchMerchants(
+  db: ReturnType<typeof getServiceRoleClient>,
+  page: number,
+  queue: 'pending' | 'history',
+) {
   const offset = (page - 1) * PER_PAGE
-  const { data, count } = await db
+  let query = db
     .from('merchants')
-    .select('id, name, category, contact_name, contact_email, phone, created_at', { count: 'exact' })
-    .eq('status', 'pending')
-    .order('created_at', { ascending: true })
-    .range(offset, offset + PER_PAGE - 1)
+    .select('id, name, category, contact_name, contact_email, phone, created_at, status, updated_at', {
+      count: 'exact',
+    })
+
+  if (queue === 'pending') {
+    query = query.eq('status', 'pending').order('created_at', { ascending: true })
+  } else {
+    query = query.in('status', [...MERCHANT_HISTORY_STATUSES]).order('updated_at', {
+      ascending: false,
+      nullsFirst: false,
+    })
+  }
+
+  const { data, count } = await query.range(offset, offset + PER_PAGE - 1)
 
   const items: MerchantItem[] = (data ?? []).map((r: any) => ({
     id: r.id,
@@ -129,13 +186,19 @@ async function fetchMerchants(db: ReturnType<typeof getServiceRoleClient>, page:
     contactEmail: r.contact_email,
     phone: r.phone,
     createdAt: r.created_at,
+    status: (r.status as string) ?? '',
+    updatedAt: (r.updated_at as string | null) ?? null,
   }))
   return { items, total: count ?? 0 }
 }
 
-async function fetchDeals(db: ReturnType<typeof getServiceRoleClient>, page: number) {
+async function fetchDeals(
+  db: ReturnType<typeof getServiceRoleClient>,
+  page: number,
+  queue: 'pending' | 'history',
+) {
   const offset = (page - 1) * PER_PAGE
-  const { data, count } = await db
+  let query = db
     .from('deals')
     .select(
       `id, title, original_price, discount_price, discount_label,
@@ -145,11 +208,19 @@ async function fetchDeals(db: ReturnType<typeof getServiceRoleClient>, page: num
        validity_type, validity_days, max_per_person, is_stackable,
        merchants(name, address),
        deal_images(image_url, is_primary)`,
-      { count: 'exact' }
+      { count: 'exact' },
     )
-    .eq('deal_status', 'pending')
-    .order('created_at', { ascending: true })
-    .range(offset, offset + PER_PAGE - 1)
+
+  if (queue === 'pending') {
+    query = query.eq('deal_status', 'pending').order('created_at', { ascending: true })
+  } else {
+    query = query.in('deal_status', [...DEAL_HISTORY_STATUSES]).order('updated_at', {
+      ascending: false,
+      nullsFirst: false,
+    })
+  }
+
+  const { data, count } = await query.range(offset, offset + PER_PAGE - 1)
 
   const items: DealItem[] = (data ?? []).map((r: any) => ({
     id: r.id,
@@ -189,9 +260,13 @@ function maskName(name: string | null) {
   return `${name[0]}***${name[name.length - 1]}`
 }
 
-async function fetchRefundDisputes(db: ReturnType<typeof getServiceRoleClient>, page: number) {
+async function fetchRefundDisputes(
+  db: ReturnType<typeof getServiceRoleClient>,
+  page: number,
+  queue: 'pending' | 'history',
+) {
   const offset = (page - 1) * PER_PAGE
-  const { data, count } = await db
+  let query = db
     .from('refund_requests')
     .select(
       `id, refund_amount, refund_items, user_reason,
@@ -201,54 +276,91 @@ async function fetchRefundDisputes(db: ReturnType<typeof getServiceRoleClient>, 
        order_id,
        merchants(name),
        users(full_name)`,
-      { count: 'exact' }
+      { count: 'exact' },
     )
-    .eq('status', 'pending_admin')
-    .order('created_at', { ascending: true })
-    .range(offset, offset + PER_PAGE - 1)
 
-  const items: RefundDisputeItem[] = (data ?? []).map((r: any) => ({
-    id: r.id,
-    refundAmount: Number(r.refund_amount ?? 0),
-    refundItems: r.refund_items,
-    userReason: r.user_reason,
-    merchantReason: r.merchant_reason,
-    merchantDecidedAt: r.merchant_decided_at,
-    merchantDecision: r.merchant_decision ?? null,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at ?? null,
-    status: r.status ?? '',
-    adminDecision: r.admin_decision ?? null,
-    adminReason: r.admin_reason ?? null,
-    adminDecidedAt: r.admin_decided_at ?? null,
-    completedAt: r.completed_at ?? null,
-    orderId: r.order_id,
-    merchantName: r.merchants?.name ?? '',
-    userNameMasked: maskName(r.users?.full_name ?? null),
-  }))
+  if (queue === 'pending') {
+    query = query.eq('status', 'pending_admin').order('created_at', { ascending: true })
+  } else {
+    query = query.in('status', [...REFUND_HISTORY_STATUSES]).order('updated_at', {
+      ascending: false,
+      nullsFirst: false,
+    })
+  }
+
+  const { data, count } = await query.range(offset, offset + PER_PAGE - 1)
+
+  const items: RefundDisputeItem[] = (data ?? []).map((r: any) => {
+    const row = r as Record<string, unknown>
+    return {
+      id: r.id,
+      refundAmount: Number(r.refund_amount ?? 0),
+      refundItems: r.refund_items,
+      userReason: r.user_reason,
+      merchantReason: r.merchant_reason,
+      merchantDecidedAt: r.merchant_decided_at,
+      merchantDecision: r.merchant_decision ?? null,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at ?? null,
+      status: r.status ?? '',
+      adminDecision: r.admin_decision ?? null,
+      adminReason: r.admin_reason ?? null,
+      adminDecidedAt: r.admin_decided_at ?? null,
+      completedAt: r.completed_at ?? null,
+      orderId: r.order_id,
+      merchantName: r.merchants?.name ?? '',
+      userNameMasked: maskName(r.users?.full_name ?? null),
+      resolvedAt: refundResolvedAtFromRow(row),
+    }
+  })
   return { items, total: count ?? 0 }
 }
 
-async function fetchAfterSales(db: ReturnType<typeof getServiceRoleClient>, page: number) {
-  const offset = (page - 1) * PER_PAGE
-  const { data, count } = await db
-    .from('view_merchant_after_sales_requests')
-    .select('id, status, reason_code, reason_detail, refund_amount, store_name, user_name, created_at, expires_at', { count: 'exact' })
-    .eq('status', 'awaiting_platform')
-    .order('created_at', { ascending: true })
-    .range(offset, offset + PER_PAGE - 1)
+const AFTER_SALES_LIST_SELECT =
+  'id, order_id, status, reason_code, reason_detail, refund_amount, store_name, user_name, user_id, created_at, expires_at, refunded_at, platform_decided_at, closed_at, resolved_at'
 
-  const items: AfterSalesItem[] = (data ?? []).map((r: any) => ({
-    id: r.id,
-    status: r.status,
-    reasonCode: r.reason_code,
-    reasonDetail: r.reason_detail,
+function mapAfterSalesRow(r: Record<string, unknown>): AfterSalesItem {
+  return {
+    id: r.id as string,
+    orderId: (r.order_id as string) ?? '',
+    status: (r.status as string) ?? '',
+    reasonCode: (r.reason_code as string) ?? '',
+    reasonDetail: (r.reason_detail as string) ?? '',
     refundAmount: Number(r.refund_amount ?? 0),
-    storeName: r.store_name,
-    userMasked: maskName(r.user_name),
-    createdAt: r.created_at,
-    expiresAt: r.expires_at,
-  }))
+    storeName: (r.store_name as string | null) ?? null,
+    userFullName: (r.user_name as string) ?? '—',
+    userId: (r.user_id as string) ?? '',
+    createdAt: r.created_at as string,
+    expiresAt: (r.expires_at as string | null) ?? null,
+    refundedAt: (r.refunded_at as string | null) ?? null,
+    platformDecidedAt: (r.platform_decided_at as string | null) ?? null,
+    closedAt: (r.closed_at as string | null) ?? null,
+    resolvedAt: (r.resolved_at as string | null) ?? null,
+  }
+}
+
+async function fetchAfterSales(
+  db: ReturnType<typeof getServiceRoleClient>,
+  page: number,
+  queue: 'pending' | 'history',
+) {
+  const offset = (page - 1) * PER_PAGE
+  let query = db
+    .from('view_merchant_after_sales_requests')
+    .select(AFTER_SALES_LIST_SELECT, { count: 'exact' })
+
+  if (queue === 'pending') {
+    query = query.eq('status', 'awaiting_platform').order('created_at', { ascending: true })
+  } else {
+    query = query.in('status', [...AFTER_SALES_HISTORY_STATUSES]).order('resolved_at', {
+      ascending: false,
+      nullsFirst: false,
+    })
+  }
+
+  const { data, count } = await query.range(offset, offset + PER_PAGE - 1)
+
+  const items: AfterSalesItem[] = (data ?? []).map((r) => mapAfterSalesRow(r as Record<string, unknown>))
   return { items, total: count ?? 0 }
 }
 
@@ -285,7 +397,7 @@ async function fetchUnifiedAllTab(
     merchantIds.length
       ? db
           .from('merchants')
-          .select('id, name, category, contact_name, contact_email, phone, created_at')
+          .select('id, name, category, contact_name, contact_email, phone, created_at, status, updated_at')
           .in('id', merchantIds)
       : Promise.resolve({ data: [] as unknown[] }),
     dealIds.length
@@ -319,7 +431,7 @@ async function fetchUnifiedAllTab(
     afterSalesIds.length
       ? db
           .from('view_merchant_after_sales_requests')
-          .select('id, status, reason_code, reason_detail, refund_amount, store_name, user_name, created_at, expires_at')
+          .select(AFTER_SALES_LIST_SELECT)
           .in('id', afterSalesIds)
       : Promise.resolve({ data: [] as unknown[] }),
   ])
@@ -336,6 +448,8 @@ async function fetchUnifiedAllTab(
       contactEmail: (r.contact_email as string | null) ?? null,
       phone: (r.phone as string | null) ?? null,
       createdAt: r.created_at as string,
+      status: (r.status as string) ?? 'pending',
+      updatedAt: (r.updated_at as string | null) ?? null,
     })
   }
 
@@ -399,6 +513,7 @@ async function fetchUnifiedAllTab(
       orderId: r.order_id as string,
       merchantName: merchants?.name ?? '',
       userNameMasked: maskName(users?.full_name ?? null),
+      resolvedAt: refundResolvedAtFromRow(r),
     })
   }
 
@@ -406,17 +521,7 @@ async function fetchUnifiedAllTab(
   for (const raw of aRes.data ?? []) {
     const r = raw as Record<string, unknown>
     const id = r.id as string
-    afterMap.set(id, {
-      id,
-      status: (r.status as string) ?? '',
-      reasonCode: (r.reason_code as string) ?? '',
-      reasonDetail: (r.reason_detail as string) ?? '',
-      refundAmount: Number(r.refund_amount ?? 0),
-      storeName: (r.store_name as string | null) ?? null,
-      userMasked: maskName(r.user_name as string | null),
-      createdAt: r.created_at as string,
-      expiresAt: (r.expires_at as string | null) ?? null,
-    })
+    afterMap.set(id, mapAfterSalesRow(r))
   }
 
   const rows: UnifiedApprovalRow[] = []
@@ -474,6 +579,8 @@ export default async function ApprovalsPage({
 
   const tab = params.tab ?? 'all'
   const page = Math.max(1, parseInt(params.page ?? '1', 10) || 1)
+  const approvalQueue: 'pending' | 'history' =
+    params.queue === 'history' ? 'history' : 'pending'
 
   // 数量角标始终查询（用于 tab 角标显示）
   const counts = await fetchCounts(db)
@@ -493,19 +600,19 @@ export default async function ApprovalsPage({
     const { rows } = await fetchUnifiedAllTab(db, page)
     unifiedAllRows = rows
   } else if (tab === 'merchants') {
-    const res = await fetchMerchants(db, page)
+    const res = await fetchMerchants(db, page, approvalQueue)
     merchants = res.items
     merchantsTotal = res.total
   } else if (tab === 'deals') {
-    const res = await fetchDeals(db, page)
+    const res = await fetchDeals(db, page, approvalQueue)
     deals = res.items
     dealsTotal = res.total
   } else if (tab === 'refund-disputes') {
-    const res = await fetchRefundDisputes(db, page)
+    const res = await fetchRefundDisputes(db, page, approvalQueue)
     refundDisputes = res.items
     refundDisputesTotal = res.total
   } else if (tab === 'after-sales') {
-    const res = await fetchAfterSales(db, page)
+    const res = await fetchAfterSales(db, page, approvalQueue)
     afterSales = res.items
     afterSalesTotal = res.total
   }
@@ -515,6 +622,7 @@ export default async function ApprovalsPage({
       tab={tab}
       page={page}
       perPage={PER_PAGE}
+      approvalQueue={approvalQueue}
       counts={counts}
       merchants={merchants}
       merchantsTotal={merchantsTotal}

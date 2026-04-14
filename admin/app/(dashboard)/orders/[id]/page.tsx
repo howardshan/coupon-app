@@ -26,10 +26,7 @@ import {
   buildMergedOrderRefundDisputeTimelines,
   type RefundDisputeTimelineInput,
 } from '@/lib/refund-dispute-admin-timeline'
-import {
-  buildAfterSalesRequestTimelineEntries,
-  isActiveAfterSalesStatus,
-} from '@/lib/after-sales-admin-timeline'
+import { isActiveAfterSalesStatus, mergeAfterSalesRowsToTimelineEvents } from '@/lib/after-sales-admin-timeline'
 import { mergeAndSortActivityTimelineEntries } from '@/lib/admin-activity-timeline-types'
 import {
   couponCodeForClipboard,
@@ -409,7 +406,7 @@ export default async function OrderDetailPage({
 
   const { data: afterSalesRowsRaw } = await serviceClient
     .from('after_sales_requests')
-    .select('id, status, created_at, reason_code, coupon_id')
+    .select('id, status, created_at, reason_code, coupon_id, timeline')
     .eq('order_id', id)
     .order('created_at', { ascending: true })
 
@@ -445,7 +442,9 @@ export default async function OrderDetailPage({
     status: String(r.status ?? ''),
     reasonCode: (r.reason_code as string | null) ?? null,
   }))
-  const afterSalesTimelineEvents = buildAfterSalesRequestTimelineEntries(afterSalesTimelineInputs)
+  const afterSalesTimelineEvents = mergeAfterSalesRowsToTimelineEvents(
+    (afterSalesRowsRaw ?? []) as Record<string, unknown>[]
+  )
 
   const activeAfterSalesCount = afterSalesTimelineInputs.filter((r) => isActiveAfterSalesStatus(r.status)).length
 

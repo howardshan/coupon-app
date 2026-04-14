@@ -71,10 +71,10 @@ class RecommendationRepository {
       // 未登录用户不上报
       if (userId == null) return;
 
+      // 不写时间字段：表列为 occurred_at，由 DB DEFAULT now() 填充（勿用不存在的 created_at）
       final payload = <String, dynamic>{
         'user_id': userId,
         'event_type': eventType,
-        'created_at': DateTime.now().toIso8601String(),
       };
       if (dealId != null) payload['deal_id'] = dealId;
       if (merchantId != null) payload['merchant_id'] = merchantId;

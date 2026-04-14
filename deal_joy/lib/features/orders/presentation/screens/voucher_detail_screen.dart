@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/widgets/back_or_home_app_bar_leading.dart';
 import '../../../cart/domain/providers/cart_provider.dart';
 import '../../../deals/domain/providers/deals_provider.dart';
 import '../../data/models/order_detail_model.dart';
@@ -64,12 +65,25 @@ class VoucherDetailScreen extends ConsumerWidget {
           detail: detail,
           dealId: dealId,
           onRefreshDetail: refreshDetail,
+          routeOrderId: orderId,
+          aggregateByDeal: useAggregate,
+          aggregatedOrderItemIds: aggregatedOrderItemIds,
         ),
-        loading: () => const Scaffold(
-          body: Center(child: CircularProgressIndicator()),
+        loading: () => Scaffold(
+          backgroundColor: const Color(0xFFF5F5F5),
+          appBar: AppBar(
+            title: const Text('Voucher Detail'),
+            leading: backOrHomeAppBarLeading(context),
+            automaticallyImplyLeading: false,
+          ),
+          body: const Center(child: CircularProgressIndicator()),
         ),
         error: (e, _) => Scaffold(
-          appBar: AppBar(title: const Text('Voucher Detail')),
+          appBar: AppBar(
+            title: const Text('Voucher Detail'),
+            leading: backOrHomeAppBarLeading(context),
+            automaticallyImplyLeading: false,
+          ),
           body: _ErrorBody(
             onRetry: refreshDetail,
             error: e,
@@ -127,11 +141,18 @@ class _VoucherDetailBody extends ConsumerStatefulWidget {
   final OrderDetailModel detail;
   final String dealId;
   final VoidCallback onRefreshDetail;
+  /// 路由入参 orderId（聚合模式下仍为列表传入的 id，QR 弹层用聚合 Provider）
+  final String routeOrderId;
+  final bool aggregateByDeal;
+  final Set<String> aggregatedOrderItemIds;
 
   const _VoucherDetailBody({
     required this.detail,
     required this.dealId,
     required this.onRefreshDetail,
+    required this.routeOrderId,
+    this.aggregateByDeal = false,
+    this.aggregatedOrderItemIds = const {},
   });
 
   @override
@@ -156,6 +177,8 @@ class _VoucherDetailBodyState extends ConsumerState<_VoucherDetailBody> {
       return Scaffold(
         appBar: AppBar(
           title: const Text('Voucher Detail'),
+          leading: backOrHomeAppBarLeading(context),
+          automaticallyImplyLeading: false,
           backgroundColor: Colors.white,
           foregroundColor: AppColors.textPrimary,
           elevation: 0.5,
@@ -216,6 +239,9 @@ class _VoucherDetailBodyState extends ConsumerState<_VoucherDetailBody> {
   // ── 现有 unused 布局（保持不变） ──────────────────
   Widget _buildUnusedBody(BuildContext context, List<OrderItemModel> dealItems) {
     final usageRules = dealItems.first.usageRules;
+    final unusedDealItems = dealItems
+        .where((i) => i.customerStatus == CustomerItemStatus.unused)
+        .toList();
 
     return Stack(
       children: [
@@ -225,6 +251,8 @@ class _VoucherDetailBodyState extends ConsumerState<_VoucherDetailBody> {
             // 顶部 AppBar
             SliverAppBar(
               pinned: true,
+              leading: backOrHomeAppBarLeading(context),
+              automaticallyImplyLeading: false,
               title: const Text(
                 'Voucher Detail',
                 style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
@@ -250,6 +278,15 @@ class _VoucherDetailBodyState extends ConsumerState<_VoucherDetailBody> {
                 onRefreshOrder: widget.onRefreshDetail,
               ),
             ),
+
+            // 未使用券按订单分组，点选后弹出对应 QR（不再从 Unused 行一键打开全部）
+            if (unusedDealItems.isNotEmpty)
+              SliverToBoxAdapter(
+                child: _UnusedVouchersByOrderSection(
+                  unusedItems: unusedDealItems,
+                  dealId: widget.dealId,
+                ),
+              ),
 
             // 操作按钮：导航、电话、转赠
             SliverToBoxAdapter(
@@ -458,7 +495,8 @@ class _VoucherDealCard extends ConsumerWidget {
               color: const Color(0xFF00C853),
               items: unusedItems,
               isExpanded: false,
-              onToggle: () => showUnusedQrSheet(context, unusedItems),
+              // QR 改由下方「按订单」列表点选打开
+              onToggle: null,
               onRefreshOrder: onRefreshOrder,
               paymentIntentId: paymentIntentId,
               storeCreditUsed: storeCreditUsed,
@@ -512,6 +550,187 @@ class _VoucherDealCard extends ConsumerWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+// ── 未使用券：按订单分组，点选打开对应 QR 弹层 ────────────────
+
+class _UnusedVouchersByOrderSection extends StatelessWidget {
+  final List<OrderItemModel> unusedItems;
+  final String dealId;
+
+  const _UnusedVouchersByOrderSection({
+    required this.unusedItems,
+    required this.dealId,
+  });
+
+  String _orderHeading(List<OrderItemModel> group) {
+    final raw = group.first.orderNumber;
+    if (raw != null && raw.trim().isNotEmpty) return raw.trim();
+    final id = group.first.orderId;
+    if (id.length >= 8) return 'Order ${id.substring(0, 8)}…';
+    return 'Order';
+  }
+
+  DateTime _earliestPurchase(List<OrderItemModel> group) {
+    return group
+        .map((e) => e.createdAt)
+        .reduce((a, b) => a.isBefore(b) ? a : b);
+  }
+
+  void _openQrForItem(BuildContext context, OrderItemModel item) {
+    showUnusedQrSheet(
+      context,
+      orderId: item.orderId,
+      dealId: dealId,
+      aggregateByDeal: true,
+      aggregatedOrderItemIds: {item.id},
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final byOrderId = <String, List<OrderItemModel>>{};
+    for (final i in unusedItems) {
+      byOrderId.putIfAbsent(i.orderId, () => []).add(i);
+    }
+    final sortedOrderIds = byOrderId.keys.toList()
+      ..sort((a, b) {
+        final ea = _earliestPurchase(byOrderId[a]!);
+        final eb = _earliestPurchase(byOrderId[b]!);
+        return ea.compareTo(eb);
+      });
+
+    final amountFmt = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Show at checkout',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Vouchers are grouped by order. Tap one to show its QR code.',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: AppColors.textSecondary,
+                  height: 1.35,
+                ),
+              ),
+            ],
+          ),
+        ),
+        ...sortedOrderIds.map((oid) {
+          final group = byOrderId[oid]!;
+          final first = group.first;
+          final subtotal = group.fold<double>(
+              0, (s, i) => s + i.unitPrice + i.serviceFee);
+          final purchased = _earliestPurchase(group);
+
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+            child: Material(
+              color: Colors.white,
+              elevation: 0.5,
+              shadowColor: Colors.black26,
+              borderRadius: BorderRadius.circular(12),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 14, 14, 6),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _orderHeading(group),
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Purchased ${DateFormat('MMM d, yyyy · h:mm a').format(purchased.toLocal())}',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '${first.dealTitle} · ${amountFmt.format(first.unitPrice)} × ${group.length}',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: AppColors.textSecondary,
+                              height: 1.3,
+                            ),
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Paid ${amountFmt.format(subtotal)}',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const Divider(height: 20),
+                    ...group.map(
+                      (item) => ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: Icon(
+                          Icons.qr_code_2_rounded,
+                          color: AppColors.primary,
+                        ),
+                        title: Text(
+                          item.formattedCouponCode ?? 'Voucher',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontFamily: 'monospace',
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                        subtitle: const Text(
+                          'Tap to show QR code',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textHint,
+                          ),
+                        ),
+                        trailing: const Icon(
+                          Icons.chevron_right_rounded,
+                          color: AppColors.textHint,
+                        ),
+                        onTap: () => _openQrForItem(context, item),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }),
+      ],
     );
   }
 }
@@ -1943,6 +2162,8 @@ class _UsedVoucherBody extends ConsumerWidget {
           slivers: [
             SliverAppBar(
               pinned: true,
+              leading: backOrHomeAppBarLeading(context),
+              automaticallyImplyLeading: false,
               title: const Text(
                 'Voucher Detail',
                 style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
@@ -2078,6 +2299,8 @@ class _RefundedVoucherBody extends ConsumerWidget {
           slivers: [
             SliverAppBar(
               pinned: true,
+              leading: backOrHomeAppBarLeading(context),
+              automaticallyImplyLeading: false,
               title: const Text(
                 'Voucher Detail',
                 style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
@@ -2191,6 +2414,8 @@ class _ExpiredVoucherBody extends ConsumerWidget {
           slivers: [
             SliverAppBar(
               pinned: true,
+              leading: backOrHomeAppBarLeading(context),
+              automaticallyImplyLeading: false,
               title: const Text(
                 'Voucher Detail',
                 style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),

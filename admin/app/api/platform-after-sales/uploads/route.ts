@@ -50,7 +50,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(data)
   } catch (err) {
     if (err instanceof Response) {
-      return new NextResponse(await err.text(), { status: err.status })
+      const text = (await err.text()).trim()
+      return NextResponse.json(
+        { message: text || 'Request failed' },
+        { status: err.status },
+      )
     }
     return NextResponse.json({ message: (err as Error).message }, { status: 500 })
   }

@@ -338,33 +338,47 @@ export default function DealDrawer({
           )}
         </div>
 
-        {/* 审批操作区 */}
-        <div className="border-t border-gray-200 px-6 py-4 space-y-3 bg-white sticky bottom-0">
-          <button
-            type="button"
-            onClick={handleApprove}
-            disabled={isPending}
-            className="w-full rounded-lg bg-emerald-600 px-4 py-2.5 font-semibold text-white hover:bg-emerald-700 transition-colors text-sm disabled:opacity-50"
-          >
-            {isPending ? 'Publishing…' : 'Approve & Publish'}
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowRejectForm(v => !v)}
-            disabled={isPending}
-            className="w-full rounded-lg border border-rose-400 px-4 py-2.5 font-semibold text-rose-700 hover:bg-rose-50 transition-colors text-sm disabled:opacity-50"
-          >
-            Reject
-          </button>
-          <a
-            href={`/deals/${deal.id}`}
-            target="_blank"
-            rel="noreferrer"
-            className="block text-center text-sm text-gray-500 hover:text-gray-800"
-          >
-            Open deal detail (full activity timeline) →
-          </a>
-        </div>
+        {/* 审批操作区：仅 deal_status=pending；历史 Deal 只读 */}
+        {deal.dealStatus === 'pending' && (
+          <div className="border-t border-gray-200 px-6 py-4 space-y-3 bg-white sticky bottom-0">
+            <button
+              type="button"
+              onClick={handleApprove}
+              disabled={isPending}
+              className="w-full rounded-lg bg-emerald-600 px-4 py-2.5 font-semibold text-white hover:bg-emerald-700 transition-colors text-sm disabled:opacity-50"
+            >
+              {isPending ? 'Publishing…' : 'Approve & Publish'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowRejectForm(v => !v)}
+              disabled={isPending}
+              className="w-full rounded-lg border border-rose-400 px-4 py-2.5 font-semibold text-rose-700 hover:bg-rose-50 transition-colors text-sm disabled:opacity-50"
+            >
+              Reject
+            </button>
+            <a
+              href={`/deals/${deal.id}`}
+              target="_blank"
+              rel="noreferrer"
+              className="block text-center text-sm text-gray-500 hover:text-gray-800"
+            >
+              Open deal detail (full activity timeline) →
+            </a>
+          </div>
+        )}
+        {deal.dealStatus && deal.dealStatus !== 'pending' && (
+          <div className="border-t border-gray-200 px-6 py-4 bg-white sticky bottom-0">
+            <a
+              href={`/deals/${deal.id}`}
+              target="_blank"
+              rel="noreferrer"
+              className="block text-center text-sm text-blue-600 hover:underline"
+            >
+              Open deal detail (full activity timeline) →
+            </a>
+          </div>
+        )}
       </div>
     </div>
   )

@@ -1,24 +1,35 @@
 'use client'
 
 import { useEffect, useState, useTransition } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { AfterSalesItem } from '@/app/(dashboard)/approvals/page'
 import { revalidateApprovalsPendingCount } from '@/app/actions/approvals'
 import AdminActivityTimelineCard from '@/components/admin-activity-timeline-card'
 import { buildAfterSalesTimelineEntries } from '@/lib/after-sales-admin-timeline'
+import { toast } from 'sonner'
 
 type AfterSalesDetail = {
   request: {
     id: string
     /** 平台 Edge 详情含 order_id，用于跳转订单页 */
     order_id?: string
+    user_id?: string
     status: string
+    created_at?: string
+    escalated_at?: string | null
     reason_code?: string
     reason_detail?: string
+    merchant_feedback?: string | null
     refund_amount?: number
     user_attachments?: string[]
     merchant_attachments?: string[]
+    platform_feedback?: string | null
     platform_attachments?: string[]
+    /** PostgREST 嵌套：单笔订单 */
+    orders?: Record<string, unknown> | Record<string, unknown>[] | null
+    /** 本单券核销时间 */
+    coupons?: { used_at?: string | null } | { used_at?: string | null }[] | null
     timeline?: Array<{
       status: string
       actor: string
@@ -32,6 +43,7 @@ type AfterSalesDetail = {
 const STATUS_COLORS: Record<string, string> = {
   pending: 'bg-yellow-100 text-yellow-800',
   awaiting_platform: 'bg-blue-100 text-blue-800',
+  platform_approved: 'bg-indigo-100 text-indigo-800',
   merchant_rejected: 'bg-rose-100 text-rose-800',
   merchant_approved: 'bg-emerald-100 text-emerald-800',
   platform_rejected: 'bg-rose-100 text-rose-800',
@@ -41,6 +53,34 @@ const STATUS_COLORS: Record<string, string> = {
 
 function formatStatus(status: string) {
   return status.replaceAll('_', ' ')
+}
+
+function formatLocalDateTime(value: string | null | undefined): string {
+  if (value == null || String(value).trim() === '') return '—'
+  const d = new Date(value)
+  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString()
+}
+
+/** PostgREST 嵌套可能为对象或单元素数组 */
+function pickEmbedded<T extends Record<string, unknown>>(
+  raw: T | T[] | null | undefined
+): T | null {
+  if (raw == null) return null
+  if (Array.isArray(raw)) return (raw[0] as T | undefined) ?? null
+  return raw
+}
+
+/** 根据 URL 路径猜测附件类型，用于预览（签名 URL 的 query 不影响 pathname） */
+function attachmentUrlKind(url: string): 'image' | 'pdf' | 'unknown' {
+  let path = ''
+  try {
+    path = new URL(url, 'https://placeholder.local').pathname.toLowerCase()
+  } catch {
+    path = (url.split('?')[0] ?? '').toLowerCase()
+  }
+  if (/\.(jpe?g|png|gif|webp|avif|bmp|svg)(\?|$)/.test(path)) return 'image'
+  if (/\.pdf(\?|$)/.test(path)) return 'pdf'
+  return 'unknown'
 }
 
 function formatSla(expiresAt: string | null, status: string) {
@@ -107,8 +147,40 @@ export default function AfterSalesDrawer({
   const [decisionNote, setDecisionNote] = useState('')
   const [decisionFiles, setDecisionFiles] = useState<File[]>([])
   const [actionLoading, setActionLoading] = useState(false)
+  /** 附件预览：点击 chip 先打开灯箱，避免直接下载 */
+  const [attachmentPreview, setAttachmentPreview] = useState<null | { url: string; title: string }>(null)
   // 乐观更新状态
   const [currentStatus, setCurrentStatus] = useState(item.status)
+
+  const req = detail?.request
+  const orderRow = req ? pickEmbedded(req.orders as Record<string, unknown> | Record<string, unknown>[] | null) : null
+  const couponRow = req ? pickEmbedded(req.coupons as { used_at?: string | null } | { used_at?: string | null }[] | null) : null
+  const purchasedAt = orderRow?.created_at as string | undefined
+  const redeemedAt = couponRow?.used_at ?? undefined
+  const afterSalesOpenedAt = req?.created_at ?? item.createdAt
+  const escalatedAt = req?.escalated_at ?? undefined
+
+  const customerBody =
+    (req?.reason_detail?.trim() || item.reasonDetail?.trim() || '').trim() || '—'
+  const merchantBody = (req?.merchant_feedback?.trim() || '').trim()
+  const platformBody = (req?.platform_feedback?.trim() || '').trim()
+  const userAtt = req?.user_attachments ?? []
+  const merchantAtt = req?.merchant_attachments ?? []
+  const platformAtt = req?.platform_attachments ?? []
+
+  /** 从服务端重新拉详情并同步状态徽章与操作区（提交失败后避免 UI 与库不一致） */
+  async function syncDetailFromServer() {
+    try {
+      const res = await fetch(`/api/platform-after-sales/${item.id}`)
+      if (!res.ok) return
+      const data = (await res.json()) as AfterSalesDetail
+      setDetail(data)
+      const st = data.request?.status
+      if (typeof st === 'string' && st) setCurrentStatus(st)
+    } catch {
+      /* 静默：仅尽力同步 */
+    }
+  }
 
   // 加载详情
   useEffect(() => {
@@ -123,7 +195,12 @@ export default function AfterSalesDrawer({
         }
         return res.json()
       })
-      .then((data) => setDetail(data as AfterSalesDetail))
+      .then((data) => {
+        const d = data as AfterSalesDetail
+        setDetail(d)
+        const st = d.request?.status
+        if (typeof st === 'string' && st) setCurrentStatus(st)
+      })
       .catch((err) => setDetailError(err.message))
       .finally(() => setDetailLoading(false))
   }, [item.id])
@@ -134,9 +211,17 @@ export default function AfterSalesDrawer({
     try {
       let attachments: string[] = []
       if (action === 'reject') {
-        attachments = await uploadEvidence(decisionFiles)
+        try {
+          attachments = await uploadEvidence(decisionFiles)
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : 'Upload failed'
+          toast.error(msg)
+          setActionMessage(msg)
+          return
+        }
         if (!attachments.length) {
-          throw new Error('At least one attachment is required for rejection')
+          toast.error('At least one attachment is required for rejection')
+          return
         }
       }
       const response = await fetch(`/api/platform-after-sales/${item.id}`, {
@@ -144,19 +229,46 @@ export default function AfterSalesDrawer({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action, note: decisionNote, attachments }),
       })
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}))
-        throw new Error(body?.message ?? 'Failed to submit decision')
+      const payload = (await response.json().catch(() => ({}))) as {
+        message?: string
+        request?: AfterSalesDetail['request']
       }
-      setActionMessage(action === 'approve' ? 'Request approved' : 'Request rejected')
+      if (!response.ok) {
+        const msg = typeof payload?.message === 'string' ? payload.message : 'Failed to submit decision'
+        toast.error(msg)
+        setDecisionState(null)
+        setDecisionNote('')
+        setDecisionFiles([])
+        await syncDetailFromServer()
+        setActionMessage(msg)
+        return
+      }
+      const successMsg =
+        action === 'approve'
+          ? `Refund approved ($${item.refundAmount.toFixed(2)})`
+          : 'Platform rejection recorded'
+      toast.success(successMsg)
+      setActionMessage(null)
       setDecisionState(null)
       setDecisionNote('')
       setDecisionFiles([])
-      setCurrentStatus(action === 'approve' ? 'refunded' : 'platform_rejected')
+      if (payload?.request && typeof payload.request === 'object') {
+        setDetail({ request: payload.request })
+        const st = payload.request.status
+        if (typeof st === 'string' && st) setCurrentStatus(st)
+      } else {
+        setCurrentStatus(action === 'approve' ? 'refunded' : 'platform_rejected')
+      }
       await revalidateApprovalsPendingCount()
       startTransition(() => { router.refresh() })
     } catch (err) {
-      setActionMessage((err as Error).message)
+      const msg = err instanceof Error ? err.message : 'Action failed'
+      toast.error(msg)
+      setDecisionState(null)
+      setDecisionNote('')
+      setDecisionFiles([])
+      await syncDetailFromServer()
+      setActionMessage(msg)
     } finally {
       setActionLoading(false)
     }
@@ -188,7 +300,7 @@ export default function AfterSalesDrawer({
 
           <div className="flex-1 px-6 py-6 space-y-6">
 
-            {/* 概览卡片 */}
+            {/* 概览：不含客户/商家长文本 */}
             <section className="rounded-xl border border-gray-200 p-4">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="font-semibold text-gray-800">Overview</h3>
@@ -203,7 +315,20 @@ export default function AfterSalesDrawer({
                 </div>
                 <div>
                   <dt className="text-gray-500">Customer</dt>
-                  <dd className="font-medium text-gray-900">{item.userMasked}</dd>
+                  <dd className="font-medium text-gray-900">
+                    {item.userId ? (
+                      <Link
+                        href={`/users/${item.userId}`}
+                        className="text-blue-600 hover:underline"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {item.userFullName}
+                      </Link>
+                    ) : (
+                      item.userFullName
+                    )}
+                  </dd>
                 </div>
                 <div>
                   <dt className="text-gray-500">Reason</dt>
@@ -214,49 +339,111 @@ export default function AfterSalesDrawer({
                   <dd className="font-medium text-gray-900">{formatSla(item.expiresAt, currentStatus)}</dd>
                 </div>
               </dl>
-              {item.reasonDetail && (
-                <p className="mt-3 text-sm text-gray-700 whitespace-pre-line border-t border-gray-100 pt-3">
-                  {item.reasonDetail}
-                </p>
-              )}
-              {detail?.request?.order_id && (
+              {(item.orderId || req?.order_id) && (
                 <p className="mt-3 border-t border-gray-100 pt-3 text-sm">
                   <a
-                    href={`/orders/${detail.request.order_id}`}
+                    href={`/orders/${req?.order_id ?? item.orderId}`}
                     target="_blank"
                     rel="noreferrer"
                     className="font-medium text-blue-600 hover:underline"
                   >
-                    Open order detail (activity & refund dispute timelines) →
+                    Open full order detail (timelines & items) →
                   </a>
                 </p>
               )}
             </section>
 
-            {/* 懒加载详情 */}
+            {/* 订单与关键时间点 */}
+            <section className="rounded-xl border border-gray-200 p-4">
+              <h3 className="font-semibold text-gray-800 mb-3">Order & key dates</h3>
+              {detailLoading && (
+                <p className="text-sm text-gray-500">Loading order times…</p>
+              )}
+              {!detailLoading && (
+                <dl className="grid grid-cols-1 gap-y-2 text-sm sm:grid-cols-2 sm:gap-x-4">
+                  <div className="flex flex-col sm:flex-row sm:gap-2">
+                    <dt className="text-gray-500 shrink-0">Purchased</dt>
+                    <dd className="font-medium text-gray-900">{formatLocalDateTime(purchasedAt)}</dd>
+                  </div>
+                  <div className="flex flex-col sm:flex-row sm:gap-2">
+                    <dt className="text-gray-500 shrink-0">Coupon redeemed</dt>
+                    <dd className="font-medium text-gray-900">{formatLocalDateTime(redeemedAt)}</dd>
+                  </div>
+                  <div className="flex flex-col sm:flex-row sm:gap-2">
+                    <dt className="text-gray-500 shrink-0">After-sales opened</dt>
+                    <dd className="font-medium text-gray-900">{formatLocalDateTime(afterSalesOpenedAt)}</dd>
+                  </div>
+                  <div className="flex flex-col sm:flex-row sm:gap-2">
+                    <dt className="text-gray-500 shrink-0">Escalated to platform</dt>
+                    <dd className="font-medium text-gray-900">{formatLocalDateTime(escalatedAt)}</dd>
+                  </div>
+                </dl>
+              )}
+            </section>
+
             {detailLoading && (
-              <p className="text-sm text-gray-500 text-center py-4">Loading detail…</p>
+              <p className="text-sm text-gray-500 text-center py-2">Loading evidence & timeline…</p>
             )}
             {detailError && (
               <p className="text-sm text-rose-600 bg-rose-50 rounded-lg p-3">{detailError}</p>
             )}
 
-            {detail?.request && (
-              <>
-                <AttachmentBlock title="User Attachments" attachments={detail.request.user_attachments ?? []} />
-                <AttachmentBlock title="Merchant Attachments" attachments={detail.request.merchant_attachments ?? []} />
-                <AttachmentBlock title="Platform Attachments" attachments={detail.request.platform_attachments ?? []} />
-                <AdminActivityTimelineCard
-                  title="After-sales timeline"
-                  footnote="Events are stored on the after-sales request record. Older requests may have incomplete history."
-                  events={buildAfterSalesTimelineEntries(detail.request.timeline)}
+            {/* 客户陈述 + 附件 */}
+            <section className="rounded-xl border border-gray-200 p-4">
+              <h3 className="font-semibold text-gray-800 mb-2">Customer request</h3>
+              <p className="text-sm text-gray-700 whitespace-pre-line">{customerBody}</p>
+              {req && (
+                <AttachmentLinks
+                  label="Customer attachments"
+                  urls={userAtt}
+                  onPreview={(url, title) => setAttachmentPreview({ url, title })}
                 />
-              </>
+              )}
+            </section>
+
+            {/* 商家拒绝说明 + 附件 */}
+            {(merchantBody !== '' || merchantAtt.length > 0) && req && (
+              <section className="rounded-xl border border-gray-200 p-4">
+                <h3 className="font-semibold text-gray-800 mb-2">Merchant response</h3>
+                {merchantBody !== '' ? (
+                  <p className="text-sm text-gray-700 whitespace-pre-line">{merchantBody}</p>
+                ) : (
+                  <p className="text-sm text-gray-500">No written response.</p>
+                )}
+                <AttachmentLinks
+                  label="Merchant attachments"
+                  urls={merchantAtt}
+                  onPreview={(url, title) => setAttachmentPreview({ url, title })}
+                />
+              </section>
             )}
 
-            {/* 操作反馈 */}
+            {/* 平台已填结论（若有） */}
+            {(platformBody !== '' || platformAtt.length > 0) && req && (
+              <section className="rounded-xl border border-gray-200 p-4">
+                <h3 className="font-semibold text-gray-800 mb-2">Platform decision (recorded)</h3>
+                {platformBody !== '' ? (
+                  <p className="text-sm text-gray-700 whitespace-pre-line">{platformBody}</p>
+                ) : null}
+                <AttachmentLinks
+                  label="Platform attachments"
+                  urls={platformAtt}
+                  onPreview={(url, title) => setAttachmentPreview({ url, title })}
+                />
+              </section>
+            )}
+
+            {req && (
+              <AdminActivityTimelineCard
+                title="After-sales timeline"
+                footnote="Events are stored on the after-sales request record. Older requests may have incomplete history."
+                events={buildAfterSalesTimelineEntries(req.timeline)}
+              />
+            )}
+
+            {/* 操作失败时抽屉内保留说明（成功仅用 toast，避免与弹窗叠两层提示） */}
             {actionMessage && (
-              <p className={`text-sm rounded-lg p-3 ${actionMessage.includes('approved') || actionMessage.includes('rejected') ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+              <p className="text-sm rounded-lg border border-rose-100 bg-rose-50 p-3 text-rose-800">
                 {actionMessage}
               </p>
             )}
@@ -279,10 +466,42 @@ export default function AfterSalesDrawer({
               >
                 Reject with Evidence
               </button>
+              {item.orderId ? (
+                <a
+                  href={`/orders/${item.orderId}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="block text-center text-sm text-gray-500 hover:text-gray-800"
+                >
+                  Open order detail (full activity timeline) →
+                </a>
+              ) : null}
             </div>
           )}
+          {/* 非平台待裁状态：与退款争议抽屉一致，吸底提供订单详情入口 */}
+          {currentStatus !== 'awaiting_platform' && item.orderId ? (
+            <div className="border-t border-gray-200 px-6 py-4 bg-white sticky bottom-0">
+              <a
+                href={`/orders/${item.orderId}`}
+                target="_blank"
+                rel="noreferrer"
+                className="block text-center text-sm text-blue-600 hover:underline"
+              >
+                Open order detail (full activity timeline) →
+              </a>
+            </div>
+          ) : null}
         </div>
       </div>
+
+      {attachmentPreview && (
+        <AttachmentPreviewLightbox
+          key={attachmentPreview.url}
+          url={attachmentPreview.url}
+          title={attachmentPreview.title}
+          onClose={() => setAttachmentPreview(null)}
+        />
+      )}
 
       {/* 决策确认弹窗 */}
       {decisionState && (
@@ -346,25 +565,131 @@ export default function AfterSalesDrawer({
   )
 }
 
-function AttachmentBlock({ title, attachments }: { title: string; attachments: string[] }) {
-  if (!attachments.length) return null
+function AttachmentLinks({
+  label,
+  urls,
+  onPreview,
+}: {
+  label: string
+  urls: string[]
+  onPreview: (url: string, title: string) => void
+}) {
+  const list = urls.filter((u) => typeof u === 'string' && u.trim().length > 0)
+  if (!list.length) return null
   return (
-    <section className="rounded-xl border border-gray-200 p-4">
-      <h3 className="font-semibold text-gray-800 mb-2">{title}</h3>
+    <div className="mt-3">
+      <p className="text-xs font-semibold text-gray-500 mb-2">{label}</p>
       <div className="flex flex-wrap gap-2">
-        {attachments.map((url, idx) => (
-          <a
+        {list.map((url, idx) => (
+          <button
             key={`${url}-${idx}`}
-            href={url}
-            target="_blank"
-            rel="noreferrer"
+            type="button"
+            onClick={() => onPreview(url, `${label} · Attachment ${idx + 1}`)}
             className="rounded-full border border-gray-300 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
           >
             Attachment {idx + 1}
-          </a>
+          </button>
         ))}
       </div>
-    </section>
+    </div>
+  )
+}
+
+/** 全屏灯箱预览：图片内嵌、PDF iframe、其它类型引导新标签页打开 */
+function AttachmentPreviewLightbox({
+  url,
+  title,
+  onClose,
+}: {
+  url: string
+  title: string
+  onClose: () => void
+}) {
+  const kind = attachmentUrlKind(url)
+  const [imgFailed, setImgFailed] = useState(false)
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Attachment preview"
+    >
+      <button
+        type="button"
+        className="absolute inset-0 bg-black/70"
+        onClick={onClose}
+        aria-label="Close preview"
+      />
+      <div className="relative z-10 flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl bg-gray-900 shadow-2xl">
+        <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
+          <span className="truncate text-sm font-medium text-white" title={title}>
+            {title}
+          </span>
+          <div className="flex shrink-0 items-center gap-3">
+            <a
+              href={url}
+              target="_blank"
+              rel="noreferrer"
+              className="text-xs text-sky-300 hover:underline"
+            >
+              Open in new tab
+            </a>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-full p-1.5 text-white hover:bg-white/10"
+              aria-label="Close"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+        <div className="flex min-h-[200px] flex-1 items-center justify-center overflow-auto p-4">
+          {kind === 'image' && !imgFailed && (
+            // eslint-disable-next-line @next/next/no-img-element -- 动态外链（Supabase 签名 URL）
+            <img
+              src={url}
+              alt=""
+              className="max-h-[min(75vh,800px)] max-w-full rounded object-contain"
+              onError={() => setImgFailed(true)}
+            />
+          )}
+          {kind === 'image' && imgFailed && (
+            <p className="text-center text-sm text-gray-300">
+              Could not load image.{' '}
+              <a href={url} target="_blank" rel="noreferrer" className="text-sky-300 underline">
+                Open in new tab
+              </a>
+            </p>
+          )}
+          {kind === 'pdf' && (
+            <iframe title={title} src={url} className="h-[min(75vh,800px)] w-full rounded bg-white" />
+          )}
+          {kind === 'unknown' && (
+            <div className="space-y-4 text-center text-sm text-gray-300">
+              <p>No inline preview for this file type.</p>
+              <a
+                href={url}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-block rounded-lg bg-white/10 px-4 py-2 text-white hover:bg-white/20"
+              >
+                Open in new tab
+              </a>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   )
 }
 

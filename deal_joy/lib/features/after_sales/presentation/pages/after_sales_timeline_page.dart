@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -9,6 +10,43 @@ import '../../../../shared/widgets/app_button.dart';
 import '../../data/models/after_sales_request_model.dart';
 import '../../domain/providers/after_sales_provider.dart';
 import '../pages/after_sales_screen_args.dart';
+
+/// 将后端 `after_sale_status` 等枚举转为用户可读英文（summary chip 与时间线标题共用）
+String _afterSalesStatusLabel(String raw) {
+  switch (raw) {
+    case 'pending':
+      return 'Awaiting merchant review';
+    case 'merchant_approved':
+      return 'Approved by merchant';
+    case 'merchant_rejected':
+      return 'Declined by merchant';
+    case 'awaiting_platform':
+      return 'Under team review';
+    case 'platform_approved':
+      return 'Approved by platform';
+    case 'platform_rejected':
+      return 'Not approved';
+    case 'refunded':
+      return 'Refunded';
+    case 'closed':
+      return 'Closed';
+    default:
+      return _afterSalesStatusLabelFallback(raw);
+  }
+}
+
+/// 未知状态：下划线拆词并首字母大写
+String _afterSalesStatusLabelFallback(String raw) {
+  final trimmed = raw.trim();
+  if (trimmed.isEmpty) return '—';
+  final parts = trimmed.split('_').where((p) => p.isNotEmpty).toList();
+  if (parts.isEmpty) return trimmed;
+  return parts.map((p) {
+    final lower = p.toLowerCase();
+    if (lower.isEmpty) return '';
+    return lower[0].toUpperCase() + (lower.length > 1 ? lower.substring(1) : '');
+  }).join(' ');
+}
 
 class AfterSalesTimelinePage extends ConsumerStatefulWidget {
   const AfterSalesTimelinePage({super.key, required this.args});
@@ -68,7 +106,6 @@ class _AfterSalesTimelinePageState extends ConsumerState<AfterSalesTimelinePage>
   }
 
   Widget _buildTimeline(BuildContext context, AfterSalesRequestModel request) {
-    final theme = Theme.of(context);
     return RefreshIndicator(
       onRefresh: () async {
         ref.invalidate(afterSalesRequestProvider(widget.args.orderId));
@@ -93,7 +130,7 @@ class _AfterSalesTimelinePageState extends ConsumerState<AfterSalesTimelinePage>
               label: 'Escalate to Crunchy Plum',
               icon: Icons.flag_outlined,
               isLoading: _isEscalating,
-              onPressed: _isEscalating ? null : () => _escalate(request.id),
+              onPressed: _isEscalating ? null : () => _confirmEscalate(request.id),
             ),
           if (!request.completed) ...[
             const SizedBox(height: 12),
@@ -108,17 +145,37 @@ class _AfterSalesTimelinePageState extends ConsumerState<AfterSalesTimelinePage>
               isOutlined: true,
               onPressed: () => Navigator.of(context).pop(),
             ),
-          const SizedBox(height: 32),
-          Text(
-            'Events',
-            style: theme.textTheme.titleMedium,
-          ),
-          const SizedBox(height: 8),
-          _EventsList(events: request.events),
-          const SizedBox(height: 48),
+          const SizedBox(height: 24),
         ],
       ),
     );
+  }
+
+  /// 升级至平台前先确认，避免误触
+  Future<void> _confirmEscalate(String requestId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Escalate to Crunchy Plum?'),
+        content: const Text(
+          'This sends your refund case to the Crunchy Plum team for review. '
+          'We typically respond within 24 hours. Tap Escalate only if you want to proceed.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Escalate'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      await _escalate(requestId);
+    }
   }
 
   Future<void> _escalate(String requestId) async {
@@ -205,7 +262,7 @@ class _SummaryCard extends StatelessWidget {
             spacing: 8,
             runSpacing: 6,
             children: [
-              _StatusChip(label: request.status.toUpperCase(), color: _statusColor(request.status)),
+              _StatusChip(label: _afterSalesStatusLabel(request.status), color: _statusColor(request.status)),
               _StatusChip(label: request.reason?.label ?? request.reasonCode),
             ],
           ),
@@ -271,7 +328,7 @@ class _TimelineCard extends StatelessWidget {
             style: TextStyle(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 12),
-          ...entries.map((entry) => _TimelineEntryTile(entry: entry)).toList(),
+          ...entries.map((entry) => _TimelineEntryTile(entry: entry)),
         ],
       ),
     );
@@ -285,14 +342,6 @@ class _TimelineEntryTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final subtitle = <Widget>[];
-    if (entry.note?.isNotEmpty == true) {
-      subtitle.add(Text(entry.note!, style: const TextStyle(color: AppColors.textSecondary)));
-    }
-    if (entry.attachments.isNotEmpty) {
-      subtitle.add(const SizedBox(height: 6));
-      subtitle.add(_AttachmentRow(urls: entry.attachments));
-    }
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
@@ -307,13 +356,18 @@ class _TimelineEntryTile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(entry.status.replaceAll('_', ' ').toUpperCase(),
-                    style: const TextStyle(fontWeight: FontWeight.w600)),
+                Text(
+                  _afterSalesStatusLabel(entry.status),
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
                 Text(
                   '${entry.actor} · ${DateFormat('MMM d, h:mm a').format(entry.timestamp.toLocal())}',
                   style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
                 ),
-                if (subtitle.isNotEmpty) ...subtitle,
+                if (entry.note?.isNotEmpty == true) ...[
+                  const SizedBox(height: 6),
+                  Text(entry.note!, style: const TextStyle(color: AppColors.textSecondary)),
+                ],
               ],
             ),
           ),
@@ -355,6 +409,138 @@ class _FeedbackCard extends StatelessWidget {
   }
 }
 
+/// 根据 URL 路径后缀判断是否适合用内嵌图片预览（忽略 query）
+bool _isLikelyImageUrl(String raw) {
+  try {
+    final uri = Uri.parse(raw);
+    final path = uri.path.toLowerCase();
+    const exts = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.heic', '.heif'];
+    return exts.any(path.endsWith);
+  } catch (_) {
+    return false;
+  }
+}
+
+Future<void> _openAttachmentUrlExternal(String url) async {
+  final uri = Uri.tryParse(url);
+  if (uri == null) return;
+  if (await canLaunchUrl(uri)) {
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+}
+
+/// 先预览；图片全屏缩放查看，其它类型引导用浏览器打开
+Future<void> _showAfterSalesAttachmentPreview(
+  BuildContext context,
+  String url,
+  int attachmentNumber,
+) async {
+  final label = 'Attachment $attachmentNumber';
+  if (!_isLikelyImageUrl(url)) {
+    if (!context.mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(label, style: Theme.of(ctx).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                const Text(
+                  'In-app preview is not available for this file. You can open it in your browser to view or save.',
+                  style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
+                ),
+                const SizedBox(height: 20),
+                FilledButton(
+                  onPressed: () async {
+                    Navigator.pop(ctx);
+                    await _openAttachmentUrlExternal(url);
+                  },
+                  child: const Text('Open in browser'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Close'),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    return;
+  }
+
+  if (!context.mounted) return;
+  final mq = MediaQuery.sizeOf(context);
+  final dpr = MediaQuery.devicePixelRatioOf(context);
+  final memW = (mq.width * dpr).round();
+
+  await Navigator.of(context).push<void>(
+    MaterialPageRoute<void>(
+      fullscreenDialog: true,
+      builder: (ctx) {
+        return Scaffold(
+          backgroundColor: Colors.black,
+          appBar: AppBar(
+            backgroundColor: Colors.black,
+            foregroundColor: Colors.white,
+            iconTheme: const IconThemeData(color: Colors.white),
+            title: Text(label, style: const TextStyle(color: Colors.white)),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.open_in_browser),
+                tooltip: 'Open in browser',
+                onPressed: () => _openAttachmentUrlExternal(url),
+              ),
+            ],
+          ),
+          body: Center(
+            child: InteractiveViewer(
+              minScale: 0.5,
+              maxScale: 5,
+              child: CachedNetworkImage(
+                imageUrl: url,
+                fit: BoxFit.contain,
+                memCacheWidth: memW,
+                placeholder: (c, _) => const Padding(
+                  padding: EdgeInsets.all(32),
+                  child: CircularProgressIndicator(color: Colors.white54, strokeWidth: 2),
+                ),
+                errorWidget: (c, u, _) => Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.broken_image_outlined, color: Colors.white54, size: 56),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'Could not load preview.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.white70),
+                      ),
+                      const SizedBox(height: 16),
+                      FilledButton(
+                        onPressed: () => _openAttachmentUrlExternal(url),
+                        child: const Text('Open in browser'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    ),
+  );
+}
+
 class _AttachmentRow extends StatelessWidget {
   const _AttachmentRow({this.title, required this.urls});
 
@@ -373,60 +559,32 @@ class _AttachmentRow extends StatelessWidget {
           ),
         Wrap(
           spacing: 8,
+          runSpacing: 8,
           children: urls
               .asMap()
               .entries
               .map(
                 (entry) => ActionChip(
-                  label: Text('Attachment ${entry.key + 1}'),
-                  onPressed: () => launchUrl(Uri.parse(entry.value), mode: LaunchMode.externalApplication),
+                  avatar: Icon(Icons.attach_file, size: 18, color: AppColors.textPrimary),
+                  label: Text(
+                    'Attachment ${entry.key + 1}',
+                    style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                    ),
+                  ),
+                  onPressed: () => _showAfterSalesAttachmentPreview(context, entry.value, entry.key + 1),
+                  backgroundColor: AppColors.surfaceVariant,
+                  side: const BorderSide(color: AppColors.textHint, width: 1),
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  visualDensity: VisualDensity.compact,
                 ),
               )
               .toList(),
         ),
       ],
-    );
-  }
-}
-
-class _EventsList extends StatelessWidget {
-  const _EventsList({required this.events});
-
-  final List<AfterSalesEventModel> events;
-
-  @override
-  Widget build(BuildContext context) {
-    if (events.isEmpty) {
-      return const Text('No logged events yet.', style: TextStyle(color: AppColors.textSecondary));
-    }
-    return Column(
-      children: events
-          .map(
-            (event) => ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text(event.action.replaceAll('_', ' ')),
-              subtitle: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '${event.actorRole} · ${event.createdAt.toLocal()}',
-                    style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                  ),
-                  if (event.note?.isNotEmpty == true)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text(event.note!),
-                    ),
-                  if (event.attachments.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: _AttachmentRow(urls: event.attachments),
-                    ),
-                ],
-              ),
-            ),
-          )
-          .toList(),
     );
   }
 }
@@ -449,30 +607,6 @@ class _ErrorView extends StatelessWidget {
           const SizedBox(height: 8),
           AppButton(label: 'Retry', onPressed: onRetry, isOutlined: true),
         ],
-      ),
-    );
-  }
-}
-
-/// 时间线状态标签 chip
-class _TimelineStatusChip extends StatelessWidget {
-  const _TimelineStatusChip({required this.label, this.color});
-
-  final String label;
-  final Color? color;
-
-  @override
-  Widget build(BuildContext context) {
-    final chipColor = color ?? AppColors.textSecondary;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: chipColor.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: chipColor),
       ),
     );
   }

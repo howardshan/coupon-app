@@ -108,48 +108,6 @@ class ScanService {
   }
 
   // =============================================================
-  // revertRedemption — 撤销核销（10分钟内）
-  // =============================================================
-  /// 撤销指定 couponId 的核销操作
-  /// 抛出 [ScanException] 如果超过10分钟或撤销失败
-  Future<void> revertRedemption(String couponId) async {
-    try {
-      final response = await _supabase.functions.invoke(
-        '$_functionName/revert',
-        method: HttpMethod.post,
-        headers: StoreService.merchantIdHeaders,
-        body: {'coupon_id': couponId},
-      );
-
-      final data = _parseResponse(response);
-
-      if (data['error'] != null) {
-        throw ScanException(
-          error: ScanError.fromString(data['error'] as String),
-          message: data['message'] as String? ?? 'Revert failed',
-          detail: data['detail'] as String?,
-        );
-      }
-    } on ScanException {
-      rethrow;
-    } on FunctionException catch (e) {
-      final body = _tryParseBody(e.details);
-      throw ScanException(
-        error: body != null
-            ? ScanError.fromString(body['error'] as String? ?? 'unknown')
-            : ScanError.network,
-        message: body?['message'] as String? ?? 'Revert failed',
-        detail: body?['detail'] as String?,
-      );
-    } catch (e) {
-      throw ScanException(
-        error: ScanError.network,
-        message: 'Network error. Please check your connection.',
-      );
-    }
-  }
-
-  // =============================================================
   // fetchRedemptionHistory — 分页获取核销历史
   // =============================================================
   /// 获取核销历史记录，支持日期范围和 Deal 筛选

@@ -45,14 +45,6 @@ class ScanNotifier extends AsyncNotifier<CouponInfo?> {
     return service.redeemCoupon(couponId);
   }
 
-  /// 撤销核销
-  Future<void> revert(String couponId) async {
-    final service = ref.read(scanServiceProvider);
-    await service.revertRedemption(couponId);
-    // 撤销成功后重置状态
-    state = const AsyncData(null);
-  }
-
   /// 重置扫码状态（返回扫码页时调用）
   void reset() {
     state = const AsyncData(null);
@@ -143,28 +135,4 @@ class RedemptionHistoryNotifier
     }
   }
 
-  /// 撤销指定记录（从列表中标记为已撤销）
-  Future<void> revert(String couponId) async {
-    final service = ref.read(scanServiceProvider);
-    await service.revertRedemption(couponId);
-
-    // 乐观更新：将对应记录标记为已撤销
-    final current = state.value ?? [];
-    final updated = current.map((r) {
-      if (r.couponId == couponId) {
-        return RedemptionRecord(
-          id: r.id,
-          couponId: r.couponId,
-          couponCode: r.couponCode,
-          dealTitle: r.dealTitle,
-          userName: r.userName,
-          redeemedAt: r.redeemedAt,
-          isReverted: true,
-          revertedAt: DateTime.now(),
-        );
-      }
-      return r;
-    }).toList();
-    state = AsyncData(updated);
-  }
 }

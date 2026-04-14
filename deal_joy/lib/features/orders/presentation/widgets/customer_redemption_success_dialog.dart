@@ -1,33 +1,56 @@
-// 核销成功页
-// 大 checkmark 动画 + 核销时间 + Scan Another / 回仪表盘
+// 用户端：商家核销成功后全屏强提示（风格对齐商家端 RedemptionSuccessPage）
 
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
-import '../providers/scan_provider.dart';
-import '../../orders/providers/orders_provider.dart';
 
-class RedemptionSuccessPage extends ConsumerStatefulWidget {
-  const RedemptionSuccessPage({
-    super.key,
-    required this.redeemedAt,
-    required this.dealTitle,
-    required this.couponId,
-  });
+import '../../../../core/theme/app_colors.dart';
 
-  final DateTime redeemedAt;
-  final String dealTitle;
-  /// 保留参数供路由/深链兼容，当前页不再发起撤销等请求
-  final String couponId;
-
-  @override
-  ConsumerState<RedemptionSuccessPage> createState() =>
-      _RedemptionSuccessPageState();
+/// 全屏展示核销成功，返回时 Future 完成（用户点击主按钮并关闭对话框后）
+Future<void> showCustomerRedemptionSuccessDialog({
+  required BuildContext context,
+  required String dealTitle,
+  required DateTime redeemedAt,
+  required String primaryButtonLabel,
+}) {
+  return showGeneralDialog<void>(
+    context: context,
+    useRootNavigator: true,
+    barrierDismissible: false,
+    barrierColor: Colors.white,
+    transitionDuration: const Duration(milliseconds: 280),
+    transitionBuilder: (ctx, animation, secondaryAnimation, child) {
+      return FadeTransition(opacity: animation, child: child);
+    },
+    pageBuilder: (dialogContext, animation, secondaryAnimation) {
+      return _CustomerRedemptionSuccessPage(
+        dealTitle: dealTitle,
+        redeemedAt: redeemedAt,
+        primaryButtonLabel: primaryButtonLabel,
+        onPrimary: () => Navigator.of(dialogContext).pop(),
+      );
+    },
+  );
 }
 
-class _RedemptionSuccessPageState
-    extends ConsumerState<RedemptionSuccessPage>
+class _CustomerRedemptionSuccessPage extends StatefulWidget {
+  const _CustomerRedemptionSuccessPage({
+    required this.dealTitle,
+    required this.redeemedAt,
+    required this.primaryButtonLabel,
+    required this.onPrimary,
+  });
+
+  final String dealTitle;
+  final DateTime redeemedAt;
+  final String primaryButtonLabel;
+  final VoidCallback onPrimary;
+
+  @override
+  State<_CustomerRedemptionSuccessPage> createState() =>
+      _CustomerRedemptionSuccessPageState();
+}
+
+class _CustomerRedemptionSuccessPageState extends State<_CustomerRedemptionSuccessPage>
     with SingleTickerProviderStateMixin {
   late final AnimationController _animController;
   late final Animation<double> _scaleAnim;
@@ -40,22 +63,15 @@ class _RedemptionSuccessPageState
       vsync: this,
       duration: const Duration(milliseconds: 600),
     );
-
     _scaleAnim = CurvedAnimation(
       parent: _animController,
       curve: Curves.elasticOut,
     );
-
     _fadeAnim = CurvedAnimation(
       parent: _animController,
       curve: const Interval(0.3, 1.0, curve: Curves.easeIn),
     );
-
     _animController.forward();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      ref.invalidate(ordersNotifierProvider);
-    });
   }
 
   @override
@@ -78,7 +94,6 @@ class _RedemptionSuccessPageState
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               const Spacer(flex: 2),
-
               ScaleTransition(
                 scale: _scaleAnim,
                 child: Container(
@@ -103,7 +118,6 @@ class _RedemptionSuccessPageState
                 ),
               ),
               const SizedBox(height: 32),
-
               FadeTransition(
                 opacity: _fadeAnim,
                 child: const Text(
@@ -117,7 +131,6 @@ class _RedemptionSuccessPageState
                 ),
               ),
               const SizedBox(height: 12),
-
               FadeTransition(
                 opacity: _fadeAnim,
                 child: Text(
@@ -133,7 +146,6 @@ class _RedemptionSuccessPageState
                 ),
               ),
               const SizedBox(height: 8),
-
               FadeTransition(
                 opacity: _fadeAnim,
                 child: Text(
@@ -145,63 +157,29 @@ class _RedemptionSuccessPageState
                   textAlign: TextAlign.center,
                 ),
               ),
-
               const Spacer(flex: 2),
-
               SizedBox(
                 width: double.infinity,
                 height: 52,
                 child: ElevatedButton(
-                  key: const ValueKey('redemption_done_btn'),
-                  onPressed: () {
-                    ref.read(scanNotifierProvider.notifier).reset();
-                    context.go('/scan');
-                  },
+                  onPressed: widget.onPrimary,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFFF6B35),
+                    backgroundColor: AppColors.primary,
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
                     elevation: 0,
                   ),
-                  child: const Text(
-                    'Scan Another',
-                    style: TextStyle(
+                  child: Text(
+                    widget.primaryButtonLabel,
+                    style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
               ),
-              const SizedBox(height: 12),
-
-              SizedBox(
-                width: double.infinity,
-                height: 52,
-                child: OutlinedButton(
-                  key: const ValueKey('redemption_dashboard_btn'),
-                  onPressed: () {
-                    ref.read(scanNotifierProvider.notifier).reset();
-                    context.go('/dashboard');
-                  },
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFF1A1A1A),
-                    side: BorderSide(color: Colors.grey.shade300),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: const Text(
-                    'Back to Dashboard',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ),
-
               const SizedBox(height: 24),
             ],
           ),
