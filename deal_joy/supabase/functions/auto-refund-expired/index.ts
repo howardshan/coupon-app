@@ -56,6 +56,7 @@ async function stripeCreateRefund(params: {
   charge?: string;
   payment_intent?: string;
   metadata: Record<string, string>;
+  reverse_transfer?: boolean;
 }): Promise<{ id?: string }> {
   if (!STRIPE_SECRET_KEY) {
     throw new Error('STRIPE_SECRET_KEY is not configured');
@@ -65,6 +66,7 @@ async function stripeCreateRefund(params: {
   form.set('amount', String(params.amount));
   if (params.charge) form.set('charge', params.charge);
   if (params.payment_intent) form.set('payment_intent', params.payment_intent);
+  if (params.reverse_transfer) form.set('reverse_transfer', 'true');
   for (const [key, value] of Object.entries(params.metadata)) {
     form.set(`metadata[${key}]`, value);
   }
@@ -142,6 +144,8 @@ Deno.serve(async (req) => {
       unit_price: number;
       service_fee: number;
       tax_amount: number;
+      commission_amount: number | null;
+      purchased_merchant_id: string | null;
       coupon_id: string;
       expires_at: string;
       stripe_charge_id: string | null;
@@ -165,6 +169,8 @@ Deno.serve(async (req) => {
           unit_price,
           service_fee,
           tax_amount,
+          commission_amount,
+          purchased_merchant_id,
           coupon_id,
           coupons!inner ( id, expires_at ),
           orders!inner ( user_id, stripe_charge_id, payment_intent_id, store_credit_used )
@@ -189,6 +195,8 @@ Deno.serve(async (req) => {
           service_fee: (row.service_fee ?? 0) as number,
           // tax_amount：购买时收取的税款，退款时需要一并退还
           tax_amount: (row.tax_amount ?? 0) as number,
+          commission_amount: row.commission_amount != null ? Number(row.commission_amount) : null,
+          purchased_merchant_id: (row.purchased_merchant_id ?? null) as string | null,
           coupon_id: (coupon?.id ?? row.coupon_id ?? '') as string,
           expires_at: (coupon?.expires_at ?? '') as string,
           stripe_charge_id: (order?.stripe_charge_id ?? null) as string | null,
@@ -215,6 +223,36 @@ Deno.serve(async (req) => {
     summary.processed = items.length;
 
     // -------------------------------------------------------------
+    // 批量查询商家 Stripe Connect 账户（用于 reverse_transfer）
+    // deal_id → merchant_id → stripe_account_id
+    // -------------------------------------------------------------
+    const dealIdSet = [...new Set(items.map(i => i.deal_id).filter(Boolean))];
+    const dealMerchantMap = new Map<string, string>(); // deal_id → merchant_id
+    if (dealIdSet.length > 0) {
+      const { data: dealRows } = await supabaseAdmin
+        .from('deals')
+        .select('id, merchant_id')
+        .in('id', dealIdSet);
+      for (const d of (dealRows ?? [])) {
+        dealMerchantMap.set(d.id, d.merchant_id);
+      }
+    }
+    const merchantIdSet = [...new Set(Array.from(dealMerchantMap.values()))];
+    const merchantConnectMap = new Map<string, string | null>(); // merchant_id → stripe_account_id
+    if (merchantIdSet.length > 0) {
+      const { data: merchantRows } = await supabaseAdmin
+        .from('merchants')
+        .select('id, stripe_account_id, stripe_account_status')
+        .in('id', merchantIdSet);
+      for (const m of (merchantRows ?? [])) {
+        merchantConnectMap.set(
+          m.id,
+          m.stripe_account_status === 'connected' && m.stripe_account_id ? m.stripe_account_id : null,
+        );
+      }
+    }
+
+    // -------------------------------------------------------------
     // 逐条处理，单条失败不中断批次
     // -------------------------------------------------------------
     for (const item of items) {
@@ -224,6 +262,11 @@ Deno.serve(async (req) => {
         const now = new Date().toISOString();
         // 退款金额 = unit_price + tax_amount（退商品价+税，手续费不退）
         const refundAmount = Number(item.unit_price ?? 0) + Number(item.tax_amount ?? 0);
+
+        // 是否走 Stripe Connect 分账路径（Phase 1B 后的订单）
+        const effectiveMerchantId = item.purchased_merchant_id ?? dealMerchantMap.get(item.deal_id) ?? null;
+        const itemConnectId = effectiveMerchantId ? (merchantConnectMap.get(effectiveMerchantId) ?? null) : null;
+        const hasConnectRouting = !!itemConnectId && !item.payment_intent_id?.startsWith('store_credit_');
 
         // 1. 先将 coupon 标记为 expired
         if (item.coupon_id) {
@@ -299,12 +342,17 @@ Deno.serve(async (req) => {
                 metadata: Record<string, string>;
                 charge?: string;
                 payment_intent?: string;
+                reverse_transfer?: boolean;
               } = {
                 amount: Math.round(cardRefundAmount * 100),
                 metadata: { order_item_id: itemId, reason: 'auto_expired' },
               };
               if (chargeId) refundParams.charge = chargeId;
               else refundParams.payment_intent = piId!;
+              // Connect 分账路径：从商家 Connect 账户拉回 merchant_net 用于退款
+              if (hasConnectRouting) {
+                refundParams.reverse_transfer = true;
+              }
 
               const stripeRefund = await stripeCreateRefund(refundParams);
               console.log(`auto-refund-expired: Stripe 卡部分退款成功 refund_id=${stripeRefund.id} item=${itemId}`);

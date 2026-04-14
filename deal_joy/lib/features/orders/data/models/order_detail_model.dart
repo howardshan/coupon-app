@@ -117,6 +117,8 @@ class OrderDetailModel {
   final int quantity;
   final double unitPrice;
   final double totalAmount;
+  /// 整单税费合计（快照，等于所有 items 的 tax_amount 之和）
+  final double taxAmount;
 
   final String? paymentIntentIdMasked;
   final String? paymentStatus;
@@ -157,6 +159,7 @@ class OrderDetailModel {
     required this.quantity,
     required this.unitPrice,
     required this.totalAmount,
+    this.taxAmount = 0.0,
     this.paymentIntentIdMasked,
     this.paymentStatus,
     this.refundAmount,
@@ -216,6 +219,7 @@ class OrderDetailModel {
       quantity: (pick<num>('quantity', 'quantity'))?.toInt() ?? 1,
       unitPrice: (pick<num>('unit_price', 'unitPrice'))?.toDouble() ?? 0.0,
       totalAmount: (pick<num>('total_amount', 'totalAmount'))?.toDouble() ?? 0.0,
+      taxAmount: (pick<num>('tax_amount', 'taxAmount'))?.toDouble() ?? 0.0,
       paymentIntentIdMasked: pick<String>('payment_intent_id_masked', 'paymentIntentIdMasked'),
       paymentStatus: pick<String>('payment_status', 'paymentStatus'),
       refundAmount: (pick<num>('refund_amount', 'refundAmount'))?.toDouble(),

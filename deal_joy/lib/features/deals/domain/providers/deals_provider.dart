@@ -61,6 +61,23 @@ final dealsListProvider = FutureProvider.family<List<DealModel>, int>((
   final isNearMe = ref.watch(isNearMeProvider);
   final category = ref.watch(selectedCategoryProvider);
   final repo = ref.watch(dealsRepositoryProvider);
+  final search = ref.watch(searchQueryProvider);
+
+  // 有搜索词时统一走 fetchDeals（支持 title/description/short_name 全文搜索）。
+  // 注意：搜索时故意忽略 selectedCategoryProvider，避免用户之前选中的分类
+  // 把与搜索词匹配的 deal 误过滤掉（UI 在搜索模式下也隐藏了分类选择器）。
+  if (search.isNotEmpty) {
+    final city = isNearMe ? null : ref.watch(selectedLocationProvider).city;
+    debugPrint('[DEBUG] dealsListProvider → 搜索模式, city=$city, search="$search"');
+    final results = await repo.fetchDeals(
+      city: city,
+      category: null,
+      search: search,
+      page: page,
+    );
+    debugPrint('[DEBUG] dealsListProvider → 搜索返回 ${results.length} 条');
+    return results;
+  }
 
   if (isNearMe) {
     final loc = await ref.watch(userLocationProvider.future);
@@ -77,13 +94,6 @@ final dealsListProvider = FutureProvider.family<List<DealModel>, int>((
 
   final city = ref.watch(selectedLocationProvider).city;
   final userLoc = ref.watch(userLocationProvider).valueOrNull;
-  final search = ref.watch(searchQueryProvider);
-
-  // 有搜索词时退回旧接口（支持全文搜索）
-  if (search.isNotEmpty) {
-    return repo.fetchDeals(
-        city: city, category: category, search: search, page: page);
-  }
 
   return repo.searchDealsByCity(
     city: city,

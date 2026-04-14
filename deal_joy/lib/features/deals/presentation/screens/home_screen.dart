@@ -10,6 +10,7 @@ import '../../data/models/deal_model.dart';
 import '../../../../core/utils/location_utils.dart';
 import '../../domain/providers/deals_provider.dart';
 import '../../domain/providers/recommendation_provider.dart';
+import '../../domain/providers/service_area_provider.dart';
 import '../../../merchant/data/models/merchant_model.dart';
 import '../../../merchant/domain/providers/merchant_provider.dart';
 import '../../../chat/domain/providers/notification_provider.dart';
@@ -31,24 +32,6 @@ Future<void> _recordAdClick(String campaignId) async {
     debugPrint('记录广告点击失败: $e');
   }
 }
-
-// ── Location data (mirrors web app) ──────────────────────────
-const _locationData = {
-  'Texas': {
-    'DFW': [
-      'Dallas',
-      'Richardson',
-      'Plano',
-      'Frisco',
-      'Fairview',
-      'McKinney',
-      'Fort Worth',
-      'Arlington',
-    ],
-    'Austin': ['Austin', 'Round Rock', 'Cedar Park', 'Georgetown'],
-    'Houston': ['Houston', 'The Woodlands', 'Sugar Land', 'Katy'],
-  },
-};
 
 // Use first 6 categories from centralized constants for the icon grid
 final _categories = AppConstants.categoryItems.take(6).toList();
@@ -138,13 +121,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     child: Row(
                       children: [
                         GestureDetector(
-                          onTap: () => setState(() {
-                            _locationMenuOpen = !_locationMenuOpen;
-                            _selectionLevel = 'state';
-                            final loc = ref.read(selectedLocationProvider);
-                            _pendingState = loc.state;
-                            _pendingMetro = loc.metro;
-                          }),
+                          onTap: () {
+                            // 打开菜单时刷新地区列表，确保看到 admin 的最新修改
+                            if (!_locationMenuOpen) {
+                              ref.invalidate(serviceAreasProvider);
+                            }
+                            setState(() {
+                              _locationMenuOpen = !_locationMenuOpen;
+                              _selectionLevel = 'state';
+                              final loc = ref.read(selectedLocationProvider);
+                              _pendingState = loc.state;
+                              _pendingMetro = loc.metro;
+                            });
+                          },
                           child: Row(
                             children: [
                               Icon(
@@ -645,13 +634,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               top: MediaQuery.of(context).padding.top + 56,
               left: 16,
               child: _LocationDropdown(
+                locationData: ref.watch(locationDataProvider),
                 location: (state: _pendingState, metro: _pendingMetro, city: ref.read(selectedLocationProvider).city),
                 selectionLevel: _selectionLevel,
                 onLevelChange: (level) =>
                     setState(() => _selectionLevel = level),
                 onStateChange: (state) => setState(() {
                   _pendingState = state;
-                  _pendingMetro = _locationData[state]!.keys.first;
+                  final locationData = ref.read(locationDataProvider);
+                  _pendingMetro = locationData[state]?.keys.first ?? '';
                 }),
                 onMetroChange: (metro) => setState(() {
                   _pendingMetro = metro;
@@ -690,6 +681,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
 // ── Location dropdown ─────────────────────────────────────────
 class _LocationDropdown extends StatelessWidget {
+  final Map<String, Map<String, List<String>>> locationData;
   final ({String state, String metro, String city}) location;
   final String selectionLevel;
   final void Function(String) onLevelChange;
@@ -700,6 +692,7 @@ class _LocationDropdown extends StatelessWidget {
   final bool isNearMeSelected;
 
   const _LocationDropdown({
+    required this.locationData,
     required this.location,
     required this.selectionLevel,
     required this.onLevelChange,
@@ -786,7 +779,7 @@ class _LocationDropdown extends StatelessWidget {
           onTap: onNearMeSelected,
         ),
         const Divider(height: 8),
-        ..._locationData.keys.map((state) {
+        ...locationData.keys.map((state) {
           return _LocationItem(
             label: state,
             selected: !isNearMeSelected && location.state == state,
@@ -800,7 +793,7 @@ class _LocationDropdown extends StatelessWidget {
       ];
     }
     if (selectionLevel == 'metro') {
-      return _locationData[location.state]!.keys.map((metro) {
+      return (locationData[location.state]?.keys ?? <String>[]).map((metro) {
         return _LocationItem(
           label: metro,
           selected: location.metro == metro,
@@ -812,7 +805,7 @@ class _LocationDropdown extends StatelessWidget {
         );
       }).toList();
     }
-    final cities = _locationData[location.state]![location.metro]!;
+    final cities = locationData[location.state]?[location.metro] ?? <String>[];
     return cities.map((city) {
       return _LocationItem(
         label: city,

@@ -23,7 +23,13 @@ const adminNav: NavEntry[] = [
   { kind: 'link', href: '/deals', label: 'Deals', icon: '🏷️' },
   { kind: 'link', href: '/orders', label: 'Orders', icon: '📦' },
   { kind: 'link', href: '/approvals', label: 'Approvals', icon: '✅' },
-  { kind: 'link', href: '/finance', label: 'Finance', icon: '💰' },
+  {
+    kind: 'group', label: 'Finance', icon: '💰',
+    children: [
+      { href: '/finance', label: 'Withdrawals' },
+      { href: '/finance/tax-revenue', label: 'Tax Revenue' },
+    ],
+  },
   {
     kind: 'group', label: 'Ads', icon: '📣',
     children: [
@@ -35,6 +41,7 @@ const adminNav: NavEntry[] = [
   { kind: 'link', href: '/closures', label: 'Closures', icon: '🔒' },
   { kind: 'link', href: '/support', label: 'Support', icon: '💬' },
   { kind: 'link', href: '/tax-rates', label: 'Tax Rates', icon: '🧾' },
+  { kind: 'link', href: '/regions', label: 'Regions', icon: '🗺️' },
   {
     kind: 'group', label: 'Content', icon: '🎨',
     children: [

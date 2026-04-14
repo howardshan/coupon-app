@@ -353,16 +353,32 @@ Deno.serve(async (req) => {
       return d?.merchant_id;
     }).filter(Boolean))] as string[];
 
-    // 查询 merchants 的 metro_area
+    // 查询 merchants 的 metro_area、stripe_account_id、commission_rate
     const { data: merchantsData } = await supabase
       .from('merchants')
-      .select('id, metro_area')
+      .select('id, metro_area, stripe_account_id, commission_rate')
       .in('id', merchantIds);
 
-    // 构建 merchantId → metro_area 映射
+    // 查询全局 commission_rate（兜底，默认 15%）
+    const { data: globalConfig } = await supabase
+      .from('platform_commission_config')
+      .select('commission_rate')
+      .limit(1)
+      .single();
+    const globalCommissionRate = Number(globalConfig?.commission_rate ?? 0.15);
+
+    // 构建 merchantId → metro_area / stripe_account_id / commission_rate 映射
     const merchantMetroMap = new Map<string, string>();
+    const merchantConnectMap = new Map<string, string | null>();       // stripe_account_id
+    const merchantCommissionRateMap = new Map<string, number>();       // 有效 commission_rate
     for (const m of (merchantsData ?? [])) {
       if (m.metro_area) merchantMetroMap.set(m.id, m.metro_area);
+      merchantConnectMap.set(m.id, m.stripe_account_id ?? null);
+      // 商家专属费率优先；NULL 则用全局默认
+      merchantCommissionRateMap.set(
+        m.id,
+        m.commission_rate != null ? Number(m.commission_rate) : globalCommissionRate,
+      );
     }
 
     // 查询 metro_tax_rates 获取税率
@@ -391,6 +407,22 @@ Deno.serve(async (req) => {
     }
     totalTax = Math.round(totalTax * 100) / 100;
 
+    // ---------- 计算佣金（commission）----------
+    // commission 仅在成功核销时最终归平台；退款/过期时需退还 commission 给商家
+    // 计算基数：(unit_price - promoDiscount) × commission_rate（promo 折扣由商家承担）
+    let totalCommission = 0;
+    for (let i = 0; i < items.length; i++) {
+      const d = dealMap.get(items[i].dealId);
+      const mId = d?.merchant_id ?? '';
+      const rate = merchantCommissionRateMap.get(mId) ?? globalCommissionRate;
+      const effectivePrice = items[i].unitPrice - (resultItems[i]?.promoDiscount ?? 0);
+      totalCommission += Math.round(effectivePrice * rate * 100) / 100;
+    }
+    totalCommission = Math.round(totalCommission * 100) / 100;
+
+    // merchant net = 商家最终应收金额（unit_price 合计 - promo 折扣 - commission）
+    const merchantNet = Math.round((subtotal - totalDiscount - totalCommission) * 100) / 100;
+
     // ---------- 计算最终收款金额 ----------
     let totalAmount = subtotal + serviceFee + totalTax - totalDiscount - creditUsed;
     totalAmount = Math.round(totalAmount * 100) / 100;
@@ -418,6 +450,21 @@ Deno.serve(async (req) => {
       return errorResponse(`Total amount $${totalAmount.toFixed(2)} is too low (minimum $0.50)`);
     }
 
+    // ---------- Stripe Connect：分账参数（Agent 定位核心）----------
+    // 单商家且已完成 Connect onboarding → merchant net 立即路由到商家 Connect 账户
+    // application_fee_amount = service_fee + commission + tax（平台保留）
+    // 多商家或商家缺少 Connect 账户 → 降级：资金路由到平台账户，记录警告
+    const isSingleMerchant = merchantIds.length === 1;
+    const soloMerchantId = isSingleMerchant ? merchantIds[0] : null;
+    const soloConnectId = soloMerchantId ? (merchantConnectMap.get(soloMerchantId) ?? null) : null;
+
+    // application_fee_amount（美分）= 平台保留金额，不得超过实际收款额
+    const platformFeeTotal = serviceFee + totalCommission + totalTax;
+    const applicationFeeAmountCents = Math.min(
+      Math.round(platformFeeTotal * 100),
+      Math.round(totalAmount * 100),
+    );
+
     // ---------- 创建 Stripe PaymentIntent（直接 charge） ----------
     // 根据前端选择的支付方式，限定 PaymentIntent 的支付类型
     // 'card' → 只显示信用卡输入（不显示 Link/Google Pay 等）
@@ -438,8 +485,25 @@ Deno.serve(async (req) => {
         total_discount: totalDiscount.toFixed(2),
         tax_total: totalTax.toFixed(2),
         total_amount: totalAmount.toFixed(2),
+        commission_total: totalCommission.toFixed(2),
+        merchant_net: merchantNet.toFixed(2),
+        has_connect_routing: String(isSingleMerchant && !!soloConnectId),
       },
     };
+
+    // 添加 Stripe Connect 分账参数（Agent 定位）
+    if (isSingleMerchant && soloConnectId) {
+      // 标准路径：merchant net 立即路由到商家 Connect 账户
+      piParams.application_fee_amount = applicationFeeAmountCents;
+      piParams.transfer_data = { destination: soloConnectId };
+    } else if (!isSingleMerchant) {
+      // 多商家购物车暂不支持单次 Connect 分账，需要前端拆单
+      // TODO: 后续实现拆单支付（每商家一笔 PaymentIntent）以维持 Agent 定位
+      console.warn(`多商家购物车 (${merchantIds.join(',')})：暂时路由到平台账户，建议前端拆单`);
+    } else {
+      // 商家缺少 Connect 账户：提示完成注册（上架 deal 前应已完成）
+      console.warn(`商家 ${soloMerchantId} 缺少 Stripe Connect 账户，资金暂时路由到平台账户`);
+    }
     if (isCardOnly) {
       // 信用卡模式：只允许 card，禁用 Link
       piParams.payment_method_types = ['card'];
@@ -497,6 +561,9 @@ Deno.serve(async (req) => {
         totalTax,
         storeCreditUsed: creditUsed,
         totalAmount,
+        commissionTotal: totalCommission,
+        merchantNet,
+        hasConnectRouting: isSingleMerchant && !!soloConnectId,
         items: resultItems,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },

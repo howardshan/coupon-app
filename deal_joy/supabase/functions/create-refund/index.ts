@@ -91,6 +91,8 @@ Deno.serve(async (req) => {
         unit_price,
         service_fee,
         tax_amount,
+        commission_amount,
+        purchased_merchant_id,
         customer_status,
         orders!inner (
           id,
@@ -159,12 +161,71 @@ Deno.serve(async (req) => {
     const serviceFee = Number(item.service_fee ?? 0);
     // tax_amount：购买时收取的税款，退款时需要一并退还
     const taxAmount = Number(item.tax_amount ?? 0);
+    // commission_amount：下单时快照的佣金，退款时退还给商家（via reverse_transfer）
+    const commissionAmount = Number((item as any).commission_amount ?? 0);
     const now = new Date().toISOString();
+
+    // 查询商家的 Stripe Connect 账户（用于 reverse_transfer）
+    // purchased_merchant_id 优先；若无则通过 deal_id 查 merchant_id
+    const merchantIdForRefund = (item as any).purchased_merchant_id ?? null;
+    let merchantStripeAccountId: string | null = null;
+    if (merchantIdForRefund) {
+      const { data: merchantData } = await supabaseAdmin
+        .from('merchants')
+        .select('stripe_account_id, stripe_account_status')
+        .eq('id', merchantIdForRefund)
+        .single();
+      if (merchantData?.stripe_account_status === 'connected' && merchantData.stripe_account_id) {
+        merchantStripeAccountId = merchantData.stripe_account_id;
+      }
+    } else if ((item as any).deal_id) {
+      // 兜底：通过 deal_id 查 merchant
+      const { data: dealData } = await supabaseAdmin
+        .from('deals')
+        .select('merchant_id, merchants(stripe_account_id, stripe_account_status)')
+        .eq('id', (item as any).deal_id)
+        .single();
+      const m = (dealData?.merchants as any);
+      if (m?.stripe_account_status === 'connected' && m?.stripe_account_id) {
+        merchantStripeAccountId = m.stripe_account_id;
+      }
+    }
+
+    // 是否走 Stripe Connect 分账路径（Phase 1B 上线后的订单）
+    const hasConnectRouting = !!merchantStripeAccountId && !isFullStoreCredit;
 
     if (refundMethod === 'store_credit') {
       // ── store_credit 退款流程 ──────────────────────────────────────────────
       // 退款金额包含 service fee 和 tax（平台承担手续费补偿用户，税款全额退还）
       const refundAmount = unitPrice + serviceFee + taxAmount;
+
+      // Stripe Connect 分账路径（Phase 1B 后的订单）：
+      // Store Credit 由平台垫付，需从商家 Connect 账户回撤 merchant_net，以平衡资金
+      // merchant_net = unit_price - commission（commission 归平台，此处也回撤）
+      if (hasConnectRouting && order.payment_intent_id && !order.payment_intent_id.startsWith('store_credit_')) {
+        try {
+          // 获取 PaymentIntent 找到关联 transfer ID
+          const pi = await stripe.paymentIntents.retrieve(order.payment_intent_id, {
+            expand: ['latest_charge.transfer'],
+          });
+          const transfer = (pi as any).latest_charge?.transfer;
+          const transferId = typeof transfer === 'string' ? transfer : transfer?.id;
+
+          if (transferId) {
+            // 回撤 merchant_net = unit_price - commission_amount
+            const merchantNetCents = Math.round((unitPrice - commissionAmount) * 100);
+            if (merchantNetCents > 0) {
+              await stripe.transfers.createReversal(transferId, {
+                amount: merchantNetCents,
+                metadata: { order_item_id: orderItemId, reason: 'store_credit_refund' },
+              });
+            }
+          }
+        } catch (transferErr) {
+          // 回撤失败不阻断 SC 退款流程，记录告警供人工处理
+          console.error('SC 退款 transfer reversal 失败（不阻断，需人工核查）:', transferErr);
+        }
+      }
 
       // 调用 RPC 增加用户 store credit 余额
       const { error: rpcErr } = await supabaseAdmin.rpc('add_store_credit', {
@@ -319,12 +380,22 @@ Deno.serve(async (req) => {
           // 向 Stripe 发起信用卡部分退款
           const refundParams: Record<string, unknown> = {
             amount: Math.round(cardRefundAmount * 100),
-            metadata: { order_item_id: orderItemId },
+            metadata: {
+              order_item_id: orderItemId,
+              commission_amount: commissionAmount.toFixed(2),
+            },
           };
           if (order.stripe_charge_id) {
             refundParams.charge = order.stripe_charge_id;
           } else {
             refundParams.payment_intent = order.payment_intent_id;
+          }
+          // Stripe Connect 分账路径（Phase 1B 后的订单）：
+          //   reverse_transfer: true → 从商家 Connect 账户拉回 merchant_net 用于退款
+          //   refund_application_fee: false（默认）→ 平台保留 service_fee，退还 commission 部分
+          //   Stripe 会按比例从 Connect 账户反转转账，近似值符合业务规则
+          if (hasConnectRouting) {
+            refundParams.reverse_transfer = true;
           }
           const refund = await stripe.refunds.create(refundParams as any);
           stripeRefundId = refund.id;

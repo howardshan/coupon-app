@@ -325,6 +325,8 @@ class MerchantSummary {
   // 品牌信息（连锁店才有）
   final String? brandName;
   final String? brandLogoUrl;
+  // Metro 区域（用于 checkout 税费预览，直接 join 自 merchants.metro_area）
+  final String? metroArea;
 
   const MerchantSummary({
     required this.id,
@@ -338,6 +340,7 @@ class MerchantSummary {
     this.reviewCount = 0,
     this.brandName,
     this.brandLogoUrl,
+    this.metroArea,
   });
 
   /// 是否为连锁店品牌
@@ -357,5 +360,6 @@ class MerchantSummary {
         // 品牌信息从 brands join 获取
         brandName: (json['brands'] as Map<String, dynamic>?)?['name'] as String?,
         brandLogoUrl: (json['brands'] as Map<String, dynamic>?)?['logo_url'] as String?,
+        metroArea: json['metro_area'] as String?,
       );
 }

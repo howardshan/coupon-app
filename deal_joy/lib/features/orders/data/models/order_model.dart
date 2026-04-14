@@ -17,7 +17,10 @@ class OrderModel {
   /// service fee 总额
   final double serviceFeeTotal;
 
-  /// 总计（itemsAmount + serviceFeeTotal）
+  /// 整单税费合计（快照，从各 item tax_amount 累加得到）
+  final double taxAmount;
+
+  /// 总计（itemsAmount + serviceFeeTotal + taxAmount）
   final double totalAmount;
 
   final String paymentIntentId;
@@ -78,6 +81,7 @@ class OrderModel {
     this.orderNumber,
     this.itemsAmount = 0.0,
     this.serviceFeeTotal = 0.0,
+    this.taxAmount = 0.0,
     required this.totalAmount,
     required this.paymentIntentId,
     this.stripeChargeId,
@@ -132,6 +136,8 @@ class OrderModel {
           (json['items_amount'] as num?)?.toDouble() ?? 0.0,
       serviceFeeTotal:
           (json['service_fee_total'] as num?)?.toDouble() ?? 0.0,
+      taxAmount:
+          (json['tax_amount'] as num?)?.toDouble() ?? 0.0,
       totalAmount:
           (json['total_amount'] as num?)?.toDouble() ?? 0.0,
       paymentIntentId:
