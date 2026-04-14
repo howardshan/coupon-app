@@ -13,6 +13,7 @@ import '../widgets/coupon_card.dart';
 import '../widgets/pending_reviews_list.dart';
 import '../widgets/used_coupons_by_order_list.dart';
 import '../widgets/expired_coupons_by_order_list.dart';
+import '../widgets/refunded_coupons_by_order_list.dart';
 
 /// 多笔订单合并行进入券详情：携带 order_item id，避免只加载单笔订单
 void _pushVoucherForMergedDealRow(
@@ -323,6 +324,8 @@ class _CouponList extends StatelessWidget {
       scrollable = _buildGroupedView(context);
     } else if (status == 'expired') {
       scrollable = ExpiredCouponsByOrderList(coupons: coupons);
+    } else if (status == 'refunded') {
+      scrollable = RefundedCouponsByOrderList(coupons: coupons);
     } else {
       scrollable = ListView.separated(
         padding: const EdgeInsets.all(16),
