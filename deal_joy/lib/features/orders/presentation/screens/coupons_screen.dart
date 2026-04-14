@@ -280,6 +280,7 @@ class _CouponList extends StatelessWidget {
           },
           child: UsedCouponsByOrderList(
             coupons: coupons,
+            allCoupons: ref.watch(userCouponsProvider).value ?? const [],
             myReviews: myReviews,
           ),
         ),

@@ -12,6 +12,25 @@ import '../../data/models/coupon_model.dart';
 String _formatDate(DateTime dt) =>
     DateFormat('MMM d, yyyy').format(dt.toLocal());
 
+/// 核销时间：日期 + 时分（与 coupons_provider Unused 统计规则一致）
+String _formatUsedAt(DateTime dt) =>
+    DateFormat('MMM d, yyyy · h:mm a').format(dt.toLocal());
+
+/// 与 Unused Tab 过滤一致，用于按订单统计未使用券数量
+bool _couponCountsAsUnusedTab(CouponModel c) {
+  return c.status == 'unused' &&
+      !c.isExpired &&
+      c.refundedAt == null &&
+      c.orderItemId != null &&
+      (c.customerStatus == null || c.customerStatus == 'unused');
+}
+
+int _unusedCountForOrder(String orderId, List<CouponModel> allCoupons) {
+  return allCoupons
+      .where((c) => c.orderId == orderId && _couponCountsAsUnusedTab(c))
+      .length;
+}
+
 /// 将已使用券按 orderId 分组，组内按 usedAt 降序；订单组按组内最近 usedAt 降序
 List<List<CouponModel>> groupUsedCouponsByOrder(List<CouponModel> coupons) {
   final map = <String, List<CouponModel>>{};
@@ -71,11 +90,14 @@ bool _multiMerchant(List<CouponModel> group) {
 /// Used Tab 主体：每个订单一张可展开卡片
 class UsedCouponsByOrderList extends StatelessWidget {
   final List<CouponModel> coupons;
+  /// 全量券列表（用于按订单统计未使用券数量）
+  final List<CouponModel> allCoupons;
   final List<ReviewModel> myReviews;
 
   const UsedCouponsByOrderList({
     super.key,
     required this.coupons,
+    required this.allCoupons,
     required this.myReviews,
   });
 
@@ -88,6 +110,7 @@ class UsedCouponsByOrderList extends StatelessWidget {
       separatorBuilder: (_, _) => const SizedBox(height: 12),
       itemBuilder: (_, i) => _UsedOrderCard(
         orderCoupons: groups[i],
+        allCoupons: allCoupons,
         myReviews: myReviews,
       ),
     );
@@ -97,10 +120,12 @@ class UsedCouponsByOrderList extends StatelessWidget {
 /// 与 Unused `_MerchantCouponGroup` 一致：白底圆角阴影 + 抬头行 + Divider + 内容区
 class _UsedOrderCard extends StatefulWidget {
   final List<CouponModel> orderCoupons;
+  final List<CouponModel> allCoupons;
   final List<ReviewModel> myReviews;
 
   const _UsedOrderCard({
     required this.orderCoupons,
+    required this.allCoupons,
     required this.myReviews,
   });
 
@@ -121,7 +146,9 @@ class _UsedOrderCardState extends State<_UsedOrderCard> {
     final multi = _multiMerchant(orderCoupons);
     final merchantLine = first.merchantName ?? 'Merchant';
     final orderTitle = orderTitleForGroup(orderCoupons);
-    final n = orderCoupons.length;
+    final orderId = first.orderId;
+    final usedCount = orderCoupons.length;
+    final unusedCount = _unusedCountForOrder(orderId, widget.allCoupons);
 
     return Container(
       decoration: BoxDecoration(
@@ -147,6 +174,7 @@ class _UsedOrderCardState extends State<_UsedOrderCard> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Container(
                         width: 22,
@@ -169,22 +197,38 @@ class _UsedOrderCardState extends State<_UsedOrderCard> {
                             fontWeight: FontWeight.w600,
                             fontSize: 14,
                           ),
-                          maxLines: 1,
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      Text(
-                        '$n voucher${n > 1 ? 's' : ''}',
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: AppColors.textHint,
-                        ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            'Used vouchers: $usedCount',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: AppColors.textHint,
+                            ),
+                          ),
+                          if (unusedCount > 0)
+                            Text(
+                              'Unused vouchers: $unusedCount',
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: AppColors.textHint,
+                              ),
+                            ),
+                        ],
                       ),
                       const SizedBox(width: 4),
-                      Icon(
-                        _expanded ? Icons.expand_less : Icons.expand_more,
-                        size: 22,
-                        color: AppColors.textSecondary,
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Icon(
+                          _expanded ? Icons.expand_less : Icons.expand_more,
+                          size: 22,
+                          color: AppColors.textSecondary,
+                        ),
                       ),
                     ],
                   ),
@@ -269,9 +313,12 @@ class _UsedCouponTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final showWriteHint = writtenReview == null;
     final usedLine = coupon.usedAt != null
-        ? 'Used ${_formatDate(coupon.usedAt!)}'
+        ? 'Used ${_formatUsedAt(coupon.usedAt!)}'
         : 'Used';
     final imageUrl = coupon.dealImageUrl;
+    final priceLine = coupon.unitPrice != null
+        ? '\$${(coupon.unitPrice! + coupon.taxAmount).toStringAsFixed(2)}'
+        : null;
 
     return InkWell(
       onTap: () => context.push('/coupon/${coupon.id}'),
@@ -317,6 +364,17 @@ class _UsedCouponTile extends StatelessWidget {
                           color: AppColors.textHint,
                         ),
                       ),
+                      if (priceLine != null) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          priceLine,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
