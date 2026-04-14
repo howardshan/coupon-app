@@ -52,7 +52,7 @@ class VoucherDetailScreen extends ConsumerWidget {
     void refreshDetail() {
       if (useAggregate) {
         ref.invalidate(aggregatedDealVoucherDetailProvider(aggKey));
-        ref.invalidate(userCouponsProvider);
+        invalidateUserCouponsEverywhere(ref.invalidate);
       } else {
         ref.invalidate(userOrderDetailProvider(orderId));
       }

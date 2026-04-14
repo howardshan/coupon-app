@@ -1,6 +1,7 @@
 // Used 标签：按订单分组展示已核销券；视觉与 Unused 商家分组卡片、券行对齐
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
@@ -8,6 +9,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../deals/data/models/review_model.dart';
 import '../../../reviews/domain/providers/my_reviews_provider.dart';
 import '../../data/models/coupon_model.dart';
+import '../../domain/providers/coupons_repository_provider.dart';
 
 String _formatDate(DateTime dt) =>
     DateFormat('MMM d, yyyy').format(dt.toLocal());
@@ -15,21 +17,6 @@ String _formatDate(DateTime dt) =>
 /// 核销时间：日期 + 时分（与 coupons_provider Unused 统计规则一致）
 String _formatUsedAt(DateTime dt) =>
     DateFormat('MMM d, yyyy · h:mm a').format(dt.toLocal());
-
-/// 与 Unused Tab 过滤一致，用于按订单统计未使用券数量
-bool _couponCountsAsUnusedTab(CouponModel c) {
-  return c.status == 'unused' &&
-      !c.isExpired &&
-      c.refundedAt == null &&
-      c.orderItemId != null &&
-      (c.customerStatus == null || c.customerStatus == 'unused');
-}
-
-int _unusedCountForOrder(String orderId, List<CouponModel> allCoupons) {
-  return allCoupons
-      .where((c) => c.orderId == orderId && _couponCountsAsUnusedTab(c))
-      .length;
-}
 
 /// 将已使用券按 orderId 分组，组内按 usedAt 降序；订单组按组内最近 usedAt 降序
 List<List<CouponModel>> groupUsedCouponsByOrder(List<CouponModel> coupons) {
@@ -87,31 +74,63 @@ bool _multiMerchant(List<CouponModel> group) {
   return group.any((c) => c.merchantId != first);
 }
 
-/// Used Tab 主体：每个订单一张可展开卡片
-class UsedCouponsByOrderList extends StatelessWidget {
+/// Used Tab 主体：每个订单一张可展开卡片（未使用张数由 RPC 按订单查询）
+class UsedCouponsByOrderList extends ConsumerStatefulWidget {
   final List<CouponModel> coupons;
-  /// 全量券列表（用于按订单统计未使用券数量）
-  final List<CouponModel> allCoupons;
   final List<ReviewModel> myReviews;
 
   const UsedCouponsByOrderList({
     super.key,
     required this.coupons,
-    required this.allCoupons,
     required this.myReviews,
   });
 
   @override
+  ConsumerState<UsedCouponsByOrderList> createState() =>
+      _UsedCouponsByOrderListState();
+}
+
+class _UsedCouponsByOrderListState extends ConsumerState<UsedCouponsByOrderList> {
+  Map<String, int> _unusedByOrderId = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUnusedCounts();
+  }
+
+  @override
+  void didUpdateWidget(covariant UsedCouponsByOrderList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.coupons.length != widget.coupons.length ||
+        oldWidget.coupons.map((c) => c.id).join(',') !=
+            widget.coupons.map((c) => c.id).join(',')) {
+      _loadUnusedCounts();
+    }
+  }
+
+  Future<void> _loadUnusedCounts() async {
+    final ids = widget.coupons.map((c) => c.orderId).toSet().toList();
+    if (ids.isEmpty) {
+      if (mounted) setState(() => _unusedByOrderId = {});
+      return;
+    }
+    final m =
+        await ref.read(couponsRepositoryProvider).fetchUnusedVoucherCountsByOrders(ids);
+    if (mounted) setState(() => _unusedByOrderId = m);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final groups = groupUsedCouponsByOrder(coupons);
+    final groups = groupUsedCouponsByOrder(widget.coupons);
     return ListView.separated(
       padding: const EdgeInsets.all(16),
       itemCount: groups.length,
       separatorBuilder: (_, _) => const SizedBox(height: 12),
       itemBuilder: (_, i) => _UsedOrderCard(
         orderCoupons: groups[i],
-        allCoupons: allCoupons,
-        myReviews: myReviews,
+        unusedByOrderId: _unusedByOrderId,
+        myReviews: widget.myReviews,
       ),
     );
   }
@@ -120,12 +139,12 @@ class UsedCouponsByOrderList extends StatelessWidget {
 /// 与 Unused `_MerchantCouponGroup` 一致：白底圆角阴影 + 抬头行 + Divider + 内容区
 class _UsedOrderCard extends StatefulWidget {
   final List<CouponModel> orderCoupons;
-  final List<CouponModel> allCoupons;
+  final Map<String, int> unusedByOrderId;
   final List<ReviewModel> myReviews;
 
   const _UsedOrderCard({
     required this.orderCoupons,
-    required this.allCoupons,
+    required this.unusedByOrderId,
     required this.myReviews,
   });
 
@@ -148,7 +167,7 @@ class _UsedOrderCardState extends State<_UsedOrderCard> {
     final orderTitle = orderTitleForGroup(orderCoupons);
     final orderId = first.orderId;
     final usedCount = orderCoupons.length;
-    final unusedCount = _unusedCountForOrder(orderId, widget.allCoupons);
+    final unusedCount = widget.unusedByOrderId[orderId] ?? 0;
 
     return Container(
       decoration: BoxDecoration(

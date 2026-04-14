@@ -1,5 +1,7 @@
 // 团购券 Riverpod Providers
 
+export 'coupons_repository_provider.dart';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../shared/providers/supabase_provider.dart';
@@ -7,14 +9,17 @@ import '../../../auth/domain/providers/auth_provider.dart';
 import '../../../chat/domain/providers/chat_provider.dart';
 import '../../data/models/coupon_model.dart';
 import '../../data/models/coupon_gift_model.dart';
-import '../../data/repositories/coupons_repository.dart';
 import '../../../profile/domain/providers/store_credit_provider.dart';
+import 'coupon_tab_list_provider.dart';
+import 'coupons_repository_provider.dart';
 import 'orders_provider.dart';
 
-/// CouponsRepository Provider
-final couponsRepositoryProvider = Provider<CouponsRepository>((ref) {
-  return CouponsRepository(ref.watch(supabaseClientProvider));
-});
+/// 刷新全量券缓存 + 各 Tab 分页列表（退款/赠送/实时推送等调用）
+/// 传入 [Ref.invalidate] 或 [WidgetRef.invalidate]：`invalidateUserCouponsEverywhere(ref.invalidate)`
+void invalidateUserCouponsEverywhere(void Function(ProviderOrFamily) invalidate) {
+  invalidateAllCouponTabLists(invalidate);
+  invalidate(userCouponsProvider);
+}
 
 /// 当前用户全部团购券
 final userCouponsProvider = FutureProvider<List<CouponModel>>((ref) async {
@@ -119,7 +124,7 @@ class RefundNotifier extends AsyncNotifier<void> {
     );
     if (!state.hasError) {
       // 刷新券列表、订单列表和 store credit 余额
-      ref.invalidate(userCouponsProvider);
+      invalidateUserCouponsEverywhere(ref.invalidate);
       ref.invalidate(couponDetailProvider(couponId));
       ref.invalidate(userOrdersProvider);
       ref.invalidate(storeCreditBalanceProvider);
@@ -143,7 +148,7 @@ class RefundNotifier extends AsyncNotifier<void> {
           ),
     );
     if (!state.hasError) {
-      ref.invalidate(userCouponsProvider);
+      invalidateUserCouponsEverywhere(ref.invalidate);
       ref.invalidate(userOrdersProvider);
       ref.invalidate(storeCreditBalanceProvider);
       ref.invalidate(storeCreditTransactionsProvider);
@@ -176,7 +181,7 @@ class RefundNotifier extends AsyncNotifier<void> {
     );
     if (!state.hasError) {
       // 刷新券列表、订单列表和 store credit 余额
-      ref.invalidate(userCouponsProvider);
+      invalidateUserCouponsEverywhere(ref.invalidate);
       ref.invalidate(userOrdersProvider);
       ref.invalidate(storeCreditBalanceProvider);
       ref.invalidate(storeCreditTransactionsProvider);
@@ -195,7 +200,7 @@ class RefundNotifier extends AsyncNotifier<void> {
     );
     if (!state.hasError) {
       // 刷新券列表、订单列表和 store credit 余额
-      ref.invalidate(userCouponsProvider);
+      invalidateUserCouponsEverywhere(ref.invalidate);
       ref.invalidate(userOrdersProvider);
       ref.invalidate(orderDetailProvider(orderId));
       ref.invalidate(storeCreditBalanceProvider);
@@ -230,7 +235,7 @@ class GiftNotifier extends AsyncNotifier<void> {
           ),
     );
     if (!state.hasError) {
-      ref.invalidate(userCouponsProvider);
+      invalidateUserCouponsEverywhere(ref.invalidate);
       ref.invalidate(userOrdersProvider);
     }
     return !state.hasError;
@@ -284,7 +289,7 @@ class GiftNotifier extends AsyncNotifier<void> {
       }
     });
     if (!state.hasError) {
-      ref.invalidate(userCouponsProvider);
+      invalidateUserCouponsEverywhere(ref.invalidate);
       ref.invalidate(userOrdersProvider);
     }
     return !state.hasError;
@@ -297,7 +302,7 @@ class GiftNotifier extends AsyncNotifier<void> {
       () => ref.read(couponsRepositoryProvider).recallGift(giftId),
     );
     if (!state.hasError) {
-      ref.invalidate(userCouponsProvider);
+      invalidateUserCouponsEverywhere(ref.invalidate);
       ref.invalidate(userOrdersProvider);
     }
     return !state.hasError;
@@ -333,7 +338,7 @@ class GiftNotifier extends AsyncNotifier<void> {
       }
     });
     if (!state.hasError) {
-      ref.invalidate(userCouponsProvider);
+      invalidateUserCouponsEverywhere(ref.invalidate);
       ref.invalidate(userOrdersProvider);
     }
     return !state.hasError;
@@ -348,7 +353,7 @@ class GiftNotifier extends AsyncNotifier<void> {
           .giftCoupon(couponId, recipientEmail),
     );
     if (!state.hasError) {
-      ref.invalidate(userCouponsProvider);
+      invalidateUserCouponsEverywhere(ref.invalidate);
       ref.invalidate(couponDetailProvider(couponId));
     }
     return !state.hasError;

@@ -5,6 +5,7 @@ import '../../../../core/errors/app_exception.dart';
 import '../../../../core/errors/postgrest_auth_mapper.dart';
 import '../models/coupon_model.dart';
 import '../models/coupon_gift_model.dart';
+import '../models/coupon_page_cursor.dart';
 
 /// V3 coupon select — 通过 order_items join 获取 applicable_store_ids
 /// order_items 关联使用外键 coupons!order_items_coupon_id_fkey
@@ -25,6 +26,83 @@ class CouponsRepository {
   final SupabaseClient _client;
 
   CouponsRepository(this._client);
+
+  /// My Coupons 列表分页（RPC 取 id 再富集），[tab] 对应顶层 Tab：unused/used/expired/refunded/gifted
+  static const int defaultCouponPageSize = 20;
+
+  Future<CouponPageFetchResult> fetchMyCouponsPage({
+    required String tab,
+    int limit = defaultCouponPageSize,
+    CouponKeysetCursor? cursor,
+  }) async {
+    try {
+      final want = limit + 1;
+      final data = await _client.rpc(
+        'fetch_my_coupon_ids_page',
+        params: {
+          'p_tab': tab,
+          'p_limit': want,
+          if (cursor != null) 'p_cursor_created_at': cursor.createdAt.toUtc().toIso8601String(),
+          if (cursor != null) 'p_cursor_id': cursor.id,
+        },
+      );
+      final rows = (data as List)
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+      final hasMore = rows.length > limit;
+      final slice = hasMore ? rows.sublist(0, limit) : rows;
+      if (slice.isEmpty) {
+        return const CouponPageFetchResult(
+          items: [],
+          nextCursor: null,
+          hasMore: false,
+        );
+      }
+      final ids = slice.map((e) => e['id'] as String).toList();
+      final full = await _client.from('coupons').select(_couponSelect).inFilter('id', ids);
+      final list = (full as List)
+          .map((e) => CouponModel.fromJson(e as Map<String, dynamic>))
+          .toList();
+      final byId = {for (final c in list) c.id: c};
+      final ordered = <CouponModel>[];
+      for (final id in ids) {
+        final c = byId[id];
+        if (c != null) ordered.add(c);
+      }
+      final enriched = await _batchEnrichDealUsageRules(ordered);
+      final lastRow = slice.last;
+      final lastCreated = DateTime.parse(lastRow['created_at'] as String);
+      final lastId = lastRow['id'] as String;
+      return CouponPageFetchResult(
+        items: enriched,
+        nextCursor:
+            hasMore ? CouponKeysetCursor(createdAt: lastCreated, id: lastId) : null,
+        hasMore: hasMore,
+      );
+    } on PostgrestException catch (e) {
+      throwForCouponListPostgrest(e);
+    }
+  }
+
+  /// 按订单统计 Unused Tab 口径下的未使用券数量（用于 Used/Expired 订单卡）
+  Future<Map<String, int>> fetchUnusedVoucherCountsByOrders(
+      List<String> orderIds) async {
+    if (orderIds.isEmpty) return {};
+    try {
+      final data = await _client.rpc(
+        'fetch_unused_voucher_counts_for_orders',
+        params: {'p_order_ids': orderIds},
+      );
+      final map = <String, int>{};
+      for (final e in data as List) {
+        final m = Map<String, dynamic>.from(e as Map);
+        map[m['order_id'] as String] = (m['unused_count'] as num).toInt();
+      }
+      return map;
+    } on PostgrestException catch (e) {
+      throwForCouponListPostgrest(e);
+    }
+  }
 
   /// 获取当前用户的全部团购券，按创建时间倒序
   Future<List<CouponModel>> fetchUserCoupons(String userId) async {
@@ -274,9 +352,9 @@ class CouponsRepository {
         'send-gift',
         body: {
           'order_item_id': orderItemId,
-          if (recipientEmail != null) 'recipient_email': recipientEmail,
-          if (recipientPhone != null) 'recipient_phone': recipientPhone,
-          if (recipientUserId != null) 'recipient_user_id': recipientUserId,
+          'recipient_email': ?recipientEmail,
+          'recipient_phone': ?recipientPhone,
+          'recipient_user_id': ?recipientUserId,
           if (giftMessage != null && giftMessage.isNotEmpty)
             'gift_message': giftMessage,
         },

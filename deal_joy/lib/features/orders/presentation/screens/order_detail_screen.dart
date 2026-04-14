@@ -87,7 +87,7 @@ class _UnusedQrSheetState extends ConsumerState<_UnusedQrSheet> {
     // 定期拉取，避免 Realtime 1002 等导致长时间停在旧 QR
     _pollTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (!mounted) return;
-      ref.invalidate(userCouponsProvider);
+      invalidateUserCouponsEverywhere(ref.invalidate);
       if (widget.aggregateByDeal && widget.aggregatedOrderItemIds.isNotEmpty) {
         final key = aggregatedDealVoucherCacheKey(
             widget.dealId, widget.aggregatedOrderItemIds);
@@ -447,7 +447,7 @@ class _UnusedQrSheetState extends ConsumerState<_UnusedQrSheet> {
               const SizedBox(height: 16),
               TextButton(
                 onPressed: () {
-                  ref.invalidate(userCouponsProvider);
+                  invalidateUserCouponsEverywhere(ref.invalidate);
                   if (aggKey != null) {
                     ref.invalidate(aggregatedDealVoucherDetailProvider(aggKey));
                   } else {

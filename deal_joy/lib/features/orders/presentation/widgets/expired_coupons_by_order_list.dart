@@ -1,32 +1,19 @@
 // Expired 标签：按订单分组展示过期券（布局与 Used 订单卡片一致）
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../data/models/coupon_model.dart';
+import '../../domain/providers/coupons_repository_provider.dart';
 
 String _formatDate(DateTime dt) =>
     DateFormat('MMM d, yyyy').format(dt.toLocal());
 
 String _formatDateTime(DateTime dt) =>
     DateFormat('MMM d, yyyy · h:mm a').format(dt.toLocal());
-
-/// 与 Unused Tab 过滤一致（同 used_coupons_by_order_list）
-bool _couponCountsAsUnusedTab(CouponModel c) {
-  return c.status == 'unused' &&
-      !c.isExpired &&
-      c.refundedAt == null &&
-      c.orderItemId != null &&
-      (c.customerStatus == null || c.customerStatus == 'unused');
-}
-
-int _unusedCountForOrder(String orderId, List<CouponModel> allCoupons) {
-  return allCoupons
-      .where((c) => c.orderId == orderId && _couponCountsAsUnusedTab(c))
-      .length;
-}
 
 /// 过期券按 orderId 分组；组内按 expiresAt 新→旧；订单组按组内最近过期时间排序
 List<List<CouponModel>> groupExpiredCouponsByOrder(List<CouponModel> coupons) {
@@ -70,26 +57,60 @@ bool _multiMerchant(List<CouponModel> group) {
 }
 
 /// Expired Tab 主体
-class ExpiredCouponsByOrderList extends StatelessWidget {
+class ExpiredCouponsByOrderList extends ConsumerStatefulWidget {
   final List<CouponModel> coupons;
-  final List<CouponModel> allCoupons;
 
   const ExpiredCouponsByOrderList({
     super.key,
     required this.coupons,
-    required this.allCoupons,
   });
 
   @override
+  ConsumerState<ExpiredCouponsByOrderList> createState() =>
+      _ExpiredCouponsByOrderListState();
+}
+
+class _ExpiredCouponsByOrderListState
+    extends ConsumerState<ExpiredCouponsByOrderList> {
+  Map<String, int> _unusedByOrderId = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUnusedCounts();
+  }
+
+  @override
+  void didUpdateWidget(covariant ExpiredCouponsByOrderList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.coupons.length != widget.coupons.length ||
+        oldWidget.coupons.map((c) => c.id).join(',') !=
+            widget.coupons.map((c) => c.id).join(',')) {
+      _loadUnusedCounts();
+    }
+  }
+
+  Future<void> _loadUnusedCounts() async {
+    final ids = widget.coupons.map((c) => c.orderId).toSet().toList();
+    if (ids.isEmpty) {
+      if (mounted) setState(() => _unusedByOrderId = {});
+      return;
+    }
+    final m =
+        await ref.read(couponsRepositoryProvider).fetchUnusedVoucherCountsByOrders(ids);
+    if (mounted) setState(() => _unusedByOrderId = m);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final groups = groupExpiredCouponsByOrder(coupons);
+    final groups = groupExpiredCouponsByOrder(widget.coupons);
     return ListView.separated(
       padding: const EdgeInsets.all(16),
       itemCount: groups.length,
       separatorBuilder: (_, _) => const SizedBox(height: 12),
       itemBuilder: (_, i) => _ExpiredOrderCard(
         orderCoupons: groups[i],
-        allCoupons: allCoupons,
+        unusedByOrderId: _unusedByOrderId,
       ),
     );
   }
@@ -97,11 +118,11 @@ class ExpiredCouponsByOrderList extends StatelessWidget {
 
 class _ExpiredOrderCard extends StatefulWidget {
   final List<CouponModel> orderCoupons;
-  final List<CouponModel> allCoupons;
+  final Map<String, int> unusedByOrderId;
 
   const _ExpiredOrderCard({
     required this.orderCoupons,
-    required this.allCoupons,
+    required this.unusedByOrderId,
   });
 
   @override
@@ -123,7 +144,7 @@ class _ExpiredOrderCardState extends State<_ExpiredOrderCard> {
     final orderTitle = orderTitleForExpiredGroup(orderCoupons);
     final orderId = first.orderId;
     final expiredCount = orderCoupons.length;
-    final unusedCount = _unusedCountForOrder(orderId, widget.allCoupons);
+    final unusedCount = widget.unusedByOrderId[orderId] ?? 0;
 
     return Container(
       decoration: BoxDecoration(

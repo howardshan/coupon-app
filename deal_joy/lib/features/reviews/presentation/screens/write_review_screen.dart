@@ -215,7 +215,7 @@ class _WriteReviewScreenState extends ConsumerState<WriteReviewScreen> {
         ref.invalidate(dealDetailProvider(widget.dealId));
         ref.invalidate(toReviewProvider);
         ref.invalidate(myWrittenReviewsProvider);
-        ref.invalidate(userCouponsProvider);
+        invalidateUserCouponsEverywhere(ref.invalidate);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(_isEditMode
@@ -243,7 +243,7 @@ class _WriteReviewScreenState extends ConsumerState<WriteReviewScreen> {
         if (isDuplicate) {
           ref.invalidate(toReviewProvider);
           ref.invalidate(myWrittenReviewsProvider);
-          ref.invalidate(userCouponsProvider);
+          invalidateUserCouponsEverywhere(ref.invalidate);
         }
       }
     } finally {

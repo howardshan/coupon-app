@@ -72,7 +72,7 @@ class PendingReviewsList extends ConsumerWidget {
         return RefreshIndicator(
           onRefresh: () async {
             ref.invalidate(toReviewProvider);
-            ref.invalidate(userCouponsProvider);
+            invalidateUserCouponsEverywhere(ref.invalidate);
           },
           child: ListView.separated(
             padding: const EdgeInsets.all(16),
