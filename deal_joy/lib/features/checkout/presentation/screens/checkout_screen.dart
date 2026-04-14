@@ -98,6 +98,9 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   int? _cachedBuyNowQuantity;
   bool _storeCreditLoaded = false;
 
+  /// 后端最近一次返回的购物车总税（cartTax 异步未到时作回退）
+  double? _lastBackendTotalTax;
+
   // 支付处理中
   bool _isProcessing = false;
 
