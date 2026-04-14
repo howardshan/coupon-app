@@ -51,6 +51,40 @@ async function sumAlreadyRefundedCreditForOrder(
   );
 }
 
+// ─── Stripe Reserves API 辅助函数 ────────────────────────────────────────────
+
+/**
+ * 释放 connected account 上的 ReserveHold
+ * 退款前必须先释放，否则 reverse_transfer 可能因资金冻结而失败
+ */
+async function releaseReserveHold(
+  connectedAccountId: string,
+  holdId: string,
+  stripeKey: string,
+): Promise<void> {
+  const body = new URLSearchParams({ reserve_hold: holdId });
+  try {
+    const res = await fetch('https://api.stripe.com/v1/reserve/releases', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${stripeKey}`,
+        'Stripe-Version': '2025-12-15.preview',
+        'Stripe-Account': connectedAccountId,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: body.toString(),
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error(`[ReserveRelease] 释放失败 hold=${holdId}:`, errText);
+    } else {
+      console.log(`[ReserveRelease] 释放成功 hold=${holdId}`);
+    }
+  } catch (err) {
+    console.error(`[ReserveRelease] 网络异常 hold=${holdId}:`, err);
+  }
+}
+
 async function stripeCreateRefund(params: {
   amount: number;
   charge?: string;
@@ -146,6 +180,7 @@ Deno.serve(async (req) => {
       tax_amount: number;
       commission_amount: number | null;
       purchased_merchant_id: string | null;
+      stripe_reserve_hold_id: string | null;
       coupon_id: string;
       expires_at: string;
       stripe_charge_id: string | null;
@@ -171,6 +206,7 @@ Deno.serve(async (req) => {
           tax_amount,
           commission_amount,
           purchased_merchant_id,
+          stripe_reserve_hold_id,
           coupon_id,
           coupons!inner ( id, expires_at ),
           orders!inner ( user_id, stripe_charge_id, payment_intent_id, store_credit_used )
@@ -197,6 +233,7 @@ Deno.serve(async (req) => {
           tax_amount: (row.tax_amount ?? 0) as number,
           commission_amount: row.commission_amount != null ? Number(row.commission_amount) : null,
           purchased_merchant_id: (row.purchased_merchant_id ?? null) as string | null,
+          stripe_reserve_hold_id: (row.stripe_reserve_hold_id ?? null) as string | null,
           coupon_id: (coupon?.id ?? row.coupon_id ?? '') as string,
           expires_at: (coupon?.expires_at ?? '') as string,
           stripe_charge_id: (order?.stripe_charge_id ?? null) as string | null,
@@ -349,6 +386,13 @@ Deno.serve(async (req) => {
               };
               if (chargeId) refundParams.charge = chargeId;
               else refundParams.payment_intent = piId!;
+
+              // 退款前先释放 ReserveHold（解冻商家资金，确保 reverse_transfer 能成功执行）
+              const holdIdExp = item.stripe_reserve_hold_id as string | null ?? null;
+              if (holdIdExp && itemConnectId) {
+                await releaseReserveHold(itemConnectId, holdIdExp, Deno.env.get('STRIPE_SECRET_KEY') ?? '');
+              }
+
               // Connect 分账路径：从商家 Connect 账户拉回 merchant_net 用于退款
               if (hasConnectRouting) {
                 refundParams.reverse_transfer = true;

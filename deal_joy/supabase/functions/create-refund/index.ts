@@ -19,6 +19,40 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// ─── Stripe Reserves API 辅助函数 ────────────────────────────────────────────
+
+/**
+ * 释放 connected account 上的 ReserveHold
+ * 退款前必须先释放，否则 reverse_transfer 可能因资金冻结而失败
+ */
+async function releaseReserveHold(
+  connectedAccountId: string,
+  holdId: string,
+  stripeKey: string,
+): Promise<void> {
+  const body = new URLSearchParams({ reserve_hold: holdId });
+  try {
+    const res = await fetch('https://api.stripe.com/v1/reserve/releases', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${stripeKey}`,
+        'Stripe-Version': '2025-12-15.preview',
+        'Stripe-Account': connectedAccountId,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: body.toString(),
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error(`[ReserveRelease] 释放失败 hold=${holdId}:`, errText);
+    } else {
+      console.log(`[ReserveRelease] 释放成功 hold=${holdId}`);
+    }
+  } catch (err) {
+    console.error(`[ReserveRelease] 网络异常 hold=${holdId}:`, err);
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -93,6 +127,7 @@ Deno.serve(async (req) => {
         tax_amount,
         commission_amount,
         purchased_merchant_id,
+        stripe_reserve_hold_id,
         customer_status,
         orders!inner (
           id,
@@ -198,6 +233,12 @@ Deno.serve(async (req) => {
       // ── store_credit 退款流程 ──────────────────────────────────────────────
       // 退款金额包含 service fee 和 tax（平台承担手续费补偿用户，税款全额退还）
       const refundAmount = unitPrice + serviceFee + taxAmount;
+
+      // 退款前先释放 ReserveHold（解冻商家资金，确保 reverse_transfer 能成功执行）
+      const holdIdSC = (item as any).stripe_reserve_hold_id as string | null;
+      if (holdIdSC && merchantStripeAccountId) {
+        await releaseReserveHold(merchantStripeAccountId, holdIdSC, Deno.env.get('STRIPE_SECRET_KEY') ?? '');
+      }
 
       // Stripe Connect 分账路径（Phase 1B 后的订单）：
       // Store Credit 由平台垫付，需从商家 Connect 账户回撤 merchant_net，以平衡资金
@@ -390,6 +431,12 @@ Deno.serve(async (req) => {
           } else {
             refundParams.payment_intent = order.payment_intent_id;
           }
+          // 退款前先释放 ReserveHold（解冻商家资金，确保 reverse_transfer 能成功执行）
+          const holdIdOP = (item as any).stripe_reserve_hold_id as string | null;
+          if (holdIdOP && merchantStripeAccountId) {
+            await releaseReserveHold(merchantStripeAccountId, holdIdOP, Deno.env.get('STRIPE_SECRET_KEY') ?? '');
+          }
+
           // Stripe Connect 分账路径（Phase 1B 后的订单）：
           //   reverse_transfer: true → 从商家 Connect 账户拉回 merchant_net 用于退款
           //   refund_application_fee: false（默认）→ 平台保留 service_fee，退还 commission 部分

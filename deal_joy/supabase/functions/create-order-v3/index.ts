@@ -33,6 +33,48 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+// ─── Stripe Reserves API 辅助函数 ────────────────────────────────────────────
+
+/**
+ * 在 connected account 上创建 ReserveHold
+ * 冻结 merchant_net，防止商家在核销前提现
+ * release_after = 180 天（兜底；实际在核销/退款时提前释放）
+ */
+async function createReserveHold(
+  connectedAccountId: string,
+  amountCents: number,
+  stripeKey: string,
+): Promise<string | null> {
+  const releaseAfter = Math.floor(Date.now() / 1000) + 180 * 24 * 3600;
+  const body = new URLSearchParams({
+    amount: String(amountCents),
+    currency: 'usd',
+    'release_schedule[release_after]': String(releaseAfter),
+  });
+  try {
+    const res = await fetch('https://api.stripe.com/v1/reserve/holds', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${stripeKey}`,
+        'Stripe-Version': '2025-12-15.preview',
+        'Stripe-Account': connectedAccountId,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: body.toString(),
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error(`[ReserveHold] 创建失败 acct=${connectedAccountId} amount=${amountCents}:`, errText);
+      return null;
+    }
+    const data = await res.json();
+    return (data as { id?: string }).id ?? null;
+  } catch (err) {
+    console.error(`[ReserveHold] 网络异常 acct=${connectedAccountId}:`, err);
+    return null;
+  }
+}
+
 Deno.serve(async (req) => {
   // 处理 CORS 预检请求
   if (req.method === 'OPTIONS') {
@@ -298,15 +340,85 @@ Deno.serve(async (req) => {
       };
     });
 
-    const { error: itemsError } = await serviceClient
+    const { data: insertedItems, error: itemsError } = await serviceClient
       .from('order_items')
-      .insert(orderItemsPayload);
+      .insert(orderItemsPayload)
+      .select('id, unit_price, commission_amount, purchased_merchant_id');
 
     if (itemsError) {
       console.error('Insert order_items error:', itemsError);
       // 回滚：删除刚创建的 order（触发级联删除 order_items）
       await serviceClient.from('orders').delete().eq('id', orderId);
       return jsonResponse({ error: `Failed to create order items: ${itemsError.message}` }, 500);
+    }
+
+    // ----------------------------------------------------------------
+    // 6.5. 为每个 order_item 在 merchant Connect 账户创建 ReserveHold
+    //      冻结 merchant_net（Path A 硬性 Reserve）
+    //      失败不阻断订单流程（支付已成功），仅记录错误日志
+    // ----------------------------------------------------------------
+    const stripeKeyForReserve = Deno.env.get('STRIPE_SECRET_KEY') ?? '';
+    if (insertedItems && insertedItems.length > 0 && stripeKeyForReserve) {
+      // 批量查询各商家的 stripe_account_id
+      const merchantIdsForReserve = [
+        ...new Set(
+          (insertedItems as any[])
+            .map((i: { purchased_merchant_id?: string | null }) => i.purchased_merchant_id)
+            .filter((id): id is string => !!id),
+        ),
+      ];
+
+      let reserveMerchantConnectMap = new Map<string, string | null>();
+      if (merchantIdsForReserve.length > 0) {
+        const { data: merchantConnectRows } = await serviceClient
+          .from('merchants')
+          .select('id, stripe_account_id, stripe_account_status')
+          .in('id', merchantIdsForReserve);
+
+        reserveMerchantConnectMap = new Map(
+          (merchantConnectRows ?? []).map((m: { id: string; stripe_account_id?: string | null; stripe_account_status?: string | null }) => [
+            m.id,
+            m.stripe_account_status === 'connected' ? (m.stripe_account_id ?? null) : null,
+          ]),
+        );
+      }
+
+      // 为每个 item 创建 ReserveHold（并行，不阻断主流程）
+      const reserveResults = await Promise.allSettled(
+        (insertedItems as any[]).map(async (dbItem: { id: string; unit_price: number; commission_amount: number; purchased_merchant_id?: string | null }, idx: number) => {
+          const connectId = dbItem.purchased_merchant_id
+            ? reserveMerchantConnectMap.get(dbItem.purchased_merchant_id)
+            : null;
+          if (!connectId) return; // 商家无 Connect 账户，跳过
+
+          // merchant_net = unit_price - promoDiscount - commission_amount
+          const originalItem = items[idx] as { promoDiscount?: number };
+          const merchantNetCents = Math.round(
+            (dbItem.unit_price - (Number(originalItem?.promoDiscount ?? 0)) - dbItem.commission_amount) * 100,
+          );
+          if (merchantNetCents <= 0) return;
+
+          const holdId = await createReserveHold(connectId, merchantNetCents, stripeKeyForReserve);
+          if (holdId) {
+            const { error: holdUpdateErr } = await serviceClient
+              .from('order_items')
+              .update({ stripe_reserve_hold_id: holdId })
+              .eq('id', dbItem.id);
+            if (holdUpdateErr) {
+              console.error(`[ReserveHold] 写入 order_items 失败 item=${dbItem.id}:`, holdUpdateErr);
+            } else {
+              console.log(`[ReserveHold] 创建成功 item=${dbItem.id} hold=${holdId} net=${merchantNetCents / 100}`);
+            }
+          }
+        }),
+      );
+
+      // 记录失败情况（不阻断）
+      reserveResults.forEach((r, i) => {
+        if (r.status === 'rejected') {
+          console.error(`[ReserveHold] item[${i}] 异常:`, r.reason);
+        }
+      });
     }
 
     // ----------------------------------------------------------------

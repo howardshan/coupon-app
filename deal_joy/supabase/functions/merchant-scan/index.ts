@@ -50,6 +50,41 @@ function maskUserName(fullName: string | null): string {
   return rest ? `${masked} ${rest}` : masked;
 }
 
+// ─── Stripe Reserves API 辅助函数 ────────────────────────────────────────────
+
+/**
+ * 释放 connected account 上的 ReserveHold
+ * 核销后商家 merchant_net 解冻，可进入提现流程
+ */
+async function releaseReserveHold(
+  connectedAccountId: string,
+  holdId: string,
+  stripeKey: string,
+): Promise<void> {
+  const body = new URLSearchParams({ reserve_hold: holdId });
+  try {
+    const res = await fetch('https://api.stripe.com/v1/reserve/releases', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${stripeKey}`,
+        'Stripe-Version': '2025-12-15.preview',
+        'Stripe-Account': connectedAccountId,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: body.toString(),
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      // 释放失败不阻断核销流程，记录告警供人工处理
+      console.error(`[ReserveRelease] 释放失败 hold=${holdId} acct=${connectedAccountId}:`, errText);
+    } else {
+      console.log(`[ReserveRelease] 释放成功 hold=${holdId} acct=${connectedAccountId}`);
+    }
+  } catch (err) {
+    console.error(`[ReserveRelease] 网络异常 hold=${holdId}:`, err);
+  }
+}
+
 // =============================================================
 // 主路由处理器
 // =============================================================
@@ -365,8 +400,6 @@ async function handleRedeem(
   // Phase 2C（软性 Reserve 释放）：
   //   redeemed_at 设置后，merchant-withdrawal 的余额计算才会将此笔金额纳入可提现范围
   //   这是 Path B 软性 Reserve 的"释放"时刻（无 Stripe Reserves API 时的替代机制）
-  //   待 Stripe Radar for Platforms (Reserves API) 申请通过后，此处需额外调用 Stripe API 释放硬性冻结
-  //   详见：/Users/howardshansmac/.claude/plans/stripe-reserves-api-upgrade.md
   if (coupon.order_item_id) {
     const { error: itemUpdateError } = await supabase
       .from('order_items')
@@ -381,6 +414,36 @@ async function handleRedeem(
 
     if (itemUpdateError) {
       console.error('order_items update error:', itemUpdateError);
+    }
+
+    // ── Stripe ReserveHold 释放（Path A 硬性 Reserve 解冻）──────────────
+    // redeemed_at 设置后，merchant_net 解冻，商家可在 T+7 后提现
+    // 若 stripe_reserve_hold_id 为 null（旧订单或 ReserveHold 创建失败），跳过
+    const { data: itemData } = await supabase
+      .from('order_items')
+      .select('stripe_reserve_hold_id, purchased_merchant_id')
+      .eq('id', coupon.order_item_id)
+      .maybeSingle();
+
+    const holdId = (itemData as any)?.stripe_reserve_hold_id as string | null;
+    const itemMerchantId = (itemData as any)?.purchased_merchant_id as string | null;
+
+    if (holdId && itemMerchantId) {
+      // 查询商家 Connect 账户 ID
+      const { data: merchantData } = await supabase
+        .from('merchants')
+        .select('stripe_account_id')
+        .eq('id', itemMerchantId)
+        .maybeSingle();
+
+      const connectId = (merchantData as any)?.stripe_account_id as string | null;
+      if (connectId) {
+        const stripeKey = Deno.env.get('STRIPE_SECRET_KEY') ?? '';
+        // fire-and-forget：释放失败不阻断核销响应
+        releaseReserveHold(connectId, holdId, stripeKey).catch(err => {
+          console.error('[ReserveRelease] 核销释放异常:', err);
+        });
+      }
     }
   }
 
