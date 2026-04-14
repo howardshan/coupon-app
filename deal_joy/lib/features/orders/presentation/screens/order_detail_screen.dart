@@ -1323,6 +1323,17 @@ class _OrderInfoSection extends StatelessWidget {
     final totalServiceFee =
         detail.items.fold<double>(0, (s, i) => s + i.serviceFee);
 
+    // Tax 显示值：优先用 order.taxAmount，其次 items 合计，否则从 total_amount 反推
+    // 反推是为了兼容老订单（tax_amount 没保存但 total_amount 已包含税）
+    final itemsTaxSum = detail.items.fold<double>(0, (s, i) => s + i.taxAmount);
+    final subtotalSum = detail.items.fold<double>(0, (s, i) => s + i.unitPrice);
+    final savedTax = detail.taxAmount > 0 ? detail.taxAmount : itemsTaxSum;
+    // 反推的税：total - subtotal - service_fee（负数视为 0）
+    final impliedTax = (detail.totalAmount - subtotalSum - totalServiceFee)
+        .clamp(0.0, double.infinity);
+    // 取较大者：优先显示 DB 保存值，若保存值为 0 而存在反推值则用反推值（老订单兜底）
+    final displayTax = savedTax > 0 ? savedTax : impliedTax;
+
     return Container(
       margin: const EdgeInsets.only(top: 8),
       color: Colors.white,
@@ -1396,17 +1407,8 @@ class _OrderInfoSection extends StatelessWidget {
             _SimpleRow('Service Fee (\$0.99 × ${detail.items.length})',
                 amountFmt.format(totalServiceFee)),
 
-          // Tax（从 detail 或 items 汇总，老订单税为 0 时自动隐藏）
-          if (detail.taxAmount > 0 ||
-              detail.items.fold<double>(0, (s, i) => s + i.taxAmount) > 0)
-            _SimpleRow(
-              'Tax',
-              amountFmt.format(
-                detail.taxAmount > 0
-                    ? detail.taxAmount
-                    : detail.items.fold<double>(0, (s, i) => s + i.taxAmount),
-              ),
-            ),
+          // Tax（优先用 DB 保存值；老订单 tax_amount 未保存时从 total 反推显示）
+          if (displayTax > 0) _SimpleRow('Tax', amountFmt.format(displayTax)),
 
           const Divider(height: 16, color: Color(0xFFF0F0F0)),
 
@@ -1451,6 +1453,33 @@ class _OrderInfoSection extends StatelessWidget {
             if (refundedItems.isEmpty) return <Widget>[];
 
             final totalRefund = refundedItems.fold<double>(0, (s, i) => s + (i.refundAmount ?? i.unitPrice));
+            // 退款分项（与后端 create-refund 的 original_payment 逻辑一致）：
+            //   退： deal price + tax_on_deal
+            //   不退：service fee + tax_on_service_fee
+            // tax_amount 是对 (unit_price + service_fee) 整体计算的，按比例拆分
+            final dealPriceRefund = refundedItems.fold<double>(0, (s, i) => s + i.unitPrice);
+            final nonRefundedServiceFee = refundedItems.fold<double>(0, (s, i) => s + i.serviceFee);
+
+            double refundableTaxSum = 0;  // 退：unit_price 对应的税
+            double nonRefundableTaxSum = 0; // 不退：service_fee 对应的税
+            for (final i in refundedItems) {
+              // 优先用 DB 保存的 taxAmount，否则从 refundAmount - unitPrice 反推（老订单兜底）
+              var itemTax = i.taxAmount;
+              if (itemTax <= 0 && i.refundAmount != null && i.refundAmount! > i.unitPrice) {
+                itemTax = i.refundAmount! - i.unitPrice;
+              }
+              if (itemTax <= 0) continue;
+              final base = i.unitPrice + i.serviceFee;
+              if (base <= 0) {
+                refundableTaxSum += itemTax;
+                continue;
+              }
+              final refundable = (itemTax * (i.unitPrice / base) * 100).round() / 100;
+              refundableTaxSum += refundable;
+              nonRefundableTaxSum += (itemTax - refundable);
+            }
+            final taxRefund = refundableTaxSum;
+
             final storeCreditRefunds = refundedItems
                 .where((i) =>
                     i.refundMethod == 'store_credit' &&
@@ -1473,6 +1502,23 @@ class _OrderInfoSection extends StatelessWidget {
                   style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
               const SizedBox(height: 8),
 
+              // 分项明细（始终显示，让用户清楚退了什么）
+              _SimpleRow(
+                'Deal Price Refunded (${refundedItems.length} voucher${refundedItems.length > 1 ? "s" : ""})',
+                amountFmt.format(dealPriceRefund),
+              ),
+              if (taxRefund > 0)
+                _SimpleRow('Tax Refunded', amountFmt.format(taxRefund)),
+              if (nonRefundedServiceFee > 0)
+                _SimpleRow(
+                  'Service Fee (non-refundable)',
+                  '−${amountFmt.format(nonRefundedServiceFee)}',
+                  valueColor: AppColors.textSecondary,
+                ),
+
+              const Divider(height: 16, color: Color(0xFFF0F0F0)),
+
+              // 按退款去向分组
               if (storeCreditRefunds.isNotEmpty)
                 _SimpleRow(
                   'To Store Credit (${storeCreditRefunds.length} voucher${storeCreditRefunds.length > 1 ? "s" : ""})',
@@ -1495,6 +1541,20 @@ class _OrderInfoSection extends StatelessWidget {
 
               _SimpleRow('Total Refunded', amountFmt.format(totalRefund),
                   isBold: true, valueColor: AppColors.error),
+
+              // 额外说明：service fee 不退原因
+              if (nonRefundedServiceFee > 0)
+                const Padding(
+                  padding: EdgeInsets.only(top: 6),
+                  child: Text(
+                    'Service fee is non-refundable per our refund policy.',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: AppColors.textSecondary,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ),
             ];
           })(),
         ],

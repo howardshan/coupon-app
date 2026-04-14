@@ -264,14 +264,17 @@ Deno.serve(async (req) => {
       (dealRows ?? []).map((d: { id: string; merchant_id: string }) => [d.id, d.merchant_id]),
     );
 
-    // 查询 merchants → metro_area + commission_rate
+    // 查询 merchants → city + metro_area + commission_rate
     const merchantIdList = [...new Set(Array.from(dealMerchantMap.values()))];
     const { data: merchantRows } = await serviceClient
       .from('merchants')
-      .select('id, metro_area, commission_rate')
+      .select('id, city, metro_area, commission_rate')
       .in('id', merchantIdList);
+    const merchantCityMap = new Map<string, string | null>(
+      (merchantRows ?? []).map((m: { id: string; city: string | null }) => [m.id, m.city]),
+    );
     const merchantMetroMap = new Map<string, string | null>(
-      (merchantRows ?? []).map((m: { id: string; metro_area: string | null; commission_rate: number | null }) => [m.id, m.metro_area]),
+      (merchantRows ?? []).map((m: { id: string; metro_area: string | null }) => [m.id, m.metro_area]),
     );
 
     // 查询全局 commission_rate（兜底，默认 15%）
@@ -290,9 +293,36 @@ Deno.serve(async (req) => {
       ]),
     );
 
+    // 查询 city_metro_map → city → metro
+    const cityList = [...new Set(
+      Array.from(merchantCityMap.values())
+        .filter((v): v is string => !!v)
+        .map(c => c.toLowerCase()),
+    )];
+    const cityToMetro = new Map<string, string>();
+    if (cityList.length > 0) {
+      const { data: cityMapRows } = await serviceClient
+        .from('city_metro_map')
+        .select('city, metro_area');
+      for (const row of (cityMapRows ?? []) as Array<{ city: string; metro_area: string }>) {
+        if (row.city && row.metro_area) {
+          cityToMetro.set(row.city.toLowerCase(), row.metro_area);
+        }
+      }
+    }
+
+    // 每个 merchant 解析出最终的 metro_area（优先 city→metro，fallback 到 merchant.metro_area）
+    const merchantResolvedMetro = new Map<string, string | null>();
+    for (const mId of merchantIdList) {
+      const city = merchantCityMap.get(mId);
+      const fromMap = city ? cityToMetro.get(city.toLowerCase()) : undefined;
+      const fallback = merchantMetroMap.get(mId) ?? null;
+      merchantResolvedMetro.set(mId, fromMap ?? fallback);
+    }
+
     // 查询 metro_tax_rates → rate
     const metroAreaList = [...new Set(
-      Array.from(merchantMetroMap.values()).filter((v): v is string => !!v),
+      Array.from(merchantResolvedMetro.values()).filter((v): v is string => !!v),
     )];
     const metroRateMap = new Map<string, number>();
     if (metroAreaList.length > 0) {
@@ -314,9 +344,11 @@ Deno.serve(async (req) => {
       purchasedMerchantId: string;
     }) => {
       const merchantId = dealMerchantMap.get(item.dealId) ?? null;
-      const metroArea = merchantId ? merchantMetroMap.get(merchantId) ?? null : null;
+      const metroArea = merchantId ? merchantResolvedMetro.get(merchantId) ?? null : null;
       const taxRate = metroArea ? metroRateMap.get(metroArea) ?? 0 : 0;
-      const itemTaxAmount = Math.round(item.unitPrice * taxRate * 100) / 100;
+      // 税基 = unit_price + service_fee（与前端 + create-payment-intent 一致）
+      const taxableAmount = item.unitPrice + SERVICE_FEE_PER_COUPON;
+      const itemTaxAmount = Math.round(taxableAmount * taxRate * 100) / 100;
 
       // 快照 commission_amount：基于 (unit_price - promoDiscount) × commission_rate
       // 仅成功核销后最终归平台；退款/过期时退还

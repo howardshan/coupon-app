@@ -384,8 +384,13 @@ Deno.serve(async (req) => {
 
     } else {
       // ── original_payment 退款流程 ─────────────────────────────────────────
-      // 退款商品价 + 税，不含 service fee（service fee 不退）
-      const itemRefundable = unitPrice + taxAmount;
+      // 退款商品价 + unitPrice 对应的税，不含 service fee 及其税（两者均不退）
+      // taxAmount 是对 (unitPrice + serviceFee) 整体计算的，需按比例拆出 unitPrice 部分的税
+      const taxBase = unitPrice + serviceFee;
+      const taxOnUnitPrice = taxBase > 0
+        ? Math.round(taxAmount * (unitPrice / taxBase) * 100) / 100
+        : 0;
+      const itemRefundable = unitPrice + taxOnUnitPrice;
 
       // 混合支付时优先退 store credit：先退完 credit 部分，剩余退信用卡
       let cardRefundAmount = itemRefundable;
