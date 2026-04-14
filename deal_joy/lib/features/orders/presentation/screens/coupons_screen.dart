@@ -8,10 +8,11 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../reviews/domain/providers/my_reviews_provider.dart';
 import '../../../reviews/presentation/widgets/submitted_reviews_list.dart';
 import '../../data/models/coupon_model.dart';
-import '../../domain/providers/coupons_provider.dart';
+import '../../domain/providers/coupon_tab_list_provider.dart';
 import '../widgets/coupon_card.dart';
 import '../widgets/pending_reviews_list.dart';
 import '../widgets/used_coupons_by_order_list.dart';
+import '../widgets/expired_coupons_by_order_list.dart';
 
 /// 多笔订单合并行进入券详情：携带 order_item id，避免只加载单笔订单
 void _pushVoucherForMergedDealRow(
@@ -61,6 +62,9 @@ class _CouponsScreenState extends ConsumerState<CouponsScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
+  /// 已触发首屏加载的券类 Tab（避免重复 refresh）
+  final Set<String> _primedCouponTabs = <String>{};
+
   @override
   void initState() {
     super.initState();
@@ -70,10 +74,29 @@ class _CouponsScreenState extends ConsumerState<CouponsScreen>
       vsync: this,
       initialIndex: idx,
     );
+    _tabController.addListener(_onMainTabChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _primeCouponTabLoad(_tabController.index);
+    });
+  }
+
+  void _onMainTabChanged() {
+    if (_tabController.indexIsChanging) return;
+    _primeCouponTabLoad(_tabController.index);
+  }
+
+  void _primeCouponTabLoad(int index) {
+    if (index < 0 || index >= _tabs.length) return;
+    final s = _tabs[index].status;
+    if (s == 'reviews') return;
+    if (_primedCouponTabs.contains(s)) return;
+    _primedCouponTabs.add(s);
+    ref.read(couponTabListProvider(s).notifier).refresh();
   }
 
   @override
   void dispose() {
+    _tabController.removeListener(_onMainTabChanged);
     _tabController.dispose();
     super.dispose();
   }
@@ -169,7 +192,7 @@ class _ReviewsHubBodyState extends ConsumerState<_ReviewsHubBody>
   }
 }
 
-/// 单个 Tab 的内容视图 — 按状态过滤、显示列表或空状态
+/// 单个 Tab：游标分页 + 触底 load more
 class _CouponTabView extends ConsumerWidget {
   final String status;
 
@@ -177,19 +200,34 @@ class _CouponTabView extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final couponsAsync = ref.watch(couponsByStatusProvider(status));
+    final tabState = ref.watch(couponTabListProvider(status));
+    return _CouponList(tabState: tabState, status: status, ref: ref);
+  }
+}
 
-    return couponsAsync.when(
-      data: (coupons) => _CouponList(coupons: coupons, status: status, ref: ref),
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(
+class _CouponList extends StatelessWidget {
+  final CouponTabListState tabState;
+  final String status;
+  final WidgetRef ref;
+
+  const _CouponList({
+    required this.tabState,
+    required this.status,
+    required this.ref,
+  });
+
+  List<CouponModel> get coupons => tabState.items;
+
+  @override
+  Widget build(BuildContext context) {
+    if (tabState.error != null && coupons.isEmpty && !tabState.loadingInitial) {
+      return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.error_outline,
-                  size: 48, color: AppColors.textHint),
+              const Icon(Icons.error_outline, size: 48, color: AppColors.textHint),
               const SizedBox(height: 12),
               Text(
                 'Failed to load coupons',
@@ -197,107 +235,138 @@ class _CouponTabView extends ConsumerWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                e.toString(),
+                tabState.error.toString(),
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                    color: AppColors.textSecondary, fontSize: 13),
+                style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
               ),
               const SizedBox(height: 16),
               ElevatedButton(
                 key: const ValueKey('coupons_retry_btn'),
-                onPressed: () => ref.invalidate(userCouponsProvider),
+                onPressed: () =>
+                    ref.read(couponTabListProvider(status).notifier).refresh(),
                 child: const Text('Retry'),
               ),
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _CouponList extends StatelessWidget {
-  final List<CouponModel> coupons;
-  final String status;
-  final WidgetRef ref;
-
-  const _CouponList({
-    required this.coupons,
-    required this.status,
-    required this.ref,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    if (coupons.isEmpty) {
-      return _EmptyState(status: status);
+      );
     }
 
-    // Unused tab：按商家分组 → 同名券合并
-    if (status == 'unused') {
-      return _buildGroupedView(context);
+    if (tabState.loadingInitial && coupons.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
     }
 
-    // Used tab：结合「我的评价」列表展示已评/待写提示
-    if (status == 'used') {
-      final reviewsAsync = ref.watch(myWrittenReviewsProvider);
-      return reviewsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.error_outline, size: 48, color: AppColors.textHint),
-                const SizedBox(height: 12),
-                Text(
-                  'Failed to load review status',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  e.toString(),
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 13,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () => ref.invalidate(myWrittenReviewsProvider),
-                  child: const Text('Retry'),
-                ),
-              ],
+    if (coupons.isEmpty && !tabState.loadingInitial) {
+      return RefreshIndicator(
+        onRefresh: () => ref.read(couponTabListProvider(status).notifier).refresh(),
+        child: CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: _EmptyState(status: status),
             ),
-          ),
-        ),
-        data: (myReviews) => RefreshIndicator(
-          onRefresh: () async {
-            ref.invalidate(userCouponsProvider);
-            ref.invalidate(myWrittenReviewsProvider);
-          },
-          child: UsedCouponsByOrderList(
-            coupons: coupons,
-            myReviews: myReviews,
-          ),
+          ],
         ),
       );
     }
 
-    // 其他 tab 保持原来的平铺列表
-    return RefreshIndicator(
-      onRefresh: () async => ref.invalidate(userCouponsProvider),
-      child: ListView.separated(
+    if (status == 'used') {
+      return ref.watch(myWrittenReviewsProvider).when(
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (e, _) => Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.error_outline, size: 48, color: AppColors.textHint),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Failed to load review status',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      e.toString(),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: () => ref.invalidate(myWrittenReviewsProvider),
+                      child: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            data: (myReviews) => _pagedRefreshShell(
+              context,
+              child: UsedCouponsByOrderList(
+                coupons: coupons,
+                myReviews: myReviews,
+              ),
+              onRefresh: () async {
+                await ref.read(couponTabListProvider(status).notifier).refresh();
+                ref.invalidate(myWrittenReviewsProvider);
+              },
+            ),
+          );
+    }
+
+    final Widget scrollable;
+    if (status == 'unused') {
+      scrollable = _buildGroupedView(context);
+    } else if (status == 'expired') {
+      scrollable = ExpiredCouponsByOrderList(coupons: coupons);
+    } else {
+      scrollable = ListView.separated(
         padding: const EdgeInsets.all(16),
         itemCount: coupons.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 12),
+        separatorBuilder: (_, _) => const SizedBox(height: 12),
         itemBuilder: (_, i) => CouponCard(
           coupon: coupons[i],
           onTap: () => context.push('/coupon/${coupons[i].id}'),
         ),
-      ),
+      );
+    }
+
+    return _pagedRefreshShell(
+      context,
+      child: scrollable,
+      onRefresh: () => ref.read(couponTabListProvider(status).notifier).refresh(),
+    );
+  }
+
+  /// 下拉刷新 + 触底 load more + 底部加载条
+  Widget _pagedRefreshShell(
+    BuildContext context, {
+    required Widget child,
+    required Future<void> Function() onRefresh,
+  }) {
+    return Column(
+      children: [
+        Expanded(
+          child: NotificationListener<ScrollNotification>(
+            onNotification: (ScrollNotification n) {
+              if (n.metrics.axis == Axis.vertical &&
+                  n.metrics.pixels >= n.metrics.maxScrollExtent - 120) {
+                ref.read(couponTabListProvider(status).notifier).loadMore();
+              }
+              return false;
+            },
+            child: RefreshIndicator(
+              onRefresh: onRefresh,
+              child: child,
+            ),
+          ),
+        ),
+        if (tabState.loadingMore) const LinearProgressIndicator(minHeight: 2),
+      ],
     );
   }
 
@@ -306,25 +375,22 @@ class _CouponList extends StatelessWidget {
     final now = DateTime.now();
     final sevenDaysLater = now.add(const Duration(days: 7));
 
-    // 分离即将过期（7天内）和正常的券
     final expiringSoon = <CouponModel>[];
     final normal = <CouponModel>[];
     for (final c in coupons) {
-      if (c.expiresAt != null && c.expiresAt!.isBefore(sevenDaysLater)) {
+      if (c.expiresAt.isBefore(sevenDaysLater)) {
         expiringSoon.add(c);
       } else {
         normal.add(c);
       }
     }
 
-    // 正常券按商家分组
     final merchantMap = <String, List<CouponModel>>{};
     for (final c in normal) {
       final merchant = c.merchantName ?? 'Merchant';
       merchantMap.putIfAbsent(merchant, () => []).add(c);
     }
 
-    // 排序：最新购买的商家排前面；同时购买的按券多排前面
     final sortedMerchants = merchantMap.entries.toList()
       ..sort((a, b) {
         final aLatest = a.value.map((c) => c.createdAt).reduce(
@@ -336,15 +402,12 @@ class _CouponList extends StatelessWidget {
         return b.value.length.compareTo(a.value.length);
       });
 
-    // 构建列表项：即将过期板块 + 商家分组
     final widgets = <Widget>[];
 
-    // 即将过期板块（如果有）
     if (expiringSoon.isNotEmpty) {
       widgets.add(_ExpiringSoonSection(coupons: expiringSoon));
     }
 
-    // 正常商家分组
     for (final entry in sortedMerchants) {
       widgets.add(_MerchantCouponGroup(
         merchantName: entry.key,
@@ -352,14 +415,11 @@ class _CouponList extends StatelessWidget {
       ));
     }
 
-    return RefreshIndicator(
-      onRefresh: () async => ref.invalidate(userCouponsProvider),
-      child: ListView.separated(
-        padding: const EdgeInsets.all(16),
-        itemCount: widgets.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 16),
-        itemBuilder: (_, i) => widgets[i],
-      ),
+    return ListView.separated(
+      padding: const EdgeInsets.all(16),
+      itemCount: widgets.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 16),
+      itemBuilder: (_, i) => widgets[i],
     );
   }
 }
@@ -488,7 +548,7 @@ class _CouponRow extends StatelessWidget {
                       width: 48,
                       height: 48,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _placeholder(),
+                      errorBuilder: (_, _, _) => _placeholder(),
                     )
                   : _placeholder(),
             ),

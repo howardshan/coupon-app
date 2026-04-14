@@ -38,7 +38,7 @@ class RealtimeService {
             // order_items 状态变化（如核销）→ 同时刷新订单列表和券列表
             debugPrint('[Realtime] order_items updated: ${payload.newRecord}');
             _ref.invalidate(userOrdersProvider);
-            _ref.invalidate(userCouponsProvider);
+            invalidateUserCouponsEverywhere(_ref.invalidate);
             _invalidateCouponDetailIfPresent(
               payload.newRecord,
               idKey: 'coupon_id',
@@ -52,7 +52,7 @@ class RealtimeService {
           callback: (payload) {
             // coupons 状态变化（如退款、核销）→ 刷新券列表与当前券详情
             debugPrint('[Realtime] coupons updated: ${payload.newRecord}');
-            _ref.invalidate(userCouponsProvider);
+            invalidateUserCouponsEverywhere(_ref.invalidate);
             _invalidateCouponDetailIfPresent(
               payload.newRecord,
               idKey: 'id',

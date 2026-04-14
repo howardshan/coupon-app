@@ -3,9 +3,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/errors/app_exception.dart';
+import '../../../../shared/providers/supabase_provider.dart';
 import '../../data/models/order_detail_model.dart';
 import '../../data/models/order_item_model.dart';
-import 'coupons_provider.dart';
 import 'orders_provider.dart';
 
 /// Riverpod family 缓存键：`dealId|itemId1,itemId2,...`（itemId 已排序）
@@ -80,20 +80,21 @@ final aggregatedDealVoucherDetailProvider =
     throw const AppException('Invalid aggregate voucher request.');
   }
 
-  final coupons = await ref.watch(userCouponsProvider.future);
-  final matchingCoupons = coupons
-      .where(
-        (c) =>
-            c.dealId == dealId &&
-            c.orderItemId != null &&
-            orderItemIds.contains(c.orderItemId!),
-      )
+  // 不拉取全量券：仅按 deal + order_item id 查 order_id
+  final client = ref.watch(supabaseClientProvider);
+  final idList = orderItemIds.toList();
+  final rows = await client
+      .from('coupons')
+      .select('order_id')
+      .eq('deal_id', dealId)
+      .inFilter('order_item_id', idList);
+  final orderIds = (rows as List)
+      .map((e) => (e as Map<String, dynamic>)['order_id'] as String)
+      .toSet()
       .toList();
-  if (matchingCoupons.isEmpty) {
+  if (orderIds.isEmpty) {
     throw const AppException('No matching coupons for this selection.');
   }
-
-  final orderIds = matchingCoupons.map((c) => c.orderId).toSet().toList();
   final repo = ref.read(ordersRepositoryProvider);
   final details = await Future.wait(
     orderIds.map(repo.fetchOrderDetailFromApi),

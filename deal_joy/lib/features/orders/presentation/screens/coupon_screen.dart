@@ -1371,7 +1371,7 @@ class _GiftInfoSection extends ConsumerWidget {
     if (ok) {
       ref.invalidate(activeGiftProvider(orderItemId));
       ref.invalidate(couponDetailProvider(coupon.id));
-      ref.invalidate(userCouponsProvider);
+      invalidateUserCouponsEverywhere(ref.invalidate);
     }
   }
 }
