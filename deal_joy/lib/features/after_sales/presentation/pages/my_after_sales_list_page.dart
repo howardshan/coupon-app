@@ -77,94 +77,131 @@ class MyAfterSalesListPage extends ConsumerWidget {
                 return Material(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(12),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(12),
-                    onTap: () => context.push('/after-sales/${r.orderId}'),
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: r.dealImageUrl != null && r.dealImageUrl!.trim().isNotEmpty
-                                ? CachedNetworkImage(
-                                    imageUrl: r.dealImageUrl!.trim(),
-                                    width: 56,
-                                    height: 56,
-                                    fit: BoxFit.cover,
-                                    placeholder: (context, url) => _dealThumbPlaceholder(),
-                                    errorWidget: (context, url, err) => _dealThumbPlaceholder(),
-                                  )
-                                : _dealThumbPlaceholder(),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  title,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 14,
-                                  ),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                if (r.merchantName != null && r.merchantName!.trim().isNotEmpty) ...[
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    r.merchantName!.trim(),
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      color: AppColors.textSecondary,
+                  clipBehavior: Clip.antiAlias,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // 主区域：进入该订单下的售后时间线
+                      InkWell(
+                        onTap: () => context.push('/after-sales/${r.orderId}'),
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: r.dealImageUrl != null && r.dealImageUrl!.trim().isNotEmpty
+                                    ? CachedNetworkImage(
+                                        imageUrl: r.dealImageUrl!.trim(),
+                                        width: 56,
+                                        height: 56,
+                                        fit: BoxFit.cover,
+                                        placeholder: (context, url) => _dealThumbPlaceholder(),
+                                        errorWidget: (context, url, err) => _dealThumbPlaceholder(),
+                                      )
+                                    : _dealThumbPlaceholder(),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      title,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 14,
+                                      ),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
                                     ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
+                                    if (r.merchantName != null && r.merchantName!.trim().isNotEmpty) ...[
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        r.merchantName!.trim(),
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: AppColors.textSecondary,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      orderLabel,
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        color: AppColors.primary,
+                                        fontWeight: FontWeight.w600,
+                                        fontFamily: 'monospace',
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      '${r.reason?.label ?? 'Request'} · Submitted ${dateFmt.format(r.createdAt.toLocal())}',
+                                      style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      'Refund amount \$${r.refundAmount.toStringAsFixed(2)}',
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.textPrimary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  _StatusChip(bucket: bucket),
+                                  const SizedBox(height: 4),
+                                  const Icon(Icons.chevron_right, size: 20, color: AppColors.textHint),
                                 ],
-                                const SizedBox(height: 4),
-                                Text(
-                                  orderLabel,
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    color: AppColors.primary,
-                                    fontWeight: FontWeight.w600,
-                                    fontFamily: 'monospace',
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  '${r.reason?.label ?? 'Request'} · Submitted ${dateFmt.format(r.createdAt.toLocal())}',
-                                  style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  'Refund amount \$${r.refundAmount.toStringAsFixed(2)}',
-                                  style: const TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w700,
-                                    color: AppColors.textPrimary,
-                                  ),
-                                ),
-                              ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      // 独立入口：订单详情（不与主区域手势冲突）
+                      InkWell(
+                        onTap: () => context.push('/order/${r.orderId}'),
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: AppColors.surfaceVariant.withValues(alpha: 0.35),
+                            border: Border(
+                              top: BorderSide(color: AppColors.surfaceVariant.withValues(alpha: 0.8)),
                             ),
                           ),
-                          const SizedBox(width: 6),
-                          Column(
-                            mainAxisSize: MainAxisSize.min,
+                          child: Row(
                             children: [
-                              _StatusChip(bucket: bucket),
-                              const SizedBox(height: 4),
+                              const Icon(Icons.receipt_long_outlined, size: 18, color: AppColors.primary),
+                              const SizedBox(width: 8),
+                              const Expanded(
+                                child: Text(
+                                  'View order detail',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.primary,
+                                  ),
+                                ),
+                              ),
                               const Icon(Icons.chevron_right, size: 20, color: AppColors.textHint),
                             ],
                           ),
-                        ],
+                        ),
                       ),
-                    ),
+                    ],
                   ),
                 );
               },

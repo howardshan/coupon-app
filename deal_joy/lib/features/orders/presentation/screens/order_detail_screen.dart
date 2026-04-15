@@ -23,6 +23,9 @@ import '../../domain/providers/coupons_provider.dart';
 import '../widgets/customer_redemption_success_dialog.dart';
 import '../widgets/gift_bottom_sheet.dart';
 import '../widgets/used_refund_entry.dart';
+import '../../../after_sales/data/models/after_sales_request_model.dart';
+import '../../../after_sales/domain/providers/after_sales_provider.dart';
+import '../helpers/after_sales_coupon_map.dart';
 
 // ── 未使用券 QR 码弹窗 ────────────────────────────
 
@@ -519,7 +522,11 @@ class OrderDetailScreen extends ConsumerWidget {
             automaticallyImplyLeading: false,
           ),
           body: _ErrorBody(
-            onRetry: () => ref.invalidate(userOrderDetailProvider(orderId)),
+            onRetry: () {
+              ref.invalidate(userOrderDetailProvider(orderId));
+              ref.invalidate(afterSalesListProvider(orderId));
+              ref.invalidate(afterSalesListProvider(null));
+            },
             error: e,
           ),
         ),
@@ -649,8 +656,11 @@ class _MeituanOrderBodyState extends ConsumerState<_MeituanOrderBody> {
                   paymentIntentId: detail.paymentIntentIdMasked,
                   storeCreditUsed: detail.storeCreditUsed,
                   orderTotalAmount: detail.totalAmount,
-                  onRefreshOrder: () =>
-                      ref.invalidate(userOrderDetailProvider(widget.orderId)),
+                  onRefreshOrder: () {
+                    ref.invalidate(userOrderDetailProvider(widget.orderId));
+                    ref.invalidate(afterSalesListProvider(widget.orderId));
+                    ref.invalidate(afterSalesListProvider(null));
+                  },
                 ),
               );
             }),
@@ -720,6 +730,12 @@ class _DealSummaryCard extends ConsumerWidget {
     final first = dealItems.first;
     final count = dealItems.length;
     final amountFmt = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
+
+    final afterSalesAsync = ref.watch(afterSalesListProvider(orderId));
+    final afterSalesByCoupon = afterSalesAsync.maybeWhen(
+      data: latestAfterSalesByCouponId,
+      orElse: () => <String, AfterSalesRequestModel>{},
+    );
 
     // 计算已付总价（不含 service fee）
     final totalPaid = dealItems.fold<double>(0, (s, i) => s + i.unitPrice);
@@ -834,6 +850,48 @@ class _DealSummaryCard extends ConsumerWidget {
                           ),
                         ],
                       ),
+                      Builder(
+                        builder: (context) {
+                          final n = dealItems
+                              .where(
+                                (i) =>
+                                    i.couponId != null &&
+                                    i.couponId!.isNotEmpty &&
+                                    afterSalesByCoupon.containsKey(i.couponId!),
+                              )
+                              .length;
+                          if (n == 0) return const SizedBox.shrink();
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 10),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 2),
+                                  child: Icon(
+                                    Icons.support_agent_outlined,
+                                    size: 16,
+                                    color: AppColors.warning,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    n == 1
+                                        ? 'After-sales in progress for 1 voucher below.'
+                                        : 'After-sales in progress for $n vouchers below.',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: AppColors.textSecondary,
+                                      height: 1.25,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
                     ],
                   ),
                 ),
@@ -857,6 +915,7 @@ class _DealSummaryCard extends ConsumerWidget {
               paymentIntentId: paymentIntentId,
               storeCreditUsed: storeCreditUsed,
               orderTotalAmount: orderTotalAmount,
+              afterSalesByCoupon: afterSalesByCoupon,
             ),
           if (usedItems.isNotEmpty)
             _CouponStatusRow(
@@ -871,6 +930,7 @@ class _DealSummaryCard extends ConsumerWidget {
               paymentIntentId: paymentIntentId,
               storeCreditUsed: storeCreditUsed,
               orderTotalAmount: orderTotalAmount,
+              afterSalesByCoupon: afterSalesByCoupon,
             ),
           if (giftedItems.isNotEmpty)
             _CouponStatusRow(
@@ -885,6 +945,7 @@ class _DealSummaryCard extends ConsumerWidget {
               paymentIntentId: paymentIntentId,
               storeCreditUsed: storeCreditUsed,
               orderTotalAmount: orderTotalAmount,
+              afterSalesByCoupon: afterSalesByCoupon,
             ),
           if (refundedItems.isNotEmpty)
             _CouponStatusRow(
@@ -903,6 +964,7 @@ class _DealSummaryCard extends ConsumerWidget {
               paymentIntentId: paymentIntentId,
               storeCreditUsed: storeCreditUsed,
               orderTotalAmount: orderTotalAmount,
+              afterSalesByCoupon: afterSalesByCoupon,
             ),
           if (otherItems.isNotEmpty)
             _CouponStatusRow(
@@ -917,6 +979,7 @@ class _DealSummaryCard extends ConsumerWidget {
               paymentIntentId: paymentIntentId,
               storeCreditUsed: storeCreditUsed,
               orderTotalAmount: orderTotalAmount,
+              afterSalesByCoupon: afterSalesByCoupon,
             ),
         ],
       ),
@@ -940,6 +1003,8 @@ class _CouponStatusRow extends ConsumerWidget {
   final double storeCreditUsed;
   /// 订单原始总金额（未扣 Store Credit）
   final double orderTotalAmount;
+  /// couponId → 最新售后（订单详情逐券标识）
+  final Map<String, AfterSalesRequestModel> afterSalesByCoupon;
 
   const _CouponStatusRow({
     required this.label,
@@ -953,10 +1018,20 @@ class _CouponStatusRow extends ConsumerWidget {
     this.paymentIntentId,
     this.storeCreditUsed = 0.0,
     this.orderTotalAmount = 0.0,
+    this.afterSalesByCoupon = const <String, AfterSalesRequestModel>{},
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final afterSalesInSection = items
+        .where(
+          (i) =>
+              i.couponId != null &&
+              i.couponId!.isNotEmpty &&
+              afterSalesByCoupon.containsKey(i.couponId!),
+        )
+        .length;
+
     return Column(
       children: [
         // 状态行标题
@@ -983,6 +1058,26 @@ class _CouponStatusRow extends ConsumerWidget {
                     color: color,
                   ),
                 ),
+                if (afterSalesInSection > 0) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: AppColors.warning.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      afterSalesInSection == 1
+                          ? 'After-sales ×1'
+                          : 'After-sales ×$afterSalesInSection',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.warning,
+                      ),
+                    ),
+                  ),
+                ],
                 const Spacer(),
                 if (onToggle != null) ...[
                   Text(
@@ -1017,6 +1112,7 @@ class _CouponStatusRow extends ConsumerWidget {
                 onRefreshOrder: onRefreshOrder,
                 storeCreditUsed: storeCreditUsed,
                 orderTotalAmount: orderTotalAmount,
+                afterSalesByCoupon: afterSalesByCoupon,
               )),
         ],
 
@@ -1038,6 +1134,7 @@ class _CouponDetailRow extends ConsumerWidget {
   final double storeCreditUsed;
   /// 订单原始总金额（未扣 Store Credit）
   final double orderTotalAmount;
+  final Map<String, AfterSalesRequestModel> afterSalesByCoupon;
 
   const _CouponDetailRow({
     required this.item,
@@ -1047,6 +1144,7 @@ class _CouponDetailRow extends ConsumerWidget {
     required this.onRefreshOrder,
     this.storeCreditUsed = 0.0,
     this.orderTotalAmount = 0.0,
+    this.afterSalesByCoupon = const <String, AfterSalesRequestModel>{},
   });
 
   @override
@@ -1130,6 +1228,44 @@ class _CouponDetailRow extends ConsumerWidget {
                           fontSize: 11, color: AppColors.textHint),
                     ),
                   ],
+                  if (item.couponId != null && item.couponId!.isNotEmpty) ...[
+                    Builder(
+                      builder: (context) {
+                        final req = afterSalesByCoupon[item.couponId!];
+                        if (req == null) return const SizedBox.shrink();
+                        final bucket = AfterSalesOrderCardBucket.fromStatus(req.status);
+                        final accent = switch (bucket) {
+                          AfterSalesOrderCardBucket.pending => AppColors.warning,
+                          AfterSalesOrderCardBucket.rejected => AppColors.textSecondary,
+                          AfterSalesOrderCardBucket.approved => AppColors.success,
+                        };
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: GestureDetector(
+                            onTap: () => context.push('/after-sales/$orderId'),
+                            behavior: HitTestBehavior.opaque,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.support_agent_outlined, size: 15, color: accent),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'After-sales · ${bucket.shortLabel}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: accent,
+                                  ),
+                                ),
+                                const SizedBox(width: 2),
+                                const Icon(Icons.chevron_right, size: 14, color: AppColors.textHint),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
                   // 赠送信息（gifted 状态时显示受赠方）
                   if (item.customerStatus == CustomerItemStatus.gifted &&
                       item.activeGift != null) ...[
@@ -1156,7 +1292,7 @@ class _CouponDetailRow extends ConsumerWidget {
                     color: AppColors.error,
                     onTap: () => _showCancelSheet(context, ref, item),
                   ),
-                if (item.showRefundRequest)
+                if (showRefundButtonConsideringAfterSales(item, afterSalesByCoupon))
                   _SmallButton(
                     label: 'Refund',
                     color: AppColors.warning,
