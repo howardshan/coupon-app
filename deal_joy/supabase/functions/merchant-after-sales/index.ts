@@ -103,8 +103,11 @@ Deno.serve(async (req) => {
     return errorResponse("Missing authorization", "unauthorized", 401);
   }
 
-  const anonClient = createClient(supabaseUrl, anonKey);
-  const { data: userData, error: userError } = await anonClient.auth.getUser(token);
+  const anonClient = createClient(supabaseUrl, anonKey, {
+    global: { headers: { Authorization: `Bearer ${token}` } },
+    auth: { persistSession: false },
+  });
+  const { data: userData, error: userError } = await anonClient.auth.getUser();
   if (userError || !userData?.user) {
     return errorResponse("Invalid or expired token", "unauthorized", 401);
   }

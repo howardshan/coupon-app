@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/errors/app_exception.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../after_sales/domain/providers/after_sales_provider.dart';
 import '../../../after_sales/presentation/pages/after_sales_screen_args.dart';
@@ -145,7 +146,15 @@ class _AfterSalesRefundChoiceSheetState extends ConsumerState<_AfterSalesRefundC
         _loadError =
             'Request timed out. Check your connection and tap Retry.';
       });
-    } catch (_) {
+    } on AppException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loadError = e.message.trim().isEmpty
+            ? 'Could not load status. Tap Retry.'
+            : e.message;
+      });
+    } catch (e, stack) {
+      debugPrint('[after-sales] load existing case failed: $e\n$stack');
       if (!mounted) return;
       setState(() {
         _loadError = 'Could not load status. Tap Retry.';

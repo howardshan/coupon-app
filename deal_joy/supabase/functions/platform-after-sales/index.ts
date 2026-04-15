@@ -122,8 +122,11 @@ async function resolveAdmin(
     throw new Error("Missing authorization");
   }
 
-  const anonClient = createClient(Deno.env.get("SUPABASE_URL") ?? "", anonKey);
-  const { data, error } = await anonClient.auth.getUser(token);
+  const anonClient = createClient(Deno.env.get("SUPABASE_URL") ?? "", anonKey, {
+    global: { headers: { Authorization: `Bearer ${token}` } },
+    auth: { persistSession: false },
+  });
+  const { data, error } = await anonClient.auth.getUser();
   if (error || !data?.user) {
     throw new Error("Invalid or expired token");
   }
