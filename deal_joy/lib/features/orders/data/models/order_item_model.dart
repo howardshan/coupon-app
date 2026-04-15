@@ -230,24 +230,14 @@ class OrderItemModel {
   /// 已使用后可申请售后退款
   bool get showRefundRequest => customerStatus == CustomerItemStatus.used;
 
-  /// 核销后 24h 内：走争议退款（submit-refund-dispute），与 Edge 校验窗口一致
-  bool get isInDisputeRefundWindow {
-    if (customerStatus != CustomerItemStatus.used) return false;
-    final r = redeemedAt;
-    if (r == null) return false;
-    final cutoff = DateTime.now().toUtc().subtract(const Duration(hours: 24));
-    return !r.toUtc().isBefore(cutoff);
-  }
-
-  /// 核销超过 24h 且在 7 天内：走 After-sales 表单
+  /// 与 after-sales-request `withinWindow` 一致：核销后天数差 ≤ 7（浮点日数）
   bool get isInAfterSalesRefundWindow {
     if (customerStatus != CustomerItemStatus.used) return false;
     final r = redeemedAt;
     if (r == null) return false;
-    final now = DateTime.now().toUtc();
-    final afterDispute = now.subtract(const Duration(hours: 24));
-    final afterSalesEnd = now.subtract(const Duration(days: 7));
-    return r.toUtc().isBefore(afterDispute) && !r.toUtc().isBefore(afterSalesEnd);
+    final diffDays = DateTime.now().toUtc().difference(r.toUtc()).inMicroseconds /
+        (86400000000.0); // 与 Edge diffDays 口径一致
+    return diffDays <= 7;
   }
 
   /// 已超过 7 天售后窗口
@@ -255,7 +245,9 @@ class OrderItemModel {
     if (customerStatus != CustomerItemStatus.used) return false;
     final r = redeemedAt;
     if (r == null) return false;
-    return r.toUtc().isBefore(DateTime.now().toUtc().subtract(const Duration(days: 7)));
+    final diffDays = DateTime.now().toUtc().difference(r.toUtc()).inMicroseconds /
+        (86400000000.0);
+    return diffDays > 7;
   }
 
   /// 已使用后可写评价

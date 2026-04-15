@@ -1160,12 +1160,7 @@ class _CouponDetailRow extends ConsumerWidget {
                   _SmallButton(
                     label: 'Refund',
                     color: AppColors.warning,
-                    onTap: () => showUsedRefundEntry(
-                      context,
-                      ref,
-                      item,
-                      onRefresh: onRefreshOrder,
-                    ),
+                    onTap: () => showUsedRefundEntry(context, ref, item),
                   ),
                 if (item.showWriteReview)
                   _SmallButton(
