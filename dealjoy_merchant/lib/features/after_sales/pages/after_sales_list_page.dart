@@ -172,9 +172,13 @@ class _AfterSalesCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
     final amountFmt = NumberFormat.simpleCurrency();
+    final dateFmt = DateFormat('MMM d, HH:mm');
     final remainingLabel = _remainingText(request.remainingTime);
+    final submittedLabel = request.createdAt != null
+        ? dateFmt.format(request.createdAt!.toLocal())
+        : '—';
     final expiresLabel = request.expiresAt != null
-        ? DateFormat('MMM d, HH:mm').format(request.expiresAt!.toLocal())
+        ? dateFmt.format(request.expiresAt!.toLocal())
         : '—';
 
     return Card(
@@ -273,6 +277,9 @@ class _AfterSalesCard extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        Text('Submitted', style: textTheme.labelSmall),
+                        Text(submittedLabel, style: textTheme.bodyMedium),
+                        const SizedBox(height: 8),
                         Text('SLA deadline', style: textTheme.labelSmall),
                         Text(expiresLabel, style: textTheme.bodyMedium),
                       ],
