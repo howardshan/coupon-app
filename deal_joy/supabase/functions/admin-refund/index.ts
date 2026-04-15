@@ -52,9 +52,12 @@ Deno.serve(async (req) => {
       return errorResponse('Missing authorization', 'unauthorized', 401);
     }
 
-    // 验证 JWT
-    const userClient = createClient(supabaseUrl, anonKey);
-    const { data: userData, error: userError } = await userClient.auth.getUser(token);
+    // 验证 JWT（anon + Bearer + getUser()，服务端校验，支持 ES256）
+    const userClient = createClient(supabaseUrl, anonKey, {
+      global: { headers: { Authorization: `Bearer ${token}` } },
+      auth: { persistSession: false },
+    });
+    const { data: userData, error: userError } = await userClient.auth.getUser();
     if (userError || !userData?.user) {
       return errorResponse('Invalid or expired token', 'unauthorized', 401);
     }

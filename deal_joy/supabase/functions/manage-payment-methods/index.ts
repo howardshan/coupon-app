@@ -54,10 +54,14 @@ async function getStripeCustomerId(req: Request): Promise<{ customerId: string; 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return { error: errorResponse('Missing or invalid Authorization header', 401) };
   }
-  const token = authHeader.replace('Bearer ', '');
-
-  // 校验 JWT，获取当前用户
-  const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+  const anonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+  const authClient = createClient(supabaseUrl, anonKey, {
+    global: { headers: { Authorization: authHeader } },
+    auth: { persistSession: false },
+  });
+  // 服务端校验 JWT（支持 ES256），避免 service_role + getUser(jwt) 本地算法限制
+  const { data: { user }, error: authError } = await authClient.auth.getUser();
   if (authError || !user) {
     return { error: errorResponse('Unauthorized', 401) };
   }
@@ -160,10 +164,13 @@ Deno.serve(async (req) => {
       if (!authHeader || !authHeader.startsWith('Bearer ')) {
         return errorResponse('Missing or invalid Authorization header', 401);
       }
-      const token = authHeader.replace('Bearer ', '');
-
-      // 通过 JWT 获取当前用户
-      const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+      const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+      const anonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+      const authClient = createClient(supabaseUrl, anonKey, {
+        global: { headers: { Authorization: authHeader } },
+        auth: { persistSession: false },
+      });
+      const { data: { user }, error: authError } = await authClient.auth.getUser();
       if (authError || !user) {
         return errorResponse('Unauthorized', 401);
       }

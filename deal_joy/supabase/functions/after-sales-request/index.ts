@@ -58,8 +58,12 @@ async function resolveUser(
   }
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
-  const userClient = createClient(supabaseUrl, anonKey);
-  const { data, error } = await userClient.auth.getUser(token);
+  // 使用带 Authorization 的 anon client + getUser()，由服务端校验 JWT（支持 ES256）
+  const userClient = createClient(supabaseUrl, anonKey, {
+    global: { headers: { Authorization: `Bearer ${token}` } },
+    auth: { persistSession: false },
+  });
+  const { data, error } = await userClient.auth.getUser();
   if (error || !data?.user) {
     throw new Error("Invalid or expired token");
   }

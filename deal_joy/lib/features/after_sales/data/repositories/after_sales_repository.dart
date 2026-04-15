@@ -27,19 +27,63 @@ class AfterSalesRepository {
 
   Future<List<AfterSalesRequestModel>> fetchRequests({String? orderId}) async {
     final token = _requireToken();
-    final response = await _client.functions.invoke(
-      _functionName,
-      method: HttpMethod.get,
-      queryParameters: {
-        'access_token': token,
-        if (orderId != null) 'order_id': orderId,
-      },
-    );
-    final data = response.data as Map<String, dynamic>?;
-    final list = (data?['requests'] as List<dynamic>? ?? const [])
-        .map((item) => AfterSalesRequestModel.fromJson(item as Map<String, dynamic>))
-        .toList();
-    return list;
+    try {
+      // 使用 Authorization，避免 JWT 仅出现在 query 导致 URL 过长或被网关截断；Edge resolveUser 支持 header
+      final response = await _client.functions.invoke(
+        _functionName,
+        method: HttpMethod.get,
+        headers: {'Authorization': 'Bearer $token'},
+        queryParameters: {
+          if (orderId != null && orderId.isNotEmpty) 'order_id': orderId,
+        },
+      );
+      final raw = response.data;
+      if (raw is! Map) {
+        throw const AppException(
+          'Unexpected response from after-sales. Please try again.',
+        );
+      }
+      final data = Map<String, dynamic>.from(raw);
+      if (data.containsKey('error')) {
+        throw AppException(
+          data['message'] as String? ?? data['error'].toString(),
+          code: data['error'] as String?,
+        );
+      }
+      final rawList = data['requests'];
+      if (rawList != null && rawList is! List) {
+        throw const AppException('Invalid after-sales list format.');
+      }
+      return (rawList as List<dynamic>? ?? const [])
+          .map((item) {
+            if (item is! Map<String, dynamic>) {
+              throw const AppException('Invalid after-sales entry.');
+            }
+            return AfterSalesRequestModel.fromJson(item);
+          })
+          .toList();
+    } on FunctionException catch (e) {
+      throw AppException(_messageFromFunctionException(e));
+    }
+  }
+
+  /// 将 Edge 非 2xx 转为用户可读文案
+  static String _messageFromFunctionException(FunctionException e) {
+    final details = e.details;
+    if (details is Map) {
+      final msg = details['message'];
+      if (msg != null && msg.toString().trim().isNotEmpty) {
+        return msg.toString();
+      }
+      final err = details['error'];
+      if (err != null && err.toString().trim().isNotEmpty) {
+        return err.toString();
+      }
+    }
+    if (e.status == 401) {
+      return 'Session expired. Please sign in again.';
+    }
+    return 'Could not load after-sales (HTTP ${e.status}). Check network and tap Retry.';
   }
 
   Future<AfterSalesRequestModel?> fetchLatestForOrder(String orderId) async {
@@ -122,7 +166,7 @@ class AfterSalesRepository {
     }
     final slot = AfterSalesUploadSlot.fromJson(uploads.first as Map<String, dynamic>);
     final bytes = await file.readAsBytes();
-    await _putSignedFile(slot, bytes, await file.mimeType);
+    await _putSignedFile(slot, bytes, file.mimeType);
     return slot.path;
   }
 
