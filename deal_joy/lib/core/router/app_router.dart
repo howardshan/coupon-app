@@ -26,6 +26,7 @@ import '../../features/orders/presentation/screens/voucher_detail_screen.dart';
 import '../../features/orders/presentation/screens/refund_request_screen.dart';
 import '../../features/after_sales/presentation/pages/after_sales_request_form_page.dart';
 import '../../features/after_sales/presentation/pages/after_sales_timeline_page.dart';
+import '../../features/after_sales/presentation/pages/my_after_sales_list_page.dart';
 import '../../features/after_sales/presentation/pages/after_sales_screen_args.dart';
 import '../../features/profile/presentation/screens/profile_screen.dart';
 import '../../features/profile/presentation/screens/edit_profile_screen.dart';
@@ -333,6 +334,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/after-sales/:orderId/request',
         builder: (_, state) => AfterSalesRequestFormPage(args: _resolveAfterSalesArgs(state)),
+      ),
+      GoRoute(
+        path: '/my-after-sales',
+        builder: (context, _) => const MyAfterSalesListPage(),
       ),
 
       // Orders (standalone, accessible from profile)
