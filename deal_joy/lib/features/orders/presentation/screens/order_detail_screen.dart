@@ -33,6 +33,8 @@ void showUnusedQrSheet(
   required String dealId,
   bool aggregateByDeal = false,
   Set<String> aggregatedOrderItemIds = const {},
+  /// 打开 sheet 后定位到该 order_item 对应页（多券时）
+  String? initialUnusedOrderItemId,
 }) {
   final hostContext = context;
   showModalBottomSheet(
@@ -48,6 +50,7 @@ void showUnusedQrSheet(
       dealId: dealId,
       aggregateByDeal: aggregateByDeal,
       aggregatedOrderItemIds: aggregatedOrderItemIds,
+      initialUnusedOrderItemId: initialUnusedOrderItemId,
     ),
   );
 }
@@ -59,6 +62,7 @@ class _UnusedQrSheet extends ConsumerStatefulWidget {
   final String dealId;
   final bool aggregateByDeal;
   final Set<String> aggregatedOrderItemIds;
+  final String? initialUnusedOrderItemId;
 
   const _UnusedQrSheet({
     required this.hostContext,
@@ -66,6 +70,7 @@ class _UnusedQrSheet extends ConsumerStatefulWidget {
     required this.dealId,
     this.aggregateByDeal = false,
     this.aggregatedOrderItemIds = const {},
+    this.initialUnusedOrderItemId,
   });
 
   @override
@@ -79,6 +84,8 @@ class _UnusedQrSheetState extends ConsumerState<_UnusedQrSheet> {
   bool _didAutoPopForEmptyOpen = false;
   bool _redemptionSuccessFlowScheduled = false;
   Timer? _pollTimer;
+  /// 已将 [initialUnusedOrderItemId] 同步到 PageView 当前页
+  bool _appliedInitialUnusedPage = false;
 
   @override
   void initState() {
@@ -380,6 +387,24 @@ class _UnusedQrSheetState extends ConsumerState<_UnusedQrSheet> {
           });
         }
 
+        // 从订单详情「点某张未用券」打开时，定位到对应 PageView 页
+        if (!_appliedInitialUnusedPage &&
+            widget.initialUnusedOrderItemId != null &&
+            unusedItems.isNotEmpty) {
+          final idx = unusedItems
+              .indexWhere((e) => e.id == widget.initialUnusedOrderItemId);
+          _appliedInitialUnusedPage = true;
+          if (idx > 0) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted || !_pageController.hasClients) return;
+              _pageController.jumpToPage(idx);
+              setState(() => _currentPage = idx);
+            });
+          } else if (idx == 0) {
+            setState(() => _currentPage = 0);
+          }
+        }
+
         if (unusedItems.isEmpty) {
           if (_redemptionSuccessFlowScheduled) {
             return _buildSheetChrome(
@@ -557,7 +582,8 @@ class _MeituanOrderBody extends ConsumerStatefulWidget {
 }
 
 class _MeituanOrderBodyState extends ConsumerState<_MeituanOrderBody> {
-  // 每个 deal 下 Used / Gifted 区块各自展开（与 Unused sheet 互不抢占）
+  // 每个 deal 下 Unused / Used / Gifted 区块各自展开
+  final Map<String, bool> _expandedUnusedByDeal = {};
   final Map<String, bool> _expandedUsedByDeal = {};
   final Map<String, bool> _expandedGiftedByDeal = {};
 
@@ -594,12 +620,19 @@ class _MeituanOrderBodyState extends ConsumerState<_MeituanOrderBody> {
             ...groupMap.entries.map((entry) {
               final dealId = entry.key;
               final items = entry.value;
+              final unusedExpanded = _expandedUnusedByDeal[dealId] ?? false;
               final usedExpanded = _expandedUsedByDeal[dealId] ?? false;
               final giftedExpanded = _expandedGiftedByDeal[dealId] ?? false;
 
               return SliverToBoxAdapter(
                 child: _DealSummaryCard(
                   dealItems: items,
+                  isUnusedExpanded: unusedExpanded,
+                  onToggleUnusedExpand: () {
+                    setState(() {
+                      _expandedUnusedByDeal[dealId] = !unusedExpanded;
+                    });
+                  },
                   isUsedExpanded: usedExpanded,
                   onToggleUsedExpand: () {
                     setState(() {
@@ -653,6 +686,8 @@ class _MeituanOrderBodyState extends ConsumerState<_MeituanOrderBody> {
 
 class _DealSummaryCard extends ConsumerWidget {
   final List<OrderItemModel> dealItems;
+  final bool isUnusedExpanded;
+  final VoidCallback onToggleUnusedExpand;
   final bool isUsedExpanded;
   final VoidCallback onToggleUsedExpand;
   final bool isGiftedExpanded;
@@ -667,6 +702,8 @@ class _DealSummaryCard extends ConsumerWidget {
 
   const _DealSummaryCard({
     required this.dealItems,
+    required this.isUnusedExpanded,
+    required this.onToggleUnusedExpand,
     required this.isUsedExpanded,
     required this.onToggleUsedExpand,
     required this.isGiftedExpanded,
@@ -813,12 +850,8 @@ class _DealSummaryCard extends ConsumerWidget {
               count: unusedItems.length,
               color: const Color(0xFF00C853),
               items: unusedItems,
-              isExpanded: false,
-              onToggle: () => showUnusedQrSheet(
-                    context,
-                    orderId: orderId,
-                    dealId: first.dealId,
-                  ),
+              isExpanded: isUnusedExpanded,
+              onToggle: onToggleUnusedExpand,
               onRefreshOrder: onRefreshOrder,
               orderId: orderId,
               paymentIntentId: paymentIntentId,
@@ -1025,6 +1058,14 @@ class _CouponDetailRow extends ConsumerWidget {
         // 赠送出去的券跳转到 coupon 详情页（显示 gift 信息）
         if (item.customerStatus == CustomerItemStatus.gifted && item.couponId != null) {
           context.push('/coupon/${item.couponId}');
+        } else if (item.customerStatus == CustomerItemStatus.unused) {
+          // 未使用：先列表展开后，点行再出示 QR（与 Used 展开体验一致）
+          showUnusedQrSheet(
+            context,
+            orderId: orderId,
+            dealId: item.dealId,
+            initialUnusedOrderItemId: item.id,
+          );
         } else {
           // 其他状态跳转到 voucher detail 页面
           context.push('/voucher/$orderId?dealId=${item.dealId}');
@@ -1060,10 +1101,27 @@ class _CouponDetailRow extends ConsumerWidget {
                               fontSize: 13, color: AppColors.textHint),
                         ),
                       const SizedBox(width: 4),
-                      const Icon(Icons.arrow_forward_ios,
-                          size: 12, color: AppColors.primary),
+                      Icon(
+                        item.customerStatus == CustomerItemStatus.unused
+                            ? Icons.qr_code_2_rounded
+                            : Icons.arrow_forward_ios,
+                        size: item.customerStatus == CustomerItemStatus.unused
+                            ? 18
+                            : 12,
+                        color: AppColors.primary,
+                      ),
                     ],
                   ),
+                  if (item.customerStatus == CustomerItemStatus.unused) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      'Tap to show QR',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: AppColors.textHint.withValues(alpha: 0.9),
+                      ),
+                    ),
+                  ],
                   if (item.redeemedAt != null) ...[
                     const SizedBox(height: 2),
                     Text(

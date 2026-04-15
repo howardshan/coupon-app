@@ -102,15 +102,12 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   int? _cachedBuyNowQuantity;
   bool _storeCreditLoaded = false;
 
-  /// 后端最近一次返回的购物车总税（cartTax 异步未到时作回退）
+  /// 后端最近一次返回的总税：购物车 cartTax 与 create-payment-intent 共用；
+  /// null 表示尚未从后端取到，cartTax 未到时可作回退，UI 可显示估算 + "Estimate"
   double? _lastBackendTotalTax;
 
   // 支付处理中
   bool _isProcessing = false;
-
-  // 后端最近一次返回的 totalTax（create-payment-intent 的精确值）
-  // null 表示尚未从后端取到，此时 UI 上显示前端估算值 + "Estimate" 标记
-  double? _lastBackendTotalTax;
 
   /// 购物车模式：已从服务端校验 deal 仍可购买后才展示结账 UI
   bool _cartEntryValidated = false;
