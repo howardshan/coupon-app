@@ -61,7 +61,7 @@ void main() {
 
     await tester.pumpAndSettle();
     expect(find.text('Status Timeline'), findsOneWidget);
-    expect(find.text('SUBMITTED'), findsOneWidget);
+    expect(find.text('Submitted'), findsOneWidget);
     expect(find.textContaining('cold food'), findsOneWidget);
   });
 }
