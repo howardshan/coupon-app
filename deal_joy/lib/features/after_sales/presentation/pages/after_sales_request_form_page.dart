@@ -149,13 +149,17 @@ class _AfterSalesRequestFormPageState extends ConsumerState<AfterSalesRequestFor
         final path = await repo.uploadEvidence(file);
         uploadPaths.add(path);
       }
-      await repo.submitRequest(
+      final submitted = await repo.submitRequest(
         orderId: widget.args.orderId,
         couponId: widget.args.couponId,
         reason: _reason,
         detail: _detailController.text.trim(),
         attachmentPaths: uploadPaths,
       );
+      // 提交接口已返回完整 request；写入乐观缓存，避免返回时间线时 GET 尚未查到而空白
+      ref
+          .read(afterSalesOptimisticProvider(widget.args.orderId).notifier)
+          .state = submitted;
       ref.invalidate(afterSalesRequestProvider(widget.args.orderId));
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

@@ -68,6 +68,7 @@ DashboardData _buildData({bool isOnline = true, int todayOrders = 5}) {
     todos: const TodoCounts(
       pendingReviews: 2,
       pendingRefunds: 0,
+      pendingAfterSales: 0,
       influencerRequests: 0,
     ),
   );

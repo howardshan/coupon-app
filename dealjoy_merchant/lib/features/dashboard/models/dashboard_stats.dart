@@ -114,8 +114,11 @@ class TodoCounts {
   /// 待回复评价数
   final int pendingReviews;
 
-  /// 待审核退款数（refund_requested 状态的订单）
+  /// 待审核争议退款数（order_items.refund_review，核销后 24h 窗口内发起的退款审批）
   final int pendingRefunds;
+
+  /// 待处理的售后单数（after_sales_requests.status = pending，核销 24h 后走售后入口）
+  final int pendingAfterSales;
 
   /// Influencer 合作申请数（V1 暂为 0）
   final int influencerRequests;
@@ -123,6 +126,7 @@ class TodoCounts {
   const TodoCounts({
     required this.pendingReviews,
     required this.pendingRefunds,
+    required this.pendingAfterSales,
     required this.influencerRequests,
   });
 
@@ -131,16 +135,21 @@ class TodoCounts {
     return TodoCounts(
       pendingReviews: (json['pendingReviews'] as num?)?.toInt() ?? 0,
       pendingRefunds: (json['pendingRefunds'] as num?)?.toInt() ?? 0,
+      pendingAfterSales: (json['pendingAfterSales'] as num?)?.toInt() ?? 0,
       influencerRequests: (json['influencerRequests'] as num?)?.toInt() ?? 0,
     );
   }
 
   /// 是否有任何待办（用于控制 Todos 区块是否显示）
   bool get hasAnyTodos =>
-      pendingReviews > 0 || pendingRefunds > 0 || influencerRequests > 0;
+      pendingReviews > 0 ||
+      pendingRefunds > 0 ||
+      pendingAfterSales > 0 ||
+      influencerRequests > 0;
 
   /// 待办总数
-  int get totalCount => pendingReviews + pendingRefunds + influencerRequests;
+  int get totalCount =>
+      pendingReviews + pendingRefunds + pendingAfterSales + influencerRequests;
 }
 
 // ============================================================

@@ -66,6 +66,7 @@ DashboardData _buildData({
     todos: TodoCounts(
       pendingReviews: hasTodos ? 2 : 0,
       pendingRefunds: hasTodos ? 1 : 0,
+      pendingAfterSales: 0,
       influencerRequests: 0,
     ),
   );
@@ -251,7 +252,7 @@ void main() {
       expect(find.text('Action Required'), findsOneWidget);
       // 待回复评价 (pendingReviews = 2) 和 待退款 (pendingRefunds = 1)
       expect(find.text('Reviews to reply'), findsOneWidget);
-      expect(find.text('Pending refunds'),  findsOneWidget);
+      expect(find.text('Refund requests'),  findsOneWidget);
     });
   });
 
