@@ -1,5 +1,53 @@
 import 'package:collection/collection.dart';
 
+/// 订单列表等处的三态摘要（pending / rejected / approved）
+enum AfterSalesOrderCardBucket {
+  pending,
+  rejected,
+  approved;
+
+  /// 单笔申请映射到三态（进行中 → pending；终局拒绝 → rejected；退款完成等 → approved）
+  static AfterSalesOrderCardBucket fromStatus(String raw) {
+    switch (raw) {
+      case 'pending':
+      case 'awaiting_platform':
+      case 'merchant_approved':
+      case 'platform_approved':
+        return AfterSalesOrderCardBucket.pending;
+      case 'merchant_rejected':
+      case 'platform_rejected':
+        return AfterSalesOrderCardBucket.rejected;
+      case 'refunded':
+      case 'closed':
+        return AfterSalesOrderCardBucket.approved;
+      default:
+        return AfterSalesOrderCardBucket.pending;
+    }
+  }
+
+  /// 同一订单多笔申请：pending 优先，其次 rejected，否则 approved
+  static AfterSalesOrderCardBucket dominant(Iterable<AfterSalesRequestModel> requests) {
+    final buckets = requests.map((r) => fromStatus(r.status)).toSet();
+    if (buckets.contains(AfterSalesOrderCardBucket.pending)) {
+      return AfterSalesOrderCardBucket.pending;
+    }
+    if (buckets.contains(AfterSalesOrderCardBucket.rejected)) {
+      return AfterSalesOrderCardBucket.rejected;
+    }
+    if (requests.isEmpty) {
+      return AfterSalesOrderCardBucket.pending;
+    }
+    return AfterSalesOrderCardBucket.approved;
+  }
+
+  /// 订单卡片上展示的英文标签
+  String get shortLabel => switch (this) {
+        AfterSalesOrderCardBucket.pending => 'Pending',
+        AfterSalesOrderCardBucket.rejected => 'Rejected',
+        AfterSalesOrderCardBucket.approved => 'Approved',
+      };
+}
+
 enum AfterSalesReason {
   mistakenRedemption('mistaken_redemption', 'Wrong redemption'),
   badExperience('bad_experience', 'Bad experience'),
@@ -99,6 +147,10 @@ class AfterSalesRequestModel {
     this.merchantAttachments = const [],
     this.platformAttachments = const [],
     this.events = const [],
+    this.orderNumber,
+    this.dealTitle,
+    this.dealImageUrl,
+    this.merchantName,
   });
 
   final String id;
@@ -112,6 +164,12 @@ class AfterSalesRequestModel {
   final DateTime createdAt;
   final String? merchantFeedback;
   final String? platformFeedback;
+
+  /// Edge 展平字段：订单号、Deal、券侧商家、首图（列表/详情展示用）
+  final String? orderNumber;
+  final String? dealTitle;
+  final String? dealImageUrl;
+  final String? merchantName;
   final List<String> userAttachments;
   final List<String> merchantAttachments;
   final List<String> platformAttachments;
@@ -152,6 +210,10 @@ class AfterSalesRequestModel {
       platformAttachments:
           (json['platform_attachments'] as List<dynamic>? ?? const []).whereType<String>().toList(),
       events: eventsList,
+      orderNumber: json['order_number'] as String?,
+      dealTitle: json['deal_title'] as String?,
+      dealImageUrl: json['deal_image_url'] as String?,
+      merchantName: json['merchant_name'] as String?,
     );
   }
 }

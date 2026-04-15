@@ -38,6 +38,28 @@ final afterSalesListProvider = FutureProvider.family<List<AfterSalesRequestModel
   return ref.watch(afterSalesRepositoryProvider).fetchRequests(orderId: orderId);
 });
 
+/// 将全量售后列表按 `order_id` 分组，供订单列表卡片展示（与 [afterSalesListProvider] null 共用一次请求）
+final userAfterSalesByOrderIdProvider =
+    Provider<AsyncValue<Map<String, List<AfterSalesRequestModel>>>>((ref) {
+  final base = ref.watch(afterSalesListProvider(null));
+  return base.when(
+    data: (list) {
+      final map = <String, List<AfterSalesRequestModel>>{};
+      for (final r in list) {
+        final oid = r.orderId;
+        if (oid.isEmpty) continue;
+        map.putIfAbsent(oid, () => []).add(r);
+      }
+      for (final v in map.values) {
+        v.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      }
+      return AsyncValue.data(map);
+    },
+    loading: () => const AsyncValue.loading(),
+    error: AsyncValue.error,
+  );
+});
+
 final supabaseSessionProvider = Provider<Session?>((ref) {
   final client = ref.watch(supabaseClientProvider);
   return client.auth.currentSession;

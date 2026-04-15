@@ -68,7 +68,13 @@ class _AfterSalesTimelinePageState extends ConsumerState<AfterSalesTimelinePage>
       body: requestAsync.when(
         data: (request) => request == null ? _buildEmptyState(context) : _buildTimeline(context, request),
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => _ErrorView(error: error, onRetry: () => ref.invalidate(afterSalesRequestProvider(widget.args.orderId))),
+        error: (error, _) => _ErrorView(
+          error: error,
+          onRetry: () {
+            ref.invalidate(afterSalesRequestProvider(widget.args.orderId));
+            ref.invalidate(afterSalesListProvider(null));
+          },
+        ),
       ),
     );
   }
@@ -109,6 +115,7 @@ class _AfterSalesTimelinePageState extends ConsumerState<AfterSalesTimelinePage>
     return RefreshIndicator(
       onRefresh: () async {
         ref.invalidate(afterSalesRequestProvider(widget.args.orderId));
+        ref.invalidate(afterSalesListProvider(null));
         await ref.read(afterSalesRequestProvider(widget.args.orderId).future);
       },
       child: ListView(
@@ -184,6 +191,7 @@ class _AfterSalesTimelinePageState extends ConsumerState<AfterSalesTimelinePage>
       final repo = ref.read(afterSalesRepositoryProvider);
       await repo.escalate(requestId);
       ref.invalidate(afterSalesRequestProvider(widget.args.orderId));
+      ref.invalidate(afterSalesListProvider(null));
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Escalated to Crunchy Plum. We will review within 24 hours.')),

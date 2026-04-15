@@ -578,6 +578,35 @@ async function handleCreateRequest(
   return jsonResponse({ request: hydrated });
 }
 
+/** 列表/详情共用：关联订单号、券对应 Deal、商家名（券侧 merchant），并展平为标量字段供 App 展示 */
+const USER_AFTER_SALES_SELECT =
+  "*,after_sales_events(*),orders(order_number),coupons(deal_id,deals(title,image_urls),merchants!merchant_id(name))";
+
+/**
+ * 将 PostgREST 嵌套行展平为 order_number / deal_title / deal_image_url / merchant_name
+ */
+function flattenUserAfterSalesRow(row: Record<string, unknown>): Record<string, unknown> {
+  const { orders: ordersRow, coupons: couponsRow, ...rest } = row;
+  const order_number =
+    (ordersRow as { order_number?: string | null } | null)?.order_number ?? null;
+  const c = couponsRow as {
+    deals?: { title?: string | null; image_urls?: string[] | null } | null;
+    merchants?: { name?: string | null } | null;
+  } | null | undefined;
+  const imageUrls = c?.deals?.image_urls;
+  const firstImage =
+    Array.isArray(imageUrls) && imageUrls.length > 0 && typeof imageUrls[0] === "string"
+      ? imageUrls[0]
+      : null;
+  return {
+    ...rest,
+    order_number,
+    deal_title: c?.deals?.title ?? null,
+    deal_image_url: firstImage,
+    merchant_name: c?.merchants?.name ?? null,
+  };
+}
+
 async function handleList(
   supabase: ReturnType<typeof createClient>,
   userId: string,
@@ -586,7 +615,7 @@ async function handleList(
   const filterOrder = params.get("order_id");
   let query = supabase
     .from("after_sales_requests")
-    .select("*, after_sales_events(*)")
+    .select(USER_AFTER_SALES_SELECT)
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
@@ -599,7 +628,10 @@ async function handleList(
     console.error("[after-sales] list error", error.message);
     return errorResponse("Failed to load requests", "db_error", 500);
   }
-  const hydrated = await decorateAfterSalesRequests(supabase, data ?? []);
+  const rows = (data ?? []).map((r) =>
+    flattenUserAfterSalesRow(r as Record<string, unknown>),
+  );
+  const hydrated = await decorateAfterSalesRequests(supabase, rows);
   return jsonResponse({ requests: hydrated });
 }
 
@@ -610,7 +642,7 @@ async function handleGetSingle(
 ): Promise<Response> {
   const { data, error } = await supabase
     .from("after_sales_requests")
-    .select("*, after_sales_events(*)")
+    .select(USER_AFTER_SALES_SELECT)
     .eq("user_id", userId)
     .eq("id", requestId)
     .single();
@@ -618,7 +650,8 @@ async function handleGetSingle(
   if (error || !data) {
     return errorResponse("Request not found", "not_found", 404);
   }
-  const hydrated = await decorateAfterSalesRequest(supabase, data);
+  const flat = flattenUserAfterSalesRow(data as Record<string, unknown>);
+  const hydrated = await decorateAfterSalesRequest(supabase, flat);
   return jsonResponse({ request: hydrated });
 }
 
@@ -720,11 +753,12 @@ async function fetchUserRequest(
 ) {
   const { data } = await supabase
     .from("after_sales_requests")
-    .select("*, after_sales_events(*)")
+    .select(USER_AFTER_SALES_SELECT)
     .eq("id", requestId)
     .eq("user_id", userId)
     .single();
-  return data;
+  if (!data) return data;
+  return flattenUserAfterSalesRow(data as Record<string, unknown>);
 }
 
 async function notifyMerchantAfterSales(

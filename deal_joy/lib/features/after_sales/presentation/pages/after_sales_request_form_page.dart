@@ -161,6 +161,7 @@ class _AfterSalesRequestFormPageState extends ConsumerState<AfterSalesRequestFor
           .read(afterSalesOptimisticProvider(widget.args.orderId).notifier)
           .state = submitted;
       ref.invalidate(afterSalesRequestProvider(widget.args.orderId));
+      ref.invalidate(afterSalesListProvider(null));
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('After-sales request submitted. We will notify you soon.')),
