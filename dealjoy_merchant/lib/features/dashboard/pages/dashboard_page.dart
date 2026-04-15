@@ -505,7 +505,7 @@ class _TodoSection extends StatelessWidget {
       );
     }
 
-    // 与订单页工具栏一致：争议退款 vs 售后工单
+    // 与订单页一致：历史争议退款 vs 售后工单（新单仅售后）
     final specs =
         <({
           IconData icon,

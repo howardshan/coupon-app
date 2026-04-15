@@ -133,35 +133,6 @@ class RefundNotifier extends AsyncNotifier<void> {
     return !state.hasError;
   }
 
-  /// 已核销券争议申请（24h 内）
-  Future<bool> submitRefundDispute(
-    String orderItemId,
-    String reason, {
-    String? couponId,
-    String? orderId,
-  }) async {
-    state = const AsyncValue.loading();
-    state = await AsyncValue.guard(
-      () => ref.read(couponsRepositoryProvider).submitRefundDispute(
-            orderItemId: orderItemId,
-            reason: reason,
-          ),
-    );
-    if (!state.hasError) {
-      invalidateUserCouponsEverywhere(ref.invalidate);
-      ref.invalidate(userOrdersProvider);
-      ref.invalidate(storeCreditBalanceProvider);
-      ref.invalidate(storeCreditTransactionsProvider);
-      if (couponId != null && couponId.isNotEmpty) {
-        ref.invalidate(couponDetailProvider(couponId));
-      }
-      if (orderId != null && orderId.isNotEmpty) {
-        ref.invalidate(orderDetailProvider(orderId));
-      }
-    }
-    return !state.hasError;
-  }
-
   /// V3：通过 orderItemId 直接请求退款（订单详情页 item 维度退款）
   /// [refundMethod] 退款方式：'store_credit' | 'original_payment'，默认 'original_payment'
   Future<bool> requestItemRefund(

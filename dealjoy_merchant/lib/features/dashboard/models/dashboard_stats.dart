@@ -114,7 +114,7 @@ class TodoCounts {
   /// 待回复评价数
   final int pendingReviews;
 
-  /// 待审核争议退款数（order_items.refund_review，核销后 24h 窗口内发起的退款审批）
+  /// 待审核数（order_items.refund_review，历史争议 refund_requests；新申请已走售后）
   final int pendingRefunds;
 
   /// 待处理的售后单数（after_sales_requests.status = pending，核销 24h 后走售后入口）
