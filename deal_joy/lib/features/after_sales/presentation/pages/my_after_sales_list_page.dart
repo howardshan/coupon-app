@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -63,9 +64,16 @@ class MyAfterSalesListPage extends ConsumerWidget {
               padding: const EdgeInsets.all(16),
               itemCount: sorted.length,
               separatorBuilder: (context, index) => const SizedBox(height: 10),
-              itemBuilder: (_, i) {
+              itemBuilder: (context, i) {
                 final r = sorted[i];
                 final bucket = AfterSalesOrderCardBucket.fromStatus(r.status);
+                final title = (r.dealTitle != null && r.dealTitle!.trim().isNotEmpty)
+                    ? r.dealTitle!.trim()
+                    : 'After-sales request';
+                final orderLabel = r.orderNumber != null && r.orderNumber!.trim().isNotEmpty
+                    ? '#${r.orderNumber!.trim().toUpperCase()}'
+                    : 'Order ${r.orderId.length >= 8 ? r.orderId.substring(0, 8).toUpperCase() : r.orderId}';
+
                 return Material(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(12),
@@ -73,33 +81,87 @@ class MyAfterSalesListPage extends ConsumerWidget {
                     borderRadius: BorderRadius.circular(12),
                     onTap: () => context.push('/after-sales/${r.orderId}'),
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      padding: const EdgeInsets.all(12),
                       child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: r.dealImageUrl != null && r.dealImageUrl!.trim().isNotEmpty
+                                ? CachedNetworkImage(
+                                    imageUrl: r.dealImageUrl!.trim(),
+                                    width: 56,
+                                    height: 56,
+                                    fit: BoxFit.cover,
+                                    placeholder: (context, url) => _dealThumbPlaceholder(),
+                                    errorWidget: (context, url, err) => _dealThumbPlaceholder(),
+                                  )
+                                : _dealThumbPlaceholder(),
+                          ),
+                          const SizedBox(width: 10),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  r.reason?.label ?? 'After-sales request',
+                                  title,
                                   style: const TextStyle(
                                     fontWeight: FontWeight.w600,
                                     fontSize: 14,
                                   ),
-                                  maxLines: 1,
+                                  maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
+                                ),
+                                if (r.merchantName != null && r.merchantName!.trim().isNotEmpty) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    r.merchantName!.trim(),
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: AppColors.textSecondary,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                                const SizedBox(height: 4),
+                                Text(
+                                  orderLabel,
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: AppColors.primary,
+                                    fontWeight: FontWeight.w600,
+                                    fontFamily: 'monospace',
+                                  ),
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  'Submitted ${dateFmt.format(r.createdAt.toLocal())}',
+                                  '${r.reason?.label ?? 'Request'} · Submitted ${dateFmt.format(r.createdAt.toLocal())}',
                                   style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  'Refund amount \$${r.refundAmount.toStringAsFixed(2)}',
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.textPrimary,
+                                  ),
                                 ),
                               ],
                             ),
                           ),
-                          _StatusChip(bucket: bucket),
-                          const SizedBox(width: 4),
-                          const Icon(Icons.chevron_right, size: 20, color: AppColors.textHint),
+                          const SizedBox(width: 6),
+                          Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _StatusChip(bucket: bucket),
+                              const SizedBox(height: 4),
+                              const Icon(Icons.chevron_right, size: 20, color: AppColors.textHint),
+                            ],
+                          ),
                         ],
                       ),
                     ),
@@ -136,6 +198,18 @@ class MyAfterSalesListPage extends ConsumerWidget {
       ),
     );
   }
+}
+
+Widget _dealThumbPlaceholder() {
+  return Container(
+    width: 56,
+    height: 56,
+    decoration: BoxDecoration(
+      color: AppColors.surfaceVariant,
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: const Icon(Icons.restaurant_outlined, size: 26, color: AppColors.textHint),
+  );
 }
 
 class _StatusChip extends StatelessWidget {

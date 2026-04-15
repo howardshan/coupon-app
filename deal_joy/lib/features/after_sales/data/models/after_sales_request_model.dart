@@ -147,6 +147,10 @@ class AfterSalesRequestModel {
     this.merchantAttachments = const [],
     this.platformAttachments = const [],
     this.events = const [],
+    this.orderNumber,
+    this.dealTitle,
+    this.dealImageUrl,
+    this.merchantName,
   });
 
   final String id;
@@ -160,6 +164,12 @@ class AfterSalesRequestModel {
   final DateTime createdAt;
   final String? merchantFeedback;
   final String? platformFeedback;
+
+  /// Edge 展平字段：订单号、Deal、券侧商家、首图（列表/详情展示用）
+  final String? orderNumber;
+  final String? dealTitle;
+  final String? dealImageUrl;
+  final String? merchantName;
   final List<String> userAttachments;
   final List<String> merchantAttachments;
   final List<String> platformAttachments;
@@ -200,6 +210,10 @@ class AfterSalesRequestModel {
       platformAttachments:
           (json['platform_attachments'] as List<dynamic>? ?? const []).whereType<String>().toList(),
       events: eventsList,
+      orderNumber: json['order_number'] as String?,
+      dealTitle: json['deal_title'] as String?,
+      dealImageUrl: json['deal_image_url'] as String?,
+      merchantName: json['merchant_name'] as String?,
     );
   }
 }
