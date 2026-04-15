@@ -194,6 +194,8 @@ class DealModel {
             ? MerchantSummary.fromJson(
                 json['merchants'] as Map<String, dynamic>)
             : null,
+        // 从嵌套 merchants 子对象里取 city（checkout 税费查询用）
+        merchantCity: (json['merchants'] as Map<String, dynamic>?)?['city'] as String?,
         dealType: json['deal_type'] as String? ?? 'regular',
         dealCategoryId: json['deal_category_id'] as String?,
         badgeText: json['badge_text'] as String?,

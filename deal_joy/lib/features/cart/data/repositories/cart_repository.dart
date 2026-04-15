@@ -30,7 +30,7 @@ class CartRepository {
       total_sold,
       expires_at,
       is_active,
-      merchants(id, name)
+      merchants(id, name, city, metro_area)
     )
   ''';
 

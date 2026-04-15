@@ -19,6 +19,40 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// ─── Stripe Reserves API 辅助函数 ────────────────────────────────────────────
+
+/**
+ * 释放 connected account 上的 ReserveHold
+ * 退款前必须先释放，否则 reverse_transfer 可能因资金冻结而失败
+ */
+async function releaseReserveHold(
+  connectedAccountId: string,
+  holdId: string,
+  stripeKey: string,
+): Promise<void> {
+  const body = new URLSearchParams({ reserve_hold: holdId });
+  try {
+    const res = await fetch('https://api.stripe.com/v1/reserve/releases', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${stripeKey}`,
+        'Stripe-Version': '2025-08-27.preview',
+        'Stripe-Account': connectedAccountId,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: body.toString(),
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error(`[ReserveRelease] 释放失败 hold=${holdId}:`, errText);
+    } else {
+      console.log(`[ReserveRelease] 释放成功 hold=${holdId}`);
+    }
+  } catch (err) {
+    console.error(`[ReserveRelease] 网络异常 hold=${holdId}:`, err);
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -92,7 +126,9 @@ Deno.serve(async (req) => {
         service_fee,
         tax_amount,
         commission_amount,
+        promo_discount,
         purchased_merchant_id,
+        stripe_reserve_hold_id,
         customer_status,
         orders!inner (
           id,
@@ -163,6 +199,7 @@ Deno.serve(async (req) => {
     const taxAmount = Number(item.tax_amount ?? 0);
     // commission_amount：下单时快照的佣金，退款时退还给商家（via reverse_transfer）
     const commissionAmount = Number((item as any).commission_amount ?? 0);
+    const promoDiscount = Number((item as any).promo_discount ?? 0);
     const now = new Date().toISOString();
 
     // 查询商家的 Stripe Connect 账户（用于 reverse_transfer）
@@ -199,10 +236,17 @@ Deno.serve(async (req) => {
       // 退款金额包含 service fee 和 tax（平台承担手续费补偿用户，税款全额退还）
       const refundAmount = unitPrice + serviceFee + taxAmount;
 
-      // Stripe Connect 分账路径（Phase 1B 后的订单）：
-      // Store Credit 由平台垫付，需从商家 Connect 账户回撤 merchant_net，以平衡资金
-      // merchant_net = unit_price - commission（commission 归平台，此处也回撤）
-      if (hasConnectRouting && order.payment_intent_id && !order.payment_intent_id.startsWith('store_credit_')) {
+      // 退款前先释放 ReserveHold（解冻商家资金，确保 reverse_transfer 能成功执行）
+      const holdIdSC = (item as any).stripe_reserve_hold_id as string | null;
+      const reservesEnabledSC = Deno.env.get('STRIPE_RESERVES_ENABLED') !== 'false';
+      if (holdIdSC && merchantStripeAccountId && reservesEnabledSC) {
+        await releaseReserveHold(merchantStripeAccountId, holdIdSC, Deno.env.get('STRIPE_SECRET_KEY') ?? '');
+      }
+
+      // Stripe Connect 分账路径：Store Credit 由平台垫付，需从商家 Connect 账户回撤 merchant_net，以平衡资金
+      // 注意：此处不依赖 hasConnectRouting（避免因商家状态不是 'connected' 而漏掉逆向）
+      // 直接从 PI latest_charge.transfer 判断是否存在 Transfer，有则逆向
+      if (order.payment_intent_id && !order.payment_intent_id.startsWith('store_credit_')) {
         try {
           // 获取 PaymentIntent 找到关联 transfer ID
           const pi = await stripe.paymentIntents.retrieve(order.payment_intent_id, {
@@ -212,8 +256,8 @@ Deno.serve(async (req) => {
           const transferId = typeof transfer === 'string' ? transfer : transfer?.id;
 
           if (transferId) {
-            // 回撤 merchant_net = unit_price - commission_amount
-            const merchantNetCents = Math.round((unitPrice - commissionAmount) * 100);
+            // merchant_net = unit_price - promo_discount - commission_amount（commission 基数已扣促销，故需再减）
+            const merchantNetCents = Math.round((unitPrice - promoDiscount - commissionAmount) * 100);
             if (merchantNetCents > 0) {
               await stripe.transfers.createReversal(transferId, {
                 amount: merchantNetCents,
@@ -390,12 +434,30 @@ Deno.serve(async (req) => {
           } else {
             refundParams.payment_intent = order.payment_intent_id;
           }
-          // Stripe Connect 分账路径（Phase 1B 后的订单）：
-          //   reverse_transfer: true → 从商家 Connect 账户拉回 merchant_net 用于退款
-          //   refund_application_fee: false（默认）→ 平台保留 service_fee，退还 commission 部分
-          //   Stripe 会按比例从 Connect 账户反转转账，近似值符合业务规则
-          if (hasConnectRouting) {
-            refundParams.reverse_transfer = true;
+          // 退款前先释放 ReserveHold（解冻商家资金，确保 reverse_transfer 能成功执行）
+          const holdIdOP = (item as any).stripe_reserve_hold_id as string | null;
+          const reservesEnabledOP = Deno.env.get('STRIPE_RESERVES_ENABLED') !== 'false';
+          if (holdIdOP && merchantStripeAccountId && reservesEnabledOP) {
+            await releaseReserveHold(merchantStripeAccountId, holdIdOP, Deno.env.get('STRIPE_SECRET_KEY') ?? '');
+          }
+
+          // Stripe Connect 分账路径：确认 PI 上存在 Transfer 再加 reverse_transfer: true
+          // 不依赖 hasConnectRouting（避免因商家状态不是 'connected' 而漏掉逆向）
+          // 直接从 latest_charge.transfer 判断：如果没有 transfer，盲目加 reverse_transfer 会导致 Stripe 报错中断退款
+          if (order.payment_intent_id && !order.payment_intent_id.startsWith('store_credit_')) {
+            try {
+              const piForCheck = await stripe.paymentIntents.retrieve(order.payment_intent_id, {
+                expand: ['latest_charge.transfer'],
+              });
+              const transferForCheck = (piForCheck as any).latest_charge?.transfer;
+              const transferIdForCheck = typeof transferForCheck === 'string' ? transferForCheck : transferForCheck?.id;
+              if (transferIdForCheck) {
+                refundParams.reverse_transfer = true;
+              }
+            } catch (piErr) {
+              // 查询失败时降级：不加 reverse_transfer，防止阻断退款主流程
+              console.error('[create-refund] 原路退款 transfer 检测失败（降级不加 reverse_transfer）:', piErr);
+            }
           }
           const refund = await stripe.refunds.create(refundParams as any);
           stripeRefundId = refund.id;

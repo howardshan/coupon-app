@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as sb;
+import '../../../../core/config/env.dart';
 import '../../../../core/errors/app_exception.dart';
 import '../models/user_model.dart';
 
@@ -116,8 +117,14 @@ class AuthRepository {
   // ---- Google OAuth 登录 ----
   Future<UserModel> signInWithGoogle() async {
     try {
-      // 使用 google_sign_in 获取 idToken
-      const webClientId = String.fromEnvironment('GOOGLE_WEB_CLIENT_ID');
+      // 从 .env 读取 Web Client ID（运行时配置，非编译时常量）
+      // 没有 serverClientId 时 Google 返回的 idToken 为 null
+      final webClientId = Env.googleWebClientId;
+      if (webClientId.isEmpty) {
+        throw const AppAuthException(
+          'Google sign-in is not configured. Please contact support.',
+        );
+      }
       final googleSignIn = GoogleSignIn(
         serverClientId: webClientId,
       );
