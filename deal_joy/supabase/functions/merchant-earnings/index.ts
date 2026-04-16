@@ -556,11 +556,17 @@ function handleAccount(merchant: {
   stripe_account_email?: string;
   stripe_account_status?: string;
 }): Response {
-  const isConnected = merchant.stripe_account_status === 'connected';
+  const id = (merchant.stripe_account_id ?? "").trim();
+  const rawStatus = merchant.stripe_account_status ?? "not_connected";
+  // 与 merchant-withdrawal 对齐：无 stripe_account_id 时不得视为已连接，
+  // 否则 DB 清空/失效后客户端仍显示 Connected，而 Refresh/Manage 返回 400。
+  const normalizedStatus =
+    id.length === 0 && rawStatus === "connected" ? "not_connected" : rawStatus;
+  const isConnected = id.length > 0 && normalizedStatus === "connected";
   return jsonResponse({
-    is_connected: isConnected,
-    account_id:     merchant.stripe_account_id ?? null,
+    is_connected:   isConnected,
+    account_id:     id.length > 0 ? id : null,
     account_email:  merchant.stripe_account_email ?? null,
-    account_status: merchant.stripe_account_status ?? 'not_connected',
+    account_status: normalizedStatus,
   });
 }
