@@ -72,6 +72,7 @@ class _AfterSalesTimelinePageState extends ConsumerState<AfterSalesTimelinePage>
           error: error,
           onRetry: () {
             ref.invalidate(afterSalesRequestProvider(widget.args.orderId));
+            ref.invalidate(afterSalesListProvider(widget.args.orderId));
             ref.invalidate(afterSalesListProvider(null));
           },
         ),
@@ -115,6 +116,7 @@ class _AfterSalesTimelinePageState extends ConsumerState<AfterSalesTimelinePage>
     return RefreshIndicator(
       onRefresh: () async {
         ref.invalidate(afterSalesRequestProvider(widget.args.orderId));
+        ref.invalidate(afterSalesListProvider(widget.args.orderId));
         ref.invalidate(afterSalesListProvider(null));
         await ref.read(afterSalesRequestProvider(widget.args.orderId).future);
       },
@@ -191,6 +193,7 @@ class _AfterSalesTimelinePageState extends ConsumerState<AfterSalesTimelinePage>
       final repo = ref.read(afterSalesRepositoryProvider);
       await repo.escalate(requestId);
       ref.invalidate(afterSalesRequestProvider(widget.args.orderId));
+      ref.invalidate(afterSalesListProvider(widget.args.orderId));
       ref.invalidate(afterSalesListProvider(null));
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
