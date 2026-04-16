@@ -17,8 +17,9 @@ final afterSalesOptimisticProvider =
     StateProvider.family<AfterSalesRequestModel?, String>((ref, orderId) => null);
 
 /// 优先使用服务端列表；列表尚无记录时用 [afterSalesOptimisticProvider]
+/// [AutoDispose]：离开页面后释放缓存，再次进入会重新拉取（与后台裁决等外部变更对齐）
 final afterSalesRequestProvider =
-    FutureProvider.family<AfterSalesRequestModel?, String>((ref, orderId) async {
+    AutoDisposeFutureProvider.family<AfterSalesRequestModel?, String>((ref, orderId) async {
   final optimistic = ref.watch(afterSalesOptimisticProvider(orderId));
   final repo = ref.watch(afterSalesRepositoryProvider);
   final fetched = await repo.fetchLatestForOrder(orderId);
@@ -34,7 +35,9 @@ final afterSalesRequestProvider =
   return optimistic;
 });
 
-final afterSalesListProvider = FutureProvider.family<List<AfterSalesRequestModel>, String?>((ref, orderId) {
+/// [AutoDispose]：无监听者时清缓存，避免长期停留在旧状态
+final afterSalesListProvider =
+    AutoDisposeFutureProvider.family<List<AfterSalesRequestModel>, String?>((ref, orderId) {
   return ref.watch(afterSalesRepositoryProvider).fetchRequests(orderId: orderId);
 });
 

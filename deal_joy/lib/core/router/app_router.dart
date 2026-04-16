@@ -57,6 +57,7 @@ import '../../features/welcome/presentation/screens/welcome_splash_screen.dart';
 import '../../features/welcome/presentation/screens/onboarding_screen.dart';
 import '../widgets/main_scaffold.dart';
 import '../widgets/splash_screen.dart';
+import 'app_route_observer.dart';
 import '../../shared/widgets/legal_document_screen.dart';
 
 /// Bridges Riverpod's authStateProvider → GoRouter's refreshListenable.
@@ -89,6 +90,7 @@ final routerProvider = Provider<GoRouter>((ref) {
 
   return GoRouter(
     navigatorKey: rootNavigatorKey,
+    observers: [appRouteObserver],
     // 启动时先进入 /splash（auth loading），再由 redirect 根据登录状态分发
     initialLocation: '/splash',
     refreshListenable: notifier,

@@ -11,6 +11,7 @@ import 'package:intl/intl.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../../core/router/app_route_observer.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/back_or_home_app_bar_leading.dart';
 import '../../../cart/domain/providers/cart_provider.dart';
@@ -588,13 +589,41 @@ class _MeituanOrderBody extends ConsumerStatefulWidget {
   ConsumerState<_MeituanOrderBody> createState() => _MeituanOrderBodyState();
 }
 
-class _MeituanOrderBodyState extends ConsumerState<_MeituanOrderBody> {
+class _MeituanOrderBodyState extends ConsumerState<_MeituanOrderBody> with RouteAware {
   // 每个 deal 下 Unused / Used / Gifted 区块各自展开
   final Map<String, bool> _expandedUnusedByDeal = {};
   final Map<String, bool> _expandedUsedByDeal = {};
   final Map<String, bool> _expandedGiftedByDeal = {};
 
   OrderDetailModel get detail => widget.detail;
+
+  /// 从售后子页返回或后台裁决后：强制失效售后缓存，避免长期显示旧状态
+  void _invalidateAfterSalesForThisOrder() {
+    final oid = widget.orderId;
+    ref.invalidate(afterSalesListProvider(oid));
+    ref.invalidate(afterSalesListProvider(null));
+    ref.invalidate(afterSalesRequestProvider(oid));
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute<dynamic>) {
+      appRouteObserver.subscribe(this, route);
+    }
+  }
+
+  @override
+  void dispose() {
+    appRouteObserver.unsubscribe(this);
+    super.dispose();
+  }
+
+  @override
+  void didPopNext() {
+    _invalidateAfterSalesForThisOrder();
+  }
 
   @override
   Widget build(BuildContext context) {
