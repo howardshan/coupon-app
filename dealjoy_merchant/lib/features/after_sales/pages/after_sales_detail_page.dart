@@ -102,6 +102,13 @@ class _AfterSalesDetailPageState extends ConsumerState<AfterSalesDetailPage> {
       }
     } catch (err) {
       if (!mounted) return;
+      // 服务端可能已写入 merchant_approved 但退款失败返回 502 等；不刷新则仍显示 Approve 导致重复提交 400
+      try {
+        await _refreshAfterAction();
+      } catch (_) {
+        // 同步失败不掩盖原始错误
+      }
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Approve failed: $err')),
       );
@@ -135,6 +142,12 @@ class _AfterSalesDetailPageState extends ConsumerState<AfterSalesDetailPage> {
       }
     } catch (err) {
       if (!mounted) return;
+      try {
+        await _refreshAfterAction();
+      } catch (_) {
+        // 同步失败不掩盖原始错误
+      }
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Reject failed: $err')),
       );
@@ -146,6 +159,8 @@ class _AfterSalesDetailPageState extends ConsumerState<AfterSalesDetailPage> {
   Future<void> _refreshAfterAction() async {
     ref.invalidate(afterSalesDetailProvider(widget.requestId));
     await ref.read(afterSalesListProvider.notifier).refresh();
+    // 等待详情重新拉取，避免仍缓存旧的 pending 与 Approve 按钮
+    await ref.read(afterSalesDetailProvider(widget.requestId).future);
   }
 
   Future<_DecisionInput?> _collectDecisionNote({
