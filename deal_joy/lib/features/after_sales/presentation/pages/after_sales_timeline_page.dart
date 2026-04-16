@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../../core/router/app_route_observer.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../data/models/after_sales_request_model.dart';
@@ -57,8 +58,36 @@ class AfterSalesTimelinePage extends ConsumerStatefulWidget {
   ConsumerState<AfterSalesTimelinePage> createState() => _AfterSalesTimelinePageState();
 }
 
-class _AfterSalesTimelinePageState extends ConsumerState<AfterSalesTimelinePage> {
+class _AfterSalesTimelinePageState extends ConsumerState<AfterSalesTimelinePage> with RouteAware {
   bool _isEscalating = false;
+
+  void _invalidateAfterSalesForOrder() {
+    final oid = widget.args.orderId;
+    ref.invalidate(afterSalesRequestProvider(oid));
+    ref.invalidate(afterSalesListProvider(oid));
+    ref.invalidate(afterSalesListProvider(null));
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute<dynamic>) {
+      appRouteObserver.subscribe(this, route);
+    }
+  }
+
+  @override
+  void dispose() {
+    appRouteObserver.unsubscribe(this);
+    super.dispose();
+  }
+
+  @override
+  void didPopNext() {
+    // 从「提交售后表单」等子路由返回时拉最新状态（含后台平台裁决）
+    _invalidateAfterSalesForOrder();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -72,6 +101,7 @@ class _AfterSalesTimelinePageState extends ConsumerState<AfterSalesTimelinePage>
           error: error,
           onRetry: () {
             ref.invalidate(afterSalesRequestProvider(widget.args.orderId));
+            ref.invalidate(afterSalesListProvider(widget.args.orderId));
             ref.invalidate(afterSalesListProvider(null));
           },
         ),
@@ -115,6 +145,7 @@ class _AfterSalesTimelinePageState extends ConsumerState<AfterSalesTimelinePage>
     return RefreshIndicator(
       onRefresh: () async {
         ref.invalidate(afterSalesRequestProvider(widget.args.orderId));
+        ref.invalidate(afterSalesListProvider(widget.args.orderId));
         ref.invalidate(afterSalesListProvider(null));
         await ref.read(afterSalesRequestProvider(widget.args.orderId).future);
       },
@@ -191,6 +222,7 @@ class _AfterSalesTimelinePageState extends ConsumerState<AfterSalesTimelinePage>
       final repo = ref.read(afterSalesRepositoryProvider);
       await repo.escalate(requestId);
       ref.invalidate(afterSalesRequestProvider(widget.args.orderId));
+      ref.invalidate(afterSalesListProvider(widget.args.orderId));
       ref.invalidate(afterSalesListProvider(null));
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
