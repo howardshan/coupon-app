@@ -34,8 +34,12 @@ class _AfterSalesListPageState extends ConsumerState<AfterSalesListPage>
     // 与 TabBar 当前选中项对齐（默认 index 0 = Action Required）。
     // 全局 [afterSalesStatusFilterProvider] 会跨次进入页面保留；若上次停在 Closed 等 Tab，
     // 再次打开时 Tab 已回到第一项，但 filter 仍为旧值，会导致列表与 Tab 文案不一致。
-    ref.read(afterSalesStatusFilterProvider.notifier).state =
-        _tabs[_tabController.index].filter;
+    // 必须在首帧 build 之后再改 provider，否则 Riverpod 报「building 期间修改 provider」。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(afterSalesStatusFilterProvider.notifier).state =
+          _tabs[_tabController.index].filter;
+    });
     _tabController.addListener(() {
       if (_tabController.indexIsChanging) return;
       final filter = _tabs[_tabController.index].filter;
