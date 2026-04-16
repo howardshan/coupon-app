@@ -460,9 +460,6 @@ async function handleReject(
   if (note.length < 10) {
     return errorResponse("Rejection reason must be at least 10 characters", "invalid_note", 400);
   }
-  if (!attachments.length) {
-    return errorResponse("Attachments required for rejection", "attachments_required", 400);
-  }
 
   const request = await fetchRequest(supabase, requestId);
   if (!request) {
