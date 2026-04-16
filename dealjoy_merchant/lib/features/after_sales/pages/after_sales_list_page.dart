@@ -21,6 +21,11 @@ class _AfterSalesListPageState extends ConsumerState<AfterSalesListPage>
   static const _tabs = [
     _AfterSalesTab(label: 'Action Required', filter: 'pending'),
     _AfterSalesTab(label: 'Escalated', filter: 'awaiting_platform'),
+    // 商家/平台已同意退款但 Stripe 等尚未完成；避免仅 merchant_approved 时三栏都筛不到
+    _AfterSalesTab(
+      label: 'Refund pending',
+      filter: 'merchant_approved,platform_approved',
+    ),
     _AfterSalesTab(
       label: 'Closed',
       filter: 'merchant_rejected,platform_rejected,refunded,closed',
@@ -80,6 +85,7 @@ class _AfterSalesListPageState extends ConsumerState<AfterSalesListPage>
         ],
         bottom: TabBar(
           controller: _tabController,
+          isScrollable: true,
           indicatorColor: const Color(0xFFFF6B35),
           labelColor: const Color(0xFFFF6B35),
           unselectedLabelColor: Colors.grey.shade500,
@@ -414,6 +420,9 @@ class _StatusPill extends StatelessWidget {
         return const Color(0xFFB45309);
       case 'awaiting_platform':
         return const Color(0xFF0F62FE);
+      case 'merchant_approved':
+      case 'platform_approved':
+        return const Color(0xFF7C3AED);
       case 'merchant_rejected':
       case 'platform_rejected':
         return const Color(0xFFB42318);

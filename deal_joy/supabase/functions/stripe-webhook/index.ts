@@ -256,10 +256,52 @@ async function handlePaymentFailed(paymentIntent: Stripe.PaymentIntent): Promise
   console.log(`[payment_intent.payment_failed] 已记录失败 order=${order.id}`);
 }
 
+/**
+ * 从 Stripe refund 列表中解析 order_item_id（metadata）。
+ * Stripe 文档：refunds.data 一般为从新到旧，取第一条带 metadata 的即可覆盖「本次 webhook」对应退款。
+ */
+function parseOrderItemIdFromRefundsList(refunds: Stripe.ApiList<Stripe.Refund> | undefined): {
+  orderItemId: string | null;
+  matchedRefund: Stripe.Refund | null;
+} {
+  if (!refunds?.data?.length) {
+    return { orderItemId: null, matchedRefund: null };
+  }
+  for (const r of refunds.data) {
+    const raw = r.metadata?.order_item_id;
+    if (raw && typeof raw === 'string' && raw.trim() !== '') {
+      return { orderItemId: raw.trim(), matchedRefund: r };
+    }
+  }
+  return { orderItemId: null, matchedRefund: null };
+}
+
+/**
+ * Webhook 事件体里的 Charge 可能未展开完整 refunds；拉取 API 再扫一遍，避免误判进「整单退款」分支。
+ */
+async function resolveRefundOrderItemContext(charge: Stripe.Charge): Promise<{
+  orderItemId: string | null;
+  matchedRefund: Stripe.Refund | null;
+}> {
+  let parsed = parseOrderItemIdFromRefundsList(charge.refunds);
+  if (parsed.orderItemId) return parsed;
+
+  try {
+    const full = await stripe.charges.retrieve(charge.id, {
+      expand: ['refunds.data'],
+    });
+    parsed = parseOrderItemIdFromRefundsList(full.refunds);
+    if (parsed.orderItemId) return parsed;
+  } catch (e) {
+    console.error('[charge.refunded] Stripe charges.retrieve 失败:', e);
+  }
+  return { orderItemId: null, matchedRefund: null };
+}
+
 // ─── 事件处理：charge.refunded ────────────────────────────────────────────────
 // 退款完成（Order V3 per-item 退款模式）：
-//   - 有 order_item_id（来自 refund.metadata）：仅更新对应 order_item 的退款状态
-//   - 无 order_item_id（旧订单兼容）：保持原有整单退款逻辑
+//   - 有 order_item_id（来自 refund.metadata）：仅更新对应 order_item + 单张券
+//   - 无 order_item_id：仅当累计退款覆盖整单金额时才走「整单退款」更新（避免同单部分退误伤其它券）
 // 同时更新 payments 表退款金额和状态
 async function handleChargeRefunded(charge: Stripe.Charge): Promise<void> {
   const chargeId = charge.id;
@@ -280,17 +322,14 @@ async function handleChargeRefunded(charge: Stripe.Charge): Promise<void> {
     return;
   }
 
-  // 从最新的 refund 对象的 metadata 中获取 order_item_id
-  // Stripe charge.refunds 是分页列表，取第一条（最新退款）
-  const latestRefund = charge.refunds?.data?.[0];
-  const orderItemId = latestRefund?.metadata?.order_item_id ?? null;
+  const { orderItemId, matchedRefund } = await resolveRefundOrderItemContext(charge);
 
-  console.log(`[charge.refunded] order_item_id=${orderItemId ?? '无（旧订单兼容模式）'}`);
+  console.log(`[charge.refunded] order_item_id=${orderItemId ?? '无（旧订单兼容或需人工核对）'}`);
 
   // 通过 payment_intent_id 找到订单（无论哪种模式都需要）
   const { data: order, error: orderErr } = await supabase
     .from('orders')
-    .select('id, status')
+    .select('id, status, total_amount')
     .eq('payment_intent_id', paymentIntentId)
     .maybeSingle();
 
@@ -308,8 +347,8 @@ async function handleChargeRefunded(charge: Stripe.Charge): Promise<void> {
 
   if (orderItemId) {
     // ── per-item 退款模式（Order V3）────────────────────────────────────────
-    // 从 refund 对象获取本次退款金额（单条 refund，不是累计金额）
-    const itemRefundAmountCents = latestRefund?.amount ?? 0;
+    // 从匹配到的 refund 对象获取本次退款金额（单条 refund，不是累计金额）
+    const itemRefundAmountCents = matchedRefund?.amount ?? 0;
     const itemRefundAmount = itemRefundAmountCents / 100;
 
     const { error: updateItemErr } = await supabase
@@ -327,38 +366,55 @@ async function handleChargeRefunded(charge: Stripe.Charge): Promise<void> {
       throw new Error(`更新 order_item 失败: ${updateItemErr.message}`);
     }
 
+    // 与 create-refund 对齐：webhook 到达时再确保单张券为 refunded（幂等）
+    const { error: updateCouponErr } = await supabase
+      .from('coupons')
+      .update({ status: 'refunded', updated_at: now })
+      .eq('order_item_id', orderItemId);
+
+    if (updateCouponErr) {
+      console.error('[charge.refunded] 更新单张券 refunded 失败:', updateCouponErr);
+    }
+
     console.log(
       `[charge.refunded] per-item 退款完成 order_item=${orderItemId} refund=${itemRefundAmount}`,
     );
   } else {
-    // ── 旧订单兼容：整单退款模式 ─────────────────────────────────────────────
-    // 更新订单状态为 refunded
-    const { error: updateOrderErr } = await supabase
-      .from('orders')
-      .update({
-        status: 'refunded',
-        stripe_charge_id: chargeId,
-        updated_at: now,
-      })
-      .eq('id', order.id);
+    // ── 旧订单兼容：整单退款模式（仅当累计退款覆盖整单，避免部分退误更新全单券）────────
+    const orderTotal = Number((order as { total_amount?: number }).total_amount ?? 0);
+    const isFullOrderRefund = orderTotal > 0 && refundAmount >= orderTotal - 0.009;
 
-    if (updateOrderErr) {
-      console.error('[charge.refunded] 更新订单状态失败:', updateOrderErr);
-      throw new Error(`更新订单状态失败: ${updateOrderErr.message}`);
+    if (!isFullOrderRefund) {
+      console.warn(
+        `[charge.refunded] 无 order_item_id 且累计退款(${refundAmount}) < 订单总额(${orderTotal})，` +
+          '跳过整单 orders/coupons 更新（避免同单部分退误伤其它券）。请核查 Stripe refund.metadata.order_item_id',
+      );
+    } else {
+      const { error: updateOrderErr } = await supabase
+        .from('orders')
+        .update({
+          status: 'refunded',
+          stripe_charge_id: chargeId,
+          updated_at: now,
+        })
+        .eq('id', order.id);
+
+      if (updateOrderErr) {
+        console.error('[charge.refunded] 更新订单状态失败:', updateOrderErr);
+        throw new Error(`更新订单状态失败: ${updateOrderErr.message}`);
+      }
+
+      const { error: updateCouponErr } = await supabase
+        .from('coupons')
+        .update({ status: 'refunded' })
+        .eq('order_id', order.id);
+
+      if (updateCouponErr) {
+        console.error('[charge.refunded] 更新优惠券状态失败:', updateCouponErr);
+      }
+
+      console.log(`[charge.refunded] 整单退款完成 order=${order.id} refund=${refundAmount}`);
     }
-
-    // 更新该订单下所有优惠券状态为 refunded
-    const { error: updateCouponErr } = await supabase
-      .from('coupons')
-      .update({ status: 'refunded' })
-      .eq('order_id', order.id);
-
-    if (updateCouponErr) {
-      console.error('[charge.refunded] 更新优惠券状态失败:', updateCouponErr);
-      // 非致命，继续更新 payments
-    }
-
-    console.log(`[charge.refunded] 整单退款完成 order=${order.id} refund=${refundAmount}`);
   }
 
   // ── 更新 payments 表退款信息（两种模式都执行）────────────────────────────
@@ -420,7 +476,7 @@ async function handleChargeRefunded(charge: Stripe.Charge): Promise<void> {
         }
 
         const itemRefundAmount = orderItemId
-          ? (latestRefund?.amount ?? 0) / 100
+          ? (matchedRefund?.amount ?? 0) / 100
           : refundAmount;
 
         const { subject, html } = buildC8Email({ refundAmount: itemRefundAmount, cardLast4, dealTitle });
