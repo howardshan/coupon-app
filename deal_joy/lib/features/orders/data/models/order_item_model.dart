@@ -350,6 +350,7 @@ class OrderItemModel {
       merchantStatus: MerchantItemStatus.fromString(
           pick<String>('merchant_status', 'merchantStatus') ?? 'unused'),
       selectedOptions: (json['selected_options'] ?? json['selectedOptions']) as Map<String, dynamic>?,
+      // user-order-detail / 列表 join 应带 created_at；缺失时退化为当前时刻仅作兜底（易掩盖数据问题）
       createdAt: pickDate('created_at', 'createdAt') ?? DateTime.now(),
       // deal 标题：优先 join 嵌套 → camelCase 扁平 → snake_case 扁平
       dealTitle: (dealsObj?['title'] as String?) ??

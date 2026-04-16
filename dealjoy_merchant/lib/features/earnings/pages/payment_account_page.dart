@@ -143,7 +143,8 @@ class _PaymentAccountPageState extends ConsumerState<PaymentAccountPage> {
           ),
         );
       }
-    } on Exception catch (e) {
+    } catch (e) {
+      _invalidateStripeIfUnlinkedError(e);
       if (mounted) _showError(e.toString());
     } finally {
       if (mounted) setState(() => _isRefreshing = false);
@@ -162,10 +163,18 @@ class _PaymentAccountPageState extends ConsumerState<PaymentAccountPage> {
       if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
         if (mounted) _showError('Could not open Stripe Dashboard. Please try again.');
       }
-    } on Exception catch (e) {
+    } catch (e) {
+      _invalidateStripeIfUnlinkedError(e);
       if (mounted) _showError(e.toString());
     } finally {
       if (mounted) setState(() => _isOpeningDashboard = false);
+    }
+  }
+
+  /// 服务端已无 Stripe 账户但本页仍显示已连接时，重拉 merchant-earnings/account
+  void _invalidateStripeIfUnlinkedError(Object e) {
+    if (e.toString().contains('No Stripe account linked')) {
+      ref.invalidate(stripeAccountProvider);
     }
   }
 
@@ -246,16 +255,18 @@ class _PaymentAccountPageState extends ConsumerState<PaymentAccountPage> {
   }
 
   // ----------------------------------------------------------
-  // 断开连接确认对话框（功能保留，Stripe 不支持直接断开）
+  // 说明：应用内无法自行解绑 Stripe，仅作政策与客服引导
   // ----------------------------------------------------------
   Future<void> _showDisconnectConfirm() async {
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Disconnect Stripe'),
+        title: const Text('Unlink Stripe'),
         content: const Text(
-          'To disconnect your Stripe account, please contact our support team. '
-          'Payouts will be paused until a new account is connected.',
+          'This app cannot remove your Stripe Connect link by itself. '
+          'To change or unlink your payout account, contact DealJoy support or complete the process '
+          'in Stripe if your organization uses the Stripe Dashboard.\n\n'
+          'After the link is removed on our side, tap "Refresh Status" to update this screen.',
         ),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         actions: [
@@ -590,7 +601,7 @@ class _ActionButtons extends StatelessWidget {
                   borderRadius: BorderRadius.circular(8),
                 ),
               ),
-              child: const Text('Disconnect Account'),
+              child: const Text('Unlink policy & support'),
             ),
           ),
         ],

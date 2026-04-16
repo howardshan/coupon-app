@@ -255,6 +255,8 @@ serve(async (req: Request) => {
     refundAmount: number | null;
     refundReason: string | null;
     selectedOptions: unknown;
+    /** 行创建时间 ISO 字符串，供客户端 OrderItemModel.createdAt（聚合页按单展示购买时间） */
+    createdAt: string;
   };
 
   let items: OrderItem[] = [];
@@ -277,6 +279,7 @@ serve(async (req: Request) => {
       refund_amount: number | null;
       refund_method: string | null;
       selected_options: unknown;
+      created_at: string;
       deals: {
         id: string;
         title: string;
@@ -339,6 +342,7 @@ serve(async (req: Request) => {
         dealExpiresAt: deal?.expires_at ?? null,
         dealOriginalPrice: deal?.original_price != null ? Number(deal.original_price) : null,
         dealDiscountPrice: deal?.discount_price != null ? Number(deal.discount_price) : null,
+        createdAt: item.created_at ?? (order.created_at as string),
       };
     });
   } else {
@@ -433,6 +437,7 @@ serve(async (req: Request) => {
           order.status === 'refunded' ? Number(order.total_amount ?? 0) : null,
         refundReason: order.refund_reason ?? null,
         selectedOptions: null,
+        createdAt: (order.created_at as string) ?? new Date().toISOString(),
       },
     ];
   }
