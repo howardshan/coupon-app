@@ -5,8 +5,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../earnings/providers/earnings_provider.dart';
+import '../../earnings/services/earnings_service.dart';
+import '../../earnings/widgets/stripe_unlink_status_banner.dart';
 import '../models/brand_earnings_data.dart';
 import '../providers/brand_earnings_provider.dart';
+import '../providers/store_provider.dart';
 
 // =============================================================
 // BrandStripeConnectPage — 品牌 Stripe Connect 页面
@@ -68,6 +72,12 @@ class _BrandStripeConnectPageState
   // 主内容
   // ----------------------------------------------------------
   Widget _buildContent(BrandStripeAccount info) {
+    final store   = ref.watch(storeProvider).valueOrNull;
+    final brand   = ref.watch(stripeUnlinkRequestsBrandProvider);
+    final isOwner = store != null && store.currentRole == 'brand_owner';
+    // 与 Edge 一致：仅 brand owner 可提交品牌维度的解绑申请
+    final canUnlink = info.isConnected && isOwner;
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -80,6 +90,34 @@ class _BrandStripeConnectPageState
           // 账户详情卡片
           _AccountCard(info: info),
           const SizedBox(height: 20),
+
+          // 解绑申请状态
+          brand.when(
+            data:   (items) {
+              if (items.isEmpty) {
+                return const SizedBox.shrink();
+              }
+              return Column(
+                children: [
+                  StripeUnlinkRequestStatusBanner(items: items),
+                  const SizedBox(height: 20),
+                ],
+              );
+            },
+            loading: () => const SizedBox.shrink(),
+            error:   (e, _) {
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: Text(
+                  'Could not load unlink request status. Try again later.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.orange.shade800,
+                  ),
+                ),
+              );
+            },
+          ),
 
           // 操作按钮
           if (info.isConnected) ...[
@@ -107,6 +145,42 @@ class _BrandStripeConnectPageState
                     borderRadius: BorderRadius.circular(8),
                   ),
                 ),
+              ),
+            ),
+            if (canUnlink) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton(
+                  onPressed: _handleRequestBrandUnlink,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF635BFF),
+                    side: const BorderSide(color: Color(0xFF635BFF)),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: const Text('Request to Unlink Stripe'),
+                ),
+              ),
+            ],
+            if (info.isConnected && !isOwner) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Only the brand owner can request to disconnect the brand-level Stripe account.',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey.shade600,
+                  height: 1.3,
+                ),
+              ),
+            ],
+            const SizedBox(height: 8),
+            Center(
+              child: TextButton(
+                onPressed: _showUnlinkingPolicy,
+                child: const Text('How does unlinking work?'),
               ),
             ),
           ] else ...[
@@ -319,6 +393,82 @@ class _BrandStripeConnectPageState
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
+  // 品牌维度解绑：subject_type=brand（仅 brand owner）
+  Future<void> _handleRequestBrandUnlink() async {
+    final existing = ref.read(stripeUnlinkRequestsBrandProvider).valueOrNull;
+    if (existing != null) {
+      if (existing.any((e) => e.status == 'pending')) {
+        _showError('A request is already pending. Please wait for a decision.');
+        return;
+      }
+    }
+
+    final r = await showStripeUnlinkRequestSheet(
+      context,
+      title: 'Request to Unlink Brand Stripe',
+      subtitle: 'We will review your request. The brand owner is notified by email. '
+          'A pending in-flight withdrawal on this store must be completed first.',
+    );
+    if (!mounted) {
+      return;
+    }
+    if (r == null || r.cancel) {
+      return;
+    }
+    try {
+      await ref.read(earningsServiceProvider).submitStripeUnlinkRequest(
+            subjectType:  'brand',
+            requestNote:  r.note,
+          );
+      if (!mounted) {
+        return;
+      }
+      ref.invalidate(brandStripeAccountProvider);
+      ref.invalidate(stripeUnlinkRequestsBrandProvider);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Request submitted. Check your email for next steps.'),
+          backgroundColor: const Color(0xFF4CAF50),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    } on EarningsException catch (e) {
+      if (mounted) {
+        _showError(e.message);
+      }
+    } catch (e) {
+      if (mounted) {
+        _showError(e.toString());
+      }
+    }
+  }
+
+  Future<void> _showUnlinkingPolicy() async {
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Unlinking brand Stripe on DealJoy'),
+        content: const Text(
+          'Only the brand owner can request to disconnect a brand-level Stripe account. '
+          'Requests are reviewed by DealJoy. You will get an email when a decision is made. '
+          'If approved, the platform unlinks the account; then use Refresh Status to sync. '
+          'In-flight withdrawals must finish before a new request can be processed in some cases.',
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('OK'),
+          ),
+        ],
       ),
     );
   }

@@ -11,11 +11,14 @@
 //   reportPeriodTypeProvider      — 对账报表周期类型
 //   reportSelectedMonthProvider   — 对账报表选中月份
 //   reportDataProvider            — 对账报表数据
+//   stripeUnlinkRequestsMerchantProvider — 门店解绑申请列表
+//   stripeUnlinkRequestsBrandProvider    — 品牌解绑申请列表
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/earnings_data.dart';
 import '../services/earnings_service.dart';
+import '../../store/providers/store_provider.dart';
 
 // =============================================================
 // 基础依赖 Provider
@@ -195,6 +198,48 @@ final stripeAccountProvider = FutureProvider<StripeAccountInfo>((ref) async {
 
   final service = ref.read(earningsServiceProvider);
   return service.fetchStripeAccountInfo(merchantIdAsync);
+});
+
+// =============================================================
+// Stripe 解绑申请列表（切换门店后随 storeProvider 重建）
+// =============================================================
+
+/// 单店/门店维度的解绑申请（GET scope=merchant）
+final stripeUnlinkRequestsMerchantProvider =
+    FutureProvider.autoDispose<List<StripeUnlinkRequestItem>>((ref) async {
+  final store = ref.watch(storeProvider);
+  if (store.isLoading || store.hasError) {
+    return [];
+  }
+  final id = store.valueOrNull?.id;
+  if (id == null || id.isEmpty) {
+    return [];
+  }
+  final service = ref.read(earningsServiceProvider);
+  return service.fetchStripeUnlinkRequests('merchant');
+});
+
+/// 品牌维度的解绑申请（GET scope=brand，需品牌管理身份；否则返回空列表避免 403 打断页面）
+final stripeUnlinkRequestsBrandProvider =
+    FutureProvider.autoDispose<List<StripeUnlinkRequestItem>>((ref) async {
+  final store = ref.watch(storeProvider);
+  if (store.isLoading || store.hasError) {
+    return [];
+  }
+  final info = store.valueOrNull;
+  if (info == null || !info.isBrandAdmin) {
+    return [];
+  }
+  final service = ref.read(earningsServiceProvider);
+  try {
+    return service.fetchStripeUnlinkRequests('brand');
+  } on EarningsException catch (e) {
+    final m = e.message;
+    if (m.contains('authorized') || m.contains('brand-level Stripe')) {
+      return [];
+    }
+    rethrow;
+  }
 });
 
 // =============================================================

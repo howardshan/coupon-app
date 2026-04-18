@@ -4,8 +4,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../store/models/store_info.dart';
+import '../../store/providers/store_provider.dart';
 import '../models/earnings_data.dart';
 import '../providers/earnings_provider.dart';
+import '../services/earnings_service.dart';
+import '../widgets/stripe_unlink_status_banner.dart';
 
 // =============================================================
 // PaymentAccountPage — 收款账户页（ConsumerStatefulWidget）
@@ -67,6 +71,10 @@ class _PaymentAccountPageState extends ConsumerState<PaymentAccountPage> {
   // 主内容
   // ----------------------------------------------------------
   Widget _buildContent(StripeAccountInfo info) {
+    final store         = ref.watch(storeProvider).valueOrNull;
+    final canUnlink     = _canRequestMerchantUnlink(store);
+    final unlinkAsync   = ref.watch(stripeUnlinkRequestsMerchantProvider);
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -78,15 +86,55 @@ class _PaymentAccountPageState extends ConsumerState<PaymentAccountPage> {
           _AccountStatusCard(info: info),
           const SizedBox(height: 20),
 
+          unlinkAsync.when(
+            data:   (items) {
+              if (items.isEmpty) {
+                return const SizedBox.shrink();
+              }
+              return Column(
+                children: [
+                  StripeUnlinkRequestStatusBanner(items: items),
+                  const SizedBox(height: 20),
+                ],
+              );
+            },
+            loading: () => const SizedBox.shrink(),
+            error:   (e, _) {
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: Text(
+                  'Could not load unlink request status. Try again later.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.orange.shade800,
+                  ),
+                ),
+              );
+            },
+          ),
+
           // 操作按钮区
           _ActionButtons(
             isConnected:     info.isConnected,
             isConnecting:    _isConnecting,
             isOpeningDashboard: _isOpeningDashboard,
+            canRequestUnlink:  info.isConnected && canUnlink,
             onConnectTap:    _handleConnect,
             onManageTap:     _handleManage,
-            onDisconnectTap: () => _showDisconnectConfirm(),
+            onRequestUnlinkTap: _handleRequestUnlink,
+            onUnlinkingPolicyTap: _showUnlinkingPolicyDialog,
           ),
+          if (info.isConnected && !canUnlink) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Only the store owner or brand owner can submit a Stripe disconnect request for this store.',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey.shade600,
+                height: 1.3,
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
 
           // Refresh Status 按钮（onboarding 完成后点击同步）
@@ -178,6 +226,91 @@ class _PaymentAccountPageState extends ConsumerState<PaymentAccountPage> {
     }
   }
 
+  // 与 Edge 一致：仅 store_owner / brand_owner 可提交
+  static bool _canRequestMerchantUnlink(StoreInfo? s) {
+    if (s == null) {
+      return false;
+    }
+    return s.currentRole == 'store_owner' || s.currentRole == 'brand_owner';
+  }
+
+  // 提交解绑申请（单店/门店维度 subject_type=merchant）
+  Future<void> _handleRequestUnlink() async {
+    final existing = ref.read(stripeUnlinkRequestsMerchantProvider).valueOrNull;
+    if (existing != null) {
+      final p = existing.where((e) => e.status == 'pending').isNotEmpty;
+      if (p) {
+        _showError('A request is already pending. Please wait for a decision.');
+        return;
+      }
+    }
+
+    final r = await showStripeUnlinkRequestSheet(
+      context,
+      title: 'Request to Unlink Stripe',
+      subtitle: 'We will review your request. You will get an email when there is an update. '
+          'A pending in-flight withdrawal must be completed first.',
+    );
+    if (!mounted) {
+      return;
+    }
+    if (r == null || r.cancel) {
+      return;
+    }
+
+    try {
+      final service = ref.read(earningsServiceProvider);
+      await service.submitStripeUnlinkRequest(
+        subjectType:  'merchant',
+        requestNote:  r.note,
+      );
+      if (!mounted) {
+        return;
+      }
+      ref.invalidate(stripeAccountProvider);
+      ref.invalidate(stripeUnlinkRequestsMerchantProvider);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Request submitted. Check your email for next steps.'),
+          backgroundColor: const Color(0xFF4CAF50),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    } on EarningsException catch (e) {
+      if (mounted) {
+        _showError(e.message);
+      }
+    } catch (e) {
+      if (mounted) {
+        _showError(e.toString());
+      }
+    }
+  }
+
+  Future<void> _showUnlinkingPolicyDialog() async {
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Unlinking Stripe on DealJoy'),
+        content: const Text(
+          'Disconnecting a payout account is a manual, reviewed process. '
+          'If your store is under a brand-level Stripe account, a brand owner must request '
+          'disconnect on the brand Stripe page. If you are not the owner, ask your owner to submit. '
+          'After our team processes an approved request, use Refresh Status on this screen to sync.',
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ----------------------------------------------------------
   // 加载中骨架屏
   // ----------------------------------------------------------
@@ -254,30 +387,6 @@ class _PaymentAccountPageState extends ConsumerState<PaymentAccountPage> {
     );
   }
 
-  // ----------------------------------------------------------
-  // 说明：应用内无法自行解绑 Stripe，仅作政策与客服引导
-  // ----------------------------------------------------------
-  Future<void> _showDisconnectConfirm() async {
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Unlink Stripe'),
-        content: const Text(
-          'This app cannot remove your Stripe Connect link by itself. '
-          'To change or unlink your payout account, contact DealJoy support or complete the process '
-          'in Stripe if your organization uses the Stripe Dashboard.\n\n'
-          'After the link is removed on our side, tap "Refresh Status" to update this screen.',
-        ),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 // =============================================================
@@ -544,23 +653,28 @@ class _ActionButtons extends StatelessWidget {
   final bool isConnected;
   final bool isConnecting;
   final bool isOpeningDashboard;
+  /// 当前用户是否可看到「申请解绑」主按钮
+  final bool canRequestUnlink;
   final VoidCallback onConnectTap;
   final VoidCallback onManageTap;
-  final VoidCallback onDisconnectTap;
+  final VoidCallback onRequestUnlinkTap;
+  final VoidCallback onUnlinkingPolicyTap;
 
   const _ActionButtons({
     required this.isConnected,
     required this.isConnecting,
     required this.isOpeningDashboard,
+    required this.canRequestUnlink,
     required this.onConnectTap,
     required this.onManageTap,
-    required this.onDisconnectTap,
+    required this.onRequestUnlinkTap,
+    required this.onUnlinkingPolicyTap,
   });
 
   @override
   Widget build(BuildContext context) {
     if (isConnected) {
-      // 已连接：显示 Manage + Disconnect
+      // 已连接：Manage + 解绑/政策
       return Column(
         children: [
           SizedBox(
@@ -588,20 +702,29 @@ class _ActionButtons extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton(
-              onPressed: onDisconnectTap,
-              style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.grey.shade600,
-                side: BorderSide(color: Colors.grey.shade300),
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
+          if (canRequestUnlink) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                onPressed: onRequestUnlinkTap,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF635BFF),
+                  side: const BorderSide(color: Color(0xFF635BFF)),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                 ),
+                child: const Text('Request to Unlink Stripe'),
               ),
-              child: const Text('Unlink policy & support'),
+            ),
+          ],
+          const SizedBox(height: 8),
+          Center(
+            child: TextButton(
+              onPressed: onUnlinkingPolicyTap,
+              child: const Text('How does unlinking work?'),
             ),
           ),
         ],
