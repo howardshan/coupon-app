@@ -1,9 +1,9 @@
 # Stripe Connect 解绑申请 v1 规格
 
-**文档版本**: v1.2  
+**文档版本**: v1.3  
 **创建日期**: 2026-04-08  
 **受众**: 产品、研发（DealJoy 全栈：Admin Next.js、商家端 Flutter、Supabase）  
-**状态**: Sprint 1–2 已按清单落地；Sprint 3+ 待实现  
+**状态**: Sprint 1–3 已按清单落地；Sprint 4+ 待实现  
 
 ---
 
@@ -14,6 +14,7 @@
 | v1.0 | 2026-04-08 | 初版：与产品确认口径一致，附实现清单（对齐仓库现成模式） |
 | v1.1 | 2026-04-08 | 实现清单拆为 Sprint 1–5，保留与原 §5.1–5.7 条目的映射 |
 | v1.2 | 2026-04-08 | 同步 Sprint 1、Sprint 2 已交付内容：迁移路径、Edge 路由、M19 模板、预检与 API 说明 |
+| v1.3 | 2026-04-08 | Sprint 3 落地：Admin 审批、解绑、M20/M21、审计 event、商家详情卡；`20260419100000` |
 
 ---
 
@@ -135,7 +136,7 @@
 | ------ | ---- | ---- | ---------- |
 | **Sprint 1** | 落库 + 邮件类型 + RLS，无业务 UI | 无 | §5.1 — **已完成**（见下「Sprint 1 落地」） |
 | **Sprint 2** | 商家可提交申请 +「已提交」邮件 + 预检最小集 | Sprint 1 | §5.2（最小）、§5.3 提交侧、§5.4 之一 — **已完成**（见下「Sprint 2 落地」） |
-| **Sprint 3** | 管理端审批、通过时平台库解绑、拒审理由、两封结果邮件、审计 | Sprint 1–2 | §5.3 解绑、§5.4 余下、§5.5（不含 All） |
+| **Sprint 3** | 管理端审批、通过时平台库解绑、拒审理由、两封结果邮件、审计 | Sprint 1–2 | §5.3 解绑、§5.4 余下、§5.5（不含 All）— **已完成** |
 | **Sprint 4** | 商家端 UI + 商家详情侧栏卡 + 品牌页入口（若需要） | Sprint 2（提交接口稳定） | §5.6 |
 | **Sprint 5** | 全链路测试、预检补全、可选 All Tab、上线清单 | Sprint 1–4 | §5.2 补全、§5.5 All、§5.7 |
 
@@ -194,16 +195,16 @@
 
 **目标**：审批中心可处理；通过则**仅平台库**解绑；拒绝必填理由；三封邮件闭环后两封。
 
-- [ ] **解绑纯函数/共享逻辑**（原 §5.3）：`UPDATE merchants` / `brands` 清 `stripe_account_id`、置 `not_connected`、清关联展示字段/ `merchant_bank_accounts` 行（与 `merchant-withdrawal` 现网一致）；**不**调 Stripe 删户；**幂等**、可重入。
-- [ ] **Server Actions**：`approveStripeUnlink` / `rejectStripeUnlink`；拒绝时 `rejected_reason` 非空校验；通过时先锁申请行再解绑、写 `unbind_applied_at` / `status`。
-- [ ] **邮件 2/3、3/3**：`...-approved.ts`、`...-rejected.ts`；`referenceId` 为 `request_id`（原 §5.4）。
-- [ ] **Admin 审批中心**（原 §5.5，**不含 All Tab**）：新 Tab + 抽屉（类 `AfterSalesDrawer`）；`page.tsx` 拉 `pending`/`history`；`approvals-page-client` 的 `TABS`、计数、`TYPE_COLORS/TYPE_LABELS`。
-- [ ] **商家详情侧栏**（原 §5.5）：只读卡 + `Review in Approvals Center →` 深链到 `?tab=...`。
-- [ ] **审计**（§3.8）：`merchant_activity_events` 或等效；记录创建/通过/拒绝/解绑执行结果。
+- [x] **解绑纯函数/共享逻辑**：`admin/lib/stripe-unlink-platform.ts` 中 `applyPlatformStripeUnlink`（`merchant`：清该店 `merchants` + 删 `merchant_bank_accounts`；`brand`：清 `brands`、同 `brand_id` 下全部门店 Stripe 展示字段、逐店删 `merchant_bank_accounts`）。**不**调 Stripe 删户；可重复执行（再清一次空值）。
+- [x] **Server Actions**：`admin/app/actions/stripe-unlink-approvals.ts` — `approveStripeUnlinkRequest` / `rejectStripeUnlinkRequest`；拒审理由 **≥10 字**；通过时先解绑再 `UPDATE` 申请行 `status/approved` + `unbind_applied_at`；`service_role` 写库（绕过 RLS）。已批准且已 `unbind_applied_at` 的再次调用直接返回（幂等）。
+- [x] **邮件 M20 / M21**：`admin/lib/email-templates/merchant/stripe-unlink-approved.ts`、`stripe-unlink-rejected.ts`；`sendAdminEmail`，`emailCode` M20/M21，`referenceId` = 申请 `id`。
+- [x] **Admin 审批中心（不含 All 合并）**：`approvals/page.tsx` 拉取列表 + `fetchCounts` 含 `stripe_connect_unlink_requests` pending；`approvals-page-client` 新 Tab **Stripe Unlink**、Pending/History、列表行与 `StripeUnlinkDrawer`（通过 / 拒审表单）。
+- [x] **商家详情侧栏**：`merchants/[id]/page.tsx` 只读卡 + 链至 `/approvals?tab=stripe-unlink` 或 `…&queue=history`；按本店 `merchant` 与（若有）`brand` 两条 subject 取**较新**一条申请。
+- [x] **审计**：迁移 `20260419100000_merchant_activity_stripe_unlink.sql` 扩展 `event_type`：`stripe_unlink_approved` / `stripe_unlink_rejected`；`logMerchantActivityServer` 在通过/拒绝后写入；`merchant-admin-timeline` 英文标题。
 
 **对应原清单**：**§5.3 解绑执行**、**§5.4** 余下、**§5.5**（先不做 All 合并）。
 
-**交付物**：管理员在 Staging 可完整走通通过/拒绝；库字段与申请单状态一致。
+**交付物**：部署顺序：先 `db push`（含 `20260419100000`），再部署 Admin。管理员在 Staging 可走通通过/拒审与邮件、商家详情时间线出现新事件。
 
 ---
 
