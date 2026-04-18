@@ -477,6 +477,64 @@ class StripeAccountInfo {
 }
 
 // =============================================================
+// StripeUnlinkRequestItem — 解绑 Stripe Connect 申请记录
+// 对应 GET merchant-withdrawal/stripe-unlink?scope= 返回的 items
+// =============================================================
+class StripeUnlinkRequestItem {
+  final String id;
+  /// 'pending' | 'approved' | 'rejected'
+  final String status;
+  final String? requestNote;
+  final String? reasonCode;
+  final String? rejectedReason;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+  final DateTime? reviewedAt;
+  final DateTime? unbindAppliedAt;
+  final String? subjectType;
+  final String? subjectId;
+  final String? merchantId;
+
+  const StripeUnlinkRequestItem({
+    required this.id,
+    required this.status,
+    this.requestNote,
+    this.reasonCode,
+    this.rejectedReason,
+    this.createdAt,
+    this.updatedAt,
+    this.reviewedAt,
+    this.unbindAppliedAt,
+    this.subjectType,
+    this.subjectId,
+    this.merchantId,
+  });
+
+  factory StripeUnlinkRequestItem.fromJson(Map<String, dynamic> json) {
+    return StripeUnlinkRequestItem(
+      id:             json['id'] as String? ?? '',
+      status:         json['status'] as String? ?? '',
+      requestNote:    json['request_note'] as String?,
+      reasonCode:     json['reason_code'] as String?,
+      rejectedReason: json['rejected_reason'] as String?,
+      createdAt:      _tryParseTime(json['created_at']),
+      updatedAt:      _tryParseTime(json['updated_at']),
+      reviewedAt:     _tryParseTime(json['reviewed_at']),
+      unbindAppliedAt: _tryParseTime(json['unbind_applied_at']),
+      subjectType:    json['subject_type'] as String?,
+      subjectId:      json['subject_id'] as String?,
+      merchantId:     json['merchant_id'] as String?,
+    );
+  }
+
+  static DateTime? _tryParseTime(dynamic v) {
+    if (v == null) return null;
+    if (v is String) return DateTime.tryParse(v);
+    return null;
+  }
+}
+
+// =============================================================
 // TransactionsFilter — 交易明细筛选条件
 // =============================================================
 class TransactionsFilter {

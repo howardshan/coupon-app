@@ -414,6 +414,120 @@ class EarningsService {
     return url;
   }
 
+  // =============================================================
+  // Stripe 解绑申请（GET/POST merchant-withdrawal/stripe-unlink...）
+  // =============================================================
+
+  /// 拉取当前 scope（merchant|brand）下最近若干条解绑申请
+  Future<List<StripeUnlinkRequestItem>> fetchStripeUnlinkRequests(
+    String scope,
+  ) async {
+    if (scope != 'merchant' && scope != 'brand') {
+      throw const EarningsException(
+        code:    'invalid_scope',
+        message: 'scope must be merchant or brand',
+      );
+    }
+    try {
+      final q = Uri.encodeQueryComponent(scope);
+      final response = await _supabase.functions.invoke(
+        '$_withdrawalFn/stripe-unlink?scope=$q',
+        method: HttpMethod.get,
+        headers: StoreService.merchantIdHeaders,
+      );
+      final data = _parseResponse(response);
+      _throwIfEdgeErrorMap(data);
+      final list = data['items'] as List<dynamic>? ?? [];
+      return list
+          .map((e) => StripeUnlinkRequestItem.fromJson(
+                e as Map<String, dynamic>,
+              ))
+          .toList();
+    } on EarningsException {
+      rethrow;
+    } on FunctionException catch (e) {
+      final body = _tryParseBody(e.details);
+      if (body != null) {
+        _throwIfEdgeErrorMap(body);
+      }
+      throw EarningsException(
+        code:    'stripe_unlink_list',
+        message: 'Failed to load Stripe unlink requests.',
+      );
+    } catch (e) {
+      if (e is EarningsException) rethrow;
+      throw const EarningsException(
+        code:    'network_error',
+        message: 'Network error. Please check your connection.',
+      );
+    }
+  }
+
+  /// 提交解绑申请（M19 邮件等由服务端处理）
+  Future<StripeUnlinkRequestItem> submitStripeUnlinkRequest({
+    required String subjectType,
+    String? requestNote,
+  }) async {
+    if (subjectType != 'merchant' && subjectType != 'brand') {
+      throw const EarningsException(
+        code:    'invalid_subject',
+        message: 'subject_type must be merchant or brand',
+      );
+    }
+    final body = <String, dynamic>{
+      'subject_type': subjectType,
+    };
+    final n = requestNote?.trim() ?? '';
+    if (n.isNotEmpty) {
+      body['request_note'] = n;
+    }
+    try {
+      final response = await _supabase.functions.invoke(
+        '$_withdrawalFn/stripe-unlink/request',
+        method: HttpMethod.post,
+        headers: StoreService.merchantIdHeaders,
+        body: body,
+      );
+      final data = _parseResponse(response);
+      _throwIfEdgeErrorMap(data);
+      final req = data['request'] as Map<String, dynamic>?;
+      if (req == null) {
+        throw const EarningsException(
+          code:    'stripe_unlink_submit',
+          message: 'Invalid response from server.',
+        );
+      }
+      return StripeUnlinkRequestItem.fromJson(req);
+    } on EarningsException {
+      rethrow;
+    } on FunctionException catch (e) {
+      final b = _tryParseBody(e.details);
+      if (b != null) {
+        _throwIfEdgeErrorMap(b);
+      }
+      throw const EarningsException(
+        code:    'stripe_unlink_submit',
+        message: 'Failed to submit Stripe unlink request.',
+      );
+    } catch (e) {
+      if (e is EarningsException) rethrow;
+      throw const EarningsException(
+        code:    'network_error',
+        message: 'Network error. Please check your connection.',
+      );
+    }
+  }
+
+  /// Edge 以 `{ error: string }` 返回时，用 error 作为可读信息
+  void _throwIfEdgeErrorMap(Map<String, dynamic> data) {
+    if (data['error'] == null) return;
+    final raw = data['error'];
+    final msg = raw is String
+        ? raw
+        : (data['message'] as String? ?? 'Request failed');
+    throw EarningsException(code: 'request_failed', message: msg);
+  }
+
   /// 更新提现设置
   Future<void> updateWithdrawalSettings({
     bool? autoEnabled,
