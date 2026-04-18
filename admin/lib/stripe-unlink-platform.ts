@@ -13,6 +13,24 @@ export type StripeUnlinkSubject = {
   merchantId: string
 }
 
+/**
+ * 删除 merchant_bank_accounts 行之前，解除 withdrawals.bank_account_id 外键引用，
+ * 否则 PostgreSQL 会报 withdrawals_bank_account_id_fkey 违反。
+ */
+async function clearWithdrawalBankAccountRefs(
+  admin: SupabaseClient,
+  merchantIds: string[]
+): Promise<void> {
+  if (merchantIds.length === 0) return
+  const { error } = await admin
+    .from('withdrawals')
+    .update({ bank_account_id: null })
+    .in('merchant_id', merchantIds)
+  if (error) {
+    throw new Error(`Failed to detach withdrawals bank_account refs: ${error.message}`)
+  }
+}
+
 export async function applyPlatformStripeUnlink(
   admin: SupabaseClient,
   sub: StripeUnlinkSubject
@@ -30,6 +48,8 @@ export async function applyPlatformStripeUnlink(
       })
       .eq('id', sub.merchantId)
     if (u1) throw new Error(`Failed to clear merchant Stripe: ${u1.message}`)
+
+    await clearWithdrawalBankAccountRefs(admin, [sub.merchantId])
 
     const { error: d1 } = await admin
       .from('merchant_bank_accounts')
@@ -75,8 +95,10 @@ export async function applyPlatformStripeUnlink(
     .eq('brand_id', sub.subjectId)
   if (sErr) throw new Error(`Failed to list brand stores: ${sErr.message}`)
 
-  for (const row of stores ?? []) {
-    const mid = (row as { id: string }).id
+  const storeIds = (stores ?? []).map((row) => (row as { id: string }).id)
+  await clearWithdrawalBankAccountRefs(admin, storeIds)
+
+  for (const mid of storeIds) {
     const { error: d2 } = await admin.from('merchant_bank_accounts').delete().eq('merchant_id', mid)
     if (d2) throw new Error(`Failed to clear bank for store ${mid}: ${d2.message}`)
   }
