@@ -15,12 +15,13 @@
 // Deno.core.runMicrotasks() is not supported（见 Supabase 文档中 Stripe + esm.sh 排错说明）
 import Stripe from "npm:stripe@14.25.0";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { resolveAuth, requirePermission } from "../_shared/auth.ts";
+import { resolveAuth, requirePermission, type AuthResult } from "../_shared/auth.ts";
 import { sendEmail, getAdminRecipients } from "../_shared/email.ts";
 import { buildM14Email } from "../_shared/email-templates/merchant/withdrawal-request.ts";
 import { buildM15Email } from "../_shared/email-templates/merchant/withdrawal-completed.ts";
 import { buildM18Email } from "../_shared/email-templates/merchant/withdrawal-failed.ts";
 import { buildA7Email } from "../_shared/email-templates/admin/withdrawal-pending.ts";
+import { buildM19Email } from "../_shared/email-templates/merchant/stripe-unlink-submitted.ts";
 
 // Stripe 客户端（与 stripe-webhook 保持相同初始化方式）
 const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") ?? "", {
@@ -219,6 +220,30 @@ Deno.serve(async (req: Request) => {
     // -------------------------------------------------------
     if (req.method === "GET" && subRoute === "settings") {
       return await handleGetSettings(supabaseAdmin, merchantId);
+    }
+
+    // -------------------------------------------------------
+    // GET /stripe-unlink — 解绑申请列表（当前主体，RLS，供商家端拉状态）
+    // -------------------------------------------------------
+    if (req.method === "GET" && subRoute === "stripe-unlink" && pathParts[1] === undefined) {
+      return await handleGetStripeUnlinkRequests(supabaseUser, url, auth);
+    }
+
+    // -------------------------------------------------------
+    // POST /stripe-unlink/request — 创建解绑申请（M19 邮件）
+    // -------------------------------------------------------
+    if (req.method === "POST" && subRoute === "stripe-unlink" && pathParts[1] === "request") {
+      if (auth.role !== "store_owner" && auth.role !== "brand_owner") {
+        return errorResponse("Only the store or brand owner can request Stripe account unlinking.", 403);
+      }
+      const body = await req.json() as Record<string, unknown>;
+      return await handlePostStripeUnlinkRequest(
+        supabaseUser,
+        supabaseAdmin,
+        user,
+        auth,
+        body
+      );
     }
 
     return errorResponse("Not found", 404);
@@ -1006,4 +1031,212 @@ async function handleGetSettings(
   };
 
   return jsonResponse({ settings });
+}
+
+// =============================================================
+// GET /stripe-unlink — 最近若干条解绑申请（按 scope=merchant|brand 过滤 subject）
+// =============================================================
+async function handleGetStripeUnlinkRequests(
+  supabaseUser: ReturnType<typeof createClient>,
+  url: URL,
+  auth: AuthResult
+): Promise<Response> {
+  const rawScope = (url.searchParams.get("scope") ?? "merchant").toLowerCase();
+  if (rawScope !== "merchant" && rawScope !== "brand") {
+    return errorResponse("Invalid scope. Use scope=merchant or scope=brand.", 400);
+  }
+
+  let subjectType: "merchant" | "brand";
+  let subjectId: string;
+
+  if (rawScope === "merchant") {
+    subjectType = "merchant";
+    subjectId = auth.merchantId;
+  } else {
+    if (!auth.isBrandAdmin || !auth.brandId) {
+      return errorResponse("You are not authorized to view brand-level Stripe unlink requests.", 403);
+    }
+    subjectType = "brand";
+    subjectId = auth.brandId;
+  }
+
+  const { data, error } = await supabaseUser
+    .from("stripe_connect_unlink_requests")
+    .select(
+      "id, status, request_note, reason_code, rejected_reason, created_at, updated_at, reviewed_at, unbind_applied_at, subject_type, subject_id, merchant_id"
+    )
+    .eq("subject_type", subjectType)
+    .eq("subject_id", subjectId)
+    .order("created_at", { ascending: false })
+    .limit(20);
+
+  if (error) {
+    console.error("[stripe-unlink] list failed", error.message);
+    return errorResponse("Failed to load requests", 500);
+  }
+
+  return jsonResponse({ items: data ?? [] });
+}
+
+// =============================================================
+// POST /stripe-unlink/request — 创建解绑申请（M19、RLS 写入）
+// Sprint 2 预检：pending 唯一（DB+409）、有 Stripe 可解绑、无在途提现（当前门店）；
+// TODO：负余额/争议/待结算等，见产品规格
+// =============================================================
+async function handlePostStripeUnlinkRequest(
+  supabaseUser: ReturnType<typeof createClient>,
+  admin: ReturnType<typeof createClient>,
+  // deno-lint-ignore no-explicit-any
+  user: any,
+  auth: AuthResult,
+  body: Record<string, unknown>
+): Promise<Response> {
+  const stRaw = String(body?.subject_type ?? "merchant").toLowerCase();
+  if (stRaw !== "merchant" && stRaw !== "brand") {
+    return errorResponse("subject_type must be merchant or brand", 400);
+  }
+  const subjectType = stRaw as "merchant" | "brand";
+
+  const requestNote = typeof body.request_note === "string"
+    ? body.request_note.trim().slice(0, 2000)
+    : null;
+
+  const { data: mRow, error: mErr } = await admin
+    .from("merchants")
+    .select("id, name, brand_id, stripe_account_id, stripe_account_status")
+    .eq("id", auth.merchantId)
+    .single();
+
+  if (mErr || !mRow) {
+    return errorResponse("Merchant not found", 404);
+  }
+
+  if (subjectType === "brand") {
+    if (auth.role !== "brand_owner") {
+      return errorResponse("Only the brand owner can request brand-level Stripe unlinking.", 403);
+    }
+    if (!auth.brandId) {
+      return errorResponse("This account is not linked to a brand.", 400);
+    }
+    if ((mRow as { brand_id?: string | null }).brand_id !== auth.brandId) {
+      return errorResponse("Current store does not belong to your brand.", 403);
+    }
+    const { data: bRow, error: bErr } = await admin
+      .from("brands")
+      .select("id, name, stripe_account_id, stripe_account_status")
+      .eq("id", auth.brandId)
+      .single();
+    if (bErr || !bRow) {
+      return errorResponse("Brand not found", 404);
+    }
+    const bStripe = (bRow as { stripe_account_id?: string | null }).stripe_account_id;
+    if (!bStripe) {
+      return errorResponse("No brand Stripe account is connected.", 400);
+    }
+  } else {
+    const mStripe = (mRow as { stripe_account_id?: string | null }).stripe_account_id;
+    if (!mStripe) {
+      const bId = (mRow as { brand_id?: string | null }).brand_id;
+      if (bId) {
+        const { data: bCheck } = await admin
+          .from("brands")
+          .select("stripe_account_id")
+          .eq("id", bId)
+          .maybeSingle();
+        if (bCheck?.stripe_account_id) {
+          return errorResponse(
+            "Payouts are connected at the brand level. Please ask a brand owner to request unlink, or use brand management.",
+            400
+          );
+        }
+      }
+      return errorResponse("No Stripe account is connected for this store.", 400);
+    }
+  }
+
+  const { data: pendingW } = await admin
+    .from("withdrawals")
+    .select("id")
+    .eq("merchant_id", auth.merchantId)
+    .in("status", ["pending", "processing"])
+    .maybeSingle();
+  if (pendingW) {
+    return errorResponse("You have a pending or in-flight withdrawal. Please wait for it to complete first.", 409);
+  }
+
+  // TODO(Sprint5): 争议 / Stripe balance / 在途分账 等，见产品规格 5.2
+
+  const subjectId = subjectType === "merchant" ? String(mRow.id) : String(auth.brandId);
+
+  const { data: inserted, error: insErr } = await supabaseUser
+    .from("stripe_connect_unlink_requests")
+    .insert({
+      subject_type:         subjectType,
+      subject_id:            subjectId,
+      merchant_id:          String(mRow.id),
+      requested_by_user_id:  user.id,
+      status:                "pending",
+      request_note:          requestNote,
+    })
+    .select("id, status, created_at, subject_type, subject_id, request_note, merchant_id")
+    .single();
+
+  if (insErr) {
+    if (insErr.code === "23505" || insErr.message?.includes("unique") || insErr.message?.includes("duplicate")) {
+      return errorResponse(
+        "A pending Stripe unlink request already exists for this account. Please wait for a decision.",
+        409
+      );
+    }
+    console.error("[stripe-unlink] insert", insErr.message, insErr);
+    return errorResponse("Could not create request. Please try again.", 500);
+  }
+
+  if (inserted?.id) {
+    (async () => {
+      try {
+        const { data: urow } = await admin
+          .from("users")
+          .select("email, full_name")
+          .eq("id", user.id)
+          .maybeSingle();
+        const to = (urow?.email as string | null) || null;
+        if (!to) {
+          return;
+        }
+        const addresseeName =
+          ((urow?.full_name as string | null)?.trim() || "there").split(/\s+/)[0] || "there";
+        let scopeLabel: string;
+        if (subjectType === "brand") {
+          const { data: bName } = await admin
+            .from("brands")
+            .select("name")
+            .eq("id", auth.brandId!)
+            .single();
+          scopeLabel = bName ? `Brand: ${String(bName.name)}` : "Brand";
+        } else {
+          scopeLabel = String((mRow as { name?: string }).name || "This store");
+        }
+        const { subject: m19Subject, html: m19Html } = buildM19Email({
+          addresseeName,
+          requestId: inserted.id,
+          scopeLabel,
+          requestNote:       requestNote ?? undefined,
+        });
+        await sendEmail(admin, {
+          to: to,
+          subject: m19Subject,
+          htmlBody: m19Html,
+          emailCode: "M19",
+          referenceId: inserted.id,
+          recipientType: "merchant",
+          merchantId: String(mRow.id),
+        });
+      } catch (e) {
+        console.warn("[stripe-unlink] M19 email failed", e);
+      }
+    })();
+  }
+
+  return jsonResponse({ request: inserted }, 201);
 }
