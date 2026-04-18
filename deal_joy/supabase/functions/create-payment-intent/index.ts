@@ -374,10 +374,11 @@ Deno.serve(async (req) => {
       return d?.merchant_id;
     }).filter(Boolean))] as string[];
 
-    // 查询 merchants 的 metro_area、stripe_account_id、commission_rate
+    // 查询 merchants 的 city、metro_area、stripe_account_id、commission_rate
+    // city 是税率查询的主字段（通过 city_metro_map 映射到 metro），metro_area 作为 fallback
     const { data: merchantsData } = await supabase
       .from('merchants')
-      .select('id, metro_area, stripe_account_id, stripe_account_status, commission_rate')
+      .select('id, city, metro_area, stripe_account_id, stripe_account_status, commission_rate')
       .in('id', merchantIds);
 
     // 查询全局 commission_rate（兜底，默认 15%）
@@ -388,14 +389,15 @@ Deno.serve(async (req) => {
       .single();
     const globalCommissionRate = Number(globalConfig?.commission_rate ?? 0.15);
 
-    // 构建 merchantId → metro_area / stripe_account_id / commission_rate 映射
-    const merchantMetroMap = new Map<string, string>();
+    // 构建 merchantId → 各字段映射
+    const merchantCityMap = new Map<string, string>();                 // 商家所在城市（优先）
+    const merchantMetroMap = new Map<string, string>();                // 商家所在 metro（fallback）
     const merchantConnectMap = new Map<string, string | null>();       // stripe_account_id
     const merchantCommissionRateMap = new Map<string, number>();       // 有效 commission_rate
     for (const m of (merchantsData ?? [])) {
+      if (m.city) merchantCityMap.set(m.id, m.city);
       if (m.metro_area) merchantMetroMap.set(m.id, m.metro_area);
-      // 只有 stripe_account_status === 'connected' 的账户才路由，避免付款分账到未完成入驻的子账户
-      merchantConnectMap.set(m.id, m.stripe_account_status === 'connected' ? (m.stripe_account_id ?? null) : null);
+      merchantConnectMap.set(m.id, m.stripe_account_id ?? null);
       // 商家专属费率优先；NULL 则用全局默认
       merchantCommissionRateMap.set(
         m.id,
@@ -403,28 +405,62 @@ Deno.serve(async (req) => {
       );
     }
 
-    // 查询 metro_tax_rates 获取税率
-    const metroAreas = [...new Set(Array.from(merchantMetroMap.values()))];
+    // 税率查询：city → metro → rate，保持与前端一致
+    // 1. 收集所有涉及的 city（去重，lowercase）
+    const cities = [...new Set(Array.from(merchantCityMap.values()).map(c => c.toLowerCase()))];
+    // 2. 查 city_metro_map 得到 city → metro_area
+    const cityToMetro = new Map<string, string>();
+    if (cities.length > 0) {
+      const { data: cityMap } = await supabase
+        .from('city_metro_map')
+        .select('city, metro_area');
+      for (const row of (cityMap ?? [])) {
+        if (row.city && row.metro_area) {
+          cityToMetro.set((row.city as string).toLowerCase(), row.metro_area as string);
+        }
+      }
+    }
+    // 3. 把没在映射表里命中的 merchant 用它自己的 metro_area 兜底
+    for (const [mId, metro] of merchantMetroMap) {
+      const c = merchantCityMap.get(mId);
+      if (c && !cityToMetro.has(c.toLowerCase())) {
+        cityToMetro.set(c.toLowerCase(), metro);
+      }
+    }
+    // 4. 查所有涉及到的 metro 的税率
+    const allMetros = [...new Set(Array.from(cityToMetro.values()))];
+    for (const mId of merchantIds) {
+      const metro = merchantMetroMap.get(mId);
+      if (metro && !allMetros.includes(metro)) allMetros.push(metro);
+    }
     const taxRateMap = new Map<string, number>();
-    if (metroAreas.length > 0) {
+    if (allMetros.length > 0) {
       const { data: taxRates } = await supabase
         .from('metro_tax_rates')
         .select('metro_area, tax_rate')
-        .in('metro_area', metroAreas)
+        .in('metro_area', allMetros)
         .eq('is_active', true);
       for (const tr of (taxRates ?? [])) {
         taxRateMap.set(tr.metro_area, Number(tr.tax_rate));
       }
     }
 
-    // 计算每个 item 的税额，汇总 totalTax
+    // 计算每个 item 的税额（税基 = unit_price + 分摊的 service fee $0.99，与前端一致）
+    // service fee 也要交税，所以每张券的税基 = unit_price + 0.99
+    const SERVICE_FEE_PER_ITEM = 0.99;
     let totalTax = 0;
     for (const item of items) {
       const deal = dealMap.get(item.dealId);
       const merchantId = deal?.merchant_id;
-      const metro = merchantId ? merchantMetroMap.get(merchantId) : null;
+      if (!merchantId) continue;
+      // 先用 city → metro 查，没有则回落 merchant 自己的 metro_area
+      const city = merchantCityMap.get(merchantId);
+      const metro = (city ? cityToMetro.get(city.toLowerCase()) : null)
+        ?? merchantMetroMap.get(merchantId)
+        ?? null;
       const rate = metro ? (taxRateMap.get(metro) ?? 0) : 0;
-      const itemTax = Math.round(item.unitPrice * rate * 100) / 100;
+      const taxableAmount = item.unitPrice + SERVICE_FEE_PER_ITEM;
+      const itemTax = Math.round(taxableAmount * rate * 100) / 100;
       totalTax += itemTax;
     }
     totalTax = Math.round(totalTax * 100) / 100;
@@ -480,8 +516,14 @@ Deno.serve(async (req) => {
     const soloMerchantId = isSingleMerchant ? merchantIds[0] : null;
     const soloConnectId = soloMerchantId ? (merchantConnectMap.get(soloMerchantId) ?? null) : null;
 
-    // application_fee_amount（美分）= 平台保留金额，不得超过实际收款额
-    const platformFeeTotal = serviceFee + totalCommission + totalTax;
+    // Stripe 手续费估算（Destination Charges 模式下从 application_fee_amount 扣）
+    // 标准费率：2.9% + $0.30/笔（美国卡）
+    // 包含到 application_fee_amount 里，让 Stripe 手续费由商家净额吸收，
+    // 确保平台实际到手 = service_fee + commission + tax 不打折
+    const stripeFeeEstimate = Math.round((totalAmount * 0.029 + 0.30) * 100) / 100;
+
+    // application_fee_amount（美分）= 平台保留金额 + Stripe 手续费
+    const platformFeeTotal = serviceFee + totalCommission + totalTax + stripeFeeEstimate;
     const applicationFeeAmountCents = Math.min(
       Math.round(platformFeeTotal * 100),
       Math.round(totalAmount * 100),

@@ -456,34 +456,137 @@ async function handleRedeem(
       console.error('order_items update error:', itemUpdateError);
     }
 
-    // ── Stripe ReserveHold 释放（Path A 硬性 Reserve 解冻）──────────────
-    // redeemed_at 设置后，merchant_net 解冻，商家可在 T+7 后提现
-    // 若 stripe_reserve_hold_id 为 null（旧订单或 ReserveHold 创建失败），跳过
+    // ── 跨店核销资金转移 + ReserveHold 释放 ──────────────────────────
+    // 查询 order_item 的购买商家、金额、reserve hold
     const { data: itemData } = await supabase
       .from('order_items')
-      .select('stripe_reserve_hold_id, purchased_merchant_id')
+      .select('stripe_reserve_hold_id, purchased_merchant_id, unit_price, commission_amount, promo_discount')
       .eq('id', coupon.order_item_id)
       .maybeSingle();
 
     const holdId = (itemData as any)?.stripe_reserve_hold_id as string | null;
-    const itemMerchantId = (itemData as any)?.purchased_merchant_id as string | null;
+    const purchasedMerchantId = (itemData as any)?.purchased_merchant_id as string | null;
+    const stripeKey = Deno.env.get('STRIPE_SECRET_KEY') ?? '';
+    const reservesEnabled = Deno.env.get('STRIPE_RESERVES_ENABLED') !== 'false';
 
-    if (holdId && itemMerchantId) {
-      // 查询商家 Connect 账户 ID 及入驻状态
+    // 跨店核销：redeemed_merchant (当前商家) ≠ purchased_merchant → 资金从 A 转到 B
+    // 流程：reverse_transfer(A) → transfer(B)，确保核销商家拿到 merchant_net
+    if (purchasedMerchantId && purchasedMerchantId !== merchantId && stripeKey) {
+      const unitPrice = Number((itemData as any)?.unit_price ?? 0);
+      const commissionAmount = Number((itemData as any)?.commission_amount ?? 0);
+      const promoDiscount = Number((itemData as any)?.promo_discount ?? 0);
+      const merchantNetCents = Math.round((unitPrice - promoDiscount - commissionAmount) * 100);
+
+      if (merchantNetCents > 0) {
+        // 查询两个商家的 Stripe Connect 信息
+        const { data: bothMerchants } = await supabase
+          .from('merchants')
+          .select('id, stripe_account_id, stripe_account_status')
+          .in('id', [purchasedMerchantId, merchantId]);
+
+        const purchasedConnect = (bothMerchants ?? []).find((m: any) => m.id === purchasedMerchantId);
+        const redeemedConnect = (bothMerchants ?? []).find((m: any) => m.id === merchantId);
+
+        // 不依赖 stripe_account_status，只要有 stripe_account_id 即可尝试
+        // purchasedConnect 的逆向通过 PI transfer 判断（有 transfer 才逆），不需要状态校验
+        // redeemedConnect 的转账由 Stripe 侧校验账户可用性
+        const purchasedConnectId = purchasedConnect?.stripe_account_id ?? null;
+        const redeemedConnectId = redeemedConnect?.stripe_account_id ?? null;
+
+        if (purchasedConnectId && redeemedConnectId) {
+          try {
+            // Step 1: 从购买商家 A 回撤 merchant_net（platform 拿回资金）
+            // 找到原始 Transfer ID（从 order 的 payment_intent 追溯）
+            const { data: orderData } = await supabase
+              .from('orders')
+              .select('payment_intent_id')
+              .eq('id', coupon.order_id)
+              .maybeSingle();
+
+            const piId = (orderData as any)?.payment_intent_id as string | null;
+            if (piId && !piId.startsWith('store_credit_')) {
+              // 通过 Stripe API 获取 PI → latest_charge → transfer
+              const piRes = await fetch(`https://api.stripe.com/v1/payment_intents/${piId}?expand[]=latest_charge.transfer`, {
+                headers: { Authorization: `Bearer ${stripeKey}` },
+              });
+              const piJson = await piRes.json();
+              const transferObj = (piJson as any)?.latest_charge?.transfer;
+              const transferId = typeof transferObj === 'string' ? transferObj : transferObj?.id;
+
+              if (transferId) {
+                // Reverse transfer 从 A 回到平台
+                const revRes = await fetch(`https://api.stripe.com/v1/transfers/${transferId}/reversals`, {
+                  method: 'POST',
+                  headers: {
+                    Authorization: `Bearer ${stripeKey}`,
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                  },
+                  body: new URLSearchParams({
+                    amount: String(merchantNetCents),
+                    metadata: JSON.stringify({
+                      reason: 'cross_store_redeem',
+                      from_merchant: purchasedMerchantId,
+                      to_merchant: merchantId,
+                      order_item_id: coupon.order_item_id,
+                    }),
+                  }).toString(),
+                });
+
+                if (!revRes.ok) {
+                  console.error('[CrossRedeem] reverse_transfer 失败:', await revRes.text());
+                } else {
+                  console.log(`[CrossRedeem] reverse_transfer 成功 from=${purchasedMerchantId}`);
+
+                  // Step 2: Transfer merchant_net 到核销商家 B
+                  const xferRes = await fetch('https://api.stripe.com/v1/transfers', {
+                    method: 'POST',
+                    headers: {
+                      Authorization: `Bearer ${stripeKey}`,
+                      'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: new URLSearchParams({
+                      amount: String(merchantNetCents),
+                      currency: 'usd',
+                      destination: redeemedConnectId,
+                      metadata: JSON.stringify({
+                        reason: 'cross_store_redeem',
+                        from_merchant: purchasedMerchantId,
+                        order_item_id: coupon.order_item_id,
+                      }),
+                    }).toString(),
+                  });
+
+                  if (!xferRes.ok) {
+                    console.error('[CrossRedeem] transfer to redeemer 失败:', await xferRes.text());
+                  } else {
+                    console.log(`[CrossRedeem] transfer 成功 to=${merchantId} amount=${merchantNetCents}c`);
+                  }
+                }
+              } else {
+                console.warn('[CrossRedeem] 无法获取原始 Transfer ID，跳过跨店结算');
+              }
+            }
+          } catch (crossErr) {
+            // 跨店结算失败不阻断核销流程，记录告警供人工处理
+            console.error('[CrossRedeem] 跨店结算异常（需人工处理）:', crossErr);
+          }
+        } else {
+          console.warn(`[CrossRedeem] 商家 Connect 未就绪: purchased=${purchasedConnectId} redeemed=${redeemedConnectId}`);
+        }
+      }
+    }
+
+    // ── Stripe ReserveHold 释放（Path A 硬性 Reserve 解冻）──────────────
+    // redeemed_at 设置后，merchant_net 解冻，核销商家可在 T+7 后提现
+    if (holdId && purchasedMerchantId) {
       const { data: merchantData } = await supabase
         .from('merchants')
         .select('stripe_account_id, stripe_account_status')
-        .eq('id', itemMerchantId)
+        .eq('id', purchasedMerchantId)
         .maybeSingle();
 
-      // 只对已完成 Connect 入驻的商家执行 Hold 释放
-      const connectId = (merchantData as any)?.stripe_account_status === 'connected'
-        ? (merchantData as any)?.stripe_account_id as string | null
-        : null;
-      const reservesEnabled = Deno.env.get('STRIPE_RESERVES_ENABLED') !== 'false';
+      const connectId = (merchantData as any)?.stripe_account_id as string | null ?? null;
       if (connectId && reservesEnabled) {
-        const stripeKey = Deno.env.get('STRIPE_SECRET_KEY') ?? '';
-        // fire-and-forget：释放失败不阻断核销响应
         releaseReserveHold(connectId, holdId, stripeKey).catch(err => {
           console.error('[ReserveRelease] 核销释放异常:', err);
         });

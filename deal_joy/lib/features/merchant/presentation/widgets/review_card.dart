@@ -51,6 +51,28 @@ class _ReviewCardState extends State<ReviewCard> {
           const SizedBox(height: 8),
           // 第二行：overall 星星 + Verified Purchase 标签
           _buildRatingRow(),
+          // 门店来源标签（连锁店场景：显示评价来自哪个门店）
+          if (widget.review.storeName != null && widget.review.storeName!.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Icon(Icons.storefront_outlined, size: 13, color: Colors.grey.shade500),
+                const SizedBox(width: 4),
+                Flexible(
+                  child: Text(
+                    widget.review.storeName!,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.grey.shade500,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ],
           // 第三行：子维度评分（如果有任意一个子维度评分）
           if (_hasSubRatings()) ...[
             const SizedBox(height: 6),

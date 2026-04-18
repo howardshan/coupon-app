@@ -32,10 +32,11 @@ final toReviewProvider = FutureProvider<List<PendingReviewItem>>((ref) async {
 
   final client = ref.watch(supabaseClientProvider);
 
+  // 查 redeemed_at_merchant_id 用于评价关联到实际核销门店（连锁店场景）
   final usedCoupons = await client
       .from('coupons')
       .select(
-        'id, deal_id, used_at, deals(title, image_urls, merchant_id, merchants(id, name))',
+        'id, deal_id, used_at, redeemed_at_merchant_id, deals(title, image_urls, merchant_id, merchants(id, name))',
       )
       .eq('user_id', user.id)
       .eq('status', 'used')
@@ -46,15 +47,34 @@ final toReviewProvider = FutureProvider<List<PendingReviewItem>>((ref) async {
       .map((r) => r['deal_id'] as String)
       .toSet();
 
+  // 批量查核销门店名称（连锁店场景下 redeemed_at_merchant_id 可能不同于 deal 主门店）
+  final redeemedMerchantIds = (usedCoupons as List)
+      .map((c) => c['redeemed_at_merchant_id'] as String?)
+      .where((id) => id != null && id.isNotEmpty)
+      .toSet()
+      .toList();
+  final redeemedMerchantMap = <String, String>{};
+  if (redeemedMerchantIds.isNotEmpty) {
+    final rows = await client
+        .from('merchants')
+        .select('id, name')
+        .inFilter('id', redeemedMerchantIds);
+    for (final r in (rows as List)) {
+      redeemedMerchantMap[r['id'] as String] = r['name'] as String? ?? '';
+    }
+  }
+
   final items = <PendingReviewItem>[];
-  for (final c in (usedCoupons as List)) {
+  for (final c in usedCoupons) {
     final dealId = c['deal_id'] as String? ?? '';
     if (reviewedDealIds.contains(dealId)) continue;
 
     final deals = c['deals'] as Map<String, dynamic>?;
     final merchants = deals?['merchants'] as Map<String, dynamic>?;
     final imageUrls = deals?['image_urls'] as List?;
-    final merchantId = (deals?['merchant_id'] as String?) ??
+    // 优先用实际核销门店 ID（连锁店场景），否则 fallback 到 deal 主门店
+    final merchantId = (c['redeemed_at_merchant_id'] as String?) ??
+        (deals?['merchant_id'] as String?) ??
         (merchants?['id'] as String?);
 
     items.add(PendingReviewItem(
@@ -65,7 +85,11 @@ final toReviewProvider = FutureProvider<List<PendingReviewItem>>((ref) async {
           ? imageUrls.first as String?
           : null,
       merchantId: merchantId,
-      merchantName: merchants?['name'] as String?,
+      // 优先用核销门店名称
+      merchantName: (c['redeemed_at_merchant_id'] != null
+              ? redeemedMerchantMap[c['redeemed_at_merchant_id'] as String]
+              : null) ??
+          merchants?['name'] as String?,
       usedAt: c['used_at'] != null
           ? DateTime.tryParse(c['used_at'] as String)
           : null,

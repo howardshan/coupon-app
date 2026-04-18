@@ -56,6 +56,9 @@ class _MerchantDetailScreenState extends ConsumerState<MerchantDetailScreen> {
   // 点击 tab 跳转时设为 true，防止滚动过程中 tab 来回闪烁
   bool _isTabClick = false;
 
+  // Reviews 星级筛选
+  int? _selectedReviewStar;
+
   // 每个区块的 GlobalKey，用于获取 RenderBox 位置
   final List<GlobalKey> _sectionKeys = List.generate(
     _kTabCount,
@@ -755,27 +758,79 @@ class _MerchantDetailScreenState extends ConsumerState<MerchantDetailScreen> {
           child: Divider(height: 1, indent: 16, endIndent: 16),
         ),
 
-        // 评价列表
+        // 星级筛选 chips
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: reviewsAsync.when(
+              data: (reviews) {
+                // 统计每个星级的评价数
+                final countByRating = <int, int>{};
+                for (final r in reviews) {
+                  countByRating[r.ratingOverall] = (countByRating[r.ratingOverall] ?? 0) + 1;
+                }
+                if (reviews.isEmpty) return const SizedBox.shrink();
+                return SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _buildFilterChip('All (${reviews.length})', _selectedReviewStar == null,
+                          () => setState(() => _selectedReviewStar = null)),
+                      const SizedBox(width: 6),
+                      ...List.generate(5, (i) {
+                        final star = 5 - i;
+                        final count = countByRating[star] ?? 0;
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: _buildFilterChip('$star ★ ($count)', _selectedReviewStar == star,
+                              () => setState(() => _selectedReviewStar = star)),
+                        );
+                      }),
+                    ],
+                  ),
+                );
+              },
+              loading: () => const SizedBox.shrink(),
+              error: (_, _) => const SizedBox.shrink(),
+            ),
+          ),
+        ),
+
+        // 评价列表（按筛选过滤）
         reviewsAsync.when(
           data: (reviews) {
-            if (reviews.isEmpty) {
-              return const SliverToBoxAdapter(child: SizedBox.shrink());
+            final filtered = _selectedReviewStar == null
+                ? reviews
+                : reviews.where((r) => r.ratingOverall == _selectedReviewStar).toList();
+
+            if (filtered.isEmpty) {
+              return SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 40),
+                  child: Center(
+                    child: Text(
+                      reviews.isEmpty ? 'No reviews yet'
+                          : 'No $_selectedReviewStar-star reviews',
+                      style: const TextStyle(color: AppColors.textSecondary),
+                    ),
+                  ),
+                ),
+              );
             }
 
             return SliverList(
               delegate: SliverChildBuilderDelegate(
                 (context, index) {
-                  // 最后一项触发加载更多
-                  if (index == reviews.length - 1) {
+                  if (_selectedReviewStar == null && index == filtered.length - 1) {
                     final notifier = ref.read(
                         merchantReviewsProvider(widget.merchantId).notifier);
                     if (notifier.hasMore) {
                       notifier.loadMore();
                     }
                   }
-                  return ReviewCard(review: reviews[index]);
+                  return ReviewCard(review: filtered[index]);
                 },
-                childCount: reviews.length,
+                childCount: filtered.length,
               ),
             );
           },
@@ -800,6 +855,27 @@ class _MerchantDetailScreenState extends ConsumerState<MerchantDetailScreen> {
 
         const SliverToBoxAdapter(child: SizedBox(height: 8)),
       ],
+    );
+  }
+
+  Widget _buildFilterChip(String label, bool isSelected, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected ? AppColors.primary : Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: isSelected ? Colors.white : AppColors.textSecondary,
+          ),
+        ),
+      ),
     );
   }
 

@@ -114,10 +114,14 @@ BEGIN
     END AS platform_fee,
     v_brand_rate AS brand_fee_rate,
     ROUND(oi.unit_price * v_brand_rate, 2) AS brand_fee,
+    -- stripe_fee 基于客户实际支付金额 = unit_price + service_fee + tax_amount
+    -- Stripe 按整笔 PaymentIntent 收费，所以 base 应含所有组成部分
     CASE
       WHEN v_commission_free_until IS NOT NULL
            AND oi.created_at::DATE <= v_commission_free_until THEN 0::NUMERIC
-      ELSE ROUND(oi.unit_price * v_stripe_rate + v_stripe_flat, 2)
+      ELSE ROUND(
+        (oi.unit_price + COALESCE(oi.service_fee, 0) + COALESCE(oi.tax_amount, 0))
+        * v_stripe_rate + v_stripe_flat, 2)
     END AS stripe_fee,
     CASE
       WHEN v_commission_free_until IS NOT NULL
@@ -127,7 +131,8 @@ BEGIN
         oi.unit_price
         - oi.unit_price * v_rate
         - oi.unit_price * v_brand_rate
-        - (oi.unit_price * v_stripe_rate + v_stripe_flat),
+        - ((oi.unit_price + COALESCE(oi.service_fee, 0) + COALESCE(oi.tax_amount, 0))
+           * v_stripe_rate + v_stripe_flat),
         2)
     END AS net_amount,
     oi.customer_status::TEXT,

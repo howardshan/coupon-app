@@ -57,7 +57,8 @@ class DealsRepository {
       }
 
       if (search != null && search.isNotEmpty) {
-        final pattern = '%$search%';
+        // PostgREST 用 * 作为 ILIKE 通配符（避免 % 被 URL 编码为 %25 导致匹配失败）
+        final pattern = '*$search*';
         query = query.or(
           'title.ilike.$pattern,'
           'description.ilike.$pattern,'
@@ -87,7 +88,7 @@ class DealsRepository {
           final merchantData = await _client
               .from('merchants')
               .select('id, brand_id, brands(name)')
-              .or('name.ilike.%$search%')
+              .or('name.ilike.*$search*')
               .eq('status', 'approved')
               .limit(20);
 
@@ -279,12 +280,41 @@ class DealsRepository {
     }
   }
 
+  /// 获取 deal 的评价
+  /// 同一产品（同 merchant + 同 title）可能有多个 deal 记录（新旧上下架），
+  /// 为了避免旧 deal 的评价在新 deal 下丢失，按 merchant_id + title 聚合所有同名 deal 的评价
   Future<List<ReviewModel>> fetchReviewsByDeal(String dealId) async {
     try {
+      // 先查当前 deal 的 merchant_id 和 title
+      final dealData = await _client
+          .from('deals')
+          .select('merchant_id, title')
+          .eq('id', dealId)
+          .maybeSingle();
+
+      if (dealData == null) return [];
+
+      final merchantId = dealData['merchant_id'] as String?;
+      final title = dealData['title'] as String?;
+
+      // 找同 merchant + 同 title 的所有 deal IDs（包括旧版已下架的）
+      List<String> allDealIds = [dealId];
+      if (merchantId != null && title != null) {
+        final siblingDeals = await _client
+            .from('deals')
+            .select('id')
+            .eq('merchant_id', merchantId)
+            .eq('title', title);
+        allDealIds = (siblingDeals as List)
+            .map((d) => d['id'] as String)
+            .toSet()
+            .toList();
+      }
+
       final data = await _client
           .from('reviews')
           .select('*, users!reviews_user_id_fkey(full_name, avatar_url)')
-          .eq('deal_id', dealId)
+          .inFilter('deal_id', allDealIds)
           .order('created_at', ascending: false)
           .limit(20);
       return (data as List).map((e) => ReviewModel.fromJson(e)).toList();

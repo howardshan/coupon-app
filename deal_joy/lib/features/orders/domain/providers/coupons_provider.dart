@@ -46,12 +46,19 @@ final couponsByStatusProvider =
             c.refundedAt == null && c.orderItemId != null &&
             (c.customerStatus == null || c.customerStatus == 'unused')).toList();
       case 'used':
-        return coupons.where((c) => c.status == 'used').toList();
-      case 'expired':
-        // 已过期的：全部都是 Expired Return（过期自动退款）
-        // 包含赠送出去但已过期的券（voided + gifted + 已过期）
+        // 只显示真正已使用且未退款的券（排除状态异常：used 但 customerStatus 为 refund_*）
         return coupons.where((c) =>
-            c.isExpired && (c.status != 'voided' ||
+            c.status == 'used' &&
+            c.customerStatus != 'refund_success' &&
+            c.customerStatus != 'refund_pending' &&
+            c.customerStatus != 'refund_processing').toList();
+      case 'expired':
+        // 已过期的：过期未使用 + 过期后自动退款（Expired Return）
+        // 包含赠送出去但已过期的券（voided + gifted + 已过期）
+        // 排除 used：已核销的券即使过期了也归 Used tab，不归 Expired
+        return coupons.where((c) =>
+            c.isExpired && c.status != 'used' &&
+            (c.status != 'voided' ||
             (c.status == 'voided' && c.voidReason == 'gifted'))).toList();
       case 'refunded':
         // 未过期就主动退款的

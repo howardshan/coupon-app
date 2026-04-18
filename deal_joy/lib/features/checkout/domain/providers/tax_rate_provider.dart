@@ -56,31 +56,44 @@ final metroTaxRatesProvider = FutureProvider<Map<String, double>>((ref) async {
 /// City → tax rate 映射（通过 city_metro_map 映射到 metro 再查税率）
 /// 返回 `{ city (lower-case) → rate }`，如 Frisco → 0.0825（Frisco 属于 Dallas metro）
 /// key 一律 lower-case，查询时也要 toLowerCase() 避免大小写不一致
+/// 实现：两次独立查询 + Dart 端 join，避免依赖 Supabase 嵌套关系
 final cityTaxRatesProvider = FutureProvider<Map<String, double>>((ref) async {
   final client = ref.watch(supabaseClientProvider);
-  // 用嵌套 select 一次拿到所有 city + 对应 metro 的 tax_rate
-  final rows = await client
-      .from('city_metro_map')
-      .select('city, metro_area, metro_tax_rates!inner(tax_rate, is_active)');
 
-  final map = <String, double>{};
-  for (final row in (rows as List)) {
-    final city = (row as Map<String, dynamic>)['city'] as String?;
-    final metroRates = row['metro_tax_rates'];
-    double? rate;
-    if (metroRates is Map<String, dynamic>) {
-      final active = metroRates['is_active'] as bool? ?? false;
-      if (active) rate = (metroRates['tax_rate'] as num?)?.toDouble();
-    } else if (metroRates is List && metroRates.isNotEmpty) {
-      final first = metroRates.first as Map<String, dynamic>;
-      final active = first['is_active'] as bool? ?? false;
-      if (active) rate = (first['tax_rate'] as num?)?.toDouble();
-    }
-    if (city != null && city.isNotEmpty && rate != null) {
-      map[city.toLowerCase()] = rate;
+  // 并行拉取两张表
+  final results = await Future.wait([
+    client.from('city_metro_map').select('city, metro_area'),
+    client.from('metro_tax_rates').select('metro_area, tax_rate').eq('is_active', true),
+  ]);
+
+  // Build metro → rate 映射
+  final metroRates = <String, double>{};
+  for (final row in (results[1] as List)) {
+    final metro = (row as Map<String, dynamic>)['metro_area'] as String?;
+    final rate = (row['tax_rate'] as num?)?.toDouble();
+    if (metro != null && rate != null) {
+      metroRates[metro] = rate;
     }
   }
-  return map;
+
+  // 把 city_metro_map 按 metro_area 查 rate 后挂到 cityMap
+  final cityMap = <String, double>{};
+  for (final row in (results[0] as List)) {
+    final city = (row as Map<String, dynamic>)['city'] as String?;
+    final metro = row['metro_area'] as String?;
+    if (city == null || city.isEmpty || metro == null) continue;
+    final rate = metroRates[metro];
+    if (rate == null) continue;
+    cityMap[city.toLowerCase()] = rate;
+  }
+
+  // metro_tax_rates 里直接存的 metro（如 Dallas, Fairview）也当 city 加进去
+  // 这样即便 merchants.metro_area 原样是 'Dallas' 也能直接查到
+  for (final entry in metroRates.entries) {
+    cityMap.putIfAbsent(entry.key.toLowerCase(), () => entry.value);
+  }
+
+  return cityMap;
 });
 
 /// Checkout 本地税费预估结果

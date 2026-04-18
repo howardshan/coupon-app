@@ -9,6 +9,7 @@ import '../models/merchant_deal.dart';
 import '../models/deal_category.dart';
 import '../models/deal_template.dart';
 import '../services/deals_service.dart';
+import '../../store/services/store_service.dart';
 
 // ============================================================
 // DealsService Provider — 注入 Supabase 客户端
@@ -415,18 +416,37 @@ final pendingStoreDealsProvider =
   }
   debugPrint('[pendingStoreDeals] user=${user.id}');
 
-  // 获取当前用户关联的门店 merchant_id
-  final merchant = await supabase
-      .from('merchants')
-      .select('id')
-      .eq('user_id', user.id)
-      .maybeSingle();
-  if (merchant == null) {
-    debugPrint('[pendingStoreDeals] merchant not found for user');
-    return [];
+  // 使用当前选中的门店 ID（品牌管理员通过 StoreSelector 切换后持久化的值）
+  // 不能用 `merchants WHERE user_id` 因为品牌管理员管理多店，那样只会返回主门店
+  final merchantId = StoreService.globalActiveMerchantId;
+  if (merchantId == null || merchantId.isEmpty) {
+    // fallback：如果 globalActiveMerchantId 还没初始化，查 user 自己的门店
+    final merchant = await supabase
+        .from('merchants')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+    if (merchant == null) {
+      debugPrint('[pendingStoreDeals] merchant not found for user');
+      return [];
+    }
+    final fallbackId = merchant['id'] as String;
+    debugPrint('[pendingStoreDeals] merchantId=$fallbackId (fallback)');
+    // 继续用 fallbackId 查询
+    try {
+      final rows = await supabase
+          .from('deal_applicable_stores')
+          .select('deal_id, created_at, deals(title, discount_price, merchants!deals_merchant_id_fkey(name))')
+          .eq('store_id', fallbackId)
+          .eq('status', 'pending_store_confirmation')
+          .order('created_at', ascending: false);
+      return List<Map<String, dynamic>>.from(rows);
+    } catch (e) {
+      debugPrint('[pendingStoreDeals] ERROR: $e');
+      rethrow;
+    }
   }
-  final merchantId = merchant['id'] as String;
-  debugPrint('[pendingStoreDeals] merchantId=$merchantId');
+  debugPrint('[pendingStoreDeals] merchantId=$merchantId (active store)');
 
   try {
     // 查询 deal_applicable_stores 中 pending 记录，join deals 和品牌商家名称

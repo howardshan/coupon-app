@@ -67,12 +67,13 @@ class CheckoutScreen extends ConsumerStatefulWidget {
 }
 
 class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
-  // 支付方式（默认：iOS=Apple Pay, Android=Google Pay，不支持时切到 card）
-  String _selectedPayment = Platform.isIOS ? 'apple' : 'google';
+  // 支付方式：默认 card（检测到 Apple/Google Pay 支持后再切换）
+  // 这样避免 emulator 上弹出 "Google Pay is not available" 错误
+  String _selectedPayment = 'card';
 
   // 当前设备是否支持 Apple/Google Pay（emulator 常不支持）
-  // null = 尚未检测；false = 不支持，UI 不显示对应选项
-  bool? _platformPaySupported;
+  // 默认 false：未确认支持前 UI 不显示 platform pay 选项
+  bool _platformPaySupported = false;
 
   // 信用卡输入是否完整（CardField 回调）
   bool _cardComplete = false;
@@ -151,31 +152,28 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   }
 
   /// 预检 Apple/Google Pay 是否可用（模拟器通常不支持）
-  /// 不支持时自动把默认支付方式切到 Credit Card，UI 隐藏 platform pay 选项
+  /// 支持时把默认支付方式切到 platform pay，UI 显示对应选项
   Future<void> _detectPlatformPaySupport() async {
     try {
       final supported = await Stripe.instance.isPlatformPaySupported();
       if (!mounted) return;
       setState(() {
         _platformPaySupported = supported;
-        if (!supported && (_selectedPayment == 'apple' || _selectedPayment == 'google')) {
-          _selectedPayment = 'card';
+        if (supported && _selectedPayment == 'card') {
+          _selectedPayment = Platform.isIOS ? 'apple' : 'google';
         }
       });
     } catch (_) {
+      // 检测失败默认保持 false（保守），UI 不显示 platform pay
       if (!mounted) return;
-      setState(() {
-        _platformPaySupported = false;
-        if (_selectedPayment == 'apple' || _selectedPayment == 'google') {
-          _selectedPayment = 'card';
-        }
-      });
+      setState(() => _platformPaySupported = false);
     }
   }
 
   /// 当前设备可用的支付方式列表（根据 platform pay 支持情况过滤）
+  /// 不支持时 UI 只显示 Credit Card 一项
   List<Map<String, Object>> get _availablePaymentMethods {
-    if (_platformPaySupported == false) {
+    if (!_platformPaySupported) {
       return _paymentMethods
           .where((m) => m['id'] != 'apple' && m['id'] != 'google')
           .toList();
@@ -1039,7 +1037,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                   const SizedBox(width: 8),
                   const Expanded(
                     child: Text(
-                      'A \$0.99 service fee applies per voucher. This fee is non-refundable for original payment method refunds.',
+                      'A \$0.99 service fee applies per voucher. The fee and its tax are non-refundable for original payment method refunds.',
                       style: TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.4),
                     ),
                   ),
@@ -1541,7 +1539,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                       const SizedBox(width: 8),
                       const Expanded(
                         child: Text(
-                          'A \$0.99 service fee applies per voucher. This fee is non-refundable for original payment method refunds.',
+                          'A \$0.99 service fee applies per voucher. The fee and its tax are non-refundable for original payment method refunds.',
                           style: TextStyle(
                               fontSize: 12, color: AppColors.textSecondary, height: 1.4),
                         ),
