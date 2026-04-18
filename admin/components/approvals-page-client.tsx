@@ -164,7 +164,12 @@ export default function ApprovalsPageClient({
 
   // 当前 tab 的总条数（用于分页）
   const totalMap: Record<string, number> = {
-    all: counts.merchants + counts.deals + counts.refundDisputes + counts.afterSales,
+    all:
+      counts.merchants +
+      counts.deals +
+      counts.refundDisputes +
+      counts.afterSales +
+      counts.stripeUnlink,
     merchants: merchantsTotal,
     deals: dealsTotal,
     'refund-disputes': refundDisputesTotal,
@@ -231,7 +236,12 @@ export default function ApprovalsPageClient({
       <div className="flex flex-nowrap gap-1 overflow-x-auto border-b border-gray-200">
         {TABS.map(t => {
           const countMap: Record<string, number> = {
-            all: counts.merchants + counts.deals + counts.refundDisputes + counts.afterSales,
+            all:
+              counts.merchants +
+              counts.deals +
+              counts.refundDisputes +
+              counts.afterSales +
+              counts.stripeUnlink,
             merchants: counts.merchants,
             deals: counts.deals,
             'refund-disputes': counts.refundDisputes,
@@ -509,7 +519,10 @@ export default function ApprovalsPageClient({
         <StripeUnlinkDrawer
           item={drawerRow.data}
           onClose={() => setDrawerRow(null)}
-          canDecide={tab === 'stripe-unlink' && approvalQueue === 'pending'}
+          canDecide={
+            drawerRow.data.status === 'pending' &&
+            (tab === 'all' || (tab === 'stripe-unlink' && approvalQueue === 'pending'))
+          }
         />
       )}
 
