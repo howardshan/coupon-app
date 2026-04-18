@@ -1037,7 +1037,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                   const SizedBox(width: 8),
                   const Expanded(
                     child: Text(
-                      'A \$0.99 service fee applies per voucher. This fee is non-refundable for original payment method refunds.',
+                      'A \$0.99 service fee applies per voucher. The fee and its tax are non-refundable for original payment method refunds.',
                       style: TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.4),
                     ),
                   ),
@@ -1539,7 +1539,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                       const SizedBox(width: 8),
                       const Expanded(
                         child: Text(
-                          'A \$0.99 service fee applies per voucher. This fee is non-refundable for original payment method refunds.',
+                          'A \$0.99 service fee applies per voucher. The fee and its tax are non-refundable for original payment method refunds.',
                           style: TextStyle(
                               fontSize: 12, color: AppColors.textSecondary, height: 1.4),
                         ),

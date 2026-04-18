@@ -305,11 +305,10 @@ class _VoucherDetailBodyState extends ConsumerState<_VoucherDetailBody> {
               ),
             ),
 
-            // Usage Notes 区块（仅在有规则时显示）
-            if (usageRules.isNotEmpty)
-              SliverToBoxAdapter(
-                child: _UsageNotesSection(usageRules: usageRules),
-              ),
+            // ── 公共 deal 信息区块（有效期、可用日、使用规则、退款政策） ──
+            SliverToBoxAdapter(
+              child: _DealInfoBlock(item: dealItems.first),
+            ),
 
             // 底部留白（为固定底部按钮留空间）
             const SliverToBoxAdapter(
@@ -449,7 +448,7 @@ class _VoucherDealCard extends ConsumerWidget {
                       if (first.couponExpiresAt != null) ...[
                         const SizedBox(height: 4),
                         Text(
-                          'Valid until ${DateFormat('MMM d, yyyy').format(first.couponExpiresAt!.toLocal())}',
+                          'Valid until ${DateFormat('MMM d, yyyy').format(first.couponExpiresAt!.toUtc())} (CT)',
                           style: const TextStyle(
                             fontSize: 12,
                             color: AppColors.textHint,
@@ -565,27 +564,18 @@ class _UnusedVouchersByOrderSection extends StatelessWidget {
     required this.dealId,
   });
 
-  String _orderHeading(List<OrderItemModel> group) {
-    final raw = group.first.orderNumber;
-    if (raw != null && raw.trim().isNotEmpty) return raw.trim();
-    final id = group.first.orderId;
-    if (id.length >= 8) return 'Order ${id.substring(0, 8)}…';
-    return 'Order';
-  }
-
-  DateTime _earliestPurchase(List<OrderItemModel> group) {
-    return group
-        .map((e) => e.createdAt)
-        .reduce((a, b) => a.isBefore(b) ? a : b);
-  }
-
   void _openQrForItem(BuildContext context, OrderItemModel item) {
+    // 传入所有 unused item IDs，让 QR 弹层支持左右滑动切换券
+    final allUnusedIds = unusedItems.map((i) => i.id).toSet();
+    // 初始页 = 点击的那张在 unused 列表里的索引
+    final initialPage = unusedItems.indexWhere((i) => i.id == item.id);
     showUnusedQrSheet(
       context,
       orderId: item.orderId,
       dealId: dealId,
       aggregateByDeal: true,
-      aggregatedOrderItemIds: {item.id},
+      aggregatedOrderItemIds: allUnusedIds,
+      initialPage: initialPage >= 0 ? initialPage : 0,
     );
   }
 
@@ -597,46 +587,17 @@ class _UnusedVouchersByOrderSection extends StatelessWidget {
     }
     final sortedOrderIds = byOrderId.keys.toList()
       ..sort((a, b) {
-        final ea = _earliestPurchase(byOrderId[a]!);
-        final eb = _earliestPurchase(byOrderId[b]!);
+        final ea = byOrderId[a]!.first.createdAt;
+        final eb = byOrderId[b]!.first.createdAt;
         return ea.compareTo(eb);
       });
-
-    final amountFmt = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Show at checkout',
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
-                    ),
-              ),
-              const SizedBox(height: 4),
-              const Text(
-                'Vouchers are grouped by order. Tap one to show its QR code.',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: AppColors.textSecondary,
-                  height: 1.35,
-                ),
-              ),
-            ],
-          ),
-        ),
+        const SizedBox(height: 8),
         ...sortedOrderIds.map((oid) {
           final group = byOrderId[oid]!;
-          final first = group.first;
-          final subtotal = group.fold<double>(
-              0, (s, i) => s + i.unitPrice + i.serviceFee);
-          final purchased = _earliestPurchase(group);
 
           return Padding(
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
@@ -646,83 +607,41 @@ class _UnusedVouchersByOrderSection extends StatelessWidget {
               shadowColor: Colors.black26,
               borderRadius: BorderRadius.circular(12),
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(14, 14, 14, 6),
+                padding: const EdgeInsets.fromLTRB(14, 10, 14, 6),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      _orderHeading(group),
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Purchased ${DateFormat('MMM d, yyyy · h:mm a').format(purchased.toLocal())}',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            '${first.dealTitle} · ${amountFmt.format(first.unitPrice)} × ${group.length}',
-                            style: const TextStyle(
-                              fontSize: 13,
-                              color: AppColors.textSecondary,
-                              height: 1.3,
-                            ),
-                            maxLines: 3,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Paid ${amountFmt.format(subtotal)}',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const Divider(height: 20),
                     ...group.map(
-                      (item) => ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: Icon(
-                          Icons.qr_code_2_rounded,
-                          color: AppColors.primary,
-                        ),
-                        title: Text(
-                          item.formattedCouponCode ?? 'Voucher',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontFamily: 'monospace',
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 0.5,
+                      (item) {
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(
+                            Icons.qr_code_2_rounded,
+                            color: AppColors.primary,
                           ),
-                        ),
-                        subtitle: const Text(
-                          'Tap to show QR code',
-                          style: TextStyle(
-                            fontSize: 12,
+                          title: Text(
+                            item.formattedCouponCode ?? 'Voucher',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontFamily: 'monospace',
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                          subtitle: const Text(
+                            'Tap to show QR code',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textHint,
+                            ),
+                          ),
+                          trailing: const Icon(
+                            Icons.chevron_right_rounded,
                             color: AppColors.textHint,
                           ),
-                        ),
-                        trailing: const Icon(
-                          Icons.chevron_right_rounded,
-                          color: AppColors.textHint,
-                        ),
-                        onTap: () => _openQrForItem(context, item),
-                      ),
+                          onTap: () => _openQrForItem(context, item),
+                        );
+                      },
                     ),
                   ],
                 ),
@@ -730,6 +649,198 @@ class _UnusedVouchersByOrderSection extends StatelessWidget {
             ),
           );
         }),
+      ],
+    );
+  }
+}
+
+// ── 公共 Deal 信息区块（有效期、可用日、使用规则、退款政策） ──
+
+class _DealInfoBlock extends StatelessWidget {
+  final OrderItemModel item;
+
+  const _DealInfoBlock({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    final expiresAt = item.couponExpiresAt ?? item.dealExpiresAt;
+    final hasUsageDays = item.usageDays.isNotEmpty;
+    final hasUsageRules = item.usageRules.isNotEmpty;
+    final hasUsageNotes = item.usageNotes != null && item.usageNotes!.trim().isNotEmpty;
+    final hasRefundPolicy = item.refundPolicy != null && item.refundPolicy!.trim().isNotEmpty;
+
+    // 没有任何信息时不渲染
+    if (expiresAt == null && !hasUsageDays && !hasUsageRules && !hasUsageNotes && !hasRefundPolicy) {
+      return const SizedBox.shrink();
+    }
+
+    // 所有要显示的 section，用于判断是否需要 divider
+    final sections = <Widget>[];
+
+    // 有效期
+    if (expiresAt != null) {
+      sections.add(_InfoRow(
+        icon: Icons.event_outlined,
+        label: 'Valid Until',
+        value: '${DateFormat('MMM d, yyyy').format(expiresAt.toUtc())} (CT)',
+      ));
+    }
+
+    // 可用日
+    if (hasUsageDays) {
+      sections.add(_InfoRow(
+        icon: Icons.calendar_today_outlined,
+        label: 'Available',
+        value: item.usageDays.join(', '),
+      ));
+    }
+
+    // 使用须知（长文案）
+    if (hasUsageNotes) {
+      sections.add(Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.info_outline, size: 16, color: Colors.grey.shade500),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Notes',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade500,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  item.usageNotes!.trim(),
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textPrimary,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ));
+    }
+
+    // 使用规则（bullet list）
+    if (hasUsageRules) {
+      sections.add(Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.rule_outlined, size: 16, color: Colors.grey.shade500),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Usage Rules',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade500,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                ...item.usageRules.map((rule) => Padding(
+                  padding: const EdgeInsets.only(bottom: 2),
+                  child: Text(
+                    '• $rule',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: AppColors.textPrimary,
+                      height: 1.4,
+                    ),
+                  ),
+                )),
+              ],
+            ),
+          ),
+        ],
+      ));
+    }
+
+    // 退款政策
+    if (hasRefundPolicy) {
+      sections.add(_InfoRow(
+        icon: Icons.assignment_return_outlined,
+        label: 'Refund Policy',
+        value: item.refundPolicy!,
+      ));
+    }
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (int i = 0; i < sections.length; i++) ...[
+            sections[i],
+            if (i < sections.length - 1)
+              const Divider(height: 16),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _InfoRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+
+  const _InfoRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 16, color: Colors.grey.shade500),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey.shade500,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -944,7 +1055,8 @@ class _CouponDetailRow extends ConsumerWidget {
                     label: 'Review',
                     color: AppColors.accent,
                     onTap: () {
-                      final merchantId = item.purchasedMerchantId ?? item.redeemedMerchantId ?? '';
+                      // 评价关联到实际核销门店（连锁店场景下可能与购买门店不同）
+                      final merchantId = item.redeemedMerchantId ?? item.purchasedMerchantId ?? '';
                       context.push('/review/${item.dealId}?merchantId=$merchantId&orderItemId=${item.id}');
                     },
                   ),
@@ -1255,12 +1367,14 @@ class _VoucherQuickActionsState extends State<_VoucherQuickActions> {
               color: AppColors.info,
               onTap: _callStore,
             ),
-          _QuickActionItem(
-            icon: Icons.card_giftcard_outlined,
-            label: 'Gift',
-            color: AppColors.secondary,
-            onTap: _giftToFriend,
-          ),
+          // Gift 只有在存在未使用券时才显示（used/expired/refunded/gifted 的券不可赠送）
+          if (widget.unusedOrderItemIds.isNotEmpty)
+            _QuickActionItem(
+              icon: Icons.card_giftcard_outlined,
+              label: 'Gift',
+              color: AppColors.secondary,
+              onTap: _giftToFriend,
+            ),
         ],
       ),
     );
@@ -2453,8 +2567,7 @@ class _ExpiredVoucherBody extends ConsumerWidget {
                       const SizedBox(height: 12),
                       _StatusInfoRow(
                         label: 'Expired On',
-                        value: dateFmt.format(
-                            first.couponExpiresAt!.toLocal()),
+                        value: '${dateFmt.format(first.couponExpiresAt!.toUtc())} (CT)',
                         valueColor: AppColors.error,
                       ),
                     ],

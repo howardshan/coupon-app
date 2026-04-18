@@ -446,7 +446,7 @@ class _DealRow extends StatelessWidget {
                 if (group.items.isNotEmpty && group.items.first.couponExpiresAt != null) ...[
                   const SizedBox(height: 2),
                   Text(
-                    'Expires ${DateFormat('MMM d, yyyy').format(group.items.first.couponExpiresAt!.toLocal())}',
+                    'Expires ${DateFormat('MMM d, yyyy').format(group.items.first.couponExpiresAt!.toUtc())} (CT)',
                     style: const TextStyle(fontSize: 11, color: AppColors.textHint),
                   ),
                 ],

@@ -12,7 +12,7 @@ const _orderSelect =
     'order_items('
     '  id, deal_id, unit_price, service_fee, customer_status, merchant_status, '
     '  coupon_id, redeemed_at, refunded_at, refund_method, '
-    '  deals(id, title, image_urls, merchants(id, name)), '
+    '  deals(id, title, image_urls, usage_days, usage_rules, usage_notes, refund_policy, expires_at, merchants(id, name)), '
     '  coupons!order_items_coupon_id_fkey(id, qr_code, coupon_code, status, expires_at), '
     '  coupon_gifts(id, gifter_user_id, recipient_email, recipient_phone, recipient_user_id, gift_message, status, claim_token, token_expires_at, claimed_at, recalled_at, created_at, updated_at)'
     ')';

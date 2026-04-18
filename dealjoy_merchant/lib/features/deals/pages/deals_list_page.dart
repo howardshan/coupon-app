@@ -159,10 +159,15 @@ class _DealTabView extends ConsumerWidget {
         var source = brandOnly
             ? deals.where((d) => d.applicableMerchantIds != null && d.applicableMerchantIds!.isNotEmpty).toList()
             : deals;
-        // 按状态筛选
+        // 按状态筛选；Active tab 排除已过期的 deal（DB deal_status 仍为 active 但 expires_at 已过）
         final filtered = filter == null
             ? source
-            : source.where((d) => d.dealStatus == filter).toList();
+            : source.where((d) {
+                if (filter == DealStatus.active) {
+                  return d.dealStatus == DealStatus.active && !d.isExpiredByDate;
+                }
+                return d.dealStatus == filter;
+              }).toList();
 
         if (filtered.isEmpty) {
           return _EmptyView(filter: filter);

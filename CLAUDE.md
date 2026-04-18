@@ -157,6 +157,65 @@ merchant_photos, merchant_hours, merchant_documents, deal_images
 - `deal_joy/lib/features/deals/domain/providers/deals_provider.dart` — featuredDealsProvider、userLocationProvider 逻辑
 - DB RPC 函数 `search_deals_nearby`、`search_deals_by_city`、`search_merchants_nearby`（含返回字段、排序、Haversine 距离计算）
 
+### 客户端 Sales Tax 全链路
+以下文件的税费计算、展示、退款含税逻辑**禁止修改**，除非用户明确命令要求：
+- `deal_joy/lib/features/checkout/domain/providers/tax_rate_provider.dart` — metroTaxRatesProvider、cartTaxEstimateProvider、singleDealTaxEstimateProvider
+- `deal_joy/lib/features/checkout/presentation/screens/checkout_screen.dart` — Tax (est.) 行展示、_lastBackendTotalTax 后端值刷新、onPaymentBreakdown 回调
+- `deal_joy/lib/features/checkout/data/repositories/checkout_repository.dart` — onPaymentBreakdown 参数、totalTax 透传
+- `deal_joy/lib/features/checkout/presentation/screens/order_success_screen.dart` — Subtotal / Tax / Amount Paid 拆分展示
+- `deal_joy/lib/features/orders/presentation/screens/order_detail_screen.dart` — Price Breakdown Tax 行、Paid 含税金额
+- `deal_joy/lib/features/orders/presentation/screens/coupon_screen.dart` — Refund Details 含税拆分（Vouchers / Subtotal / Tax / Refunded To）、_RefundDetailsCard
+- `deal_joy/lib/features/orders/presentation/screens/refund_request_screen.dart` — 退款金额 Subtotal + Tax 拆分
+- `deal_joy/lib/features/orders/presentation/screens/orders_screen.dart` — 订单卡片 Tax 行
+- `deal_joy/lib/features/orders/data/models/order_model.dart` — taxAmount 字段
+- `deal_joy/lib/features/orders/data/models/order_item_model.dart` — taxAmount、taxRate、usageDays、usageNotes 字段
+- `deal_joy/lib/features/orders/data/models/order_detail_model.dart` — taxAmount 字段
+- `deal_joy/lib/features/orders/data/models/coupon_model.dart` — taxAmount、taxRate 字段、isExpired 按商家时区 +30h 判断
+- `deal_joy/supabase/functions/create-order-v3/index.ts` — per-item 税费计算 + tax_metro_area 快照写入
+- `deal_joy/supabase/functions/create-payment-intent/index.ts` — 按 merchant.metro_area 查 metro_tax_rates 计税
+- `deal_joy/supabase/functions/user-order-detail/index.ts` — tax_amount / tax_rate / usageDays / usageNotes 返回
+- `deal_joy/supabase/migrations/20260413000001_tax_revenue_report.sql` — tax_metro_area 字段 + get_tax_revenue_report RPC
+- DB 表 `metro_tax_rates`、`order_items.tax_amount`、`order_items.tax_rate`、`order_items.tax_metro_area`
+
+### 客户端 Voucher Detail 页面
+以下文件**禁止修改**，除非用户明确命令要求：
+- `deal_joy/lib/features/orders/presentation/screens/voucher_detail_screen.dart` — _UnusedVouchersByOrderSection（券列表）、_DealInfoBlock（公共信息卡片：Valid Until / Available / Notes / Usage Rules / Refund Policy）、_VoucherQuickActions（Gift 按钮条件 unusedOrderItemIds.isNotEmpty）、QR 弹层 initialPage 定位
+- `deal_joy/lib/features/orders/data/repositories/orders_repository.dart` — _orderSelect（含 tax_amount、tax_rate、usage_days、usage_rules、usage_notes、refund_policy、expires_at）
+- `deal_joy/lib/features/orders/data/repositories/coupons_repository.dart` — _couponSelect（含 tax_amount、tax_rate）
+
+### 客户端 Review 评价系统（维度评分 + 星级筛选 + 同名 deal 聚合）
+以下文件**禁止修改**，除非用户明确命令要求：
+- `deal_joy/lib/features/deals/data/repositories/deals_repository.dart` — fetchReviewsByDeal 按同 merchant + 同 title 聚合所有 deal 评价
+- `deal_joy/lib/features/deals/data/models/review_model.dart` — storeName 字段
+- `deal_joy/lib/features/deals/presentation/screens/deal_detail_screen.dart` — _ReviewsSection（星级筛选 chips + 评价数量 + actualRating/actualCount）、_RatingFilterChip、_RestaurantInfo 头部 actualRating/actualReviewCount
+- `deal_joy/lib/features/merchant/presentation/screens/merchant_detail_screen.dart` — _buildReviewsSection 星级筛选 chips + _selectedReviewStar + _buildFilterChip
+- `deal_joy/lib/features/merchant/presentation/widgets/review_stats_header.dart` — 维度评分进度条（Overall / Environment / Product / Service）
+- `deal_joy/lib/features/merchant/presentation/widgets/review_card.dart` — storeName 门店来源标签
+- `deal_joy/lib/features/merchant/data/models/review_stats_model.dart` — avgOverall / avgEnvironment / avgProduct / avgService 字段
+- `deal_joy/lib/features/merchant/data/repositories/store_detail_repository.dart` — fetchMerchantReviews 按 reviews.merchant_id 查 + join merchants(name)、fetchReviewStats 按 reviews.merchant_id
+- `deal_joy/lib/features/orders/domain/providers/pending_reviews_provider.dart` — redeemed_at_merchant_id 优先关联核销门店
+- DB RPC `get_merchant_review_summary` — 按 reviews.merchant_id 统计 + 维度平均分
+
+### 客户端 Gift 赠送 + Recall 码重生成
+以下文件**禁止修改**，除非用户明确命令要求：
+- `deal_joy/supabase/functions/send-gift/index.ts` — 赠送后调 regenerate_coupon_codes 重生码（in_app + external 两分支）
+- `deal_joy/supabase/functions/recall-gift/index.ts` — 撤回后调 regenerate_coupon_codes 重生码
+- `deal_joy/supabase/migrations/20260413000006_regenerate_coupon_codes.sql` — regenerate_coupon_codes RPC
+- `deal_joy/lib/features/orders/domain/providers/coupons_provider.dart` — sendGift / sendGiftToFriend 成功后 invalidate couponDetailProvider + activeGiftProvider；couponsByStatusProvider expired case 排除 used；giftCoupon 旧方法保留但不再从 UI 调用
+
+### 商家端 Dashboard Today's Stats
+以下文件**禁止修改**，除非用户明确命令要求：
+- `dealjoy_merchant/lib/features/dashboard/widgets/stats_card.dart` — infoText ? 图标 + AlertDialog 说明
+- `dealjoy_merchant/lib/features/dashboard/pages/dashboard_page.dart` — _StatsSection 四个 StatsCard infoText 说明文字
+- `dealjoy_merchant/lib/features/earnings/models/earnings_data.dart` — EarningsTransaction.taxAmount、TransactionTotals.taxAmount 字段
+- `dealjoy_merchant/lib/features/earnings/widgets/transaction_tile.dart` — Tax 行 + TransactionTotalsRow.totalTaxAmount
+- DB RPC `get_merchant_daily_stats` — today_revenue 按 redeemed_at 统计净额（扣除 commission + stripe fee）
+- DB RPC `get_merchant_transactions` — 含 tax_amount 列
+
+### 好友系统 Chat 自动创建
+以下文件**禁止修改**，除非用户明确命令要求：
+- `deal_joy/supabase/migrations/20260413000007_friend_accept_create_chat.sql` — friend_request accepted 触发器自动创建 direct conversation + 系统欢迎消息
+
 ## 开发命令
 ```bash
 # Flutter

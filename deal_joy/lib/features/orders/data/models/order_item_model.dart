@@ -167,6 +167,12 @@ class OrderItemModel {
   /// Deal 使用规则（从 deals.usage_rules 字段）
   final List<String> usageRules;
 
+  /// Deal 使用须知长文案（从 deals.usage_notes 字段）
+  final String? usageNotes;
+
+  /// Deal 可用日（从 deals.usage_days 字段，如 ['Mon','Tue','Wed']，空表示每天可用）
+  final List<String> usageDays;
+
   /// Deal 退款政策
   final String? refundPolicy;
 
@@ -202,6 +208,8 @@ class OrderItemModel {
     this.refundedAt,
     this.refundReason,
     this.usageRules = const [],
+    this.usageNotes,
+    this.usageDays = const [],
     this.refundPolicy,
     this.dealExpiresAt,
     this.dealOriginalPrice,
@@ -370,6 +378,10 @@ class OrderItemModel {
           pick<String>('merchant_name', 'merchantName'),
       // Deal 额外信息
       usageRules: ((json['usageRules'] ?? json['usage_rules'] ?? dealsObj?['usage_rules']) as List?)
+              ?.cast<String>() ?? const [],
+      usageNotes: pick<String>('usage_notes', 'usageNotes') ??
+          dealsObj?['usage_notes'] as String?,
+      usageDays: ((json['usageDays'] ?? json['usage_days'] ?? dealsObj?['usage_days']) as List?)
               ?.cast<String>() ?? const [],
       refundPolicy: pick<String>('refund_policy', 'refundPolicy') ??
           dealsObj?['refund_policy'] as String?,

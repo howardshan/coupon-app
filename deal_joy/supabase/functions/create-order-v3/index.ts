@@ -445,6 +445,19 @@ Deno.serve(async (req) => {
             if (net > 0) merchantNetMap.set(connectId, (merchantNetMap.get(connectId) ?? 0) + net);
           }
 
+          // 从 merchant net 里按比例扣除 Stripe 手续费（2.9% + $0.30/笔）
+          // 确保平台净收 = service_fee + commission + tax 不被 Stripe 吃掉
+          const totalAmountCents = Math.round((totalAmount ?? 0) * 100);
+          const stripeFeeCents = Math.round(totalAmountCents * 0.029 + 30);
+          const totalNetCents = Array.from(merchantNetMap.values()).reduce((s, v) => s + v, 0);
+          if (totalNetCents > 0 && stripeFeeCents > 0) {
+            for (const [cid, netCents] of merchantNetMap) {
+              // 按 merchant_net 占比分摊 Stripe 费
+              const share = Math.round(stripeFeeCents * (netCents / totalNetCents));
+              merchantNetMap.set(cid, Math.max(0, netCents - share));
+            }
+          }
+
           for (const [connectId, amountCents] of merchantNetMap) {
             try {
               const transferRes = await fetch('https://api.stripe.com/v1/transfers', {
@@ -596,6 +609,88 @@ Deno.serve(async (req) => {
           await serviceClient.from('orders').delete().eq('id', orderId);
           return jsonResponse({ error: 'ReserveHold 创建失败，订单已取消，支付已退款' }, 500);
         }
+      }
+    }
+
+    // ----------------------------------------------------------------
+    // 6.6. 记录每张 order_item 的实际 stripe_transfer_amount（退款精确逆向用）
+    //   多商家：merchantNetMap 已含 stripe_fee 摊薄，按 item 比例分配
+    //   单商家：PI application_fee_amount 反推实际 transfer，按 item 比例分配
+    // ----------------------------------------------------------------
+    if (insertedItems && insertedItems.length > 0 && !skipStripeVerification) {
+      try {
+        const itemTransferUpdates: Array<{ id: string; stripe_transfer_amount: number }> = [];
+
+        if (merchantIdsForReserve.length > 1) {
+          // ── 多商家：使用已计算好的 merchantNetMap（含 stripe_fee 摊薄）──
+          // 先汇总每个商家下所有 items 的 merchant_net 总量，用于按比例分配
+          const merchantItemNetTotals = new Map<string, number>(); // merchantId → total merchant_net(cents)
+          for (const dbItem of (insertedItems as any[])) {
+            const mid = dbItem.purchased_merchant_id as string | null;
+            if (!mid) continue;
+            const net = Math.max(0,
+              Math.round((Number(dbItem.unit_price) - Number(dbItem.commission_amount ?? 0) - Number(dbItem.promo_discount ?? 0)) * 100),
+            );
+            merchantItemNetTotals.set(mid, (merchantItemNetTotals.get(mid) ?? 0) + net);
+          }
+
+          for (const dbItem of (insertedItems as any[])) {
+            const mid = dbItem.purchased_merchant_id as string | null;
+            if (!mid) continue;
+            const connectId = reserveMerchantConnectMap.get(mid);
+            if (!connectId || !successfulTransfers.has(connectId)) continue; // 分账失败的跳过
+
+            const actualMerchantTransferCents = merchantNetMap.get(connectId) ?? 0;
+            const merchantTotalNetCents = merchantItemNetTotals.get(mid) ?? 0;
+            const itemNetCents = Math.max(0,
+              Math.round((Number(dbItem.unit_price) - Number(dbItem.commission_amount ?? 0) - Number(dbItem.promo_discount ?? 0)) * 100),
+            );
+
+            if (merchantTotalNetCents > 0 && actualMerchantTransferCents > 0) {
+              const itemTransferCents = Math.round(actualMerchantTransferCents * (itemNetCents / merchantTotalNetCents));
+              if (itemTransferCents > 0) {
+                itemTransferUpdates.push({ id: dbItem.id, stripe_transfer_amount: itemTransferCents / 100 });
+              }
+            }
+          }
+        } else {
+          // ── 单商家：PI 自动 transfer，从 application_fee_amount 反推 ──
+          const appFeeCents = Number((paymentIntent as any).application_fee_amount ?? 0);
+          const totalAmountCents = Math.round((totalAmount ?? 0) * 100);
+          const actualTransferCents = Math.max(0, totalAmountCents - appFeeCents);
+
+          if (actualTransferCents > 0) {
+            const totalNetCents = (insertedItems as any[]).reduce((sum: number, it: any) => {
+              return sum + Math.max(0,
+                Math.round((Number(it.unit_price) - Number(it.commission_amount ?? 0) - Number(it.promo_discount ?? 0)) * 100),
+              );
+            }, 0);
+
+            for (const dbItem of (insertedItems as any[])) {
+              const itemNetCents = Math.max(0,
+                Math.round((Number(dbItem.unit_price) - Number(dbItem.commission_amount ?? 0) - Number(dbItem.promo_discount ?? 0)) * 100),
+              );
+              if (totalNetCents > 0) {
+                const itemTransferCents = Math.round(actualTransferCents * (itemNetCents / totalNetCents));
+                if (itemTransferCents > 0) {
+                  itemTransferUpdates.push({ id: dbItem.id, stripe_transfer_amount: itemTransferCents / 100 });
+                }
+              }
+            }
+          }
+        }
+
+        if (itemTransferUpdates.length > 0) {
+          await Promise.allSettled(
+            itemTransferUpdates.map(({ id, stripe_transfer_amount }) =>
+              serviceClient.from('order_items').update({ stripe_transfer_amount }).eq('id', id),
+            ),
+          );
+          console.log(`[TransferAmount] 已写入 ${itemTransferUpdates.length} 张 item 的 stripe_transfer_amount`);
+        }
+      } catch (taErr) {
+        // 写入失败不阻断订单，退款时会降级到比例计算
+        console.error('[TransferAmount] 写入失败（不阻断，退款时降级）:', taErr);
       }
     }
 

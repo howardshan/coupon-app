@@ -249,7 +249,9 @@ class OrderDetailModel {
   bool get isExpired => status == 'expired';
   bool get isRefundRejected => refundRejectedAt != null;
   bool get isExpiredByDate =>
-      couponExpiresAt != null && DateTime.now().isAfter(couponExpiresAt!);
+      couponExpiresAt != null &&
+      DateTime.now().toUtc().isAfter(
+          couponExpiresAt!.toUtc().add(const Duration(hours: 30)));
 
   /// 展示用状态（与商家端一致：已退款优先，再按过期/其他）
   bool get canRequestAfterSales {

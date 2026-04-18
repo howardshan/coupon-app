@@ -5,11 +5,21 @@ class ReviewStatsModel {
   final Map<int, int> ratingDistribution; // {5: 780, 4: 300, 3: 50, 2: 10, 1: 5}
   final List<ReviewTag> topTags;
 
+  // 维度平均分（0 表示无数据）
+  final double avgOverall;
+  final double avgEnvironment;
+  final double avgProduct;
+  final double avgService;
+
   const ReviewStatsModel({
     required this.avgRating,
     required this.totalCount,
     required this.ratingDistribution,
     required this.topTags,
+    this.avgOverall = 0,
+    this.avgEnvironment = 0,
+    this.avgProduct = 0,
+    this.avgService = 0,
   });
 
   factory ReviewStatsModel.fromJson(Map<String, dynamic> json) {
@@ -38,6 +48,10 @@ class ReviewStatsModel {
       totalCount: (json['total_count'] as num?)?.toInt() ?? 0,
       ratingDistribution: distribution,
       topTags: tags,
+      avgOverall: (json['avg_overall'] as num?)?.toDouble() ?? 0.0,
+      avgEnvironment: (json['avg_environment'] as num?)?.toDouble() ?? 0.0,
+      avgProduct: (json['avg_product'] as num?)?.toDouble() ?? 0.0,
+      avgService: (json['avg_service'] as num?)?.toDouble() ?? 0.0,
     );
   }
 

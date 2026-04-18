@@ -115,6 +115,8 @@ class DealModel {
   final int? validityDays;
   // 使用规则列表（从 DB 读取，显示在详情页 Purchase Notes 区域）
   final List<String> usageRules;
+  // 可使用的星期几（如 ['Mon','Tue','Wed']），空数组表示每天可用
+  final List<String> usageDays;
   // 每账号限购数量，-1 表示无限制
   final int maxPerAccount;
   // 广告相关（由推荐系统 get-recommendations 返回）
@@ -160,6 +162,7 @@ class DealModel {
     this.validityType = 'fixed_date',
     this.validityDays,
     this.usageRules = const [],
+    this.usageDays = const [],
     this.maxPerAccount = -1,
     this.isSponsored = false,
     this.campaignId,
@@ -212,6 +215,7 @@ class DealModel {
         validityType: json['validity_type'] as String? ?? 'fixed_date',
         validityDays: json['validity_days'] as int?,
         usageRules: (json['usage_rules'] as List?)?.cast<String>() ?? [],
+        usageDays: (json['usage_days'] as List?)?.cast<String>() ?? [],
         maxPerAccount: json['max_per_account'] as int? ?? -1,
         isSponsored: json['isSponsored'] as bool? ?? false,
         campaignId: json['campaignId'] as String?,
@@ -256,6 +260,7 @@ class DealModel {
         validityDays: json['validity_days'] as int?,
         // RPC 搜索结果不返回这两个字段，给默认值
         usageRules: const [],
+        usageDays: (json['usage_days'] as List?)?.cast<String>() ?? [],
         maxPerAccount: -1,
       );
 
@@ -303,7 +308,14 @@ class DealModel {
     return list;
   }
 
-  bool get isExpired => DateTime.now().isAfter(expiresAt);
+  /// 用日期级比较：设定过期日当天全天有效，次日才算过期
+  /// 避免 UTC 午夜存储导致本地时区下提前过期
+  bool get isExpired {
+    final today = DateTime.now();
+    final todayDate = DateTime(today.year, today.month, today.day);
+    final expiryDate = DateTime(expiresAt.year, expiresAt.month, expiresAt.day);
+    return todayDate.isAfter(expiryDate);
+  }
 
   Duration get timeLeft => expiresAt.difference(DateTime.now());
 

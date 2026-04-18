@@ -160,7 +160,14 @@ class _DealDetailBodyState extends ConsumerState<_DealDetailBody> {
           const SliverToBoxAdapter(child: _SectionDivider()),
 
           // Restaurant info
-          SliverToBoxAdapter(child: _RestaurantInfo(deal: deal)),
+          SliverToBoxAdapter(child: Builder(builder: (_) {
+            final reviews = ref.watch(dealReviewsProvider(deal.id)).valueOrNull ?? [];
+            final actualRating = reviews.isNotEmpty
+                ? reviews.fold<double>(0, (s, r) => s + r.ratingOverall) / reviews.length
+                : deal.rating;
+            final actualCount = reviews.isNotEmpty ? reviews.length : deal.reviewCount;
+            return _RestaurantInfo(deal: deal, actualRating: actualRating, actualReviewCount: actualCount);
+          })),
 
           // 详情竖版图片展示区（restaurant info 下方）
           if (deal.detailImages.isNotEmpty)
@@ -1175,6 +1182,24 @@ class _InfoSection extends StatelessWidget {
 
   const _InfoSection({required this.deal});
 
+  // 格式化 usage_days：空数组 → "Available Everyday"，否则列出星期几
+  String _formatUsageDays(List<String> days) {
+    if (days.isEmpty) return 'Available Everyday';
+    const fullNames = {
+      'Mon': 'Mon', 'Tue': 'Tue', 'Wed': 'Wed', 'Thu': 'Thu',
+      'Fri': 'Fri', 'Sat': 'Sat', 'Sun': 'Sun',
+    };
+    if (days.length == 7) return 'Available Everyday';
+    // 判断是否刚好工作日或周末
+    final sorted = days.toList()..sort((a, b) =>
+      fullNames.keys.toList().indexOf(a).compareTo(fullNames.keys.toList().indexOf(b)));
+    final weekdays = {'Mon', 'Tue', 'Wed', 'Thu', 'Fri'};
+    final weekend = {'Sat', 'Sun'};
+    if (sorted.toSet().containsAll(weekdays) && sorted.length == 5) return 'Weekdays Only';
+    if (sorted.toSet().containsAll(weekend) && sorted.length == 2) return 'Weekends Only';
+    return 'Available: ${sorted.map((d) => fullNames[d] ?? d).join(', ')}';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -1215,18 +1240,22 @@ class _InfoSection extends StatelessWidget {
 
           const SizedBox(height: 10),
 
-          // Availability row
+          // Availability row — 根据 usage_days 显示可用日期
           Row(
             children: [
               const Icon(Icons.access_time_outlined,
                   size: 16, color: AppColors.success),
               const SizedBox(width: 6),
-              Text(
-                'Available Today',
-                style: TextStyle(
-                  color: AppColors.success,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
+              Flexible(
+                child: Text(
+                  _formatUsageDays(deal.usageDays),
+                  style: TextStyle(
+                    color: AppColors.success,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               if (deal.merchantHours != null) ...[
@@ -1874,6 +1903,15 @@ class _PurchaseNotes extends StatelessWidget {
               value: 'Card hold only — charged at redemption, released if unused',
             ),
           ],
+          // 可使用日期（usage_days 非空且非全周时展示）
+          if (deal.usageDays.isNotEmpty && deal.usageDays.length < 7) ...[
+            const SizedBox(height: 12),
+            _NoteRow(
+              icon: Icons.calendar_today_outlined,
+              label: 'Available',
+              value: deal.usageDays.join(', '),
+            ),
+          ],
           if (deal.merchantHours != null) ...[
             const SizedBox(height: 12),
             _NoteRow(
@@ -1958,8 +1996,10 @@ class _NoteRow extends StatelessWidget {
 // ── Restaurant info ──────────────────────────────────────────
 class _RestaurantInfo extends StatelessWidget {
   final DealModel deal;
+  final double? actualRating;
+  final int? actualReviewCount;
 
-  const _RestaurantInfo({required this.deal});
+  const _RestaurantInfo({required this.deal, this.actualRating, this.actualReviewCount});
 
   @override
   Widget build(BuildContext context) {
@@ -2044,7 +2084,7 @@ class _RestaurantInfo extends StatelessWidget {
                         const Icon(Icons.star, size: 14, color: Colors.amber),
                         const SizedBox(width: 3),
                         Text(
-                          deal.rating.toStringAsFixed(1),
+                          (actualRating ?? deal.rating).toStringAsFixed(1),
                           style: const TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.bold,
@@ -2052,7 +2092,7 @@ class _RestaurantInfo extends StatelessWidget {
                         ),
                         const SizedBox(width: 6),
                         Text(
-                          '(${deal.reviewCount} reviews)',
+                          '(${actualReviewCount ?? deal.reviewCount} reviews)',
                           style: const TextStyle(
                             fontSize: 12,
                             color: AppColors.textSecondary,
@@ -2735,7 +2775,7 @@ class _MerchantDealCard extends StatelessWidget {
 }
 
 // ── Reviews section ──────────────────────────────────────────
-class _ReviewsSection extends ConsumerWidget {
+class _ReviewsSection extends ConsumerStatefulWidget {
   final String dealId;
   final double dealRating;
   final int dealReviewCount;
@@ -2747,10 +2787,16 @@ class _ReviewsSection extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final reviewsAsync = ref.watch(dealReviewsProvider(dealId));
-    // 当前用户是否持有该 deal 的已核销 coupon → 决定是否显示 "Write a Review" 按钮
-    final canReview = ref.watch(canReviewDealProvider(dealId)).valueOrNull ?? false;
+  ConsumerState<_ReviewsSection> createState() => _ReviewsSectionState();
+}
+
+class _ReviewsSectionState extends ConsumerState<_ReviewsSection> {
+  int? _selectedStar;
+
+  @override
+  Widget build(BuildContext context) {
+    final reviewsAsync = ref.watch(dealReviewsProvider(widget.dealId));
+    final canReview = ref.watch(canReviewDealProvider(widget.dealId)).valueOrNull ?? false;
 
     return Container(
       color: Colors.white,
@@ -2771,14 +2817,14 @@ class _ReviewsSection extends ConsumerWidget {
                   const Icon(Icons.star, size: 16, color: Colors.amber),
                   const SizedBox(width: 3),
                   Text(
-                    dealRating.toStringAsFixed(1),
+                    widget.dealRating.toStringAsFixed(1),
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       color: AppColors.primary,
                     ),
                   ),
                   Text(
-                    ' ($dealReviewCount)',
+                    ' (${widget.dealReviewCount})',
                     style: const TextStyle(
                       fontSize: 13,
                       color: AppColors.textSecondary,
@@ -2789,68 +2835,94 @@ class _ReviewsSection extends ConsumerWidget {
             ],
           ),
           const SizedBox(height: 6),
-          // Rating stars summary
-          Row(
-            children: List.generate(
-              5,
-              (i) => Icon(
-                i < dealRating.round() ? Icons.star : Icons.star_border,
-                size: 18,
-                color: Colors.amber,
-              ),
-            ),
-          ),
-          Text(
-            '$dealReviewCount reviews',
-            style: const TextStyle(
-              fontSize: 12,
-              color: AppColors.textSecondary,
-            ),
-          ),
-          const SizedBox(height: 14),
-
-          // Reviews list
           reviewsAsync.when(
             data: (reviews) {
-              if (reviews.isEmpty) {
-                return Container(
-                  padding: const EdgeInsets.symmetric(vertical: 24),
-                  alignment: Alignment.center,
-                  child: const Text(
-                    'Be the first to review!',
-                    style: TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 14,
-                    ),
-                  ),
-                );
-              }
-              final shown = reviews.length > 5 ? reviews.sublist(0, 5) : reviews;
+              final actualCount = reviews.length;
+              final actualRating = reviews.isEmpty
+                  ? widget.dealRating
+                  : reviews.fold<double>(0, (s, r) => s + r.ratingOverall) / reviews.length;
+
+              // 按星级筛选
+              final filtered = _selectedStar == null
+                  ? reviews
+                  : reviews.where((r) => r.ratingOverall == _selectedStar).toList();
+
               return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  ...shown.map((r) => Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: _ReviewCard(review: r),
-                      )),
-                  if (reviews.length > 5)
-                    GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () {
-                        // TODO: navigate to full reviews page
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        alignment: Alignment.center,
-                        child: Text(
-                          'See All $dealReviewCount Reviews',
-                          style: TextStyle(
-                            color: AppColors.primary,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 14,
-                          ),
-                        ),
+                  Row(
+                    children: List.generate(
+                      5,
+                      (i) => Icon(
+                        i < actualRating.round() ? Icons.star : Icons.star_border,
+                        size: 18,
+                        color: Colors.amber,
                       ),
                     ),
+                  ),
+                  Text(
+                    '$actualCount reviews',
+                    style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                  ),
+                  // 星级筛选 chips
+                  if (reviews.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Builder(builder: (_) {
+                        final countByRating = <int, int>{};
+                        for (final r in reviews) {
+                          countByRating[r.ratingOverall] = (countByRating[r.ratingOverall] ?? 0) + 1;
+                        }
+                        return Row(
+                          children: [
+                            _RatingFilterChip(
+                              label: 'All (${reviews.length})',
+                              isSelected: _selectedStar == null,
+                              onTap: () => setState(() => _selectedStar = null),
+                            ),
+                            const SizedBox(width: 6),
+                            ...List.generate(5, (i) {
+                              final star = 5 - i;
+                              final count = countByRating[star] ?? 0;
+                              return Padding(
+                                padding: const EdgeInsets.only(right: 6),
+                                child: _RatingFilterChip(
+                                  label: '$star ★ ($count)',
+                                  isSelected: _selectedStar == star,
+                                  onTap: () => setState(() => _selectedStar = star),
+                                ),
+                              );
+                            }),
+                          ],
+                        );
+                      }),
+                    ),
+                  ],
+                  const SizedBox(height: 14),
+                  if (reviews.isEmpty)
+                    Container(
+                      padding: const EdgeInsets.symmetric(vertical: 24),
+                      alignment: Alignment.center,
+                      child: const Text(
+                        'Be the first to review!',
+                        style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
+                      ),
+                    )
+                  else if (filtered.isEmpty)
+                    Container(
+                      padding: const EdgeInsets.symmetric(vertical: 24),
+                      alignment: Alignment.center,
+                      child: Text(
+                        'No $_selectedStar-star reviews',
+                        style: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
+                      ),
+                    )
+                  else
+                    ...filtered.map((r) => Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: _ReviewCard(review: r),
+                        )),
                 ],
               );
             },
@@ -2873,7 +2945,7 @@ class _ReviewsSection extends ConsumerWidget {
             const SizedBox(height: 8),
             GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTap: () => context.push('/review/$dealId'),
+              onTap: () => context.push('/review/${widget.dealId}'),
               child: Container(
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(vertical: 12),
@@ -2895,6 +2967,41 @@ class _ReviewsSection extends ConsumerWidget {
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+// ── 星级筛选 chip ─────────────────────────────────────────────
+class _RatingFilterChip extends StatelessWidget {
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _RatingFilterChip({
+    required this.label,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected ? AppColors.primary : Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: isSelected ? Colors.white : AppColors.textSecondary,
+          ),
+        ),
       ),
     );
   }

@@ -585,7 +585,7 @@ class _DealInfoRow extends StatelessWidget {
   Widget build(BuildContext context) {
     // 格式化过期日期：Apr 20, 2026
     final expiresLabel = expiresAt != null
-        ? 'Expires: ${DateFormat('MMM d, yyyy').format(expiresAt!.toLocal())}'
+        ? 'Expires: ${DateFormat('MMM d, yyyy').format(expiresAt!.toUtc())} (CT)'
         : null;
 
     // 组合副标题（商家 · 过期时间）

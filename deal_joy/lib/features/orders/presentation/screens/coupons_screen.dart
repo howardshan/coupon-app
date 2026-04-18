@@ -522,7 +522,7 @@ class _CouponRow extends StatelessWidget {
                   if (expiresAt != null) ...[
                     const SizedBox(height: 2),
                     Text(
-                      'Expires ${DateFormat('MMM d, yyyy').format(expiresAt!.toLocal())}',
+                      'Expires ${DateFormat('MMM d, yyyy').format(expiresAt!.toUtc())} (CT)',
                       style: TextStyle(
                         fontSize: 11,
                         color: showUrgent ? AppColors.error : AppColors.textHint,

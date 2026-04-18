@@ -193,17 +193,7 @@ class _AmountColumn extends StatelessWidget {
             ),
           ),
         ],
-        // Tax 代收（仅 tax > 0 时显示，老订单隐藏）
-        if (transaction.taxAmount > 0) ...[
-          const SizedBox(height: 1),
-          Text(
-            'Tax: \$${transaction.taxAmount.toStringAsFixed(2)}',
-            style: TextStyle(
-              fontSize: 10,
-              color: Colors.grey.shade400,
-            ),
-          ),
-        ],
+        // Tax 行已移除 — 商家不需要看代收税额
         const SizedBox(height: 2),
         // 商家实收（绿色）
         Text(
@@ -323,11 +313,7 @@ class TransactionTotalsRow extends StatelessWidget {
                     'Stripe fee: \$${totalStripeFee.toStringAsFixed(2)}',
                     style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
                   ),
-                if (totalTaxAmount > 0)
-                  Text(
-                    'Tax: \$${totalTaxAmount.toStringAsFixed(2)}',
-                    style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
-                  ),
+                // Tax 汇总行已移除
               ],
             ),
           ),

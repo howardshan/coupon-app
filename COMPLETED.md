@@ -208,6 +208,38 @@
   - `admin/app/(dashboard)/approvals/page.tsx` — `DealItem` 与 `fetchDeals` / All Tab deals 查询字段
   - `admin/app/api/approvals/merchant/[id]/route.ts` — `updated_at`
 
+#### Sales Tax 全链路 ✅
+- 状态：已完成，checkout / order success / order detail / coupon / refund 全页面 Tax 展示 + 后端计税 + Admin 月度报表
+- 受保护文件：见 CLAUDE.md「客户端 Sales Tax 全链路」章节
+
+#### Voucher Detail 页面改版 ✅
+- 状态：已完成，移除订单信息 + 公共 Deal Info Block（Valid Until / Available / Notes / Usage Rules / Refund Policy）+ QR 左右滑动切换 + Gift 仅 unused 可用
+- 受保护文件：见 CLAUDE.md「客户端 Voucher Detail 页面」章节
+
+#### Review 评价系统增强 ✅
+- 状态：已完成，维度评分进度条（Overall/Environment/Product/Service）+ 星级筛选 chips（含计数）+ 同名 deal 评价聚合 + 评价关联核销门店 + 门店来源标签
+- 受保护文件：见 CLAUDE.md「客户端 Review 评价系统」章节
+
+#### Gift 赠送券码重生成 ✅
+- 状态：已完成，send-gift / recall-gift 均调 regenerate_coupon_codes 让旧码失效 + couponDetailProvider invalidate 页面自动刷新 + Gift 按钮统一走 GiftBottomSheet
+- 受保护文件：见 CLAUDE.md「客户端 Gift 赠送 + Recall 码重生成」章节
+
+#### 商家端 Dashboard Today's Stats ✅
+- 状态：已完成，Revenue 改为按 redeemed_at 统计净额 + ? 图标说明 + Tax 行 + Earnings 含税展示
+- 受保护文件：见 CLAUDE.md「商家端 Dashboard Today's Stats」章节
+
+#### 好友系统 Chat 自动创建 ✅
+- 状态：已完成，friend_request accepted 触发器自动创建 direct conversation + 系统欢迎消息
+- 受保护文件：见 CLAUDE.md「好友系统 Chat 自动创建」章节
+
+#### Admin Tax Revenue 报表 ✅
+- 状态：已完成，/finance/tax-revenue 页面 + 月份切换 + CSV 导出 + get_tax_revenue_report RPC
+- 受保护文件：
+  - `admin/app/(dashboard)/finance/tax-revenue/page.tsx`
+  - `admin/app/(dashboard)/finance/tax-revenue/tax-revenue-table.tsx`
+  - `admin/app/actions/tax-revenue.ts`
+  - `admin/components/sidebar.tsx` — Finance 分组含 Tax Revenue 入口
+
 ---
 
 ## 更新记录
@@ -223,6 +255,7 @@
 | 2026-03-30 | Admin 退款争议活动时间线（订单详情 + Refund 抽屉 + revalidate） | Claude |
 | 2026-03-30 | Admin 售后时间线统一通用卡片 + `after-sales-admin-timeline.ts` | Claude |
 | 2026-03-30 | Admin Phase 5：审批抽屉 Activity preview + 订单跳转与说明 | Claude |
+| 2026-04-18 | Sales Tax 全链路 + Voucher Detail 改版 + Review 增强 + Gift 码重生成 + Dashboard Stats + Chat 自动创建 + Admin Tax Revenue | Claude |
 
 ---
 

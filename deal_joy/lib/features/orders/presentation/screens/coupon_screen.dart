@@ -398,7 +398,7 @@ class _QrSection extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              'Expires: ${DateFormat('MMM d, yyyy').format(coupon.expiresAt.toLocal())}',
+              'Expires: ${DateFormat('MMM d, yyyy').format(coupon.expiresAt.toUtc())} (CT)',
               style: const TextStyle(
                   color: AppColors.textSecondary, fontSize: 12),
             ),
@@ -452,7 +452,7 @@ class _UsedStatusSection extends StatelessWidget {
       message = 'Used on $formatted';
     } else if (coupon.isExpired) {
       message =
-          'This coupon expired on ${DateFormat('MMM d, yyyy').format(coupon.expiresAt.toLocal())}';
+          'This coupon expired on ${DateFormat('MMM d, yyyy').format(coupon.expiresAt.toUtc())} (CT)';
     } else {
       message = 'This coupon is no longer active.';
     }
@@ -542,7 +542,7 @@ class _UsedStatusSection extends StatelessWidget {
                     _DetailRow(
                       icon: Icons.event_outlined,
                       label: 'Expired',
-                      value: dateFmt.format(coupon.expiresAt.toLocal()),
+                      value: '${dateFmt.format(coupon.expiresAt.toUtc())} (CT)',
                     ),
                   const SizedBox(height: 8),
                   // 退款金额（含税）

@@ -436,8 +436,15 @@ class MerchantDeal {
   /// 是否已售罄
   bool get isSoldOut => !isUnlimited && remainingStock <= 0;
 
-  /// 是否已按日期过期（expires_at 已过，用于展示「Expired」状态）
-  bool get isExpiredByDate => DateTime.now().isAfter(expiresAt);
+  /// 是否已按日期过期
+  /// 用日期级比较：设定过期日当天全天有效，次日才算过期
+  /// 避免 UTC 午夜存储导致本地时区下提前过期的问题
+  bool get isExpiredByDate {
+    final today = DateTime.now();
+    final todayDate = DateTime(today.year, today.month, today.day);
+    final expiryDate = DateTime(expiresAt.year, expiresAt.month, expiresAt.day);
+    return todayDate.isAfter(expiryDate);
+  }
 
   /// 主图 URL（第一张 is_primary=true 的图，或第一张图）
   String? get coverImageUrl {

@@ -9,6 +9,33 @@ import { buildA4Email } from '../_shared/email-templates/admin/large-refund-aler
 // 大额退款告警阈值（美元）
 const LARGE_REFUND_THRESHOLD = 200;
 
+/**
+ * 计算本 order_item 应逆向的 Transfer 金额（美分）
+ *
+ * 原始 Transfer 总额 = sum(所有 item 的 merchant_net) - stripe_fee_estimate
+ * 本 item 应逆向 = actualTransferCents × (item_merchant_net / total_merchant_net)
+ *
+ * 这样无论单张还是多张券，都不会超额逆向（Stripe fee 已在比例里摊薄）
+ */
+async function calcProportionalReversalCents(
+  supabaseAdmin: ReturnType<typeof import('https://esm.sh/@supabase/supabase-js@2?target=deno').createClient>,
+  orderId: string,
+  itemMerchantNet: number,   // 本 item 的 merchant_net（美元）
+  actualTransferCents: number, // Stripe PI expand 拿到的实际 transfer.amount（美分）
+): Promise<number> {
+  const { data: allItems } = await supabaseAdmin
+    .from('order_items')
+    .select('unit_price, commission_amount, promo_discount')
+    .eq('order_id', orderId);
+
+  const totalMerchantNet = (allItems ?? []).reduce((sum: number, it: Record<string, unknown>) => {
+    return sum + (Number(it.unit_price ?? 0) - Number(it.commission_amount ?? 0) - Number(it.promo_discount ?? 0));
+  }, 0);
+
+  const proportion = totalMerchantNet > 0 ? itemMerchantNet / totalMerchantNet : 1;
+  return Math.max(0, Math.round(actualTransferCents * proportion));
+}
+
 const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {
   apiVersion: '2024-04-10',
   httpClient: Stripe.createFetchHttpClient(),
@@ -129,6 +156,7 @@ Deno.serve(async (req) => {
         promo_discount,
         purchased_merchant_id,
         stripe_reserve_hold_id,
+        stripe_transfer_amount,
         customer_status,
         orders!inner (
           id,
@@ -243,12 +271,10 @@ Deno.serve(async (req) => {
         await releaseReserveHold(merchantStripeAccountId, holdIdSC, Deno.env.get('STRIPE_SECRET_KEY') ?? '');
       }
 
-      // Stripe Connect 分账路径：Store Credit 由平台垫付，需从商家 Connect 账户回撤 merchant_net，以平衡资金
-      // 注意：此处不依赖 hasConnectRouting（避免因商家状态不是 'connected' 而漏掉逆向）
-      // 直接从 PI latest_charge.transfer 判断是否存在 Transfer，有则逆向
+      // Stripe Connect 分账路径：从商家 Connect 账户回撤本 item 实际 transfer 金额
+      // 优先用下单时存储的 stripe_transfer_amount（精确），旧订单降级到比例计算
       if (order.payment_intent_id && !order.payment_intent_id.startsWith('store_credit_')) {
         try {
-          // 获取 PaymentIntent 找到关联 transfer ID
           const pi = await stripe.paymentIntents.retrieve(order.payment_intent_id, {
             expand: ['latest_charge.transfer'],
           });
@@ -256,17 +282,34 @@ Deno.serve(async (req) => {
           const transferId = typeof transfer === 'string' ? transfer : transfer?.id;
 
           if (transferId) {
-            // merchant_net = unit_price - promo_discount - commission_amount（commission 基数已扣促销，故需再减）
-            const merchantNetCents = Math.round((unitPrice - promoDiscount - commissionAmount) * 100);
-            if (merchantNetCents > 0) {
+            const storedTransferAmount = Number((item as any).stripe_transfer_amount ?? 0);
+            let reversalCents: number;
+
+            if (storedTransferAmount > 0) {
+              // 新订单：直接使用下单时记录的精确 transfer 金额
+              reversalCents = Math.round(storedTransferAmount * 100);
+            } else {
+              // 旧订单兜底：从实际 transfer.amount 按比例计算
+              const transferAmountCents: number | null =
+                transfer && typeof transfer === 'object' ? Number(transfer.amount) : null;
+              if (transferAmountCents !== null && transferAmountCents > 0) {
+                const itemMerchantNet = unitPrice - promoDiscount - commissionAmount;
+                reversalCents = await calcProportionalReversalCents(
+                  supabaseAdmin, order.id, itemMerchantNet, transferAmountCents,
+                );
+              } else {
+                reversalCents = 0;
+              }
+            }
+
+            if (reversalCents > 0) {
               await stripe.transfers.createReversal(transferId, {
-                amount: merchantNetCents,
+                amount: reversalCents,
                 metadata: { order_item_id: orderItemId, reason: 'store_credit_refund' },
               });
             }
           }
         } catch (transferErr) {
-          // 回撤失败不阻断 SC 退款流程，记录告警供人工处理
           console.error('SC 退款 transfer reversal 失败（不阻断，需人工核查）:', transferErr);
         }
       }
@@ -439,31 +482,59 @@ Deno.serve(async (req) => {
           } else {
             refundParams.payment_intent = order.payment_intent_id;
           }
-          // 退款前先释放 ReserveHold（解冻商家资金，确保 reverse_transfer 能成功执行）
+          // 退款前先释放 ReserveHold（解冻商家资金）
           const holdIdOP = (item as any).stripe_reserve_hold_id as string | null;
           const reservesEnabledOP = Deno.env.get('STRIPE_RESERVES_ENABLED') !== 'false';
           if (holdIdOP && merchantStripeAccountId && reservesEnabledOP) {
             await releaseReserveHold(merchantStripeAccountId, holdIdOP, Deno.env.get('STRIPE_SECRET_KEY') ?? '');
           }
 
-          // Stripe Connect 分账路径：确认 PI 上存在 Transfer 再加 reverse_transfer: true
-          // 不依赖 hasConnectRouting（避免因商家状态不是 'connected' 而漏掉逆向）
-          // 直接从 latest_charge.transfer 判断：如果没有 transfer，盲目加 reverse_transfer 会导致 Stripe 报错中断退款
+          // Stripe Connect 分账路径：
+          // ❌ 不用 reverse_transfer: true —— 会让 Stripe 从商家账户拉走全额退款，商家多付 commission+税
+          // ✅ 手动 createReversal：只逆向本 item 实际收到的 transfer 金额，其余由平台从 application_fee 里出
           if (order.payment_intent_id && !order.payment_intent_id.startsWith('store_credit_')) {
             try {
-              const piForCheck = await stripe.paymentIntents.retrieve(order.payment_intent_id, {
+              const piForReversal = await stripe.paymentIntents.retrieve(order.payment_intent_id, {
                 expand: ['latest_charge.transfer'],
               });
-              const transferForCheck = (piForCheck as any).latest_charge?.transfer;
-              const transferIdForCheck = typeof transferForCheck === 'string' ? transferForCheck : transferForCheck?.id;
-              if (transferIdForCheck) {
-                refundParams.reverse_transfer = true;
+              const transferForReversal = (piForReversal as any).latest_charge?.transfer;
+              const transferIdForReversal = typeof transferForReversal === 'string' ? transferForReversal : transferForReversal?.id;
+
+              if (transferIdForReversal) {
+                const storedTransferAmountOP = Number((item as any).stripe_transfer_amount ?? 0);
+                let reversalCentsOP: number;
+
+                if (storedTransferAmountOP > 0) {
+                  // 新订单：直接使用下单时记录的精确 transfer 金额
+                  reversalCentsOP = Math.round(storedTransferAmountOP * 100);
+                } else {
+                  // 旧订单兜底：从实际 transfer.amount 按比例计算
+                  const transferAmountCentsOP: number | null =
+                    transferForReversal && typeof transferForReversal === 'object'
+                      ? Number(transferForReversal.amount)
+                      : null;
+                  if (transferAmountCentsOP !== null && transferAmountCentsOP > 0) {
+                    const itemMerchantNetOP = unitPrice - promoDiscount - commissionAmount;
+                    reversalCentsOP = await calcProportionalReversalCents(
+                      supabaseAdmin, order.id, itemMerchantNetOP, transferAmountCentsOP,
+                    );
+                  } else {
+                    reversalCentsOP = 0;
+                  }
+                }
+
+                if (reversalCentsOP > 0) {
+                  await stripe.transfers.createReversal(transferIdForReversal, {
+                    amount: reversalCentsOP,
+                    metadata: { order_item_id: orderItemId, reason: 'original_payment_refund' },
+                  });
+                }
               }
-            } catch (piErr) {
-              // 查询失败时降级：不加 reverse_transfer，防止阻断退款主流程
-              console.error('[create-refund] 原路退款 transfer 检测失败（降级不加 reverse_transfer）:', piErr);
+            } catch (reversalErr) {
+              console.error('[create-refund] 原路退款 transfer reversal 失败（降级平台垫付）:', reversalErr);
             }
           }
+          // 退款由平台余额支付（不带 reverse_transfer），该 item 的 transfer 已通过上方 createReversal 归还平台
           const refund = await stripe.refunds.create(refundParams as any);
           stripeRefundId = refund.id;
         } catch (stripeErr: unknown) {

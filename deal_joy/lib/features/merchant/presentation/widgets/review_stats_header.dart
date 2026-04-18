@@ -88,32 +88,34 @@ class ReviewStatsHeader extends StatelessWidget {
     );
   }
 
-  /// 右侧评分分布进度条（5星 → 1星）
+  /// 右侧维度评分进度条（Overall / Environment / Product / Service）
   Widget _buildRatingBars() {
-    return Column(
-      children: List.generate(5, (i) {
-        final star = 5 - i; // 5, 4, 3, 2, 1
-        final count = stats.ratingDistribution[star] ?? 0;
-        final ratio = stats.totalCount > 0 ? count / stats.totalCount : 0.0;
+    final dimensions = <(String, double)>[
+      ('Overall', stats.avgOverall),
+      ('Environment', stats.avgEnvironment),
+      ('Product', stats.avgProduct),
+      ('Service', stats.avgService),
+    ];
 
+    return Column(
+      children: dimensions.map((d) {
+        final (label, score) = d;
+        final ratio = score / 5.0; // 满分 5 分
         return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 2),
+          padding: const EdgeInsets.symmetric(vertical: 3),
           child: Row(
             children: [
-              // 星级数字
               SizedBox(
-                width: 14,
+                width: 72,
                 child: Text(
-                  '$star',
+                  label,
                   style: const TextStyle(
-                    fontSize: 12,
+                    fontSize: 11,
                     color: AppColors.textSecondary,
                   ),
-                  textAlign: TextAlign.right,
                 ),
               ),
               const SizedBox(width: 6),
-              // 进度条
               Expanded(
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(4),
@@ -128,22 +130,22 @@ class ReviewStatsHeader extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 6),
-              // 评价数量
               SizedBox(
                 width: 28,
                 child: Text(
-                  '$count',
+                  score > 0 ? score.toStringAsFixed(1) : '-',
                   style: const TextStyle(
                     fontSize: 11,
                     color: AppColors.textSecondary,
+                    fontWeight: FontWeight.w600,
                   ),
-                  textAlign: TextAlign.left,
+                  textAlign: TextAlign.right,
                 ),
               ),
             ],
           ),
         );
-      }),
+      }).toList(),
     );
   }
 

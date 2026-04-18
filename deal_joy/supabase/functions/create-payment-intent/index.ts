@@ -516,8 +516,14 @@ Deno.serve(async (req) => {
     const soloMerchantId = isSingleMerchant ? merchantIds[0] : null;
     const soloConnectId = soloMerchantId ? (merchantConnectMap.get(soloMerchantId) ?? null) : null;
 
-    // application_fee_amount（美分）= 平台保留金额，不得超过实际收款额
-    const platformFeeTotal = serviceFee + totalCommission + totalTax;
+    // Stripe 手续费估算（Destination Charges 模式下从 application_fee_amount 扣）
+    // 标准费率：2.9% + $0.30/笔（美国卡）
+    // 包含到 application_fee_amount 里，让 Stripe 手续费由商家净额吸收，
+    // 确保平台实际到手 = service_fee + commission + tax 不打折
+    const stripeFeeEstimate = Math.round((totalAmount * 0.029 + 0.30) * 100) / 100;
+
+    // application_fee_amount（美分）= 平台保留金额 + Stripe 手续费
+    const platformFeeTotal = serviceFee + totalCommission + totalTax + stripeFeeEstimate;
     const applicationFeeAmountCents = Math.min(
       Math.round(platformFeeTotal * 100),
       Math.round(totalAmount * 100),

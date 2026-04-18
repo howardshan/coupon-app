@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/coupon_info.dart';
 import '../services/scan_service.dart';
+import '../../dashboard/providers/dashboard_provider.dart';
 
 // =============================================================
 // ScanService Provider — 单例服务
@@ -39,10 +40,14 @@ class ScanNotifier extends AsyncNotifier<CouponInfo?> {
 
   /// 执行核销，返回核销时间
   /// 调用方负责在成功后导航到成功页
+  /// 核销成功后自动刷新 dashboard 统计（today_redemptions / revenue）
   Future<DateTime> redeem(String couponId) async {
     final service = ref.read(scanServiceProvider);
-    // 核销期间不更新 state（保持 CouponInfo 展示），由调用方处理 loading UI
-    return service.redeemCoupon(couponId);
+    final result = await service.redeemCoupon(couponId);
+    // 刷新 dashboard 统计数据（Redeemed 数量 + Revenue）
+    ref.invalidate(dashboardProvider);
+    ref.invalidate(redemptionHistoryProvider);
+    return result;
   }
 
   /// 重置扫码状态（返回扫码页时调用）
