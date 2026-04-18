@@ -149,6 +149,8 @@ serve(async (req: Request) => {
         title,
         image_urls,
         usage_rules,
+        usage_notes,
+        usage_days,
         refund_policy,
         expires_at,
         discount_price,
@@ -338,11 +340,12 @@ serve(async (req: Request) => {
         coupon_gifts: (item as any).coupon_gifts ?? [],
         // Deal 额外信息（用于详情页展示）
         usageRules: deal?.usage_rules ?? [],
+        usageNotes: (deal as any)?.usage_notes ?? null,
         refundPolicy: deal?.refund_policy ?? null,
         dealExpiresAt: deal?.expires_at ?? null,
         dealOriginalPrice: deal?.original_price != null ? Number(deal.original_price) : null,
         dealDiscountPrice: deal?.discount_price != null ? Number(deal.discount_price) : null,
-        createdAt: item.created_at ?? (order.created_at as string),
+        usageDays: (deal as any)?.usage_days ?? [],
       };
     });
   } else {

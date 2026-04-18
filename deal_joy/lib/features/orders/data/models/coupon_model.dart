@@ -234,7 +234,15 @@ class CouponModel {
   // 状态便捷 getter（过期同时考虑 status 与过期时间，便于展示「已过期」提示）
   bool get isUnused => status == 'unused';
   bool get isUsed => status == 'used';
-  bool get isExpired => status == 'expired' || DateTime.now().isAfter(expiresAt);
+  /// 按商家时区（Dallas CST/CDT）判断是否过期
+  /// expires_at 存的是 UTC 午夜（如 Apr 19 00:00 UTC），代表"Apr 19 当天可用"
+  /// 商家时区 CST = UTC-6，Apr 19 23:59:59 CST = UTC Apr 20 05:59:59
+  /// 所以 expires_at + 30h = Apr 20 06:00 UTC 之后才算过期
+  /// 这确保 CST 当天 23:59 不过期、CDT 当天 23:59 也不过期
+  bool get isExpired =>
+      status == 'expired' ||
+      DateTime.now().toUtc().isAfter(
+          expiresAt.toUtc().add(const Duration(hours: 30)));
   bool get isRefunded => status == 'refunded';
   bool get isVoided => status == 'voided';
 

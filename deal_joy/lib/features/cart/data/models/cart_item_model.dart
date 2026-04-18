@@ -60,10 +60,16 @@ class CartItemModel {
     this.dealIsActive = true,
   });
 
-  /// 已过期或已下架，不可勾选结账（与 DealModel.isExpired 判定一致：当前时刻晚于 expires_at）
-  bool get isDealUnpurchasable =>
-      !dealIsActive ||
-      (dealExpiresAt != null && DateTime.now().isAfter(dealExpiresAt!));
+  /// 已过期或已下架，不可勾选结账
+  /// 用日期级比较：过期日当天全天有效，次日才算过期
+  bool get isDealUnpurchasable {
+    if (!dealIsActive) return true;
+    if (dealExpiresAt == null) return false;
+    final today = DateTime.now();
+    final todayDate = DateTime(today.year, today.month, today.day);
+    final expiryDate = DateTime(dealExpiresAt!.year, dealExpiresAt!.month, dealExpiresAt!.day);
+    return todayDate.isAfter(expiryDate);
+  }
 
   /// 从 Supabase 查询结果解析（含 deals join merchants 嵌套）
   factory CartItemModel.fromJson(Map<String, dynamic> json) {

@@ -40,6 +40,9 @@ class ReviewModel {
   // Deal 标题（join deals 表）
   final String? dealTitle;
 
+  // 核销门店名称（连锁店评价来源标签用）
+  final String? storeName;
+
   const ReviewModel({
     required this.id,
     this.dealId,
@@ -65,6 +68,7 @@ class ReviewModel {
     this.merchantReply,
     this.repliedAt,
     this.dealTitle,
+    this.storeName,
   });
 
   // 是否有商家回复
@@ -130,6 +134,9 @@ class ReviewModel {
           ? DateTime.tryParse(json['replied_at'] as String)
           : null,
       dealTitle: dealTitle,
+      // 核销门店名称（从 merchants join 或扁平字段）
+      storeName: (json['merchants'] as Map<String, dynamic>?)?['name'] as String?
+          ?? json['store_name'] as String?,
     );
   }
 }

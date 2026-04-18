@@ -423,12 +423,35 @@ async function handleCreateDeal(
     return errorResponse("Invalid validity_type", 400);
   }
 
+  // 查询商家时区（用于 fixed_date 过期时间转换）
+  const { data: tzData } = await supabaseAdmin
+    .from("merchants")
+    .select("timezone")
+    .eq("id", merchantId)
+    .single();
+  const merchantTimezone = (tzData?.timezone as string) || "America/Chicago";
+
   let expiresAt: string;
   if (validityType === "fixed_date") {
     if (!body.expires_at) {
       return errorResponse("expires_at is required for fixed_date validity", 400);
     }
-    expiresAt = body.expires_at as string;
+    // 把商家选择的日期转为店铺时区 23:59:59 的 UTC 时间
+    // 例：商家选 2026-04-17 + 时区 America/Chicago(CDT, UTC-5)
+    //   → 2026-04-17T23:59:59 CDT → 2026-04-18T04:59:59Z
+    const rawDate = String(body.expires_at).substring(0, 10); // 取纯日期 YYYY-MM-DD
+    const endOfDayLocal = `${rawDate} 23:59:59`;
+    // 用 PostgreSQL AT TIME ZONE 做精确转换（自动处理 DST）
+    const { data: tzResult } = await supabaseAdmin.rpc("convert_local_to_utc", {
+      p_local_timestamp: endOfDayLocal,
+      p_timezone: merchantTimezone,
+    });
+    if (tzResult) {
+      expiresAt = tzResult as string;
+    } else {
+      // RPC 不可用时降级：直接用客户端传来的值
+      expiresAt = body.expires_at as string;
+    }
   } else {
     // short_after_purchase / long_after_purchase: 设置远期占位，购买后计算实际到期
     const daysAfter = Number(body.validity_days ?? 30);
@@ -611,6 +634,20 @@ async function handleUpdateDeal(
     if (body[field] !== undefined) {
       newDealData[field] = body[field];
     }
+  }
+
+  // 如果 expires_at 被修改且 validity_type 是 fixed_date，转换为店铺时区 23:59:59 的 UTC
+  const effectiveValidityType = (newDealData.validity_type ?? existing.validity_type) as string;
+  if (newDealData.expires_at && effectiveValidityType === "fixed_date") {
+    const rawDate = String(newDealData.expires_at).substring(0, 10);
+    const endOfDayLocal = `${rawDate} 23:59:59`;
+    const { data: tzData2 } = await admin.from("merchants").select("timezone").eq("id", merchantId).single();
+    const tz2 = (tzData2?.timezone as string) || "America/Chicago";
+    const { data: tzResult2 } = await admin.rpc("convert_local_to_utc", {
+      p_local_timestamp: endOfDayLocal,
+      p_timezone: tz2,
+    });
+    if (tzResult2) newDealData.expires_at = tzResult2;
   }
 
   // 2. 插入新 deal

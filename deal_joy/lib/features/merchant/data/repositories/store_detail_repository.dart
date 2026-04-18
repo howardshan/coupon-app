@@ -154,26 +154,18 @@ class StoreDetailRepository {
     }
   }
 
-  /// 获取商家所有评价（分页，含 review_photos + 用户信息）
+  /// 获取该门店的所有评价（分页，含 review_photos + 用户信息 + deal 标题标签）
+  /// 直接按 reviews.merchant_id = 当前门店查询
   Future<List<ReviewModel>> fetchMerchantReviews(
     String merchantId, {
     int page = 0,
     int pageSize = 10,
   }) async {
     try {
-      // 先获取该商家的所有 deal IDs
-      final dealData = await _client
-          .from('deals')
-          .select('id')
-          .eq('merchant_id', merchantId);
-      final dealIds =
-          (dealData as List).map((d) => d['id'] as String).toList();
-      if (dealIds.isEmpty) return [];
-
       final data = await _client
           .from('reviews')
-          .select('*, users!reviews_user_id_fkey(full_name, avatar_url), review_photos(image_url, sort_order)')
-          .inFilter('deal_id', dealIds)
+          .select('*, users!reviews_user_id_fkey(full_name, avatar_url), review_photos(image_url, sort_order), deals(title)')
+          .eq('merchant_id', merchantId)
           .order('created_at', ascending: false)
           .range(page * pageSize, (page + 1) * pageSize - 1);
 

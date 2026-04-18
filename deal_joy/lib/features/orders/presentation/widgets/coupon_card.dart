@@ -73,6 +73,9 @@ class CouponCard extends StatelessWidget {
       displayStatus = 'gifted';
     } else if (coupon.isVoided) {
       displayStatus = 'voided';
+    } else if (coupon.status == 'used') {
+      // 已使用的券永远显示 "Used"，即使过了过期日期
+      displayStatus = 'used';
     } else if (coupon.isExpired) {
       displayStatus = 'expired_refund';
     } else {

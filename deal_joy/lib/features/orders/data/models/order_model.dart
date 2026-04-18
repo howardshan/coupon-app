@@ -221,10 +221,11 @@ class OrderModel {
   /// 管理员曾拒绝过该订单的退款申请
   bool get isRefundRejected => refundRejectedAt != null;
 
-  /// 未使用订单的券已按时间过期
+  /// 未使用订单的券已按时间过期（按商家时区 CST UTC-6，给 30h 缓冲）
   bool get isExpiredByDate =>
       couponExpiresAt != null &&
-      DateTime.now().isAfter(couponExpiresAt!);
+      DateTime.now().toUtc().isAfter(
+          couponExpiresAt!.toUtc().add(const Duration(hours: 30)));
 
   /// 旧版：仅未使用的订单可退款
   bool get canRefund => isUnused;

@@ -12,12 +12,15 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../menu/models/menu_item.dart';
+import '../../store/services/store_service.dart';
+import '../providers/deals_provider.dart';
 
 // ============================================================
 // StoreDealConfirmPage — 门店确认 brand_multi_store Deal
 // ============================================================
-class StoreDealConfirmPage extends StatefulWidget {
+class StoreDealConfirmPage extends ConsumerStatefulWidget {
   const StoreDealConfirmPage({
     super.key,
     required this.dealId,
@@ -39,10 +42,10 @@ class StoreDealConfirmPage extends StatefulWidget {
   final String brandName;
 
   @override
-  State<StoreDealConfirmPage> createState() => _StoreDealConfirmPageState();
+  ConsumerState<StoreDealConfirmPage> createState() => _StoreDealConfirmPageState();
 }
 
-class _StoreDealConfirmPageState extends State<StoreDealConfirmPage> {
+class _StoreDealConfirmPageState extends ConsumerState<StoreDealConfirmPage> {
   static const _primaryColor = Color(0xFFFF6B35);
 
   final _supabase = Supabase.instance.client;
@@ -94,15 +97,22 @@ class _StoreDealConfirmPageState extends State<StoreDealConfirmPage> {
       final userId = _supabase.auth.currentUser?.id;
       if (userId == null) throw Exception('Not authenticated');
 
-      // 获取当前门店 merchant_id
-      final merchantRow = await _supabase
-          .from('merchants')
-          .select('id')
-          .eq('user_id', userId)
-          .maybeSingle();
-
-      if (merchantRow == null) throw Exception('Merchant not found');
-      final merchantId = merchantRow['id'] as String;
+      // 使用当前选中的门店 ID（品牌管理员通过 StoreSelector 切换后持久化的值）
+      // 不能用 `merchants WHERE user_id` 因为品牌管理员管理多店，那样只会返回主门店
+      final activeMerchantId = StoreService.globalActiveMerchantId;
+      String merchantId;
+      if (activeMerchantId != null && activeMerchantId.isNotEmpty) {
+        merchantId = activeMerchantId;
+      } else {
+        // fallback：如果 globalActiveMerchantId 还没初始化
+        final merchantRow = await _supabase
+            .from('merchants')
+            .select('id')
+            .eq('user_id', userId)
+            .maybeSingle();
+        if (merchantRow == null) throw Exception('Merchant not found');
+        merchantId = merchantRow['id'] as String;
+      }
       _merchantId = merchantId;
 
       // 查询 deal 完整信息
@@ -324,8 +334,9 @@ class _StoreDealConfirmPageState extends State<StoreDealConfirmPage> {
 
       if (!mounted) return;
 
-      // 成功后刷新状态
+      // 成功后刷新本页状态 + dashboard 的 pending 计数
       await _loadData();
+      ref.invalidate(pendingStoreDealsProvider);
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
