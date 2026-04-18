@@ -214,6 +214,41 @@ export default async function MerchantReviewPage({
   const merchantTimelineEvents = buildMerchantTimeline(merchant, activityEventsForTimeline)
   const storeIsOnline = Boolean((merchant as { is_online?: boolean }).is_online)
 
+  // Stripe 解绑申请只读卡（本店 merchant subject + 同品牌时 brand subject 取较新一条）
+  const mBrandId = (merchant as { brand_id?: string | null }).brand_id ?? null
+  const { data: suMerchant } = await serviceClient
+    .from('stripe_connect_unlink_requests')
+    .select('id, status, subject_type, created_at, reviewed_at')
+    .eq('subject_type', 'merchant')
+    .eq('subject_id', id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  const { data: suBrand } = mBrandId
+    ? await serviceClient
+        .from('stripe_connect_unlink_requests')
+        .select('id, status, subject_type, created_at, reviewed_at')
+        .eq('subject_type', 'brand')
+        .eq('subject_id', mBrandId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+    : { data: null }
+  const suCandidates = [suMerchant, suBrand].filter(
+    (x): x is NonNullable<typeof suMerchant> => x != null
+  )
+  const latestStripeUnlink = suCandidates.sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  )[0] as
+    | {
+        id: string
+        status: string
+        subject_type: string
+        created_at: string
+        reviewed_at: string | null
+      }
+    | undefined
+
   // 法律合规数据
   const consentStatus = await getUserConsentStatus(merchant.user_id)
   const { items: legalTimeline, total: legalTotal } = await getUserLegalTimeline(merchant.user_id, 1, 20)
@@ -452,6 +487,32 @@ export default async function MerchantReviewPage({
             {merchant.rejection_reason && (
               <p className="mt-2 text-sm text-red-600 bg-red-50 p-3 rounded-lg break-words">Rejection reason: {merchant.rejection_reason}</p>
             )}
+          </div>
+
+          <div className="bg-white rounded-xl border border-gray-200 p-5">
+            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Stripe unlink request</h2>
+            {latestStripeUnlink ? (
+              <div className="space-y-1 text-sm text-gray-700">
+                <p>
+                  <span className="text-gray-500">Status: </span>
+                  <span className="font-medium capitalize">{String(latestStripeUnlink.status).replaceAll('_', ' ')}</span>
+                </p>
+                <p className="text-xs text-gray-500">Scope: {latestStripeUnlink.subject_type} · last activity{' '}
+                  {latestStripeUnlink.reviewed_at
+                    ? new Date(latestStripeUnlink.reviewed_at).toLocaleString()
+                    : new Date(latestStripeUnlink.created_at).toLocaleString()}
+                </p>
+                <Link
+                  href={latestStripeUnlink.status === 'pending' ? '/approvals?tab=stripe-unlink' : '/approvals?tab=stripe-unlink&queue=history'}
+                  className="text-sm font-semibold text-amber-800 underline hover:text-amber-900"
+                >
+                  Review in Approvals Center →
+                </Link>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500">No request recorded for this store/brand (merchant or brand subject).</p>
+            )}
+            <p className="mt-2 text-xs text-gray-400">Applies to Connect unlink workflow only; v1 is platform-DB unbind on approval.</p>
           </div>
 
           <AdminActivityTimelineCard
