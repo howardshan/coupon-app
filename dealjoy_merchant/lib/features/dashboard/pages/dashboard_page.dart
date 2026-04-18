@@ -11,6 +11,8 @@ import '../providers/dashboard_provider.dart';
 import '../widgets/stats_card.dart';
 import '../widgets/shortcut_grid.dart';
 
+import '../../after_sales/pages/after_sales_list_page.dart';
+import '../../orders/pages/refund_requests_page.dart';
 import '../../store/providers/store_provider.dart';
 import '../../deals/providers/deals_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -487,7 +489,7 @@ class _TodoSection extends StatelessWidget {
     void pushRefundRequests() {
       Navigator.of(context).push<void>(
         MaterialPageRoute<void>(
-          builder: (_) => const RefundRequestsPage(),
+          builder: (_) => RefundRequestsPage(),
         ),
       );
     }
@@ -495,7 +497,7 @@ class _TodoSection extends StatelessWidget {
     void pushAfterSalesList() {
       Navigator.of(context).push<void>(
         MaterialPageRoute<void>(
-          builder: (_) => const AfterSalesListPage(),
+          builder: (_) => AfterSalesListPage(),
         ),
       );
     }
