@@ -5,6 +5,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../../core/constants/app_branding.dart';
 import '../../earnings/providers/earnings_provider.dart';
 import '../../earnings/services/earnings_service.dart';
 import '../../earnings/widgets/stripe_unlink_status_banner.dart';
@@ -99,7 +100,10 @@ class _BrandStripeConnectPageState
               }
               return Column(
                 children: [
-                  StripeUnlinkRequestStatusBanner(items: items),
+                  StripeUnlinkRequestStatusBanner(
+                    items:             items,
+                    isStripeConnected: info.isConnected,
+                  ),
                   const SizedBox(height: 20),
                 ],
               );
@@ -281,6 +285,7 @@ class _BrandStripeConnectPageState
       final service = ref.read(brandEarningsServiceProvider);
       await service.refreshStripeStatus();
       ref.invalidate(brandStripeAccountProvider);
+      ref.invalidate(stripeUnlinkRequestsBrandProvider);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -296,15 +301,47 @@ class _BrandStripeConnectPageState
       }
     } catch (e) {
       _invalidateBrandStripeIfUnlinkedError(e);
-      if (mounted) _showError(e.toString());
+      if (!mounted) {
+        return;
+      }
+      final friendly = _friendlyMessageForNoStripeError(e);
+      if (friendly != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(friendly),
+            backgroundColor: const Color(0xFF546E7A),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      } else {
+        _showError(e.toString());
+      }
     } finally {
       if (mounted) setState(() => _isRefreshing = false);
     }
   }
 
+  String? _friendlyMessageForNoStripeError(Object e) {
+    final s = e.toString();
+    if (s.contains('No Stripe account linked') ||
+        s.contains('connect first') ||
+        s.contains('Please connect')) {
+      return 'No Stripe account is connected. Connect when you are ready to receive payouts.';
+    }
+    return null;
+  }
+
   void _invalidateBrandStripeIfUnlinkedError(Object e) {
-    if (e.toString().contains('No Stripe account linked')) {
+    final s = e.toString();
+    if (s.contains('No Stripe account linked') ||
+        s.contains('connect first') ||
+        s.contains('Please connect')) {
       ref.invalidate(brandStripeAccountProvider);
+      ref.invalidate(stripeUnlinkRequestsBrandProvider);
     }
   }
 
@@ -324,7 +361,25 @@ class _BrandStripeConnectPageState
       }
     } catch (e) {
       _invalidateBrandStripeIfUnlinkedError(e);
-      if (mounted) _showError(e.toString());
+      if (!mounted) {
+        return;
+      }
+      final friendly = _friendlyMessageForNoStripeError(e);
+      if (friendly != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(friendly),
+            backgroundColor: const Color(0xFF546E7A),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      } else {
+        _showError(e.toString());
+      }
     } finally {
       if (mounted) setState(() => _isOpeningDashboard = false);
     }
@@ -455,10 +510,10 @@ class _BrandStripeConnectPageState
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Unlinking brand Stripe on DealJoy'),
-        content: const Text(
+        title: Text('Unlinking brand Stripe on ${AppBranding.displayName}'),
+        content: Text(
           'Only the brand owner can request to disconnect a brand-level Stripe account. '
-          'Requests are reviewed by DealJoy. You will get an email when a decision is made. '
+          'Requests are reviewed by ${AppBranding.displayName}. You will get an email when a decision is made. '
           'If approved, the platform unlinks the account; then use Refresh Status to sync. '
           'In-flight withdrawals must finish before a new request can be processed in some cases.',
         ),
@@ -518,15 +573,15 @@ class _InfoBanner extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: const Color(0xFFFF9800).withAlpha(60)),
       ),
-      child: const Row(
+      child: Row(
         children: [
-          Icon(Icons.warning_amber_outlined,
+          const Icon(Icons.warning_amber_outlined,
               color: Color(0xFFFF9800), size: 20),
-          SizedBox(width: 10),
+          const SizedBox(width: 10),
           Expanded(
             child: Text(
-              'Connect a Stripe account to receive brand commission payouts from DealJoy.',
-              style: TextStyle(
+              'Connect a Stripe account to receive brand commission payouts from ${AppBranding.displayName}.',
+              style: const TextStyle(
                 fontSize: 13,
                 color: Color(0xFFE65100),
                 height: 1.4,
@@ -722,15 +777,14 @@ class _InfoRow extends StatelessWidget {
 class _HowItWorks extends StatelessWidget {
   const _HowItWorks();
 
-  static const List<String> _steps = [
-    'Customer purchases a brand deal at any of your locations.',
-    'Store scans and redeems the voucher.',
-    'DealJoy calculates brand commission from the redemption amount.',
-    'Brand commission is settled and transferred to this Stripe account.',
-  ];
-
   @override
   Widget build(BuildContext context) {
+    final steps = <String>[
+      'Customer purchases a brand deal at any of your locations.',
+      'Store scans and redeems the voucher.',
+      '${AppBranding.displayName} calculates brand commission from the redemption amount.',
+      'Brand commission is settled and transferred to this Stripe account.',
+    ];
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -756,7 +810,7 @@ class _HowItWorks extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          ..._steps.asMap().entries.map(
+          ...steps.asMap().entries.map(
                 (entry) => Padding(
                   padding: const EdgeInsets.only(bottom: 10),
                   child: Row(

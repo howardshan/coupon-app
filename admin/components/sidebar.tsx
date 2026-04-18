@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
+import { APP_DISPLAY_NAME } from '@/lib/app-branding'
 import { createClient } from '@/lib/supabase/client'
 
 interface SidebarProps {
@@ -110,7 +111,7 @@ export default function Sidebar({ role, email, pendingCount = 0 }: SidebarProps)
   return (
     <aside className="w-56 min-h-screen bg-gray-900 text-white flex flex-col">
       <div className="px-5 py-6 border-b border-gray-700">
-        <p className="text-lg font-bold">DealJoy</p>
+        <p className="text-lg font-bold">{APP_DISPLAY_NAME}</p>
         <p className="text-xs text-gray-400 mt-0.5 capitalize">{role} Portal</p>
       </div>
 
