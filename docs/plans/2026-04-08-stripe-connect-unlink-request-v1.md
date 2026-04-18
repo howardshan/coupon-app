@@ -1,9 +1,9 @@
 # Stripe Connect 解绑申请 v1 规格
 
-**文档版本**: v1.3  
+**文档版本**: v1.4  
 **创建日期**: 2026-04-08  
 **受众**: 产品、研发（DealJoy 全栈：Admin Next.js、商家端 Flutter、Supabase）  
-**状态**: Sprint 1–3 已按清单落地；Sprint 4+ 待实现  
+**状态**: Sprint 1–4 已按清单落地；Sprint 5 待实现  
 
 ---
 
@@ -15,6 +15,7 @@
 | v1.1 | 2026-04-08 | 实现清单拆为 Sprint 1–5，保留与原 §5.1–5.7 条目的映射 |
 | v1.2 | 2026-04-08 | 同步 Sprint 1、Sprint 2 已交付内容：迁移路径、Edge 路由、M19 模板、预检与 API 说明 |
 | v1.3 | 2026-04-08 | Sprint 3 落地：Admin 审批、解绑、M20/M21、审计 event、商家详情卡；`20260419100000` |
+| v1.4 | 2026-04-08 | Sprint 4 落地：商家端 `EarningsService` 拉取/提交解绑 API、`Payment Account` 与 `Brand Stripe Connect` 双入口、状态条与底部申请表单、Riverpod 列表 provider |
 
 ---
 
@@ -137,7 +138,7 @@
 | **Sprint 1** | 落库 + 邮件类型 + RLS，无业务 UI | 无 | §5.1 — **已完成**（见下「Sprint 1 落地」） |
 | **Sprint 2** | 商家可提交申请 +「已提交」邮件 + 预检最小集 | Sprint 1 | §5.2（最小）、§5.3 提交侧、§5.4 之一 — **已完成**（见下「Sprint 2 落地」） |
 | **Sprint 3** | 管理端审批、通过时平台库解绑、拒审理由、两封结果邮件、审计 | Sprint 1–2 | §5.3 解绑、§5.4 余下、§5.5（不含 All）— **已完成** |
-| **Sprint 4** | 商家端 UI + 商家详情侧栏卡 + 品牌页入口（若需要） | Sprint 2（提交接口稳定） | §5.6 |
+| **Sprint 4** | 商家端 UI + 商家详情侧栏卡 + 品牌页入口（若需要） | Sprint 2（提交接口稳定） | §5.6 — **已完成**（见下「Sprint 4 落地」；商家详情卡属 Sprint 3 已交） |
 | **Sprint 5** | 全链路测试、预检补全、可选 All Tab、上线清单 | Sprint 1–4 | §5.2 补全、§5.5 All、§5.7 |
 
 **建议排期顺序**：1 → 2 与 3 可部分并行（3 需等表与 Service 解绑函数设计定稿）→ 4 依赖 2 的 API → 5 收尾。
@@ -212,12 +213,23 @@
 
 **目标**：商家在 App 内发起申请、看到状态/反馈；与 API 合同对齐。
 
-- [ ] `payment_account_page.dart`：**Request to unlink Stripe**、原因表单、调 Sprint 2 提交接口、成功/失败态、**刷新** `stripeAccountProvider` + 申请状态（Sprint 2 的 GET 或 list）。
-- [ ] 品牌线：`brand_stripe_connect_page.dart` 若需平行入口，与 3.1 主体一致。
+- [x] `payment_account_page.dart`：已连接时 **Request to Unlink Stripe**、底部表单单选「可选说明」+ 提交/取消、调 `POST …/stripe-unlink/request`（`subject_type: merchant`）；**仅** `store_owner` / `brand_owner` 显示主按钮；`How does unlinking work?` 政策说明。成功/失败 **SnackBar**；成功后 `invalidate` **`stripeAccountProvider`** + **`stripeUnlinkRequestsMerchantProvider`**。列表 **GET** `scope=merchant` 驱动状态条（`pending` / 最近历史）。
+- [x] 品牌线：`lib/features/store/pages/brand_stripe_connect_page.dart` 平行入口：已连接时 **仅 `brand_owner`** 显示主按钮，**GET** `scope=brand` 状态条；`subject_type: brand` 提交；成功后 `invalidate` **`brandStripeAccountProvider`** + **`stripeUnlinkRequestsBrandProvider`**。`isBrandAdmin` 可拉取列表，非 owner 只读状态 + 英文说明。
+
+**落地文件**
+
+| 说明 | 路径 |
+| ---- | ---- |
+| 解绑行模型 + GET/POST 封装 | `dealjoy_merchant/lib/features/earnings/models/earnings_data.dart`（`StripeUnlinkRequestItem`）；`.../earnings/services/earnings_service.dart`（`fetchStripeUnlinkRequests` / `submitStripeUnlinkRequest`） |
+| 列表 provider | `dealjoy_merchant/lib/features/earnings/providers/earnings_provider.dart`（`stripeUnlinkRequestsMerchantProvider`、`stripeUnlinkRequestsBrandProvider`；依赖 `storeProvider` 切换门店重建） |
+| 状态条 + 底部申请表单 | `dealjoy_merchant/lib/features/earnings/widgets/stripe_unlink_status_banner.dart`（`StripeUnlinkRequestStatusBanner`、`showStripeUnlinkRequestSheet`） |
+| 单店页、品牌页 | `dealjoy_merchant/lib/features/earnings/pages/payment_account_page.dart`；`dealjoy_merchant/lib/features/store/pages/brand_stripe_connect_page.dart` |
+
+**注**：Sprint 3 已覆盖 **「商家详情侧栏卡」**（Admin）；本 Sprint 4 不重复，仅做 **商家端 App**。
 
 **对应原清单**：原 **§5.6 商家端** 全部。
 
-**交付物**：真机/模拟器可提单；与 Sprint 2 联调无 Mock（或仅最小 Mock）。
+**交付物**：真机/模拟器可提单；与 Sprint 2/3 联调走真实 Edge（**无** Mock 桩）；E2E 全链路验收归入 **Sprint 5**。
 
 ---
 
@@ -251,6 +263,7 @@
 ### 5.8 参考文件（不修改本清单内容时仅作开发指引）
 
 - **Sprint 1–2 已落地路径**：`deal_joy/supabase/migrations/20260418120000_stripe_connect_unlink_requests.sql`；`deal_joy/supabase/functions/merchant-withdrawal/index.ts`（含 `GET/POST …/stripe-unlink`）；`deal_joy/supabase/functions/_shared/email-templates/merchant/stripe-unlink-submitted.ts`（M19）
+- **Sprint 4 商家端 Flutter**：`dealjoy_merchant/lib/features/earnings/pages/payment_account_page.dart`、`dealjoy_merchant/lib/features/store/pages/brand_stripe_connect_page.dart`；`dealjoy_merchant/lib/features/earnings/services/earnings_service.dart`；`dealjoy_merchant/lib/features/earnings/providers/earnings_provider.dart`；`dealjoy_merchant/lib/features/earnings/widgets/stripe_unlink_status_banner.dart`
 - 统一审批：[`admin/app/(dashboard)/approvals/page.tsx`](../admin/app/(dashboard)/approvals/page.tsx)、[`approvals-page-client.tsx`](../admin/components/approvals-page-client.tsx)
 - 邮件与日志：[邮件系统总览](2026-03-21-email-system.md)、`deal_joy/supabase/functions/_shared/email.ts`
 - Connect 与解绑现网逻辑：`deal_joy/supabase/functions/merchant-withdrawal/index.ts`（`stripe_account_id` 清空、stale 处理；**另含**解绑申请 API）、`deal_joy/supabase/functions/merchant-brand/index.ts`（品牌）
