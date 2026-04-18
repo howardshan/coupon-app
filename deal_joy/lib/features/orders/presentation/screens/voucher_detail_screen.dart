@@ -19,6 +19,9 @@ import '../../domain/providers/coupons_provider.dart';
 import 'order_detail_screen.dart' show showUnusedQrSheet;
 import '../widgets/gift_bottom_sheet.dart';
 import '../widgets/used_refund_entry.dart';
+import '../../../after_sales/data/models/after_sales_request_model.dart';
+import '../../../after_sales/domain/providers/after_sales_provider.dart';
+import '../helpers/after_sales_coupon_map.dart';
 
 // ── 主屏幕 ────────────────────────────────────────
 
@@ -52,10 +55,12 @@ class VoucherDetailScreen extends ConsumerWidget {
     void refreshDetail() {
       if (useAggregate) {
         ref.invalidate(aggregatedDealVoucherDetailProvider(aggKey));
-        ref.invalidate(userCouponsProvider);
+        invalidateUserCouponsEverywhere(ref.invalidate);
       } else {
         ref.invalidate(userOrderDetailProvider(orderId));
       }
+      ref.invalidate(afterSalesListProvider(orderId));
+      ref.invalidate(afterSalesListProvider(null));
     }
 
     return Scaffold(
@@ -265,6 +270,7 @@ class _VoucherDetailBodyState extends ConsumerState<_VoucherDetailBody> {
             // Deal 摘要卡片（含券状态行）
             SliverToBoxAdapter(
               child: _VoucherDealCard(
+                orderId: dealItems.first.orderId,
                 dealItems: dealItems,
                 isExpanded: _isExpanded,
                 paymentIntentId: detail.paymentIntentIdMasked,
@@ -336,6 +342,7 @@ class _VoucherDetailBodyState extends ConsumerState<_VoucherDetailBody> {
 // ── Deal 摘要卡片（含券状态展开行） ───────────────
 
 class _VoucherDealCard extends ConsumerWidget {
+  final String orderId;
   final List<OrderItemModel> dealItems;
   final bool isExpanded;
   final VoidCallback onToggleExpand;
@@ -345,6 +352,7 @@ class _VoucherDealCard extends ConsumerWidget {
   final double orderTotalAmount;
 
   const _VoucherDealCard({
+    required this.orderId,
     required this.dealItems,
     required this.isExpanded,
     required this.onToggleExpand,
@@ -356,6 +364,12 @@ class _VoucherDealCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final afterSalesAsync = ref.watch(afterSalesListProvider(orderId));
+    final afterSalesByCoupon = afterSalesAsync.maybeWhen(
+      data: latestAfterSalesByCouponId,
+      orElse: () => <String, AfterSalesRequestModel>{},
+    );
+
     final first = dealItems.first;
     final amountFmt = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
 
@@ -500,6 +514,7 @@ class _VoucherDealCard extends ConsumerWidget {
               paymentIntentId: paymentIntentId,
               storeCreditUsed: storeCreditUsed,
               orderTotalAmount: orderTotalAmount,
+              afterSalesByCoupon: afterSalesByCoupon,
             ),
           if (usedItems.isNotEmpty)
             _CouponStatusRow(
@@ -513,6 +528,7 @@ class _VoucherDealCard extends ConsumerWidget {
               paymentIntentId: paymentIntentId,
               storeCreditUsed: storeCreditUsed,
               orderTotalAmount: orderTotalAmount,
+              afterSalesByCoupon: afterSalesByCoupon,
             ),
           if (refundedItems.isNotEmpty)
             _CouponStatusRow(
@@ -533,6 +549,7 @@ class _VoucherDealCard extends ConsumerWidget {
               paymentIntentId: paymentIntentId,
               storeCreditUsed: storeCreditUsed,
               orderTotalAmount: orderTotalAmount,
+              afterSalesByCoupon: afterSalesByCoupon,
             ),
           if (otherItems.isNotEmpty)
             _CouponStatusRow(
@@ -546,6 +563,7 @@ class _VoucherDealCard extends ConsumerWidget {
               paymentIntentId: paymentIntentId,
               storeCreditUsed: storeCreditUsed,
               orderTotalAmount: orderTotalAmount,
+              afterSalesByCoupon: afterSalesByCoupon,
             ),
         ],
       ),
@@ -859,6 +877,7 @@ class _CouponStatusRow extends ConsumerWidget {
   final String? paymentIntentId;
   final double storeCreditUsed;
   final double orderTotalAmount;
+  final Map<String, AfterSalesRequestModel> afterSalesByCoupon;
 
   const _CouponStatusRow({
     required this.label,
@@ -871,6 +890,7 @@ class _CouponStatusRow extends ConsumerWidget {
     this.paymentIntentId,
     this.storeCreditUsed = 0.0,
     this.orderTotalAmount = 0.0,
+    this.afterSalesByCoupon = const <String, AfterSalesRequestModel>{},
   });
 
   @override
@@ -934,6 +954,7 @@ class _CouponStatusRow extends ConsumerWidget {
                 onRefreshOrder: onRefreshOrder,
                 storeCreditUsed: storeCreditUsed,
                 orderTotalAmount: orderTotalAmount,
+                afterSalesByCoupon: afterSalesByCoupon,
               )),
         ],
 
@@ -952,6 +973,7 @@ class _CouponDetailRow extends ConsumerWidget {
   final VoidCallback onRefreshOrder;
   final double storeCreditUsed;
   final double orderTotalAmount;
+  final Map<String, AfterSalesRequestModel> afterSalesByCoupon;
 
   const _CouponDetailRow({
     required this.item,
@@ -960,6 +982,7 @@ class _CouponDetailRow extends ConsumerWidget {
     required this.onRefreshOrder,
     this.storeCreditUsed = 0.0,
     this.orderTotalAmount = 0.0,
+    this.afterSalesByCoupon = const <String, AfterSalesRequestModel>{},
   });
 
   @override
@@ -1039,16 +1062,11 @@ class _CouponDetailRow extends ConsumerWidget {
                     color: AppColors.error,
                     onTap: () => _showCancelSheet(context, ref, item),
                   ),
-                if (item.showRefundRequest)
+                if (showRefundButtonConsideringAfterSales(item, afterSalesByCoupon))
                   _SmallButton(
                     label: 'Refund',
                     color: AppColors.warning,
-                    onTap: () => showUsedRefundEntry(
-                      context,
-                      ref,
-                      item,
-                      onRefresh: onRefreshOrder,
-                    ),
+                    onTap: () => showUsedRefundEntry(context, ref, item),
                   ),
                 if (item.showWriteReview)
                   _SmallButton(

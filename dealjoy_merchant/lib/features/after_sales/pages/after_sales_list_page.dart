@@ -21,6 +21,11 @@ class _AfterSalesListPageState extends ConsumerState<AfterSalesListPage>
   static const _tabs = [
     _AfterSalesTab(label: 'Action Required', filter: 'pending'),
     _AfterSalesTab(label: 'Escalated', filter: 'awaiting_platform'),
+    // 商家/平台已同意退款但 Stripe 等尚未完成；避免仅 merchant_approved 时三栏都筛不到
+    _AfterSalesTab(
+      label: 'Refund pending',
+      filter: 'merchant_approved,platform_approved',
+    ),
     _AfterSalesTab(
       label: 'Closed',
       filter: 'merchant_rejected,platform_rejected,refunded,closed',
@@ -31,6 +36,15 @@ class _AfterSalesListPageState extends ConsumerState<AfterSalesListPage>
   void initState() {
     super.initState();
     _tabController = TabController(length: _tabs.length, vsync: this);
+    // 与 TabBar 当前选中项对齐（默认 index 0 = Action Required）。
+    // 全局 [afterSalesStatusFilterProvider] 会跨次进入页面保留；若上次停在 Closed 等 Tab，
+    // 再次打开时 Tab 已回到第一项，但 filter 仍为旧值，会导致列表与 Tab 文案不一致。
+    // 必须在首帧 build 之后再改 provider，否则 Riverpod 报「building 期间修改 provider」。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(afterSalesStatusFilterProvider.notifier).state =
+          _tabs[_tabController.index].filter;
+    });
     _tabController.addListener(() {
       if (_tabController.indexIsChanging) return;
       final filter = _tabs[_tabController.index].filter;
@@ -71,6 +85,7 @@ class _AfterSalesListPageState extends ConsumerState<AfterSalesListPage>
         ],
         bottom: TabBar(
           controller: _tabController,
+          isScrollable: true,
           indicatorColor: const Color(0xFFFF6B35),
           labelColor: const Color(0xFFFF6B35),
           unselectedLabelColor: Colors.grey.shade500,
@@ -172,9 +187,13 @@ class _AfterSalesCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
     final amountFmt = NumberFormat.simpleCurrency();
+    final dateFmt = DateFormat('MMM d, HH:mm');
     final remainingLabel = _remainingText(request.remainingTime);
+    final submittedLabel = request.createdAt != null
+        ? dateFmt.format(request.createdAt!.toLocal())
+        : '—';
     final expiresLabel = request.expiresAt != null
-        ? DateFormat('MMM d, HH:mm').format(request.expiresAt!.toLocal())
+        ? dateFmt.format(request.expiresAt!.toLocal())
         : '—';
 
     return Card(
@@ -273,6 +292,9 @@ class _AfterSalesCard extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        Text('Submitted', style: textTheme.labelSmall),
+                        Text(submittedLabel, style: textTheme.bodyMedium),
+                        const SizedBox(height: 8),
                         Text('SLA deadline', style: textTheme.labelSmall),
                         Text(expiresLabel, style: textTheme.bodyMedium),
                       ],
@@ -398,6 +420,9 @@ class _StatusPill extends StatelessWidget {
         return const Color(0xFFB45309);
       case 'awaiting_platform':
         return const Color(0xFF0F62FE);
+      case 'merchant_approved':
+      case 'platform_approved':
+        return const Color(0xFF7C3AED);
       case 'merchant_rejected':
       case 'platform_rejected':
         return const Color(0xFFB42318);

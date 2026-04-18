@@ -122,8 +122,11 @@ async function resolveAdmin(
     throw new Error("Missing authorization");
   }
 
-  const anonClient = createClient(Deno.env.get("SUPABASE_URL") ?? "", anonKey);
-  const { data, error } = await anonClient.auth.getUser(token);
+  const anonClient = createClient(Deno.env.get("SUPABASE_URL") ?? "", anonKey, {
+    global: { headers: { Authorization: `Bearer ${token}` } },
+    auth: { persistSession: false },
+  });
+  const { data, error } = await anonClient.auth.getUser();
   if (error || !data?.user) {
     throw new Error("Invalid or expired token");
   }
@@ -456,9 +459,6 @@ async function handleReject(
   const attachments = normalizeAttachmentKeys(body.attachments ?? []);
   if (note.length < 10) {
     return errorResponse("Rejection reason must be at least 10 characters", "invalid_note", 400);
-  }
-  if (!attachments.length) {
-    return errorResponse("Attachments required for rejection", "attachments_required", 400);
   }
 
   const request = await fetchRequest(supabase, requestId);

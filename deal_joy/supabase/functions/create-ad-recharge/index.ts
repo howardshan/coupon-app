@@ -47,9 +47,14 @@ Deno.serve(async (req) => {
     if (!authHeader) {
       return errorResponse('Missing Authorization header', 401);
     }
-    const token = authHeader.replace('Bearer ', '');
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+    const anonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+    const authHeaderNorm = authHeader.startsWith('Bearer ') ? authHeader : `Bearer ${authHeader}`;
+    const authClient = createClient(supabaseUrl, anonKey, {
+      global: { headers: { Authorization: authHeaderNorm } },
+      auth: { persistSession: false },
+    });
+    const { data: { user }, error: authError } = await authClient.auth.getUser();
     if (authError || !user) {
       return errorResponse('Unauthorized', 401);
     }

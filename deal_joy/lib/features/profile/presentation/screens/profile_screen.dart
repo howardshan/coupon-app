@@ -261,9 +261,9 @@ _IconGridItem(
                           context.push('/coupons?tab=reviews&sub=pending'),
                     ),
                     _IconGridItem(
-                      icon: Icons.assignment_return_outlined,
-                      label: 'Refunds',
-                      onTap: () => context.push('/coupons?tab=refunded'),
+                      icon: Icons.support_agent_outlined,
+                      label: 'After-Sales',
+                      onTap: () => context.push('/my-after-sales'),
                     ),
                   ],
                 ),

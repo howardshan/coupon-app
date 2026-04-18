@@ -1,4 +1,4 @@
-// 已核销券退款入口：24h 争议 / 7d After-sales / 超窗提示
+// 已核销券退款入口：统一走 After-sales（核销后 7 天内）/ 超窗提示
 
 import 'dart:async';
 
@@ -11,15 +11,13 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../after_sales/domain/providers/after_sales_provider.dart';
 import '../../../after_sales/presentation/pages/after_sales_screen_args.dart';
 import '../../data/models/order_item_model.dart';
-import '../../domain/providers/coupons_provider.dart';
 
 /// 从订单/券详情对「已使用」券打开退款相关流程（不再对 used 调 create-refund）
 void showUsedRefundEntry(
   BuildContext context,
   WidgetRef ref,
-  OrderItemModel item, {
-  required VoidCallback onRefresh,
-}) {
+  OrderItemModel item,
+) {
   if (!item.showRefundRequest) return;
 
   if (item.redeemedAt == null) {
@@ -33,23 +31,6 @@ void showUsedRefundEntry(
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
         ],
-      ),
-    );
-    return;
-  }
-
-  if (item.isInDisputeRefundWindow) {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (sheetCtx) => _DisputeRefundSheet(
-        parentContext: context,
-        item: item,
-        onRefresh: onRefresh,
       ),
     );
     return;
@@ -165,7 +146,15 @@ class _AfterSalesRefundChoiceSheetState extends ConsumerState<_AfterSalesRefundC
         _loadError =
             'Request timed out. Check your connection and tap Retry.';
       });
-    } catch (_) {
+    } on AppException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loadError = e.message.trim().isEmpty
+            ? 'Could not load status. Tap Retry.'
+            : e.message;
+      });
+    } catch (e, stack) {
+      debugPrint('[after-sales] load existing case failed: $e\n$stack');
       if (!mounted) return;
       setState(() {
         _loadError = 'Could not load status. Tap Retry.';
@@ -213,8 +202,7 @@ class _AfterSalesRefundChoiceSheetState extends ConsumerState<_AfterSalesRefundC
                 ? _loadError!
                 : hasCase
                     ? 'You already have an after-sales case for this voucher. Open status to review updates or escalate if needed.'
-                    : 'The 24-hour dispute window has passed. You can still submit an after-sales '
-                        'request within 7 days of redemption.',
+                    : 'You can submit an after-sales request within 7 days of redeeming your voucher.',
             style: TextStyle(
               fontSize: 14,
               color: hasError ? AppColors.error : AppColors.textSecondary,
@@ -267,148 +255,6 @@ class _AfterSalesRefundChoiceSheetState extends ConsumerState<_AfterSalesRefundC
             child: const Text('Cancel'),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _DisputeRefundSheet extends ConsumerStatefulWidget {
-  const _DisputeRefundSheet({
-    required this.parentContext,
-    required this.item,
-    required this.onRefresh,
-  });
-
-  /// 打开 bottom sheet 的页面 context，用于关闭弹窗后在主 Scaffold 上显示 SnackBar（避免被遮罩）
-  final BuildContext parentContext;
-  final OrderItemModel item;
-  final VoidCallback onRefresh;
-
-  @override
-  ConsumerState<_DisputeRefundSheet> createState() => _DisputeRefundSheetState();
-}
-
-String _disputeErrorMessage(Object? error) {
-  if (error == null) return 'Request failed. Please try again.';
-  if (error is AppException) return error.message;
-  return error.toString();
-}
-
-class _DisputeRefundSheetState extends ConsumerState<_DisputeRefundSheet> {
-  final _controller = TextEditingController();
-  final _formKey = GlobalKey<FormState>();
-  bool _submitting = false;
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final bottom = MediaQuery.of(context).viewInsets.bottom;
-    return Padding(
-      padding: EdgeInsets.fromLTRB(24, 24, 24, 24 + bottom),
-      child: Form(
-        key: _formKey,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: AppColors.textHint,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-            const Text(
-              'Dispute refund',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: AppColors.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Within 24 hours of redemption you can request a refund for review. '
-              'If approved, the amount will be credited to Store Credit.',
-              style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
-            ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _controller,
-              maxLines: 4,
-              maxLength: 500,
-              decoration: const InputDecoration(
-                labelText: 'Reason',
-                hintText: 'Please describe the issue (10–500 characters)',
-                border: OutlineInputBorder(),
-                alignLabelWithHint: true,
-              ),
-              validator: (v) {
-                final t = v?.trim() ?? '';
-                if (t.length < 10) return 'Enter at least 10 characters';
-                if (t.length > 500) return 'Max 500 characters';
-                return null;
-              },
-            ),
-            const SizedBox(height: 16),
-            FilledButton(
-              onPressed: _submitting
-                  ? null
-                  : () async {
-                      if (!(_formKey.currentState?.validate() ?? false)) return;
-                      final sheetContext = context;
-                      final parentContext = widget.parentContext;
-                      setState(() => _submitting = true);
-                      final ok = await ref.read(refundNotifierProvider.notifier).submitRefundDispute(
-                            widget.item.id,
-                            _controller.text.trim(),
-                            couponId: widget.item.couponId,
-                            orderId: widget.item.orderId,
-                          );
-                      final err = ref.read(refundNotifierProvider).error;
-                      if (!sheetContext.mounted) return;
-                      // 先关弹窗再提示，避免 SnackBar 被 bottom sheet 挡住；此处不再 setState（即将 dispose）
-                      Navigator.of(sheetContext).pop();
-                      if (ok) widget.onRefresh();
-                      final String snackText = ok
-                          ? 'Request submitted. The merchant will review it.'
-                          : _disputeErrorMessage(err);
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        if (!parentContext.mounted) return;
-                        ScaffoldMessenger.of(parentContext).clearSnackBars();
-                        ScaffoldMessenger.of(parentContext).showSnackBar(
-                          SnackBar(
-                            content: Text(snackText),
-                            behavior: SnackBarBehavior.floating,
-                            duration: Duration(seconds: ok ? 4 : 6),
-                            backgroundColor: ok ? null : AppColors.error,
-                          ),
-                        );
-                      });
-                    },
-              child: _submitting
-                  ? const SizedBox(
-                      height: 22,
-                      width: 22,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('Submit for review'),
-            ),
-            TextButton(
-              onPressed: _submitting ? null : () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-          ],
-        ),
       ),
     );
   }

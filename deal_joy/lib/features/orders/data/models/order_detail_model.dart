@@ -191,6 +191,8 @@ class OrderDetailModel {
     }
 
     final orderNum = pick<String>('order_number', 'orderNumber') ?? '';
+    // 订单级下单时间：item 缺 created_at 时回填，避免聚合页误用 DateTime.now()
+    final orderCreatedRaw = json['created_at'] ?? json['createdAt'];
     // V3：解析 items；把订单号写入每条 item 便于聚合页按单展示
     final rawItems = json['items'] as List?;
     final items = rawItems
@@ -200,6 +202,11 @@ class OrderDetailModel {
                   m['order_number'] == null &&
                   m['orderNumber'] == null) {
                 m['order_number'] = orderNum;
+              }
+              if (m['created_at'] == null &&
+                  m['createdAt'] == null &&
+                  orderCreatedRaw != null) {
+                m['created_at'] = orderCreatedRaw;
               }
               return OrderItemModel.fromJson(m);
             })

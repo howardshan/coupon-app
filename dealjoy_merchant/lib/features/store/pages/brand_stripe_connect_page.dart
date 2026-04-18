@@ -221,9 +221,16 @@ class _BrandStripeConnectPageState
         );
       }
     } catch (e) {
+      _invalidateBrandStripeIfUnlinkedError(e);
       if (mounted) _showError(e.toString());
     } finally {
       if (mounted) setState(() => _isRefreshing = false);
+    }
+  }
+
+  void _invalidateBrandStripeIfUnlinkedError(Object e) {
+    if (e.toString().contains('No Stripe account linked')) {
+      ref.invalidate(brandStripeAccountProvider);
     }
   }
 
@@ -242,6 +249,7 @@ class _BrandStripeConnectPageState
         }
       }
     } catch (e) {
+      _invalidateBrandStripeIfUnlinkedError(e);
       if (mounted) _showError(e.toString());
     } finally {
       if (mounted) setState(() => _isOpeningDashboard = false);

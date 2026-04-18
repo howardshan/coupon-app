@@ -11,6 +11,7 @@ import 'package:intl/intl.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../../core/router/app_route_observer.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/back_or_home_app_bar_leading.dart';
 import '../../../cart/domain/providers/cart_provider.dart';
@@ -23,6 +24,9 @@ import '../../domain/providers/coupons_provider.dart';
 import '../widgets/customer_redemption_success_dialog.dart';
 import '../widgets/gift_bottom_sheet.dart';
 import '../widgets/used_refund_entry.dart';
+import '../../../after_sales/data/models/after_sales_request_model.dart';
+import '../../../after_sales/domain/providers/after_sales_provider.dart';
+import '../helpers/after_sales_coupon_map.dart';
 
 // ── 未使用券 QR 码弹窗 ────────────────────────────
 
@@ -83,6 +87,8 @@ class _UnusedQrSheetState extends ConsumerState<_UnusedQrSheet> {
   bool _didAutoPopForEmptyOpen = false;
   bool _redemptionSuccessFlowScheduled = false;
   Timer? _pollTimer;
+  /// 已将 [initialUnusedOrderItemId] 同步到 PageView 当前页
+  bool _appliedInitialUnusedPage = false;
 
   @override
   void initState() {
@@ -92,7 +98,7 @@ class _UnusedQrSheetState extends ConsumerState<_UnusedQrSheet> {
     // 定期拉取，避免 Realtime 1002 等导致长时间停在旧 QR
     _pollTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (!mounted) return;
-      ref.invalidate(userCouponsProvider);
+      invalidateUserCouponsEverywhere(ref.invalidate);
       if (widget.aggregateByDeal && widget.aggregatedOrderItemIds.isNotEmpty) {
         final key = aggregatedDealVoucherCacheKey(
             widget.dealId, widget.aggregatedOrderItemIds);
@@ -385,6 +391,24 @@ class _UnusedQrSheetState extends ConsumerState<_UnusedQrSheet> {
           });
         }
 
+        // 从订单详情「点某张未用券」打开时，定位到对应 PageView 页
+        if (!_appliedInitialUnusedPage &&
+            widget.initialUnusedOrderItemId != null &&
+            unusedItems.isNotEmpty) {
+          final idx = unusedItems
+              .indexWhere((e) => e.id == widget.initialUnusedOrderItemId);
+          _appliedInitialUnusedPage = true;
+          if (idx > 0) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted || !_pageController.hasClients) return;
+              _pageController.jumpToPage(idx);
+              setState(() => _currentPage = idx);
+            });
+          } else if (idx == 0) {
+            setState(() => _currentPage = 0);
+          }
+        }
+
         if (unusedItems.isEmpty) {
           if (_redemptionSuccessFlowScheduled) {
             return _buildSheetChrome(
@@ -452,7 +476,7 @@ class _UnusedQrSheetState extends ConsumerState<_UnusedQrSheet> {
               const SizedBox(height: 16),
               TextButton(
                 onPressed: () {
-                  ref.invalidate(userCouponsProvider);
+                  invalidateUserCouponsEverywhere(ref.invalidate);
                   if (aggKey != null) {
                     ref.invalidate(aggregatedDealVoucherDetailProvider(aggKey));
                   } else {
@@ -499,7 +523,11 @@ class OrderDetailScreen extends ConsumerWidget {
             automaticallyImplyLeading: false,
           ),
           body: _ErrorBody(
-            onRetry: () => ref.invalidate(userOrderDetailProvider(orderId)),
+            onRetry: () {
+              ref.invalidate(userOrderDetailProvider(orderId));
+              ref.invalidate(afterSalesListProvider(orderId));
+              ref.invalidate(afterSalesListProvider(null));
+            },
             error: e,
           ),
         ),
@@ -561,11 +589,41 @@ class _MeituanOrderBody extends ConsumerStatefulWidget {
   ConsumerState<_MeituanOrderBody> createState() => _MeituanOrderBodyState();
 }
 
-class _MeituanOrderBodyState extends ConsumerState<_MeituanOrderBody> {
-  // 每个 deal 分组的展开状态（key = dealId）
-  final Map<String, bool> _expandedGroups = {};
+class _MeituanOrderBodyState extends ConsumerState<_MeituanOrderBody> with RouteAware {
+  // 每个 deal 下 Unused / Used / Gifted 区块各自展开
+  final Map<String, bool> _expandedUnusedByDeal = {};
+  final Map<String, bool> _expandedUsedByDeal = {};
+  final Map<String, bool> _expandedGiftedByDeal = {};
 
   OrderDetailModel get detail => widget.detail;
+
+  /// 从售后子页返回或后台裁决后：强制失效售后缓存，避免长期显示旧状态
+  void _invalidateAfterSalesForThisOrder() {
+    final oid = widget.orderId;
+    ref.invalidate(afterSalesListProvider(oid));
+    ref.invalidate(afterSalesListProvider(null));
+    ref.invalidate(afterSalesRequestProvider(oid));
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute<dynamic>) {
+      appRouteObserver.subscribe(this, route);
+    }
+  }
+
+  @override
+  void dispose() {
+    appRouteObserver.unsubscribe(this);
+    super.dispose();
+  }
+
+  @override
+  void didPopNext() {
+    _invalidateAfterSalesForThisOrder();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -598,23 +656,40 @@ class _MeituanOrderBodyState extends ConsumerState<_MeituanOrderBody> {
             ...groupMap.entries.map((entry) {
               final dealId = entry.key;
               final items = entry.value;
-              final isExpanded = _expandedGroups[dealId] ?? false;
+              final unusedExpanded = _expandedUnusedByDeal[dealId] ?? false;
+              final usedExpanded = _expandedUsedByDeal[dealId] ?? false;
+              final giftedExpanded = _expandedGiftedByDeal[dealId] ?? false;
 
               return SliverToBoxAdapter(
                 child: _DealSummaryCard(
                   dealItems: items,
-                  isExpanded: isExpanded,
+                  isUnusedExpanded: unusedExpanded,
+                  onToggleUnusedExpand: () {
+                    setState(() {
+                      _expandedUnusedByDeal[dealId] = !unusedExpanded;
+                    });
+                  },
+                  isUsedExpanded: usedExpanded,
+                  onToggleUsedExpand: () {
+                    setState(() {
+                      _expandedUsedByDeal[dealId] = !usedExpanded;
+                    });
+                  },
+                  isGiftedExpanded: giftedExpanded,
+                  onToggleGiftedExpand: () {
+                    setState(() {
+                      _expandedGiftedByDeal[dealId] = !giftedExpanded;
+                    });
+                  },
                   orderId: widget.orderId,
                   paymentIntentId: detail.paymentIntentIdMasked,
                   storeCreditUsed: detail.storeCreditUsed,
                   orderTotalAmount: detail.totalAmount,
-                  onToggleExpand: () {
-                    setState(() {
-                      _expandedGroups[dealId] = !isExpanded;
-                    });
+                  onRefreshOrder: () {
+                    ref.invalidate(userOrderDetailProvider(widget.orderId));
+                    ref.invalidate(afterSalesListProvider(widget.orderId));
+                    ref.invalidate(afterSalesListProvider(null));
                   },
-                  onRefreshOrder: () =>
-                      ref.invalidate(userOrderDetailProvider(widget.orderId)),
                 ),
               );
             }),
@@ -650,8 +725,12 @@ class _MeituanOrderBodyState extends ConsumerState<_MeituanOrderBody> {
 
 class _DealSummaryCard extends ConsumerWidget {
   final List<OrderItemModel> dealItems;
-  final bool isExpanded;
-  final VoidCallback onToggleExpand;
+  final bool isUnusedExpanded;
+  final VoidCallback onToggleUnusedExpand;
+  final bool isUsedExpanded;
+  final VoidCallback onToggleUsedExpand;
+  final bool isGiftedExpanded;
+  final VoidCallback onToggleGiftedExpand;
   final VoidCallback onRefreshOrder;
   final String? paymentIntentId;
   final String orderId;
@@ -662,8 +741,12 @@ class _DealSummaryCard extends ConsumerWidget {
 
   const _DealSummaryCard({
     required this.dealItems,
-    required this.isExpanded,
-    required this.onToggleExpand,
+    required this.isUnusedExpanded,
+    required this.onToggleUnusedExpand,
+    required this.isUsedExpanded,
+    required this.onToggleUsedExpand,
+    required this.isGiftedExpanded,
+    required this.onToggleGiftedExpand,
     required this.onRefreshOrder,
     required this.orderId,
     this.paymentIntentId,
@@ -676,6 +759,12 @@ class _DealSummaryCard extends ConsumerWidget {
     final first = dealItems.first;
     final count = dealItems.length;
     final amountFmt = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
+
+    final afterSalesAsync = ref.watch(afterSalesListProvider(orderId));
+    final afterSalesByCoupon = afterSalesAsync.maybeWhen(
+      data: latestAfterSalesByCouponId,
+      orElse: () => <String, AfterSalesRequestModel>{},
+    );
 
     // 计算已付总价（不含 service fee）
     final totalPaid = dealItems.fold<double>(0, (s, i) => s + i.unitPrice);
@@ -790,6 +879,48 @@ class _DealSummaryCard extends ConsumerWidget {
                           ),
                         ],
                       ),
+                      Builder(
+                        builder: (context) {
+                          final n = dealItems
+                              .where(
+                                (i) =>
+                                    i.couponId != null &&
+                                    i.couponId!.isNotEmpty &&
+                                    afterSalesByCoupon.containsKey(i.couponId!),
+                              )
+                              .length;
+                          if (n == 0) return const SizedBox.shrink();
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 10),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 2),
+                                  child: Icon(
+                                    Icons.support_agent_outlined,
+                                    size: 16,
+                                    color: AppColors.warning,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    n == 1
+                                        ? 'After-sales in progress for 1 voucher below.'
+                                        : 'After-sales in progress for $n vouchers below.',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: AppColors.textSecondary,
+                                      height: 1.25,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
                     ],
                   ),
                 ),
@@ -806,17 +937,14 @@ class _DealSummaryCard extends ConsumerWidget {
               count: unusedItems.length,
               color: const Color(0xFF00C853),
               items: unusedItems,
-              isExpanded: false,
-              onToggle: () => showUnusedQrSheet(
-                    context,
-                    orderId: orderId,
-                    dealId: first.dealId,
-                  ),
+              isExpanded: isUnusedExpanded,
+              onToggle: onToggleUnusedExpand,
               onRefreshOrder: onRefreshOrder,
               orderId: orderId,
               paymentIntentId: paymentIntentId,
               storeCreditUsed: storeCreditUsed,
               orderTotalAmount: orderTotalAmount,
+              afterSalesByCoupon: afterSalesByCoupon,
             ),
           if (usedItems.isNotEmpty)
             _CouponStatusRow(
@@ -824,13 +952,14 @@ class _DealSummaryCard extends ConsumerWidget {
               count: usedItems.length,
               color: const Color(0xFF2979FF),
               items: usedItems,
-              isExpanded: isExpanded && unusedItems.isEmpty,
-              onToggle: unusedItems.isEmpty ? onToggleExpand : null,
+              isExpanded: isUsedExpanded,
+              onToggle: onToggleUsedExpand,
               onRefreshOrder: onRefreshOrder,
               orderId: orderId,
               paymentIntentId: paymentIntentId,
               storeCreditUsed: storeCreditUsed,
               orderTotalAmount: orderTotalAmount,
+              afterSalesByCoupon: afterSalesByCoupon,
             ),
           if (giftedItems.isNotEmpty)
             _CouponStatusRow(
@@ -838,13 +967,14 @@ class _DealSummaryCard extends ConsumerWidget {
               count: giftedItems.length,
               color: AppColors.secondary,
               items: giftedItems,
-              isExpanded: isExpanded && unusedItems.isEmpty && usedItems.isEmpty,
-              onToggle: unusedItems.isEmpty && usedItems.isEmpty ? onToggleExpand : null,
+              isExpanded: isGiftedExpanded,
+              onToggle: onToggleGiftedExpand,
               onRefreshOrder: onRefreshOrder,
               orderId: orderId,
               paymentIntentId: paymentIntentId,
               storeCreditUsed: storeCreditUsed,
               orderTotalAmount: orderTotalAmount,
+              afterSalesByCoupon: afterSalesByCoupon,
             ),
           if (refundedItems.isNotEmpty)
             _CouponStatusRow(
@@ -863,6 +993,7 @@ class _DealSummaryCard extends ConsumerWidget {
               paymentIntentId: paymentIntentId,
               storeCreditUsed: storeCreditUsed,
               orderTotalAmount: orderTotalAmount,
+              afterSalesByCoupon: afterSalesByCoupon,
             ),
           if (otherItems.isNotEmpty)
             _CouponStatusRow(
@@ -877,6 +1008,7 @@ class _DealSummaryCard extends ConsumerWidget {
               paymentIntentId: paymentIntentId,
               storeCreditUsed: storeCreditUsed,
               orderTotalAmount: orderTotalAmount,
+              afterSalesByCoupon: afterSalesByCoupon,
             ),
         ],
       ),
@@ -900,6 +1032,8 @@ class _CouponStatusRow extends ConsumerWidget {
   final double storeCreditUsed;
   /// 订单原始总金额（未扣 Store Credit）
   final double orderTotalAmount;
+  /// couponId → 最新售后（订单详情逐券标识）
+  final Map<String, AfterSalesRequestModel> afterSalesByCoupon;
 
   const _CouponStatusRow({
     required this.label,
@@ -913,10 +1047,20 @@ class _CouponStatusRow extends ConsumerWidget {
     this.paymentIntentId,
     this.storeCreditUsed = 0.0,
     this.orderTotalAmount = 0.0,
+    this.afterSalesByCoupon = const <String, AfterSalesRequestModel>{},
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final afterSalesInSection = items
+        .where(
+          (i) =>
+              i.couponId != null &&
+              i.couponId!.isNotEmpty &&
+              afterSalesByCoupon.containsKey(i.couponId!),
+        )
+        .length;
+
     return Column(
       children: [
         // 状态行标题
@@ -943,6 +1087,26 @@ class _CouponStatusRow extends ConsumerWidget {
                     color: color,
                   ),
                 ),
+                if (afterSalesInSection > 0) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: AppColors.warning.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      afterSalesInSection == 1
+                          ? 'After-sales ×1'
+                          : 'After-sales ×$afterSalesInSection',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.warning,
+                      ),
+                    ),
+                  ),
+                ],
                 const Spacer(),
                 if (onToggle != null) ...[
                   Text(
@@ -977,6 +1141,7 @@ class _CouponStatusRow extends ConsumerWidget {
                 onRefreshOrder: onRefreshOrder,
                 storeCreditUsed: storeCreditUsed,
                 orderTotalAmount: orderTotalAmount,
+                afterSalesByCoupon: afterSalesByCoupon,
               )),
         ],
 
@@ -998,6 +1163,7 @@ class _CouponDetailRow extends ConsumerWidget {
   final double storeCreditUsed;
   /// 订单原始总金额（未扣 Store Credit）
   final double orderTotalAmount;
+  final Map<String, AfterSalesRequestModel> afterSalesByCoupon;
 
   const _CouponDetailRow({
     required this.item,
@@ -1007,6 +1173,7 @@ class _CouponDetailRow extends ConsumerWidget {
     required this.onRefreshOrder,
     this.storeCreditUsed = 0.0,
     this.orderTotalAmount = 0.0,
+    this.afterSalesByCoupon = const <String, AfterSalesRequestModel>{},
   });
 
   @override
@@ -1018,6 +1185,14 @@ class _CouponDetailRow extends ConsumerWidget {
         // 赠送出去的券跳转到 coupon 详情页（显示 gift 信息）
         if (item.customerStatus == CustomerItemStatus.gifted && item.couponId != null) {
           context.push('/coupon/${item.couponId}');
+        } else if (item.customerStatus == CustomerItemStatus.unused) {
+          // 未使用：先列表展开后，点行再出示 QR（与 Used 展开体验一致）
+          showUnusedQrSheet(
+            context,
+            orderId: orderId,
+            dealId: item.dealId,
+            initialUnusedOrderItemId: item.id,
+          );
         } else {
           // 其他状态跳转到 voucher detail 页面
           context.push('/voucher/$orderId?dealId=${item.dealId}');
@@ -1053,16 +1228,71 @@ class _CouponDetailRow extends ConsumerWidget {
                               fontSize: 13, color: AppColors.textHint),
                         ),
                       const SizedBox(width: 4),
-                      const Icon(Icons.arrow_forward_ios,
-                          size: 12, color: AppColors.primary),
+                      Icon(
+                        item.customerStatus == CustomerItemStatus.unused
+                            ? Icons.qr_code_2_rounded
+                            : Icons.arrow_forward_ios,
+                        size: item.customerStatus == CustomerItemStatus.unused
+                            ? 18
+                            : 12,
+                        color: AppColors.primary,
+                      ),
                     ],
                   ),
+                  if (item.customerStatus == CustomerItemStatus.unused) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      'Tap to show QR',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: AppColors.textHint.withValues(alpha: 0.9),
+                      ),
+                    ),
+                  ],
                   if (item.redeemedAt != null) ...[
                     const SizedBox(height: 2),
                     Text(
                       'Used ${DateFormat('MMM d, yyyy').format(item.redeemedAt!.toLocal())}',
                       style: const TextStyle(
                           fontSize: 11, color: AppColors.textHint),
+                    ),
+                  ],
+                  if (item.couponId != null && item.couponId!.isNotEmpty) ...[
+                    Builder(
+                      builder: (context) {
+                        final req = afterSalesByCoupon[item.couponId!];
+                        if (req == null) return const SizedBox.shrink();
+                        final bucket = AfterSalesOrderCardBucket.fromStatus(req.status);
+                        final accent = switch (bucket) {
+                          AfterSalesOrderCardBucket.pending => AppColors.warning,
+                          AfterSalesOrderCardBucket.rejected => AppColors.textSecondary,
+                          AfterSalesOrderCardBucket.approved => AppColors.success,
+                        };
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: GestureDetector(
+                            onTap: () => context.push('/after-sales/$orderId'),
+                            behavior: HitTestBehavior.opaque,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.support_agent_outlined, size: 15, color: accent),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'After-sales · ${bucket.shortLabel}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: accent,
+                                  ),
+                                ),
+                                const SizedBox(width: 2),
+                                const Icon(Icons.chevron_right, size: 14, color: AppColors.textHint),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
                     ),
                   ],
                   // 赠送信息（gifted 状态时显示受赠方）
@@ -1091,16 +1321,11 @@ class _CouponDetailRow extends ConsumerWidget {
                     color: AppColors.error,
                     onTap: () => _showCancelSheet(context, ref, item),
                   ),
-                if (item.showRefundRequest)
+                if (showRefundButtonConsideringAfterSales(item, afterSalesByCoupon))
                   _SmallButton(
                     label: 'Refund',
                     color: AppColors.warning,
-                    onTap: () => showUsedRefundEntry(
-                      context,
-                      ref,
-                      item,
-                      onRefresh: onRefreshOrder,
-                    ),
+                    onTap: () => showUsedRefundEntry(context, ref, item),
                   ),
                 if (item.showWriteReview)
                   _SmallButton(

@@ -32,7 +32,7 @@ class OrderSuccessScreen extends ConsumerWidget {
           child: orderAsync.when(
             data: (order) {
               // 支付成功后刷新券列表和订单列表
-              ref.invalidate(userCouponsProvider);
+              invalidateUserCouponsEverywhere(ref.invalidate);
               ref.invalidate(userOrdersProvider);
 
               // 上报购买行为，用于推荐系统个性化（postFrame 避免 build 内副作用）

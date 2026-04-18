@@ -118,6 +118,22 @@ function mapEventRowToEntry(row: MerchantActivityEventRow): AdminActivityTimelin
         title: 'Store closed',
         subtitle: sub ?? 'Permanent close flow (deals deactivated, pending refunds)',
       }
+    case 'stripe_unlink_approved': {
+      const d = row.detail?.trim()
+      return {
+        at,
+        title: 'Stripe disconnection request approved (platform unlinked)',
+        subtitle: [d ? truncate(d, 200) : null, sub].filter(Boolean).join(' · ') || undefined,
+      }
+    }
+    case 'stripe_unlink_rejected': {
+      const d = row.detail?.trim()
+      return {
+        at,
+        title: 'Stripe disconnection request not approved',
+        subtitle: [d ? truncate(d, 200) : null, sub].filter(Boolean).join(' · ') || undefined,
+      }
+    }
     default:
       return {
         at,

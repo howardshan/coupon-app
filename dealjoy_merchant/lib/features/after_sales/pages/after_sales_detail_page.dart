@@ -44,14 +44,14 @@ class _AfterSalesDetailPageState extends ConsumerState<AfterSalesDetailPage> {
             padding: const EdgeInsets.all(16),
             children: [
               _SummaryCard(request: request),
+              const SizedBox(height: 16),
+              _CustomerRequestCard(request: request),
               if (request.merchantOrderContext?.hasAnyContext == true) ...[
                 const SizedBox(height: 16),
                 _MerchantOrderContextCard(
                   contextInfo: request.merchantOrderContext!,
                 ),
               ],
-              const SizedBox(height: 16),
-              _AttachmentSection(title: 'User attachments', attachments: request.userAttachments),
               if (request.merchantAttachments.isNotEmpty) ...[
                 const SizedBox(height: 16),
                 _AttachmentSection(title: 'Merchant attachments', attachments: request.merchantAttachments),
@@ -102,6 +102,13 @@ class _AfterSalesDetailPageState extends ConsumerState<AfterSalesDetailPage> {
       }
     } catch (err) {
       if (!mounted) return;
+      // 服务端可能已写入 merchant_approved 但退款失败返回 502 等；不刷新则仍显示 Approve 导致重复提交 400
+      try {
+        await _refreshAfterAction();
+      } catch (_) {
+        // 同步失败不掩盖原始错误
+      }
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Approve failed: $err')),
       );
@@ -135,6 +142,12 @@ class _AfterSalesDetailPageState extends ConsumerState<AfterSalesDetailPage> {
       }
     } catch (err) {
       if (!mounted) return;
+      try {
+        await _refreshAfterAction();
+      } catch (_) {
+        // 同步失败不掩盖原始错误
+      }
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Reject failed: $err')),
       );
@@ -146,6 +159,8 @@ class _AfterSalesDetailPageState extends ConsumerState<AfterSalesDetailPage> {
   Future<void> _refreshAfterAction() async {
     ref.invalidate(afterSalesDetailProvider(widget.requestId));
     await ref.read(afterSalesListProvider.notifier).refresh();
+    // 等待详情重新拉取，避免仍缓存旧的 pending 与 Approve 按钮
+    await ref.read(afterSalesDetailProvider(widget.requestId).future);
   }
 
   Future<_DecisionInput?> _collectDecisionNote({
@@ -372,11 +387,6 @@ class _SummaryCard extends StatelessWidget {
                             color: Colors.grey.shade600,
                           ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      request.reasonDetail,
-                      style: const TextStyle(color: Colors.black54),
-                    ),
                   ],
                 ),
               ),
@@ -451,6 +461,87 @@ class _SummaryTimeRow extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// 用户留言 + 用户上传证据（与订单卡分离，便于商家快速阅读）
+class _CustomerRequestCard extends StatelessWidget {
+  const _CustomerRequestCard({required this.request});
+
+  final MerchantAfterSalesRequest request;
+
+  @override
+  Widget build(BuildContext context) {
+    final detail = request.reasonDetail.trim();
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Customer request',
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+          ),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF4ED),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFFFE0CC)),
+            ),
+            child: Text(
+              request.reasonCode.replaceAll('_', ' ').toUpperCase(),
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.3,
+                color: Color(0xFFB45309),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            detail.isNotEmpty ? detail : '—',
+            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                  height: 1.45,
+                  fontWeight: FontWeight.w500,
+                  color: const Color(0xFF1A1A1A),
+                ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Evidence',
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  color: Colors.black54,
+                  fontWeight: FontWeight.w600,
+                ),
+          ),
+          const SizedBox(height: 8),
+          if (request.userAttachments.isNotEmpty)
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: request.userAttachments
+                  .map((url) => _AttachmentPreview(url: url))
+                  .toList(),
+            )
+          else
+            Text(
+              'No attachments submitted.',
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -769,7 +860,7 @@ class _TimelineTile extends StatelessWidget {
                     padding: const EdgeInsets.only(top: 6),
                     child: Text(entry.note!),
                   ),
-                // 附件统一在上方 User attachments 区打开，避免与 Timeline 重复入口
+                // 附件在上方 Customer request 卡中打开，避免与 Timeline 重复入口
               ],
             ),
           ),

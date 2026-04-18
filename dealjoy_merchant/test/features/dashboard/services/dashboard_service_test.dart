@@ -71,6 +71,7 @@ DashboardData _buildMockData({bool isOnline = true}) {
     todos: const TodoCounts(
       pendingReviews: 2,
       pendingRefunds: 1,
+      pendingAfterSales: 0,
       influencerRequests: 0,
     ),
   );
@@ -189,6 +190,7 @@ void main() {
       const todos = TodoCounts(
         pendingReviews: 0,
         pendingRefunds: 0,
+        pendingAfterSales: 0,
         influencerRequests: 0,
       );
 
@@ -199,6 +201,7 @@ void main() {
       const todos = TodoCounts(
         pendingReviews: 2,
         pendingRefunds: 0,
+        pendingAfterSales: 0,
         influencerRequests: 0,
       );
 
@@ -209,6 +212,7 @@ void main() {
       const todos = TodoCounts(
         pendingReviews: 3,
         pendingRefunds: 1,
+        pendingAfterSales: 0,
         influencerRequests: 2,
       );
 

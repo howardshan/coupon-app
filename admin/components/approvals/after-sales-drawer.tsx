@@ -219,10 +219,6 @@ export default function AfterSalesDrawer({
           setActionMessage(msg)
           return
         }
-        if (!attachments.length) {
-          toast.error('At least one attachment is required for rejection')
-          return
-        }
       }
       const response = await fetch(`/api/platform-after-sales/${item.id}`, {
         method: 'POST',
@@ -513,7 +509,7 @@ export default function AfterSalesDrawer({
             <p className="mt-2 text-sm text-gray-600">
               {decisionState.action === 'approve'
                 ? 'Add a note that will be logged in the merchant timeline.'
-                : 'Provide a detailed rejection reason (min 10 characters) and at least one supporting image.'}
+                : 'Provide a detailed rejection reason (min 10 characters). Supporting images are optional.'}
             </p>
             <textarea
               value={decisionNote}
@@ -532,7 +528,7 @@ export default function AfterSalesDrawer({
                   className="text-sm"
                 />
                 <p className="mt-1 text-xs text-gray-500">
-                  Evidence is required for rejection. Maximum 3 images.
+                  Optional evidence images. Maximum 3 images.
                 </p>
               </div>
             )}
@@ -550,7 +546,7 @@ export default function AfterSalesDrawer({
                   actionLoading ||
                   (decisionState.action === 'approve'
                     ? false
-                    : decisionNote.trim().length < 10 || decisionFiles.length === 0)
+                    : decisionNote.trim().length < 10)
                 }
                 onClick={() => submitDecision(decisionState.action)}
                 className="px-4 py-2 rounded-lg bg-orange-600 text-sm font-semibold text-white hover:bg-orange-700 disabled:opacity-50"

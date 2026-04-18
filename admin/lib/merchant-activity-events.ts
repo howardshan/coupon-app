@@ -15,6 +15,8 @@ export type MerchantActivityEventTypeDb =
   | 'store_online_admin'
   | 'store_offline_admin'
   | 'store_closed_merchant'
+  | 'stripe_unlink_approved'
+  | 'stripe_unlink_rejected'
 
 export type MerchantActivityActorTypeDb = 'admin' | 'merchant_owner' | 'system'
 

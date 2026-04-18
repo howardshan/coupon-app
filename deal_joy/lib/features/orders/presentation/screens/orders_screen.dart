@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../after_sales/data/models/after_sales_request_model.dart';
+import '../../../after_sales/domain/providers/after_sales_provider.dart';
 import '../../data/models/order_item_model.dart';
 import '../../data/models/order_model.dart';
 import '../../domain/providers/orders_provider.dart';
@@ -171,6 +173,7 @@ class OrdersScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final ordersAsync = ref.watch(userOrdersProvider);
+    final afterSalesByOrderAsync = ref.watch(userAfterSalesByOrderIdProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -201,12 +204,26 @@ class OrdersScreen extends ConsumerWidget {
             );
           }
           return RefreshIndicator(
-            onRefresh: () async => ref.invalidate(userOrdersProvider),
+            onRefresh: () async {
+              ref.invalidate(userOrdersProvider);
+              ref.invalidate(afterSalesListProvider(null));
+              await Future.wait([
+                ref.read(userOrdersProvider.future),
+                ref.read(afterSalesListProvider(null).future),
+              ]);
+            },
             child: ListView.separated(
               padding: const EdgeInsets.all(16),
               itemCount: entries.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 16),
-              itemBuilder: (_, i) => _OrderCard(entry: entries[i]),
+              separatorBuilder: (context, index) => const SizedBox(height: 16),
+              itemBuilder: (_, i) {
+                final entry = entries[i];
+                final list = afterSalesByOrderAsync.maybeWhen(
+                  data: (m) => m[entry.order.id] ?? const <AfterSalesRequestModel>[],
+                  orElse: () => const <AfterSalesRequestModel>[],
+                );
+                return _OrderCard(entry: entry, afterSalesForOrder: list);
+              },
             ),
           );
         },
@@ -220,7 +237,10 @@ class OrdersScreen extends ConsumerWidget {
               const Text('Failed to load orders', style: TextStyle(color: AppColors.textSecondary)),
               const SizedBox(height: 16),
               ElevatedButton.icon(
-                onPressed: () => ref.invalidate(userOrdersProvider),
+                onPressed: () {
+                  ref.invalidate(userOrdersProvider);
+                  ref.invalidate(afterSalesListProvider(null));
+                },
                 icon: const Icon(Icons.refresh, size: 18),
                 label: const Text('Retry'),
               ),
@@ -235,13 +255,16 @@ class OrdersScreen extends ConsumerWidget {
 // ── Order 外框卡片 ────────────────────────────────────────────
 class _OrderCard extends StatelessWidget {
   final _OrderEntry entry;
+  final List<AfterSalesRequestModel> afterSalesForOrder;
 
-  const _OrderCard({required this.entry});
+  const _OrderCard({
+    required this.entry,
+    required this.afterSalesForOrder,
+  });
 
   @override
   Widget build(BuildContext context) {
     final order = entry.order;
-    final dateFmt = DateFormat('MMM d, yyyy · h:mm a');
 
     return Container(
       decoration: BoxDecoration(
@@ -288,6 +311,7 @@ class _OrderCard extends StatelessWidget {
                 ),
               ),
             ),
+            if (afterSalesForOrder.isNotEmpty) _AfterSalesOrderBanner(orderId: order.id, requests: afterSalesForOrder),
             const Divider(height: 16, indent: 14, endIndent: 14),
 
             // ── 商家组（可能多个）──────────────────────────────
@@ -326,6 +350,65 @@ class _OrderCard extends StatelessWidget {
               ),
             ),
           ],
+      ),
+    );
+  }
+}
+
+/// 订单卡片内：售后数量 + 聚合状态，点击进入该订单售后时间线
+class _AfterSalesOrderBanner extends StatelessWidget {
+  const _AfterSalesOrderBanner({
+    required this.orderId,
+    required this.requests,
+  });
+
+  final String orderId;
+  final List<AfterSalesRequestModel> requests;
+
+  @override
+  Widget build(BuildContext context) {
+    final bucket = AfterSalesOrderCardBucket.dominant(requests);
+    final accent = switch (bucket) {
+      AfterSalesOrderCardBucket.pending => AppColors.warning,
+      AfterSalesOrderCardBucket.rejected => AppColors.textSecondary,
+      AfterSalesOrderCardBucket.approved => AppColors.success,
+    };
+    final n = requests.length;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 4),
+      child: Material(
+        color: accent.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: () => context.push('/after-sales/$orderId'),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            child: Row(
+              children: [
+                Icon(Icons.support_agent_outlined, size: 18, color: accent),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'After-sales · $n · ${bucket.shortLabel}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: accent,
+                    ),
+                  ),
+                ),
+                Text(
+                  'View',
+                  style: TextStyle(fontSize: 11, color: AppColors.textHint),
+                ),
+                const SizedBox(width: 2),
+                Icon(Icons.chevron_right, size: 18, color: AppColors.textHint),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -421,8 +504,8 @@ class _DealRow extends StatelessWidget {
                     width: 60,
                     height: 60,
                     fit: BoxFit.cover,
-                    placeholder: (_, __) => _placeholder(),
-                    errorWidget: (_, __, ___) => _placeholder(),
+                    placeholder: (context, url) => _placeholder(),
+                    errorWidget: (context, url, err) => _placeholder(),
                   )
                 : _placeholder(),
           ),

@@ -1056,11 +1056,17 @@ Deno.serve(async (req: Request) => {
     return errorResponse('Missing Authorization header', 401);
   }
 
-  const token = authHeader.replace('Bearer ', '');
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+  const anonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+  const authHeaderNorm = authHeader.startsWith('Bearer ') ? authHeader : `Bearer ${authHeader}`;
+  const authClient = createClient(supabaseUrl, anonKey, {
+    global: { headers: { Authorization: authHeaderNorm } },
+    auth: { persistSession: false },
+  });
 
   let user;
   try {
-    const { data, error } = await supabase.auth.getUser(token);
+    const { data, error } = await authClient.auth.getUser();
     if (error || !data?.user) {
       return errorResponse('Invalid or expired token', 401);
     }

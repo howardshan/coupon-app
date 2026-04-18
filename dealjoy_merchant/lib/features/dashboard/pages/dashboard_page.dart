@@ -484,50 +484,94 @@ class _TodoSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext _) {
+    void pushRefundRequests() {
+      Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => const RefundRequestsPage(),
+        ),
+      );
+    }
+
+    void pushAfterSalesList() {
+      Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => const AfterSalesListPage(),
+        ),
+      );
+    }
+
+    // 与订单页一致：历史争议退款 vs 售后工单（新单仅售后）
+    final specs =
+        <({
+          IconData icon,
+          Color iconColor,
+          String label,
+          int count,
+          VoidCallback onTap,
+        })>[];
+
+    if (todos.pendingReviews > 0) {
+      specs.add((
+        icon: Icons.star_outline,
+        iconColor: const Color(0xFFFF9800),
+        label: 'Reviews to reply',
+        count: todos.pendingReviews,
+        onTap: () => context.go('/reviews'),
+      ));
+    }
+    if (todos.pendingRefunds > 0) {
+      specs.add((
+        icon: Icons.reply_outlined,
+        iconColor: const Color(0xFFF44336),
+        label: 'Refund requests',
+        count: todos.pendingRefunds,
+        onTap: pushRefundRequests,
+      ));
+    }
+    if (todos.pendingAfterSales > 0) {
+      specs.add((
+        icon: Icons.support_agent_outlined,
+        iconColor: const Color(0xFF00897B),
+        label: 'After-sales pending',
+        count: todos.pendingAfterSales,
+        onTap: pushAfterSalesList,
+      ));
+    }
+    if (todos.influencerRequests > 0) {
+      specs.add((
+        icon: Icons.people_outline,
+        iconColor: const Color(0xFF9C27B0),
+        label: 'Influencer applications',
+        count: todos.influencerRequests,
+        onTap: () {}, // V1 暂无 influencer 路由
+      ));
+    }
+
+    final children = <Widget>[];
+    for (var i = 0; i < specs.length; i++) {
+      final s = specs[i];
+      if (i > 0) {
+        children.add(Divider(height: 1, color: Colors.grey.shade100));
+      }
+      children.add(
+        _TodoTile(
+          icon: s.icon,
+          iconColor: s.iconColor,
+          label: s.label,
+          count: s.count,
+          onTap: s.onTap,
+          isLast: i == specs.length - 1,
+        ),
+      );
+    }
+
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.grey.shade100),
       ),
-      child: Column(
-        children: [
-          // 待回复评价
-          if (todos.pendingReviews > 0)
-            _TodoTile(
-              icon: Icons.star_outline,
-              iconColor: const Color(0xFFFF9800),
-              label: 'Reviews to reply',
-              count: todos.pendingReviews,
-              onTap: () => context.go('/reviews'),
-            ),
-          // 待审核退款
-          if (todos.pendingRefunds > 0) ...[
-            if (todos.pendingReviews > 0)
-              Divider(height: 1, color: Colors.grey.shade100),
-            _TodoTile(
-              icon: Icons.reply_outlined,
-              iconColor: const Color(0xFFF44336),
-              label: 'Pending refunds',
-              count: todos.pendingRefunds,
-              onTap: () => context.go('/orders'),
-            ),
-          ],
-          // Influencer 申请
-          if (todos.influencerRequests > 0) ...[
-            if (todos.pendingReviews > 0 || todos.pendingRefunds > 0)
-              Divider(height: 1, color: Colors.grey.shade100),
-            _TodoTile(
-              icon: Icons.people_outline,
-              iconColor: const Color(0xFF9C27B0),
-              label: 'Influencer applications',
-              count: todos.influencerRequests,
-              onTap: () {}, // V1 暂无 influencer 路由
-              isLast: true,
-            ),
-          ],
-        ],
-      ),
+      child: Column(children: children),
     );
   }
 }

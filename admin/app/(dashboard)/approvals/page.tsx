@@ -102,6 +102,22 @@ export type AfterSalesItem = {
   resolvedAt?: string | null
 }
 
+export type StripeUnlinkItem = {
+  id: string
+  subjectType: 'merchant' | 'brand'
+  subjectId: string
+  merchantId: string
+  merchantName: string
+  brandName: string | null
+  requestNote: string | null
+  status: string
+  createdAt: string
+  updatedAt: string | null
+  reviewedAt: string | null
+  unbindAppliedAt: string | null
+  rejectedReason: string | null
+}
+
 /** 平台售后历史：非待办状态（含 platform_approved 卡单） */
 const AFTER_SALES_HISTORY_STATUSES = [
   'refunded',
@@ -136,20 +152,26 @@ export type UnifiedApprovalRow =
   | { kind: 'deal'; data: DealItem }
   | { kind: 'refund'; data: RefundDisputeItem }
   | { kind: 'after-sales'; data: AfterSalesItem }
+  | { kind: 'stripe-unlink'; data: StripeUnlinkItem }
 
 // ─── 数量统计 ────────────────────────────────────────────────────────────
 async function fetchCounts(db: ReturnType<typeof getServiceRoleClient>) {
-  const [merchantRes, dealRes, refundRes, afterSalesRes] = await Promise.all([
+  const [merchantRes, dealRes, refundRes, afterSalesRes, stripeUnlinkRes] = await Promise.all([
     db.from('merchants').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
     db.from('deals').select('id', { count: 'exact', head: true }).eq('deal_status', 'pending'),
     db.from('refund_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending_admin'),
     db.from('after_sales_requests').select('id', { count: 'exact', head: true }).eq('status', 'awaiting_platform'),
+    db
+      .from('stripe_connect_unlink_requests')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'pending'),
   ])
   return {
     merchants: merchantRes.count ?? 0,
     deals: dealRes.count ?? 0,
     refundDisputes: refundRes.count ?? 0,
     afterSales: afterSalesRes.count ?? 0,
+    stripeUnlink: stripeUnlinkRes.count ?? 0,
   }
 }
 
@@ -361,6 +383,73 @@ async function fetchAfterSales(
   const { data, count } = await query.range(offset, offset + PER_PAGE - 1)
 
   const items: AfterSalesItem[] = (data ?? []).map((r) => mapAfterSalesRow(r as Record<string, unknown>))
+  return { items, total: count ?? 0 }
+}
+
+const STRIPE_UNLINK_HISTORY_STATUSES = ['approved', 'rejected'] as const
+
+async function fetchStripeUnlink(
+  db: ReturnType<typeof getServiceRoleClient>,
+  page: number,
+  queue: 'pending' | 'history',
+) {
+  const offset = (page - 1) * PER_PAGE
+  let query = db
+    .from('stripe_connect_unlink_requests')
+    .select(
+      'id, subject_type, subject_id, merchant_id, status, request_note, created_at, updated_at, reviewed_at, unbind_applied_at, rejected_reason',
+      { count: 'exact' },
+    )
+
+  if (queue === 'pending') {
+    query = query.eq('status', 'pending').order('created_at', { ascending: true })
+  } else {
+    query = query
+      .in('status', [...STRIPE_UNLINK_HISTORY_STATUSES])
+      .order('reviewed_at', { ascending: false, nullsFirst: false })
+  }
+
+  const { data, count, error } = await query.range(offset, offset + PER_PAGE - 1)
+  if (error) {
+    throw new Error(error.message)
+  }
+  const rows = data ?? []
+  const mIds = [...new Set(rows.map((r: { merchant_id: string }) => r.merchant_id))]
+  const bIds = [
+    ...new Set(
+      rows
+        .filter((r: { subject_type: string }) => r.subject_type === 'brand')
+        .map((r: { subject_id: string }) => r.subject_id),
+    ),
+  ]
+  const { data: mrows } = mIds.length
+    ? await db.from('merchants').select('id, name').in('id', mIds)
+    : { data: [] as { id: string; name: string }[] }
+  const { data: brows } = bIds.length
+    ? await db.from('brands').select('id, name').in('id', bIds)
+    : { data: [] as { id: string; name: string }[] }
+  const mName = new Map((mrows ?? []).map((m) => [m.id, m.name as string]))
+  const bName = new Map((brows ?? []).map((b) => [b.id, b.name as string]))
+  const items: StripeUnlinkItem[] = rows.map((r: Record<string, unknown>) => {
+    const mid = r.merchant_id as string
+    const st = r.subject_type as string
+    const sid = r.subject_id as string
+    return {
+      id: r.id as string,
+      subjectType: (st === 'brand' ? 'brand' : 'merchant') as 'merchant' | 'brand',
+      subjectId: sid,
+      merchantId: mid,
+      merchantName: mName.get(mid) ?? '—',
+      brandName: st === 'brand' ? (bName.get(sid) ?? null) : null,
+      requestNote: (r.request_note as string | null) ?? null,
+      status: (r.status as string) ?? '',
+      createdAt: r.created_at as string,
+      updatedAt: (r.updated_at as string | null) ?? null,
+      reviewedAt: (r.reviewed_at as string | null) ?? null,
+      unbindAppliedAt: (r.unbind_applied_at as string | null) ?? null,
+      rejectedReason: (r.rejected_reason as string | null) ?? null,
+    }
+  })
   return { items, total: count ?? 0 }
 }
 
@@ -594,6 +683,8 @@ export default async function ApprovalsPage({
   let refundDisputesTotal = 0
   let afterSales: AfterSalesItem[] = []
   let afterSalesTotal = 0
+  let stripeUnlinks: StripeUnlinkItem[] = []
+  let stripeUnlinkTotal = 0
   let unifiedAllRows: UnifiedApprovalRow[] = []
 
   if (tab === 'all') {
@@ -615,6 +706,10 @@ export default async function ApprovalsPage({
     const res = await fetchAfterSales(db, page, approvalQueue)
     afterSales = res.items
     afterSalesTotal = res.total
+  } else if (tab === 'stripe-unlink') {
+    const res = await fetchStripeUnlink(db, page, approvalQueue)
+    stripeUnlinks = res.items
+    stripeUnlinkTotal = res.total
   }
 
   return (
@@ -632,6 +727,8 @@ export default async function ApprovalsPage({
       refundDisputesTotal={refundDisputesTotal}
       afterSales={afterSales}
       afterSalesTotal={afterSalesTotal}
+      stripeUnlinks={stripeUnlinks}
+      stripeUnlinkTotal={stripeUnlinkTotal}
       unifiedAllRows={unifiedAllRows}
     />
   )

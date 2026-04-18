@@ -56,8 +56,7 @@ serve(async (req) => {
     // ──────────────────────────────────────────────────────────
     // 1. 验证用户身份
     // ──────────────────────────────────────────────────────────
-    const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
+    const { data: { user }, error: authError } = await supabaseUser.auth.getUser();
     if (authError || !user) {
       return new Response(
         JSON.stringify({ error: 'Unauthorized' }),

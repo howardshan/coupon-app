@@ -114,9 +114,17 @@ class OrderModel {
     // 解析 V3 items 列表（两种 key 都尝试）
     final rawItems =
         (json['items'] as List?) ?? (json['order_items'] as List?);
+    final orderCreatedRaw = json['created_at'];
     final items = rawItems
-            ?.map((e) =>
-                OrderItemModel.fromJson(e as Map<String, dynamic>))
+            ?.map((e) {
+              final m = Map<String, dynamic>.from(e as Map<String, dynamic>);
+              if (m['created_at'] == null &&
+                  m['createdAt'] == null &&
+                  orderCreatedRaw != null) {
+                m['created_at'] = orderCreatedRaw;
+              }
+              return OrderItemModel.fromJson(m);
+            })
             .toList() ??
         const <OrderItemModel>[];
 

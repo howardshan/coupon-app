@@ -164,10 +164,10 @@ class _OrdersListPageState extends ConsumerState<OrdersListPage>
               );
             },
           ),
-          // 退款申请审批入口（商家审核用户的核销后退款申请）
+          // 历史争议退款队列（refund_requests）；新申请已统一走 After-Sales
           IconButton(
             icon: const Icon(Icons.policy_outlined),
-            tooltip: 'Refund Requests',
+            tooltip: 'Refund Requests (legacy)',
             onPressed: () async {
               await Navigator.push<bool>(
                 context,

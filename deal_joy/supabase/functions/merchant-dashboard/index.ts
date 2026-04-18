@@ -177,11 +177,18 @@ async function handleGet(
     pending_coupons: 0,
   };
 
-  // 解析待办数据（取第一行）
-  const todosRow = todosResult.data?.[0] ?? {
+  // 解析待办数据（取第一行；RPC 返回 snake_case）
+  type TodosRpcRow = {
+    pending_reviews: number;
+    pending_refunds: number;
+    influencer_requests: number;
+    pending_after_sales: number;
+  };
+  const todosRow = (todosResult.data?.[0] as TodosRpcRow | undefined) ?? {
     pending_reviews: 0,
     pending_refunds: 0,
     influencer_requests: 0,
+    pending_after_sales: 0,
   };
 
   // 解析 7 天趋势（数组，每天一行）
@@ -212,6 +219,7 @@ async function handleGet(
       pendingReviews: Number(todosRow.pending_reviews),
       pendingRefunds: Number(todosRow.pending_refunds),
       influencerRequests: Number(todosRow.influencer_requests),
+      pendingAfterSales: Number(todosRow.pending_after_sales ?? 0),
     },
   };
 

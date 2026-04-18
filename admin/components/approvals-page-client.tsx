@@ -7,12 +7,14 @@ import type {
   DealItem,
   RefundDisputeItem,
   AfterSalesItem,
+  StripeUnlinkItem,
   UnifiedApprovalRow,
 } from '@/app/(dashboard)/approvals/page'
 import MerchantDrawer from '@/components/approvals/merchant-drawer'
 import DealDrawer from '@/components/approvals/deal-drawer'
 import RefundDisputeDrawer from '@/components/approvals/refund-dispute-drawer'
 import AfterSalesDrawer from '@/components/approvals/after-sales-drawer'
+import StripeUnlinkDrawer from '@/components/approvals/stripe-unlink-drawer'
 import { batchApproveDeal, batchRejectDeal } from '@/app/actions/admin'
 
 // ─── 类型 ────────────────────────────────────────────────────────────────
@@ -21,6 +23,7 @@ type Counts = {
   deals: number
   refundDisputes: number
   afterSales: number
+  stripeUnlink: number
 }
 
 type Props = {
@@ -38,6 +41,8 @@ type Props = {
   refundDisputesTotal: number
   afterSales: AfterSalesItem[]
   afterSalesTotal: number
+  stripeUnlinks: StripeUnlinkItem[]
+  stripeUnlinkTotal: number
   /** All Tab：服务端已按全局时间排序的一页数据 */
   unifiedAllRows: UnifiedApprovalRow[]
 }
@@ -49,6 +54,7 @@ const TABS = [
   { key: 'deals', label: 'Deal Reviews' },
   { key: 'refund-disputes', label: 'Refund Disputes' },
   { key: 'after-sales', label: 'After-Sales' },
+  { key: 'stripe-unlink', label: 'Stripe Unlink' },
 ] as const
 
 // 超过 24h 认为超时
@@ -75,12 +81,14 @@ const TYPE_COLORS: Record<string, string> = {
   deal: 'bg-blue-100 text-blue-700',
   refund: 'bg-orange-100 text-orange-700',
   'after-sales': 'bg-teal-100 text-teal-700',
+  'stripe-unlink': 'bg-indigo-100 text-indigo-800',
 }
 const TYPE_LABELS: Record<string, string> = {
   merchant: 'Merchant',
   deal: 'Deal',
   refund: 'Refund Dispute',
   'after-sales': 'After-Sales',
+  'stripe-unlink': 'Stripe Unlink',
 }
 
 // ─── Component ───────────────────────────────────────────────────────────
@@ -108,6 +116,8 @@ export default function ApprovalsPageClient({
   refundDisputesTotal,
   afterSales,
   afterSalesTotal,
+  stripeUnlinks,
+  stripeUnlinkTotal,
   unifiedAllRows,
 }: Props) {
   const router = useRouter()
@@ -142,7 +152,7 @@ export default function ApprovalsPageClient({
     }
   }
 
-  const QUEUE_TABS = ['merchants', 'deals', 'refund-disputes', 'after-sales'] as const
+  const QUEUE_TABS = ['merchants', 'deals', 'refund-disputes', 'after-sales', 'stripe-unlink'] as const
   const showQueueToggle = (QUEUE_TABS as readonly string[]).includes(tab)
   const historyColumnMode = showQueueToggle && approvalQueue === 'history'
   const dealsPendingMode = tab === 'deals' && approvalQueue === 'pending'
@@ -159,6 +169,7 @@ export default function ApprovalsPageClient({
     deals: dealsTotal,
     'refund-disputes': refundDisputesTotal,
     'after-sales': afterSalesTotal,
+    'stripe-unlink': stripeUnlinkTotal,
   }
   const currentTotal = totalMap[tab] ?? 0
   const totalPages = Math.max(1, Math.ceil(currentTotal / perPage))
@@ -212,7 +223,7 @@ export default function ApprovalsPageClient({
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Approvals</h1>
         <p className="text-sm text-gray-500 mt-1">
-          {counts.merchants + counts.deals + counts.refundDisputes + counts.afterSales} pending
+          {counts.merchants + counts.deals + counts.refundDisputes + counts.afterSales + counts.stripeUnlink} pending
         </p>
       </div>
 
@@ -225,6 +236,7 @@ export default function ApprovalsPageClient({
             deals: counts.deals,
             'refund-disputes': counts.refundDisputes,
             'after-sales': counts.afterSales,
+            'stripe-unlink': counts.stripeUnlink,
           }
           const cnt = countMap[t.key] ?? 0
           const active = tab === t.key
@@ -410,6 +422,21 @@ export default function ApprovalsPageClient({
                 />
               )
             })}
+            {tab === 'stripe-unlink' && stripeUnlinks.map(su => {
+              const row: UnifiedRow = { kind: 'stripe-unlink', data: su }
+              return (
+                <UnifiedTableRow
+                  key={su.id}
+                  row={row}
+                  showType={false}
+                  showCheckbox={false}
+                  checked={false}
+                  onToggle={() => {}}
+                  onReview={() => setDrawerRow(row)}
+                  approvalColumnMode={historyColumnMode ? 'history' : 'default'}
+                />
+              )
+            })}
           </tbody>
         </table>
 
@@ -422,6 +449,7 @@ export default function ApprovalsPageClient({
                   tab === 'deals' ? 'No deal reviews in history.' :
                   tab === 'refund-disputes' ? 'No refund disputes in history.' :
                   tab === 'after-sales' ? 'No After-Sales records in history.' :
+                  tab === 'stripe-unlink' ? 'No Stripe unlink requests in history.' :
                   'No records.'
                 )
               : 'No pending approvals in this category.'}
@@ -475,6 +503,13 @@ export default function ApprovalsPageClient({
         <AfterSalesDrawer
           item={drawerRow.data}
           onClose={() => setDrawerRow(null)}
+        />
+      )}
+      {drawerRow?.kind === 'stripe-unlink' && (
+        <StripeUnlinkDrawer
+          item={drawerRow.data}
+          onClose={() => setDrawerRow(null)}
+          canDecide={tab === 'stripe-unlink' && approvalQueue === 'pending'}
         />
       )}
 
@@ -567,6 +602,12 @@ const REFUND_STATUS_BADGE: Record<string, string> = {
   cancelled: 'bg-gray-200 text-gray-700',
 }
 
+const STRIPE_UNLINK_STATUS_BADGE: Record<string, string> = {
+  pending:   'bg-amber-100 text-amber-800',
+  approved:  'bg-emerald-100 text-emerald-800',
+  rejected:  'bg-rose-100 text-rose-800',
+}
+
 function UnifiedTableRow({
   row,
   showType,
@@ -585,8 +626,9 @@ function UnifiedTableRow({
   approvalColumnMode?: 'default' | 'history'
 }) {
   const historyCols = approvalColumnMode === 'history'
-  const overdue =
-    !historyCols && isOverdue(row.data.createdAt)
+  const overdue = !historyCols && isOverdue(
+    (row.data as { createdAt: string }).createdAt
+  )
 
   let summary = ''
   let submitter = ''
@@ -599,6 +641,14 @@ function UnifiedTableRow({
   } else if (row.kind === 'refund') {
     summary = `$${row.data.refundAmount.toFixed(2)} — ${row.data.merchantName}`
     submitter = row.data.userNameMasked
+  } else if (row.kind === 'stripe-unlink') {
+    const d = row.data
+    const label =
+      d.subjectType === 'brand'
+        ? (d.brandName || 'Brand') + ' (chain)'
+        : d.merchantName
+    summary = `Unlink: ${label}`
+    submitter = d.subjectType
   } else {
     summary = row.data.reasonCode.replaceAll('_', ' ')
     submitter = row.data.userFullName
@@ -695,6 +745,24 @@ function UnifiedTableRow({
           </td>
           <td className="px-4 py-3 text-gray-600 whitespace-nowrap text-xs">
             {formatResolvedAt(row.data.resolvedAt)}
+          </td>
+        </>
+      )}
+      {historyCols && row.kind === 'stripe-unlink' && (
+        <>
+          <td className="px-4 py-3">
+            <span
+              className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold capitalize ${
+                STRIPE_UNLINK_STATUS_BADGE[row.data.status] ?? 'bg-gray-100 text-gray-700'
+              }`}
+            >
+              {formatStatusLabel(row.data.status)}
+            </span>
+          </td>
+          <td className="px-4 py-3 text-gray-600 whitespace-nowrap text-xs">
+            {formatResolvedAt(
+              row.data.reviewedAt ?? row.data.unbindAppliedAt ?? row.data.updatedAt
+            )}
           </td>
         </>
       )}
