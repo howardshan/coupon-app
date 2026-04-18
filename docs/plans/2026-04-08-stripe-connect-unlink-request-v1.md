@@ -12,6 +12,7 @@
 | 版本 | 日期 | 变更内容 |
 | ---- | ---- | -------- |
 | v1.0 | 2026-04-08 | 初版：与产品确认口径一致，附实现清单（对齐仓库现成模式） |
+| v1.1 | 2026-04-08 | 实现清单拆为 Sprint 1–5，保留与原 §5.1–5.7 条目的映射 |
 
 ---
 
@@ -127,48 +128,107 @@
 
 > 以下路径以本仓库为基准；表名/函数名可在详细设计时微调，但**模式应复用**。
 
-### 5.1 数据库（`deal_joy/supabase/migrations/`）
+### 5.0 迭代总览
 
-- [ ] 新建申请单表，例如 `stripe_connect_unlink_requests`（列至少包含）  
-  `id`, `subject_type` (`merchant` | `brand`), `subject_id` (uuid), `merchant_id`（冗余可查询/RLS 辅助）, `requested_by_user_id`, `status`, `request_note` 或 `reason_code`, `rejected_reason` (text null), `reviewed_by_admin_id`, `reviewed_at`, `created_at`, `updated_at`，以及**幂等执行标记** `unbind_applied_at` 等（若与审批完成解耦）。
-- [ ] **部分唯一约束**：`UNIQUE` 或部分索引保证 **同一 `subject` 在 `pending` 时仅一条**（Postgres 部分唯一索引或应用层+约束组合）。
-- [ ] **RLS**：商家仅能 `SELECT/INSERT` 自己主体下的申请；管理员用 `is_admin()` 或现有 admin 读策略；Service Role 用于审批通过后的解绑与邮件。
-- [ ] 将新邮件类型插入 **`email_type_settings` / 邮件类型枚举**（与 `20260321200000_email_system.sql` 等迁移风格一致，具体以现网最新迁移为准）。
-- [ ] 可选：字段级注释、`COMMENT ON`。
+| Sprint | 目标 | 依赖 | 原章节映射 |
+| ------ | ---- | ---- | ---------- |
+| **Sprint 1** | 落库 + 邮件类型 + RLS，无业务 UI | 无 | §5.1 |
+| **Sprint 2** | 商家可提交申请 +「已提交」邮件 + 预检最小集 | Sprint 1 | §5.2（最小）、§5.3 提交侧、§5.4 之一 |
+| **Sprint 3** | 管理端审批、通过时平台库解绑、拒审理由、两封结果邮件、审计 | Sprint 1–2 | §5.3 解绑、§5.4 余下、§5.5（不含 All） |
+| **Sprint 4** | 商家端 UI + 商家详情侧栏卡 + 品牌页入口（若需要） | Sprint 2（提交接口稳定） | §5.6 |
+| **Sprint 5** | 全链路测试、预检补全、可选 All Tab、上线清单 | Sprint 1–4 | §5.2 补全、§5.5 All、§5.7 |
 
-### 5.2 预检与阻塞条件
+**建议排期顺序**：1 → 2 与 3 可部分并行（3 需等表与 Service 解绑函数设计定稿）→ 4 依赖 2 的 API → 5 收尾。
 
-- [ ] 定义**可机读**的阻塞条件列表（待结算/在途/争议/负余额 等），在**商家提交** Edge 或 **RPC** 中统一实现；不可判定的项在代码内 `TODO` + 文档备注。
-- [ ] 若品牌与单店**预检数据源不同**（`merchant-withdrawal`、`merchant_earnings` 等），分支清晰。
+---
 
-### 5.3 Edge Functions / RPC（`deal_joy/supabase/functions/`）
+### Sprint 1 — 数据层与邮件类型
 
-- [ ] 商家：例如 `POST .../request-stripe-unlink`（或挂到 `merchant-withdrawal` 子路径），校验 JWT、主体、预检、`pending` 去重、写 `stripe_connect_unlink_requests`，触发「提交成功」邮件（`sendEmail`，新建模板）。
-- [ ] 解绑执行：在 **Admin 通过** 路径中**事务或顺序**：先锁行/再 `UPDATE merchants` 或 `brands` 清 `stripe_account_id`、置 `stripe_account_status`、清可选邮箱/关联 `merchant_bank_accounts` 行（**与现网** `merchant-withdrawal` 中 stale clear、以及 **只做库** 的口径一致）；**不**在 v1 调 Stripe 删除 account。
-- [ ] 与 **`merchant_brand`** 若品牌 Stripe 在独立表/字段，同步更新**同一套**解绑规则。
+**目标**：可安全写入/读取申请单主表；邮件开关位预留。
 
-### 5.4 邮件模板（`deal_joy/supabase/functions/_shared/email-templates/`）
+- [ ] 新建 `stripe_connect_unlink_requests`（列见原 §5.1：`id`, `subject_type`, `subject_id`, `merchant_id`, `requested_by_user_id`, `status`, 原因字段, `rejected_reason`, 审核人/时间, 时间戳, `unbind_applied_at` 等）。
+- [ ] **部分唯一约束**：同一 `subject` 仅一条 `pending`（部分唯一索引或等价约束）。
+- [ ] **RLS**：商家 `SELECT/INSERT` 限本主体；管理员 `is_admin()` 读；敏感写由 Service Role / Server Action。
+- [ ] **`email_type_settings` + 新邮件类型**（Mxx 占位，与现网邮件迁移风格一致）。
+- [ ] 可选：`COMMENT ON`、开发环境 seed。
 
-- [ ] 新建 merchant 向模板，如 `merchant/stripe-unlink-submitted.ts`、`...-approved.ts`、`...-rejected.ts`；**全英文**；`emailCode` 在 `email_logs` 中可区分（如 `M22`–`M24` 等未占用的编号，以 `email_type_settings` 实际为准）。
-- [ ] 在 `sendEmail` 调用处传入 `referenceId` 为 `request_id`，便于 Email Log 检索。
+**对应原清单**：原 **§5.1 数据库** 全部。
 
-### 5.5 Admin 后台（`admin/`）
+**交付物**：`db push` 可应用；无前端依赖。
 
-- [ ] **统一审批** `admin/app/(dashboard)/approvals/page.tsx`：增加新 **Tab** 与 **抽屉** 组件（参考 `AfterSalesDrawer`、`RefundDisputeDrawer`）；`admin/components/approvals-page-client.tsx` 中 `TABS` / 计数 / `TYPE_LABELS` 扩展。
-- [ ] **数据拉取**：在 `admin/app/(dashboard)/approvals/page.tsx` 的 `fetch` / Server 数据加载逻辑中增加对 `stripe_connect_unlink_requests` 的 `pending`/`history` 查询；**All Tab** 若用 `admin_pending_approvals_unified_page` RPC（`deal_joy/supabase/migrations/20260331150000_admin_pending_approvals_unified_rpc.sql` 等），需**迁移**扩展该 SQL（或 v1 先仅独立 Tab 查询、All 二期合并——实现时二选一，清单项注明）。
-- [ ] **Server Actions**（`admin/app/actions/` 或 `approvals.ts`）：`approveStripeUnlink(id)` / `rejectStripeUnlink(id, reason)`：鉴权、写状态、**触发解绑**、发邮件、写 `merchant_activity_events`。
-- [ ] **商家详情** `admin/app/(dashboard)/merchants/[id]/page.tsx` 侧栏**新卡片**（与现有「去审批中心」链接同风格）只读 + 链到 `?tab=stripe-unlink`（以实际 query 名为准）。
+---
 
-### 5.6 商家端 Flutter（`dealjoy_merchant/`）
+### Sprint 2 — 商家提交 API +「已提交」邮件 + 预检（最小）
 
-- [ ] `dealjoy_merchant/lib/features/earnings/pages/payment_account_page.dart`：**解绑申请** 入口（按钮文案如 **Request to unlink Stripe**），表单/底部表单（原因 + 确认文案）；调用新 Edge 接口；成功 SnackBar + 依赖**刷新** `stripeAccountProvider` 与**申请状态**的 provider（若 v1 仅 `pending` 可拉一条 REST/RPC）。
-- [ ] 品牌线：若品牌有独立 `dealjoy_merchant/lib/features/store/pages/brand_stripe_connect_page.dart`，同步入口或明确「仅单店/仅品牌」路由（与 3.1 一致）。
+**目标**：商家端/HTTP 可创建 `pending` 单并收到「申请已提交」邮件；预检先实现**能落地的子集**（余量 `TODO`）。
 
-### 5.7 测试与上线
+- [ ] **预检**（原 §5.2）：明确定义 v1 必拦项（如：已有一条 `pending` 则 409）；资金/争议等**能查则拦，不能查先记录 TODO**。
+- [ ] **Edge**（或 `merchant-withdrawal` 子路由）：`POST` 创建申请，校验 JWT、`X-Merchant-Id` 与 `subject` 一致、去重、写表；调用 **submitted** 邮件（`sendEmail` + `referenceId = request_id`）。
+- [ ] **邮件模板 1/3**：`merchant/stripe-unlink-submitted.ts`（全英文，原 §5.4）。
+- [ ] 可选：只读 `GET` 当前主体最近一条申请状态（供 Sprint 4 少写 mock）。
 
-- [ ] Staging：全链路 提交 → 邮件（或关全局开关后仅日志）→ 审批通过 → DB 字段清空 → 商家端 **Refresh** 为未连接。
-- [ ] 拒审理由展示与邮件**必填**校验。
-- [ ] 与 **COMPLETED.md** 有冲突的目录（如 `orders` 等）不触碰；**商家端 / Admin / migrations** 按本规格新增，合并前按团队流程更新 COMPLETED 可选模块说明。
+**对应原清单**：**§5.2**（最小）、**§5.3** 的「商家提交」半段、**§5.4** 的 submitted。
+
+**交付物**：Postman/curl 可通；Email Log 可见 submitted（或沙箱关邮开关仅日志）。
+
+---
+
+### Sprint 3 — 管理端审批 + 平台库解绑 + 结果邮件 + 审计
+
+**目标**：审批中心可处理；通过则**仅平台库**解绑；拒绝必填理由；三封邮件闭环后两封。
+
+- [ ] **解绑纯函数/共享逻辑**（原 §5.3）：`UPDATE merchants` / `brands` 清 `stripe_account_id`、置 `not_connected`、清关联展示字段/ `merchant_bank_accounts` 行（与 `merchant-withdrawal` 现网一致）；**不**调 Stripe 删户；**幂等**、可重入。
+- [ ] **Server Actions**：`approveStripeUnlink` / `rejectStripeUnlink`；拒绝时 `rejected_reason` 非空校验；通过时先锁申请行再解绑、写 `unbind_applied_at` / `status`。
+- [ ] **邮件 2/3、3/3**：`...-approved.ts`、`...-rejected.ts`；`referenceId` 为 `request_id`（原 §5.4）。
+- [ ] **Admin 审批中心**（原 §5.5，**不含 All Tab**）：新 Tab + 抽屉（类 `AfterSalesDrawer`）；`page.tsx` 拉 `pending`/`history`；`approvals-page-client` 的 `TABS`、计数、`TYPE_COLORS/TYPE_LABELS`。
+- [ ] **商家详情侧栏**（原 §5.5）：只读卡 + `Review in Approvals Center →` 深链到 `?tab=...`。
+- [ ] **审计**（§3.8）：`merchant_activity_events` 或等效；记录创建/通过/拒绝/解绑执行结果。
+
+**对应原清单**：**§5.3 解绑执行**、**§5.4** 余下、**§5.5**（先不做 All 合并）。
+
+**交付物**：管理员在 Staging 可完整走通通过/拒绝；库字段与申请单状态一致。
+
+---
+
+### Sprint 4 — 商家端 Flutter + 品牌入口
+
+**目标**：商家在 App 内发起申请、看到状态/反馈；与 API 合同对齐。
+
+- [ ] `payment_account_page.dart`：**Request to unlink Stripe**、原因表单、调 Sprint 2 提交接口、成功/失败态、**刷新** `stripeAccountProvider` + 申请状态（Sprint 2 的 GET 或 list）。
+- [ ] 品牌线：`brand_stripe_connect_page.dart` 若需平行入口，与 3.1 主体一致。
+
+**对应原清单**：原 **§5.6 商家端** 全部。
+
+**交付物**：真机/模拟器可提单；与 Sprint 2 联调无 Mock（或仅最小 Mock）。
+
+---
+
+### Sprint 5 — 预检补全、All Tab（可选）、测试与上线
+
+**目标**：生产可上；与产品对「待结算/在途」等定义对齐。
+
+- [ ] **预检补全**（原 §5.2 余量）：待结算、在途、争议、负余额等**以库表/RPC 可行为准**；不可行项关闭 TODO 或移入 v1.1。
+- [ ] **（可选）All Tab**（原 §5.5）：扩展 `admin_pending_approvals_unified_page` 或文档约定二期；若本期不做，在 **§六** 明确「All 未含 Stripe Unlink」。
+- [ ] **测试**（原 §5.7）：Staging E2E；拒审理由前后端双端校验；解绑后商家端 Refresh 为未连接。
+- [ ] **上线**：`COMPLETED.md`、发版说明、Edge/migration/Admin 发布顺序（先库后 Function 后 Admin）。
+
+**对应原清单**：**§5.2** 补全、**§5.5** 的 All（可选）、**§5.7** 全部。
+
+**交付物**： sign-off 检查表 + 回滚说明（如仅回滚 Admin 不破坏已解绑数据）。
+
+---
+
+### 原分类速查（与上表 Sprint 对应）
+
+| 原小节 | 内容 | Sprint |
+| ------ | ---- | ------ |
+| **§5.1** 数据库 | 表、约束、RLS、邮件类型 | 1 |
+| **§5.2** 预检 | 阻塞条件 | 2（最小）+ 5（补全） |
+| **§5.3** Edge / RPC | 提交 + 解绑 | 2 + 3 |
+| **§5.4** 邮件 | 三封模板 | 2 + 3 |
+| **§5.5** Admin | 审批页、抽屉、侧栏、All 可选 | 3 + 5 |
+| **§5.6** Flutter | 商家端 | 4 |
+| **§5.7** 测试上线 |  | 5 |
 
 ### 5.8 参考文件（不修改本清单内容时仅作开发指引）
 
@@ -183,7 +243,7 @@
 ## 六、待产品后续拍板（不影响本 v1 文档结构）
 
 - 「待结算/在途」的**精确定义**以你们财务/风控字段为准，实现清单中以第一次落地版本为准做文档脚注。
-- **All** Tab 与统一 RPC 是否**一期**就合并新类型：建议研发评估工作量后二选一（见 5.5）。
+- **All** Tab 与统一 RPC 是否**一期**就合并新类型：建议研发评估工作量后二选一（见 **§5.0 / Sprint 5** 与 **§5.5** 原意）。
 
 ---
 
