@@ -1,9 +1,9 @@
 # Stripe Connect 解绑申请 v1 规格
 
-**文档版本**: v1.0  
+**文档版本**: v1.2  
 **创建日期**: 2026-04-08  
 **受众**: 产品、研发（DealJoy 全栈：Admin Next.js、商家端 Flutter、Supabase）  
-**状态**: 规格定稿，待排期实现  
+**状态**: Sprint 1–2 已按清单落地；Sprint 3+ 待实现  
 
 ---
 
@@ -13,6 +13,7 @@
 | ---- | ---- | -------- |
 | v1.0 | 2026-04-08 | 初版：与产品确认口径一致，附实现清单（对齐仓库现成模式） |
 | v1.1 | 2026-04-08 | 实现清单拆为 Sprint 1–5，保留与原 §5.1–5.7 条目的映射 |
+| v1.2 | 2026-04-08 | 同步 Sprint 1、Sprint 2 已交付内容：迁移路径、Edge 路由、M19 模板、预检与 API 说明 |
 
 ---
 
@@ -132,8 +133,8 @@
 
 | Sprint | 目标 | 依赖 | 原章节映射 |
 | ------ | ---- | ---- | ---------- |
-| **Sprint 1** | 落库 + 邮件类型 + RLS，无业务 UI | 无 | §5.1 |
-| **Sprint 2** | 商家可提交申请 +「已提交」邮件 + 预检最小集 | Sprint 1 | §5.2（最小）、§5.3 提交侧、§5.4 之一 |
+| **Sprint 1** | 落库 + 邮件类型 + RLS，无业务 UI | 无 | §5.1 — **已完成**（见下「Sprint 1 落地」） |
+| **Sprint 2** | 商家可提交申请 +「已提交」邮件 + 预检最小集 | Sprint 1 | §5.2（最小）、§5.3 提交侧、§5.4 之一 — **已完成**（见下「Sprint 2 落地」） |
 | **Sprint 3** | 管理端审批、通过时平台库解绑、拒审理由、两封结果邮件、审计 | Sprint 1–2 | §5.3 解绑、§5.4 余下、§5.5（不含 All） |
 | **Sprint 4** | 商家端 UI + 商家详情侧栏卡 + 品牌页入口（若需要） | Sprint 2（提交接口稳定） | §5.6 |
 | **Sprint 5** | 全链路测试、预检补全、可选 All Tab、上线清单 | Sprint 1–4 | §5.2 补全、§5.5 All、§5.7 |
@@ -146,15 +147,17 @@
 
 **目标**：可安全写入/读取申请单主表；邮件开关位预留。
 
-- [ ] 新建 `stripe_connect_unlink_requests`（列见原 §5.1：`id`, `subject_type`, `subject_id`, `merchant_id`, `requested_by_user_id`, `status`, 原因字段, `rejected_reason`, 审核人/时间, 时间戳, `unbind_applied_at` 等）。
-- [ ] **部分唯一约束**：同一 `subject` 仅一条 `pending`（部分唯一索引或等价约束）。
-- [ ] **RLS**：商家 `SELECT/INSERT` 限本主体；管理员 `is_admin()` 读；敏感写由 Service Role / Server Action。
-- [ ] **`email_type_settings` + 新邮件类型**（Mxx 占位，与现网邮件迁移风格一致）。
-- [ ] 可选：`COMMENT ON`、开发环境 seed。
+- [x] 新建 `stripe_connect_unlink_requests`（列见原 §5.1：`id`, `subject_type`, `subject_id`, `merchant_id`, `requested_by_user_id`, `status`, 原因字段, `rejected_reason`, 审核人/时间, 时间戳, `unbind_applied_at` 等）。
+- [x] **部分唯一约束**：同一 `subject` 仅一条 `pending`（部分唯一索引 `uq_stripe_unlink_one_pending_per_subject`）。
+- [x] **RLS**：商家 `SELECT/INSERT` 限本主体（`can_access_stripe_unlink_request` + `INSERT` 校验 `merchant`/`brand` 与 `merchant_id` 一致）；`is_admin()` 读全表；**无** `UPDATE/DELETE` 对 `authenticated`（审批/解绑走 service_role / Server Action）。
+- [x] **`email_type_settings` + 新邮件类型**：`M19` / `M20` / `M21` 预置（`ON CONFLICT DO NOTHING`），与现网风格一致。
+- [x] 表/列 `COMMENT ON`；辅助函数 `can_access_stripe_unlink_request(subject_type, subject_id)`；`updated_at` 触发器接 `update_updated_at_column()`。
+
+**落地文件**：`deal_joy/supabase/migrations/20260418120000_stripe_connect_unlink_requests.sql`
 
 **对应原清单**：原 **§5.1 数据库** 全部。
 
-**交付物**：`db push` 可应用；无前端依赖。
+**交付物**：`db push` 可应用；无前端依赖。部署后须先应用此 migration 再部署含 Sprint 2 的 Edge。
 
 ---
 
@@ -162,14 +165,28 @@
 
 **目标**：商家端/HTTP 可创建 `pending` 单并收到「申请已提交」邮件；预检先实现**能落地的子集**（余量 `TODO`）。
 
-- [ ] **预检**（原 §5.2）：明确定义 v1 必拦项（如：已有一条 `pending` 则 409）；资金/争议等**能查则拦，不能查先记录 TODO**。
-- [ ] **Edge**（或 `merchant-withdrawal` 子路由）：`POST` 创建申请，校验 JWT、`X-Merchant-Id` 与 `subject` 一致、去重、写表；调用 **submitted** 邮件（`sendEmail` + `referenceId = request_id`）。
-- [ ] **邮件模板 1/3**：`merchant/stripe-unlink-submitted.ts`（全英文，原 §5.4）。
-- [ ] 可选：只读 `GET` 当前主体最近一条申请状态（供 Sprint 4 少写 mock）。
+- [x] **预检**（原 §5.2 最小集）  
+  - 已存在 `pending` 申请：DB 唯一 + `INSERT` 失败 → **409**（重复键/唯一冲突）。  
+  - 当前 `X-Merchant-Id` 对应门店存在 **pending / processing 提现** → **409**（需先等提现完成）。  
+  - **无 Stripe 可解绑**：`subject_type=merchant` 时要求 `merchants.stripe_account_id` 非空；若单店无 Connect 但品牌有 **品牌级** Connect，返回 **400** 并提示由品牌主在品牌侧处理。`subject_type=brand` 时要求 `brands.stripe_account_id` 非空。  
+  - 品牌解绑仅 **`brand_owner`** 可 `POST`；`POST` 仍要求 `auth.role` 为 `store_owner` 或 `brand_owner`（与 Connect 同口径）。  
+  - 代码中 **`// TODO(Sprint5)`**：争议、负余额、待结算/在途分账等，与 §3.2 余量一致。
+- [x] **Edge**（`merchant-withdrawal` 子路由，**未**新增独立 Function）：`POST` 使用 **用户 JWT 客户端**写表以通过 RLS；`resolveAuth` + `requirePermission(…, "finance")`；`sendEmail` + **`emailCode: "M19"`**、`referenceId` = 申请行 `id`；`merchantId` 用于 `merchant_email_preferences` 等。
+- [x] **邮件模板 1/3**：`deal_joy/supabase/functions/_shared/email-templates/merchant/stripe-unlink-submitted.ts`（`buildM19Email`，全英文）。
+- [x] **只读 GET**：`GET /stripe-unlink?scope=merchant|brand`（默认 `merchant`），返回 `items` 列表（最近 20 条），供 Sprint 4 拉状态。
+
+**API 约定（相对 function 根路径，与现网 `merchant-withdrawal` 一致）**
+
+| 方法 | 路径 | 说明 |
+| ---- | ---- | ---- |
+| `GET` | `stripe-unlink?scope=merchant` 或 `?scope=brand` | 需 `Authorization` + `X-Merchant-Id`（及现有 finance 权限链） |
+| `POST` | `stripe-unlink/request` | Body JSON：`subject_type`（`merchant` \| `brand`）、可选 `request_note`；仅 **store_owner / brand_owner** 可提交 |
+
+**落地文件**：`deal_joy/supabase/functions/merchant-withdrawal/index.ts`（`handleGetStripeUnlinkRequests`、`handlePostStripeUnlinkRequest`）、上列 M19 模板。
 
 **对应原清单**：**§5.2**（最小）、**§5.3** 的「商家提交」半段、**§5.4** 的 submitted。
 
-**交付物**：Postman/curl 可通；Email Log 可见 submitted（或沙箱关邮开关仅日志）。
+**交付物**：Postman/curl 可通；Email Log 可见 M19（或关 `global_enabled` 仅走日志）。部署命令：`supabase functions deploy merchant-withdrawal`（并确保 DB 已含 Sprint 1 迁移与 M19–M21 记录）。
 
 ---
 
@@ -232,9 +249,10 @@
 
 ### 5.8 参考文件（不修改本清单内容时仅作开发指引）
 
+- **Sprint 1–2 已落地路径**：`deal_joy/supabase/migrations/20260418120000_stripe_connect_unlink_requests.sql`；`deal_joy/supabase/functions/merchant-withdrawal/index.ts`（含 `GET/POST …/stripe-unlink`）；`deal_joy/supabase/functions/_shared/email-templates/merchant/stripe-unlink-submitted.ts`（M19）
 - 统一审批：[`admin/app/(dashboard)/approvals/page.tsx`](../admin/app/(dashboard)/approvals/page.tsx)、[`approvals-page-client.tsx`](../admin/components/approvals-page-client.tsx)
 - 邮件与日志：[邮件系统总览](2026-03-21-email-system.md)、`deal_joy/supabase/functions/_shared/email.ts`
-- Connect 与解绑现网逻辑：`deal_joy/supabase/functions/merchant-withdrawal/index.ts`（`stripe_account_id` 清空、stale 处理）、`deal_joy/supabase/functions/merchant-brand/index.ts`（品牌）
+- Connect 与解绑现网逻辑：`deal_joy/supabase/functions/merchant-withdrawal/index.ts`（`stripe_account_id` 清空、stale 处理；**另含**解绑申请 API）、`deal_joy/supabase/functions/merchant-brand/index.ts`（品牌）
 - 管理端发信：`admin/lib/email.ts`（若审批走 Server Action 在 Next 内发信）
 - 活动审计：`admin/lib/merchant-activity-*.ts`、`merchant_activity_events` 相关迁移
 
