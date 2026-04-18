@@ -3,6 +3,7 @@
 
 import 'package:flutter/material.dart';
 import '../models/earnings_data.dart';
+import '../../../core/constants/app_branding.dart';
 
 // =============================================================
 // 根据列表展示最近一条或 pending 状态
@@ -11,19 +12,27 @@ class StripeUnlinkRequestStatusBanner extends StatelessWidget {
   const StripeUnlinkRequestStatusBanner({
     super.key,
     required this.items,
+    /// 当前门店是否仍显示为已连接 Stripe（与 merchant-earnings/account 一致）
+    required this.isStripeConnected,
   });
 
   final List<StripeUnlinkRequestItem> items;
+  final bool isStripeConnected;
 
   @override
   Widget build(BuildContext context) {
     if (items.isEmpty) {
       return const SizedBox.shrink();
     }
-    final pending = items.where((e) => e.status == 'pending').toList();
-    final first = pending.isNotEmpty
-        ? pending.first
-        : items.first;
+    // 已断开连接时优先展示非 pending（approved/rejected），避免列表缓存仍含 pending 时误导
+    StripeUnlinkRequestItem first;
+    if (!isStripeConnected) {
+      final nonPending = items.where((e) => e.status != 'pending').toList();
+      first = nonPending.isNotEmpty ? nonPending.first : items.first;
+    } else {
+      final pending = items.where((e) => e.status == 'pending').toList();
+      first = pending.isNotEmpty ? pending.first : items.first;
+    }
     return _StatusBody(item: first, hasOlder: items.length > 1);
   }
 }
@@ -261,7 +270,8 @@ class _UnlinkRequestFormState extends State<_UnlinkRequestForm> {
           maxLines: 4,
           minLines: 2,
           decoration: InputDecoration(
-            hintText: 'Optional note to DealJoy (e.g. why you are disconnecting)',
+            hintText:
+                'Optional note to ${AppBranding.displayName} (e.g. why you are disconnecting)',
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
             ),

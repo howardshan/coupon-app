@@ -4,6 +4,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../../core/constants/app_branding.dart';
 import '../../store/models/store_info.dart';
 import '../../store/providers/store_provider.dart';
 import '../models/earnings_data.dart';
@@ -93,7 +94,10 @@ class _PaymentAccountPageState extends ConsumerState<PaymentAccountPage> {
               }
               return Column(
                 children: [
-                  StripeUnlinkRequestStatusBanner(items: items),
+                  StripeUnlinkRequestStatusBanner(
+                    items:             items,
+                    isStripeConnected: info.isConnected,
+                  ),
                   const SizedBox(height: 20),
                 ],
               );
@@ -178,8 +182,8 @@ class _PaymentAccountPageState extends ConsumerState<PaymentAccountPage> {
     try {
       final service = ref.read(earningsServiceProvider);
       await service.refreshStripeAccountStatus();
-      // 刷新 stripeAccountProvider，重新加载页面
       ref.invalidate(stripeAccountProvider);
+      ref.invalidate(stripeUnlinkRequestsMerchantProvider);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -193,10 +197,37 @@ class _PaymentAccountPageState extends ConsumerState<PaymentAccountPage> {
       }
     } catch (e) {
       _invalidateStripeIfUnlinkedError(e);
-      if (mounted) _showError(e.toString());
+      if (!mounted) {
+        return;
+      }
+      final friendly = _friendlyMessageForNoStripeRefresh(e);
+      if (friendly != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(friendly),
+            backgroundColor: const Color(0xFF546E7A),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      } else {
+        _showError(e.toString());
+      }
     } finally {
       if (mounted) setState(() => _isRefreshing = false);
     }
+  }
+
+  /// 无 Stripe 连接时 /connect/refresh 返回 400，避免向用户展示 FunctionException 原文
+  String? _friendlyMessageForNoStripeRefresh(Object e) {
+    final s = e.toString();
+    if (s.contains('No Stripe account linked') ||
+        s.contains('connect first') ||
+        s.contains('Please connect')) {
+      return 'No Stripe account is connected. Connect when you are ready to receive payouts.';
+    }
+    return null;
   }
 
   // ----------------------------------------------------------
@@ -213,16 +244,36 @@ class _PaymentAccountPageState extends ConsumerState<PaymentAccountPage> {
       }
     } catch (e) {
       _invalidateStripeIfUnlinkedError(e);
-      if (mounted) _showError(e.toString());
+      if (!mounted) {
+        return;
+      }
+      final friendly = _friendlyMessageForNoStripeRefresh(e);
+      if (friendly != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(friendly),
+            backgroundColor: const Color(0xFF546E7A),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      } else {
+        _showError(e.toString());
+      }
     } finally {
       if (mounted) setState(() => _isOpeningDashboard = false);
     }
   }
 
-  /// 服务端已无 Stripe 账户但本页仍显示已连接时，重拉 merchant-earnings/account
+  /// 服务端已无 Stripe 账户但本页仍显示已连接时，重拉 account 与解绑列表
   void _invalidateStripeIfUnlinkedError(Object e) {
-    if (e.toString().contains('No Stripe account linked')) {
+    final s = e.toString();
+    if (s.contains('No Stripe account linked') ||
+        s.contains('connect first') ||
+        s.contains('Please connect')) {
       ref.invalidate(stripeAccountProvider);
+      ref.invalidate(stripeUnlinkRequestsMerchantProvider);
     }
   }
 
@@ -293,8 +344,8 @@ class _PaymentAccountPageState extends ConsumerState<PaymentAccountPage> {
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Unlinking Stripe on DealJoy'),
-        content: const Text(
+        title: Text('Unlinking Stripe on ${AppBranding.displayName}'),
+        content: Text(
           'Disconnecting a payout account is a manual, reviewed process. '
           'If your store is under a brand-level Stripe account, a brand owner must request '
           'disconnect on the brand Stripe page. If you are not the owner, ask your owner to submit. '
@@ -441,10 +492,10 @@ class _InfoBanner extends StatelessWidget {
         children: [
           const Icon(Icons.warning_amber_outlined, color: Color(0xFFFF9800), size: 20),
           const SizedBox(width: 10),
-          const Expanded(
+          Expanded(
             child: Text(
-              'Connect your Stripe account to start receiving payouts from DealJoy.',
-              style: TextStyle(
+              'Connect your Stripe account to start receiving payouts from ${AppBranding.displayName}.',
+              style: const TextStyle(
                 fontSize: 13,
                 color: Color(0xFFE65100),
                 height: 1.4,
@@ -515,7 +566,7 @@ class _AccountStatusCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Payout partner for DealJoy',
+                      'Payout partner for ${AppBranding.displayName}',
                       style: TextStyle(
                         fontSize: 12,
                         color: Colors.grey.shade500,
@@ -811,6 +862,12 @@ class _SettlementExplainer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final steps = <String>[
+      'Customer purchases a deal and pays via Stripe.',
+      'Customer redeems the voucher at your store.',
+      '${AppBranding.displayName} processes settlement T+7 days after redemption.',
+      'Net amount (85% of deal price) is transferred to your Stripe account.',
+    ];
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -836,7 +893,7 @@ class _SettlementExplainer extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          ..._steps.map((step) => Padding(
+          ...steps.asMap().entries.map((entry) => Padding(
                 padding: const EdgeInsets.only(bottom: 10),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -850,7 +907,7 @@ class _SettlementExplainer extends StatelessWidget {
                       ),
                       child: Center(
                         child: Text(
-                          '${_steps.indexOf(step) + 1}',
+                          '${entry.key + 1}',
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 11,
@@ -862,7 +919,7 @@ class _SettlementExplainer extends StatelessWidget {
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        step,
+                        entry.value,
                         style: TextStyle(
                           fontSize: 13,
                           color: Colors.grey.shade700,
@@ -877,11 +934,4 @@ class _SettlementExplainer extends StatelessWidget {
       ),
     );
   }
-
-  static const List<String> _steps = [
-    'Customer purchases a deal and pays via Stripe.',
-    'Customer redeems the voucher at your store.',
-    'DealJoy processes settlement T+7 days after redemption.',
-    'Net amount (85% of deal price) is transferred to your Stripe account.',
-  ];
 }
