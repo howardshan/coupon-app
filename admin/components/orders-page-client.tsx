@@ -7,6 +7,7 @@ import { useTransition } from 'react'
 import OrderRefundButtons from '@/components/order-refund-buttons'
 import OrderSearchForm from '@/components/order-search-form'
 import OrdersTableContainer from '@/components/orders-table-container'
+import AdminTableScroll from '@/components/admin-table-scroll'
 import { getOrderDetailStatusTags, STATUS_STYLES, STATUS_LABELS } from '@/lib/order-display-status'
 import type { OrdersListPayload } from '@/app/actions/orders'
 
@@ -299,8 +300,9 @@ export default function OrdersPageClient({
       </div>
 
       <OrdersTableContainer>
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+          <AdminTableScroll>
+          <table className="w-full min-w-[880px] text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Order #</th>
@@ -417,6 +419,7 @@ export default function OrdersPageClient({
               })}
             </tbody>
           </table>
+          </AdminTableScroll>
           {(!initialOrders || initialOrders.length === 0) && (
             <div className="text-center py-8">
               {initialFetchError ? (

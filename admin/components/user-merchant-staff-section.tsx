@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import AdminTableScroll from '@/components/admin-table-scroll'
 import MerchantStaffAdminRow, { type MerchantStaffAdminRowModel } from '@/components/merchant-staff-admin-row'
 
 type PendingInvitation = {
@@ -46,8 +47,8 @@ export default function UserMerchantStaffSection({
           <p className="text-xs text-gray-500 mb-4">
             Store-level roles (cashier, manager, etc.). Use actions to change role, disable, or remove access.
           </p>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[640px]">
+          <AdminTableScroll>
+            <table className="w-full min-w-[640px] text-sm">
               <thead className="border-b border-gray-100">
                 <tr>
                   <th className="text-left py-2 font-medium text-gray-500">Store</th>
@@ -65,7 +66,7 @@ export default function UserMerchantStaffSection({
                 ))}
               </tbody>
             </table>
-          </div>
+          </AdminTableScroll>
         </div>
       )}
 

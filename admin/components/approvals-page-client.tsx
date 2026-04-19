@@ -16,6 +16,7 @@ import RefundDisputeDrawer from '@/components/approvals/refund-dispute-drawer'
 import AfterSalesDrawer from '@/components/approvals/after-sales-drawer'
 import StripeUnlinkDrawer from '@/components/approvals/stripe-unlink-drawer'
 import { batchApproveDeal, batchRejectDeal } from '@/app/actions/admin'
+import AdminTableScroll from '@/components/admin-table-scroll'
 
 // ─── 类型 ────────────────────────────────────────────────────────────────
 type Counts = {
@@ -342,8 +343,9 @@ export default function ApprovalsPageClient({
       )}
 
       {/* ── 列表 ── */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <table className="w-full text-sm">
+      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+        <AdminTableScroll>
+        <table className="w-full min-w-[720px] text-sm">
           <thead className="bg-gray-50 border-b border-gray-200 text-gray-600">
             <tr>
               {dealsPendingMode && <th className="px-4 py-3 w-8" />}
@@ -449,6 +451,7 @@ export default function ApprovalsPageClient({
             })}
           </tbody>
         </table>
+        </AdminTableScroll>
 
         {/* 空状态 */}
         {currentTotal === 0 && (

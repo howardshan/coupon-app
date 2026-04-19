@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getServiceRoleClient } from '@/lib/supabase/service'
-import Sidebar from '@/components/sidebar'
+import DashboardShell from '@/components/dashboard-shell'
 
 /** 待审批总数：与 /approvals 页 fetchCounts 一致，每次布局请求实时查询，避免角标与列表不一致 */
 async function getPendingCount(): Promise<number> {
@@ -40,9 +40,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const pendingCount = profile.role === 'admin' ? await getPendingCount() : 0
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
-      <Sidebar role={profile.role} email={profile.email} pendingCount={pendingCount} />
-      <main className="flex-1 p-8 overflow-auto">{children}</main>
-    </div>
+    <DashboardShell role={profile.role} email={profile.email ?? ''} pendingCount={pendingCount}>
+      {children}
+    </DashboardShell>
   )
 }
