@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getServiceRoleClient } from '@/lib/supabase/service'
 import ApprovalsPageClient from '@/components/approvals-page-client'
+import { fetchPendingApprovalCounts } from '@/lib/admin-approval-counts'
 
 export const dynamic = 'force-dynamic'
 
@@ -153,27 +154,6 @@ export type UnifiedApprovalRow =
   | { kind: 'refund'; data: RefundDisputeItem }
   | { kind: 'after-sales'; data: AfterSalesItem }
   | { kind: 'stripe-unlink'; data: StripeUnlinkItem }
-
-// ─── 数量统计 ────────────────────────────────────────────────────────────
-async function fetchCounts(db: ReturnType<typeof getServiceRoleClient>) {
-  const [merchantRes, dealRes, refundRes, afterSalesRes, stripeUnlinkRes] = await Promise.all([
-    db.from('merchants').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
-    db.from('deals').select('id', { count: 'exact', head: true }).eq('deal_status', 'pending'),
-    db.from('refund_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending_admin'),
-    db.from('after_sales_requests').select('id', { count: 'exact', head: true }).eq('status', 'awaiting_platform'),
-    db
-      .from('stripe_connect_unlink_requests')
-      .select('id', { count: 'exact', head: true })
-      .eq('status', 'pending'),
-  ])
-  return {
-    merchants: merchantRes.count ?? 0,
-    deals: dealRes.count ?? 0,
-    refundDisputes: refundRes.count ?? 0,
-    afterSales: afterSalesRes.count ?? 0,
-    stripeUnlink: stripeUnlinkRes.count ?? 0,
-  }
-}
 
 // ─── 各 tab 数据查询 ─────────────────────────────────────────────────────
 
@@ -693,7 +673,7 @@ export default async function ApprovalsPage({
     params.queue === 'history' ? 'history' : 'pending'
 
   // 数量角标始终查询（用于 tab 角标显示）
-  const counts = await fetchCounts(db)
+  const counts = await fetchPendingApprovalCounts(db)
 
   // 根据当前 tab 查询对应数据
   let merchants: MerchantItem[] = []
