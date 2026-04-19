@@ -134,6 +134,38 @@ function mapEventRowToEntry(row: MerchantActivityEventRow): AdminActivityTimelin
         subtitle: [d ? truncate(d, 200) : null, sub].filter(Boolean).join(' · ') || undefined,
       }
     }
+    case 'admin_staff_invited': {
+      const d = row.detail?.trim()
+      return {
+        at,
+        title: 'Staff invitation or direct add (admin)',
+        subtitle: [d ? truncate(d, 220) : null, sub].filter(Boolean).join(' · ') || undefined,
+      }
+    }
+    case 'admin_staff_role_changed': {
+      const d = row.detail?.trim()
+      return {
+        at,
+        title: 'Staff role changed (admin)',
+        subtitle: [d ? truncate(d, 220) : null, sub].filter(Boolean).join(' · ') || undefined,
+      }
+    }
+    case 'admin_staff_removed': {
+      const d = row.detail?.trim()
+      return {
+        at,
+        title: 'Staff access removed (admin)',
+        subtitle: [d ? truncate(d, 220) : null, sub].filter(Boolean).join(' · ') || undefined,
+      }
+    }
+    case 'admin_staff_status_changed': {
+      const d = row.detail?.trim()
+      return {
+        at,
+        title: 'Staff account enabled/disabled (admin)',
+        subtitle: [d ? truncate(d, 220) : null, sub].filter(Boolean).join(' · ') || undefined,
+      }
+    }
     default:
       return {
         at,
