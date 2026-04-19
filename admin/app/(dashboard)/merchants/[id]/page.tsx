@@ -2,7 +2,8 @@ import { createClient } from '@/lib/supabase/server'
 import { getServiceRoleClient } from '@/lib/supabase/service'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import StaffToggleButton from '@/components/staff-toggle-button'
+import MerchantStaffInviteForm from '@/components/merchant-staff-invite-form'
+import MerchantStaffAdminRow from '@/components/merchant-staff-admin-row'
 import MerchantCommissionForm from '@/components/merchant-commission-form'
 import MerchantOperationalActions from '@/components/merchant-operational-actions'
 import { CopyableId } from '@/components/copyable-id'
@@ -423,44 +424,44 @@ export default async function MerchantReviewPage({
 
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">Staff ({staff?.length ?? 0})</h2>
-          {staff && staff.length > 0 ? (
-            <table className="w-full text-sm">
-              <thead className="border-b border-gray-100">
-                <tr>
-                  <th className="text-left py-2 font-medium text-gray-500">Name</th>
-                  <th className="text-left py-2 font-medium text-gray-500">Email</th>
-                  <th className="text-left py-2 font-medium text-gray-500">Role</th>
-                  <th className="text-left py-2 font-medium text-gray-500">Status</th>
-                  <th className="text-left py-2 font-medium text-gray-500">Joined</th>
-                  <th className="text-left py-2 font-medium text-gray-500">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {staff.map((s: any) => (
-                  <tr key={s.id}>
-                    <td className="py-2 text-gray-900">{s.nickname || s.users?.full_name || '—'}</td>
-                    <td className="py-2 text-gray-600 text-xs">{s.users?.email || '—'}</td>
-                    <td className="py-2">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${s.role === 'manager' ? 'bg-purple-100 text-purple-700' : s.role === 'cashier' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>
-                        {s.role}
-                      </span>
-                    </td>
-                    <td className="py-2">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${s.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                        {s.is_active ? 'Active' : 'Disabled'}
-                      </span>
-                    </td>
-                    <td className="py-2 text-gray-500 text-xs">{new Date(s.created_at).toLocaleDateString('en-US')}</td>
-                    <td className="py-2">
-                      <StaffToggleButton staffId={s.id} isActive={s.is_active} />
-                    </td>
+          <MerchantStaffInviteForm merchantId={id} />
+          <div className="mt-6">
+            {staff && staff.length > 0 ? (
+              <table className="w-full text-sm">
+                <thead className="border-b border-gray-100">
+                  <tr>
+                    <th className="text-left py-2 font-medium text-gray-500">Name</th>
+                    <th className="text-left py-2 font-medium text-gray-500">Email</th>
+                    <th className="text-left py-2 font-medium text-gray-500">Role</th>
+                    <th className="text-left py-2 font-medium text-gray-500">Status</th>
+                    <th className="text-left py-2 font-medium text-gray-500">Joined</th>
+                    <th className="text-left py-2 font-medium text-gray-500">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <p className="text-sm text-gray-500">No staff members.</p>
-          )}
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {staff.map((s: any) => (
+                    <MerchantStaffAdminRow
+                      key={s.id}
+                      showStoreColumn={false}
+                      row={{
+                        id: s.id,
+                        merchantId: id,
+                        userId: s.user_id,
+                        role: s.role,
+                        isActive: s.is_active,
+                        nickname: s.nickname,
+                        email: s.users?.email ?? null,
+                        fullName: s.users?.full_name ?? null,
+                        createdAt: s.created_at,
+                      }}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <p className="text-sm text-gray-500">No staff members yet.</p>
+            )}
+          </div>
         </div>
         </div>
 

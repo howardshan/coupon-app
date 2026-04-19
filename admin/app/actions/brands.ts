@@ -19,20 +19,6 @@ async function requireAdmin() {
   return supabase
 }
 
-// 强制禁用员工账号
-export async function toggleStaffActive(staffId: string, isActive: boolean) {
-  await requireAdmin()
-  const supabase = getServiceRoleClient()
-
-  const { error } = await supabase
-    .from('merchant_staff')
-    .update({ is_active: isActive })
-    .eq('id', staffId)
-
-  if (error) throw new Error(error.message)
-  revalidatePath('/merchants')
-}
-
 // 添加 Brand Admin（通过 email 查用户，插入 brand_admins）
 export async function addBrandAdmin(brandId: string, email: string, role: 'owner' | 'admin') {
   await requireAdmin()

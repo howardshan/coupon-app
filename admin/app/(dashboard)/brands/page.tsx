@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getServiceRoleClient } from '@/lib/supabase/service'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
+import AdminTableScroll from '@/components/admin-table-scroll'
 
 export default async function BrandsPage() {
   const supabase = await createClient()
@@ -70,13 +71,14 @@ export default async function BrandsPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Brands</h1>
         <span className="text-sm text-gray-500">{brands?.length ?? 0} total</span>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <table className="w-full text-sm">
+      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+        <AdminTableScroll>
+        <table className="w-full min-w-[800px] text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Brand</th>
@@ -122,6 +124,7 @@ export default async function BrandsPage() {
             ))}
           </tbody>
         </table>
+        </AdminTableScroll>
         {(!brands || brands.length === 0) && (
           <p className="text-center text-gray-400 py-8">No brands found</p>
         )}
