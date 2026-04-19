@@ -38,6 +38,8 @@ void showUnusedQrSheet(
   bool aggregateByDeal = false,
   Set<String> aggregatedOrderItemIds = const {},
   int initialPage = 0,
+  /// 从订单详情点某行打开时，将 PageView 定位到该未用券条目
+  String? initialUnusedOrderItemId,
 }) {
   final hostContext = context;
   showModalBottomSheet(
@@ -54,6 +56,7 @@ void showUnusedQrSheet(
       aggregateByDeal: aggregateByDeal,
       aggregatedOrderItemIds: aggregatedOrderItemIds,
       initialPage: initialPage,
+      initialUnusedOrderItemId: initialUnusedOrderItemId,
     ),
   );
 }
@@ -66,6 +69,7 @@ class _UnusedQrSheet extends ConsumerStatefulWidget {
   final bool aggregateByDeal;
   final Set<String> aggregatedOrderItemIds;
   final int initialPage;
+  final String? initialUnusedOrderItemId;
 
   const _UnusedQrSheet({
     required this.hostContext,
@@ -74,6 +78,7 @@ class _UnusedQrSheet extends ConsumerStatefulWidget {
     this.aggregateByDeal = false,
     this.aggregatedOrderItemIds = const {},
     this.initialPage = 0,
+    this.initialUnusedOrderItemId,
   });
 
   @override
