@@ -38,7 +38,6 @@ void showUnusedQrSheet(
   bool aggregateByDeal = false,
   Set<String> aggregatedOrderItemIds = const {},
   int initialPage = 0,
-  /// 从订单详情点某行打开时，将 PageView 定位到该未用券条目
   String? initialUnusedOrderItemId,
 }) {
   final hostContext = context;

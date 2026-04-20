@@ -556,10 +556,17 @@ Deno.serve(async (req) => {
     };
 
     // 添加 Stripe Connect 分账参数（Agent 定位）
-    if (isSingleMerchant && soloConnectId) {
-      // 标准路径：merchant net 立即路由到商家 Connect 账户
+    // 混合支付（Store Credit + 刷卡）时不用 Destination Charges：
+    //   application_fee 基于全单算，可能 > Stripe 实际收款 → 商家 transfer = 0
+    //   改为：Stripe 收款全部进平台，下单后由 create-order-v3 手动 Transfer 给商家
+    const hasMixedPayment = creditUsed > 0 && totalAmount > 0;
+    if (isSingleMerchant && soloConnectId && !hasMixedPayment) {
+      // 纯刷卡：标准 Destination Charges 路径
       piParams.application_fee_amount = applicationFeeAmountCents;
       piParams.transfer_data = { destination: soloConnectId };
+    } else if (isSingleMerchant && soloConnectId && hasMixedPayment) {
+      // 混合支付：不设 application_fee，资金先进平台，create-order-v3 手动 Transfer
+      console.log(`[混合支付] credit=$${creditUsed} card=$${totalAmount} → 跳过 Destination Charges，由 create-order-v3 手动 Transfer`);
     } else if (!isSingleMerchant) {
       // 多商家购物车暂不支持单次 Connect 分账，需要前端拆单
       // TODO: 后续实现拆单支付（每商家一笔 PaymentIntent）以维持 Agent 定位

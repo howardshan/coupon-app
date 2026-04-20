@@ -65,6 +65,8 @@ async function createReserveHold(
     if (!res.ok) {
       const errText = await res.text();
       console.error(`[ReserveHold] 创建失败 acct=${connectedAccountId} amount=${amountCents}:`, errText);
+      // DEBUG: 写错误到全局变量供外层记录到 DB
+      (globalThis as any).__lastReserveError = `acct=${connectedAccountId} amt=${amountCents} err=${errText.substring(0, 200)}`;
       return null;
     }
     const data = await res.json();
@@ -356,6 +358,19 @@ Deno.serve(async (req) => {
       const effectivePrice = item.unitPrice - (Number(item.promoDiscount ?? 0));
       const commissionAmount = Math.round(effectivePrice * commRate * 100) / 100;
 
+      // Stripe 手续费分摊（整笔 PI 的 2.9% + $0.30 按 item 比例分配）
+      // totalAmount 在外层已知，这里用 item 占比计算
+      // 注意：flat fee $0.30 平均分摊到所有 items
+      const itemTotal = item.unitPrice + SERVICE_FEE_PER_COUPON + itemTaxAmount;
+      const orderTotal = (subtotal ?? 0) + (serviceFeeTotal ?? 0) + (totalTax ?? 0) - (totalDiscount ?? 0);
+      const totalStripeFee = orderTotal > 0 ? Math.round((orderTotal * 0.029 + 0.30) * 100) / 100 : 0;
+      const itemStripeFee = orderTotal > 0
+        ? Math.round(totalStripeFee * (itemTotal / orderTotal) * 100) / 100
+        : 0;
+
+      // 商家实收 = 商品价 - 平台佣金 - Stripe 手续费（不含 service fee 和 tax，那些归平台）
+      const merchantNet = Math.round((effectivePrice - commissionAmount - itemStripeFee) * 100) / 100;
+
       return {
         order_id: orderId,
         deal_id: item.dealId,
@@ -363,9 +378,11 @@ Deno.serve(async (req) => {
         service_fee: SERVICE_FEE_PER_COUPON,
         tax_amount: itemTaxAmount,
         tax_rate: taxRate,
-        tax_metro_area: metroArea,       // 快照下单时的税归属地，防止 merchant.metro_area 后续变更
-        commission_amount: commissionAmount, // 快照佣金金额，用于退款精确计算
-        promo_discount: Number(item.promoDiscount ?? 0),  // 快照促销折扣，用于退款时精确计算 merchant_net
+        tax_metro_area: metroArea,
+        commission_amount: commissionAmount,
+        stripe_fee_amount: itemStripeFee,          // Stripe 手续费快照（退款时平台承担）
+        stripe_transfer_amount: merchantNet,       // 商家实收快照（退款时只从商家 reverse 这个金额）
+        promo_discount: Number(item.promoDiscount ?? 0),
         purchased_merchant_id: item.purchasedMerchantId ?? null,
         selected_options: item.selectedOptions ?? null,
         customer_status: 'unused',
@@ -395,6 +412,8 @@ Deno.serve(async (req) => {
     // ----------------------------------------------------------------
     const stripeKey = Deno.env.get('STRIPE_SECRET_KEY') ?? '';
     const reservesEnabled = Deno.env.get('STRIPE_RESERVES_ENABLED') !== 'false';
+    // 混合支付标记（提前声明，section 6.5 / 6.6 / 6.7 都要用）
+    const isMixedPayment = creditUsed > 0 && !skipStripeVerification;
 
     if (insertedItems && insertedItems.length > 0 && stripeKey) {
       // 查询各商家的 Stripe Connect 账户信息
@@ -497,7 +516,8 @@ Deno.serve(async (req) => {
       }
 
       // ── B. ReserveHold（STRIPE_RESERVES_ENABLED=true 时强制，失败则回滚）──
-      if (reservesEnabled) {
+      // 混合支付跳过：section 6.7 会先 Transfer 再 Hold（这里执行时商家还没收到钱，hold 必然失败）
+      if (reservesEnabled && !isMixedPayment) {
         const holdFailures: string[] = [];
         // createdHolds：已成功创建的 Hold，回滚时需要释放（Fix 2）
         const createdHolds: Array<{ connectId: string; holdId: string }> = [];
@@ -617,7 +637,8 @@ Deno.serve(async (req) => {
     //   多商家：merchantNetMap 已含 stripe_fee 摊薄，按 item 比例分配
     //   单商家：PI application_fee_amount 反推实际 transfer，按 item 比例分配
     // ----------------------------------------------------------------
-    if (insertedItems && insertedItems.length > 0 && !skipStripeVerification) {
+    // 混合支付跳过 section 6.6（由 section 6.7 统一处理 Transfer + 写入 stripe_transfer_amount）
+    if (insertedItems && insertedItems.length > 0 && !skipStripeVerification && !isMixedPayment) {
       try {
         const itemTransferUpdates: Array<{ id: string; stripe_transfer_amount: number }> = [];
 
@@ -691,6 +712,152 @@ Deno.serve(async (req) => {
       } catch (taErr) {
         // 写入失败不阻断订单，退款时会降级到比例计算
         console.error('[TransferAmount] 写入失败（不阻断，退款时降级）:', taErr);
+      }
+    }
+
+    // ----------------------------------------------------------------
+    // 6.7. Store Credit / 混合支付：从平台 Stripe 余额 Transfer 给商家 + ReserveHold
+    //   适用场景：
+    //     A. Store Credit 全额（skipStripeVerification=true）：Stripe 没收款，从平台余额转
+    //     B. 混合支付（creditUsed > 0 且有 Stripe 收款）：PI 没设 Destination Charges，
+    //        Stripe 收款全部进平台，从平台余额手动 Transfer merchant_net
+    //   两种场景统一：从平台余额 Transfer + ReserveHold
+    // ----------------------------------------------------------------
+    if ((skipStripeVerification || isMixedPayment) && insertedItems && insertedItems.length > 0 && stripeKey) {
+      console.log(`[PlatformTransfer] ${skipStripeVerification ? 'Store Credit 全额' : '混合支付'}，从平台余额 Transfer 给商家...`);
+
+      // 重新查商家 Connect 信息（reserveMerchantConnectMap 在 section 6.5 作用域内不可见）
+      const scMerchantIds = [
+        ...new Set(
+          (insertedItems as any[])
+            .map((i: any) => i.purchased_merchant_id as string | null)
+            .filter((id): id is string => !!id),
+        ),
+      ];
+      const scConnectMap = new Map<string, string | null>();
+      if (scMerchantIds.length > 0) {
+        const { data: scMerchantRows } = await serviceClient
+          .from('merchants')
+          .select('id, stripe_account_id, stripe_account_status')
+          .in('id', scMerchantIds);
+        for (const m of (scMerchantRows ?? []) as any[]) {
+          scConnectMap.set(m.id, m.stripe_account_status === 'connected' ? (m.stripe_account_id ?? null) : null);
+        }
+      }
+
+      console.log(`[StoreCreditTransfer] scMerchantIds=${JSON.stringify(scMerchantIds)}`);
+      console.log(`[StoreCreditTransfer] scConnectMap=${JSON.stringify([...scConnectMap.entries()])}`);
+
+      // 按 merchant 汇总 merchant_net（cents）
+      const scMerchantNetMap = new Map<string, number>();
+      for (const dbItem of (insertedItems as any[])) {
+        const mid = dbItem.purchased_merchant_id as string | null;
+        if (!mid) { console.log(`[StoreCreditTransfer] item ${dbItem.id} has no purchased_merchant_id`); continue; }
+        const connectId = scConnectMap.get(mid);
+        if (!connectId) { console.log(`[StoreCreditTransfer] merchant ${mid} has no connectId`); continue; }
+        const netCents = Math.max(0,
+          Math.round((Number(dbItem.unit_price) - Number(dbItem.commission_amount ?? 0) - Number(dbItem.promo_discount ?? 0)) * 100),
+        );
+        // Store Credit 不走 Stripe 收款，没有 Stripe 手续费，所以 merchant_net 不需要扣 stripe_fee
+        if (netCents > 0) scMerchantNetMap.set(connectId, (scMerchantNetMap.get(connectId) ?? 0) + netCents);
+      }
+
+      // Transfer 给每个商家
+      const scTransfers = new Map<string, string>(); // connectId → transferId
+      for (const [connectId, amountCents] of scMerchantNetMap) {
+        try {
+          const xferRes = await fetch('https://api.stripe.com/v1/transfers', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${stripeKey}`,
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams({
+              amount: String(amountCents),
+              currency: 'usd',
+              destination: connectId,
+              transfer_group: orderId,
+              'metadata[reason]': 'store_credit_purchase',
+              'metadata[order_id]': orderId,
+            }).toString(),
+          });
+          if (!xferRes.ok) {
+            console.error(`[StoreCreditTransfer] Transfer 失败 dest=${connectId}: ${await xferRes.text()}`);
+          } else {
+            const xferData = await xferRes.json();
+            scTransfers.set(connectId, (xferData as any).id);
+            console.log(`[StoreCreditTransfer] Transfer 成功 dest=${connectId} id=${(xferData as any).id} amount=${amountCents}c`);
+          }
+        } catch (err) {
+          console.error(`[StoreCreditTransfer] Transfer 异常 dest=${connectId}:`, err);
+        }
+      }
+
+      // 写入每个 item 的 stripe_transfer_amount + stripe_transfer_id
+      if (scTransfers.size > 0) {
+        const scItemNetTotals = new Map<string, number>();
+        for (const dbItem of (insertedItems as any[])) {
+          const mid = dbItem.purchased_merchant_id as string | null;
+          if (!mid) continue;
+          const netCents = Math.max(0,
+            Math.round((Number(dbItem.unit_price) - Number(dbItem.commission_amount ?? 0) - Number(dbItem.promo_discount ?? 0)) * 100),
+          );
+          scItemNetTotals.set(mid, (scItemNetTotals.get(mid) ?? 0) + netCents);
+        }
+
+        for (const dbItem of (insertedItems as any[])) {
+          const mid = dbItem.purchased_merchant_id as string | null;
+          if (!mid) continue;
+          const connectId = scConnectMap.get(mid);
+          if (!connectId || !scTransfers.has(connectId)) continue;
+
+          const totalMerchantTransferCents = scMerchantNetMap.get(connectId) ?? 0;
+          const merchantTotalNetCents = scItemNetTotals.get(mid) ?? 0;
+          const itemNetCents = Math.max(0,
+            Math.round((Number(dbItem.unit_price) - Number(dbItem.commission_amount ?? 0) - Number(dbItem.promo_discount ?? 0)) * 100),
+          );
+
+          if (merchantTotalNetCents > 0 && totalMerchantTransferCents > 0) {
+            const itemTransferCents = Math.round(totalMerchantTransferCents * (itemNetCents / merchantTotalNetCents));
+            if (itemTransferCents > 0) {
+              await serviceClient.from('order_items').update({
+                stripe_transfer_amount: itemTransferCents / 100,
+                stripe_transfer_id: scTransfers.get(connectId),
+              }).eq('id', dbItem.id);
+            }
+          }
+        }
+      }
+
+      // ReserveHold：冻结资金直到核销后 T+7
+      // DEBUG: 记录 reservesEnabled 状态
+      await serviceClient.from('orders').update({
+        refund_reason: `reserve_check: enabled=${reservesEnabled}, items=${(insertedItems as any[]).length}, scConnectMap_size=${scConnectMap.size}`,
+      }).eq('id', orderId);
+      if (reservesEnabled) {
+        for (const dbItem of (insertedItems as any[])) {
+          const mid = dbItem.purchased_merchant_id as string | null;
+          if (!mid) continue;
+          const connectId = scConnectMap.get(mid);
+          if (!connectId) continue;
+          const itemNetCents = Math.max(0,
+            Math.round((Number(dbItem.unit_price) - Number(dbItem.commission_amount ?? 0) - Number(dbItem.promo_discount ?? 0)) * 100),
+          );
+          if (itemNetCents > 0) {
+            const holdId = await createReserveHold(connectId, itemNetCents, stripeKey);
+            if (holdId) {
+              await serviceClient.from('order_items').update({
+                stripe_reserve_hold_id: holdId,
+              }).eq('id', dbItem.id);
+            } else {
+              // DEBUG: 把 Reserve 错误写到 orders.refund_reason 供诊断
+              const errMsg = (globalThis as any).__lastReserveError ?? 'unknown';
+              await serviceClient.from('orders').update({
+                refund_reason: `reserve_fail: ${errMsg}`,
+              }).eq('id', orderId);
+            }
+          }
+        }
       }
     }
 
