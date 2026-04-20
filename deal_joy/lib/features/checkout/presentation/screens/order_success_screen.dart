@@ -139,8 +139,13 @@ class OrderSuccessScreen extends ConsumerWidget {
                 const SizedBox(height: 32),
                 AppButton(
                   label: voucherCount > 1 ? 'View My Vouchers' : 'View My Voucher',
-                  // push 保留成功页在栈中，订单页可返回继续看确认信息
-                  onPressed: () => context.push('/order/$orderId'),
+                  onPressed: () {
+                    // 跳转到 voucher detail 页（和 unused 列表进入一致）
+                    final dealId = items.isNotEmpty
+                        ? items.first.dealId
+                        : (order.deal?.id ?? '');
+                    context.push('/voucher/$orderId?dealId=$dealId');
+                  },
                   icon: Icons.qr_code_2,
                 ),
                 const SizedBox(height: 16),

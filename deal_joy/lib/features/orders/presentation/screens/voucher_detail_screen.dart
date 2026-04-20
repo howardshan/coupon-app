@@ -1764,7 +1764,6 @@ class _CancelSheetState extends ConsumerState<_CancelSheet> {
   String _selectedMethod = 'store_credit';
   bool _isSubmitting = false;
   late int _cancelCount;
-  late Set<String> _selectedIds;
 
   bool get _isPaidByStoreCredit {
     if (widget.storeCreditUsed > 0 &&
@@ -1783,7 +1782,6 @@ class _CancelSheetState extends ConsumerState<_CancelSheet> {
   void initState() {
     super.initState();
     _cancelCount = 1;
-    _selectedIds = widget.allUnusedItems.map((i) => i.id).toSet();
     if (_isPaidByStoreCredit) {
       _selectedMethod = 'store_credit';
     }
@@ -1880,84 +1878,56 @@ class _CancelSheetState extends ConsumerState<_CancelSheet> {
             ),
           ),
 
-          // 多张券时显示券选择列表
+          // 多张券时显示数量选择器（不需要选具体哪张，直接选数量）
           if (totalUnused > 1) ...[
             const SizedBox(height: 16),
-            GestureDetector(
-              onTap: () {
-                setState(() {
-                  if (_selectedIds.length == widget.allUnusedItems.length) {
-                    _selectedIds = {widget.allUnusedItems.first.id};
-                  } else {
-                    _selectedIds =
-                        widget.allUnusedItems.map((i) => i.id).toSet();
-                  }
-                  _cancelCount = _selectedIds.length;
-                });
-              },
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Row(
-                  children: [
-                    const Text(
-                      'Select vouchers to cancel',
-                      style: TextStyle(
-                          fontSize: 14, fontWeight: FontWeight.w500),
-                    ),
-                    const Spacer(),
-                    Text(
-                      _selectedIds.length == widget.allUnusedItems.length
-                          ? 'Deselect All'
-                          : 'Select All',
-                      style: const TextStyle(
-                          fontSize: 13, color: AppColors.primary),
-                    ),
-                  ],
+            Row(
+              children: [
+                const Text(
+                  'How many to cancel?',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
                 ),
-              ),
-            ),
-            // 每张券的复选框列表
-            ...widget.allUnusedItems.map((unusedItem) {
-              final code = unusedItem.formattedCouponCode ?? 'No code';
-              final isSelected = _selectedIds.contains(unusedItem.id);
-              return GestureDetector(
-                onTap: () {
-                  setState(() {
-                    if (isSelected && _selectedIds.length > 1) {
-                      _selectedIds.remove(unusedItem.id);
-                    } else if (!isSelected) {
-                      _selectedIds.add(unusedItem.id);
-                    }
-                    _cancelCount = _selectedIds.length;
-                  });
-                },
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 6),
+                const Spacer(),
+                // 数量选择器：- count +
+                Container(
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey.shade300),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                   child: Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(
-                        isSelected
-                            ? Icons.check_box_rounded
-                            : Icons.check_box_outline_blank_rounded,
-                        color: isSelected
-                            ? AppColors.primary
-                            : AppColors.textHint,
-                        size: 20,
+                      _QuantityButton(
+                        icon: Icons.remove,
+                        enabled: _cancelCount > 1,
+                        onTap: () => setState(() => _cancelCount--),
                       ),
-                      const SizedBox(width: 10),
-                      Text(
-                        code,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontFamily: 'monospace',
-                          letterSpacing: 1.2,
+                      Container(
+                        width: 40,
+                        alignment: Alignment.center,
+                        child: Text(
+                          '$_cancelCount',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
+                      ),
+                      _QuantityButton(
+                        icon: Icons.add,
+                        enabled: _cancelCount < totalUnused,
+                        onTap: () => setState(() => _cancelCount++),
                       ),
                     ],
                   ),
                 ),
-              );
-            }),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '$totalUnused unused voucher${totalUnused > 1 ? 's' : ''} available',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+            ),
           ],
 
           const SizedBox(height: 20),
@@ -1976,7 +1946,6 @@ class _CancelSheetState extends ConsumerState<_CancelSheet> {
                     await widget.onConfirm(
                       _selectedMethod,
                       cancelCount: _cancelCount,
-                      selectedItemIds: _selectedIds.toList(),
                     );
                     if (mounted) setState(() => _isSubmitting = false);
                   },
@@ -2004,6 +1973,35 @@ class _CancelSheetState extends ConsumerState<_CancelSheet> {
                   ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _QuantityButton extends StatelessWidget {
+  final IconData icon;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  const _QuantityButton({
+    required this.icon,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: enabled ? onTap : null,
+      child: Container(
+        width: 32,
+        height: 32,
+        alignment: Alignment.center,
+        child: Icon(
+          icon,
+          size: 18,
+          color: enabled ? AppColors.textPrimary : Colors.grey.shade300,
+        ),
       ),
     );
   }

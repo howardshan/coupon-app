@@ -439,11 +439,12 @@ class _MerchantCouponGroup extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 按券名（deal title）合并，统计数量
+    // 按 orderId + dealId 合并：只有同一笔订单的同一个 deal 才合并为一行
+    // 不同订单买的同名 deal 分开展示
     final dealMap = <String, List<CouponModel>>{};
     for (final c in coupons) {
-      final title = c.dealTitle ?? 'Coupon';
-      dealMap.putIfAbsent(title, () => []).add(c);
+      final key = '${c.orderId}:${c.dealId}';
+      dealMap.putIfAbsent(key, () => []).add(c);
     }
 
     return Container(
@@ -493,7 +494,7 @@ class _MerchantCouponGroup extends StatelessWidget {
           ),
           const Divider(height: 16, indent: 14, endIndent: 14),
 
-          // 按券名合并后的列表 — 点击跳转到 order deal detail 页
+          // 按 order + deal 合并后的列表 — 点击跳转到 order deal detail 页
           ...dealMap.entries.map((entry) {
             final dealCoupons = entry.value;
             final first = dealCoupons.first;
@@ -502,7 +503,7 @@ class _MerchantCouponGroup extends StatelessWidget {
                 .map((c) => c.expiresAt)
                 .reduce((a, b) => a.isBefore(b) ? a : b);
             return _CouponRow(
-              dealTitle: entry.key,
+              dealTitle: first.dealTitle ?? 'Coupon',
               imageUrl: first.dealImageUrl,
               quantity: dealCoupons.length,
               expiresAt: earliestExpiry,
@@ -678,11 +679,11 @@ class _ExpiringSoonSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 按券名合并
+    // 按 orderId + dealId 合并（只有同一订单同一 deal 才合并）
     final dealMap = <String, List<CouponModel>>{};
     for (final c in coupons) {
-      final title = c.dealTitle ?? 'Coupon';
-      dealMap.putIfAbsent(title, () => []).add(c);
+      final key = '${c.orderId}:${c.dealId}';
+      dealMap.putIfAbsent(key, () => []).add(c);
     }
 
     return Container(
@@ -739,7 +740,7 @@ class _ExpiringSoonSection extends StatelessWidget {
                 .reduce((a, b) => a.isBefore(b) ? a : b);
 
             return _CouponRow(
-              dealTitle: entry.key,
+              dealTitle: first.dealTitle ?? 'Coupon',
               imageUrl: first.dealImageUrl,
               quantity: dealCoupons.length,
               expiresAt: earliestExpiry,

@@ -153,10 +153,12 @@ Deno.serve(async (req) => {
         service_fee,
         tax_amount,
         commission_amount,
+        stripe_fee_amount,
         promo_discount,
         purchased_merchant_id,
         stripe_reserve_hold_id,
         stripe_transfer_amount,
+        stripe_transfer_id,
         customer_status,
         orders!inner (
           id,
@@ -272,8 +274,27 @@ Deno.serve(async (req) => {
       }
 
       // Stripe Connect 分账路径：从商家 Connect 账户回撤本 item 实际 transfer 金额
-      // 优先用下单时存储的 stripe_transfer_amount（精确），旧订单降级到比例计算
-      if (order.payment_intent_id && !order.payment_intent_id.startsWith('store_credit_')) {
+      // 两种路径：
+      //   A. 刷卡订单：通过 PI → latest_charge → transfer 查 transfer ID
+      //   B. Store Credit 订单：直接用 order_items.stripe_transfer_id（下单时记录）
+      const storedTransferAmount = Number((item as any).stripe_transfer_amount ?? 0);
+      const storedTransferId = (item as any).stripe_transfer_id as string | null;
+      const isStoreCreditOrder = (order.payment_intent_id ?? '').startsWith('store_credit_');
+
+      if (isStoreCreditOrder && storedTransferId && storedTransferAmount > 0) {
+        // ── Store Credit 订单：直接用 stripe_transfer_id reverse ──
+        try {
+          const reversalCents = Math.round(storedTransferAmount * 100);
+          await stripe.transfers.createReversal(storedTransferId, {
+            amount: reversalCents,
+            metadata: { order_item_id: orderItemId, reason: 'store_credit_refund' },
+          });
+          console.log(`[SC Refund] Reversed $${storedTransferAmount} from transfer ${storedTransferId}`);
+        } catch (transferErr) {
+          console.error('[SC Refund] Store Credit transfer reversal 失败:', transferErr);
+        }
+      } else if (order.payment_intent_id && !isStoreCreditOrder) {
+        // ── 刷卡订单：通过 PI → latest_charge → transfer 查 transfer ID ──
         try {
           const pi = await stripe.paymentIntents.retrieve(order.payment_intent_id, {
             expand: ['latest_charge.transfer'],
@@ -282,14 +303,11 @@ Deno.serve(async (req) => {
           const transferId = typeof transfer === 'string' ? transfer : transfer?.id;
 
           if (transferId) {
-            const storedTransferAmount = Number((item as any).stripe_transfer_amount ?? 0);
             let reversalCents: number;
 
             if (storedTransferAmount > 0) {
-              // 新订单：直接使用下单时记录的精确 transfer 金额
               reversalCents = Math.round(storedTransferAmount * 100);
             } else {
-              // 旧订单兜底：从实际 transfer.amount 按比例计算
               const transferAmountCents: number | null =
                 transfer && typeof transfer === 'object' ? Number(transfer.amount) : null;
               if (transferAmountCents !== null && transferAmountCents > 0) {
@@ -427,20 +445,20 @@ Deno.serve(async (req) => {
 
     } else {
       // ── original_payment 退款流程 ─────────────────────────────────────────
-      // 退款商品价 + unitPrice 对应的税，不含 service fee 及其税（两者均不退）
-      // taxAmount 是对 (unitPrice + serviceFee) 整体计算的，需按比例拆出 unitPrice 部分的税
-      const taxBase = unitPrice + serviceFee;
-      const taxOnUnitPrice = taxBase > 0
-        ? Math.round(taxAmount * (unitPrice / taxBase) * 100) / 100
-        : 0;
-      const itemRefundable = unitPrice + taxOnUnitPrice;
+      // 退款分配原则：
+      //   - 退给用户：unitPrice + tax（不退 service fee）
+      //   - 从商家 Connect reverse：stripe_transfer_amount（商家实收部分）
+      //   - 从平台出：commission + stripe_fee + tax（这些钱在平台手里）
+      //   - service fee 不退
 
-      // 混合支付时优先退 store credit：先退完 credit 部分，剩余退信用卡
+      const stripeFeeAmount = Number((item as any).stripe_fee_amount ?? 0);
+      const itemRefundable = unitPrice + taxAmount; // 退给用户的总额
+
+      // 混合支付时优先退 store credit
       let cardRefundAmount = itemRefundable;
       let creditRefundAmount = 0;
 
       if (isPartialStoreCredit && storeCreditUsed > 0) {
-        // 查询该订单下已退款 items 中已退还的 store credit 总额
         const { data: refundedItems } = await supabaseAdmin
           .from('order_items')
           .select('refund_credit_amount')
@@ -451,14 +469,12 @@ Deno.serve(async (req) => {
           .reduce((sum: number, r: { refund_credit_amount: number | null }) =>
             sum + Number(r.refund_credit_amount ?? 0), 0);
 
-        // 剩余可退的 store credit 额度
         const remainingCredit = Math.max(0, storeCreditUsed - alreadyRefundedCredit);
-        // 优先退 store credit，不超过本 item 的可退金额
         creditRefundAmount = Math.round(Math.min(remainingCredit, itemRefundable) * 100) / 100;
         cardRefundAmount = Math.round((itemRefundable - creditRefundAmount) * 100) / 100;
       }
 
-      // 信用卡部分退款（如果有的话）
+      // 信用卡部分退款
       let stripeRefundId: string | null = null;
       if (cardRefundAmount > 0) {
         if (!order.stripe_charge_id && !order.payment_intent_id) {
@@ -469,19 +485,6 @@ Deno.serve(async (req) => {
         }
 
         try {
-          // 向 Stripe 发起信用卡部分退款
-          const refundParams: Record<string, unknown> = {
-            amount: Math.round(cardRefundAmount * 100),
-            metadata: {
-              order_item_id: orderItemId,
-              commission_amount: commissionAmount.toFixed(2),
-            },
-          };
-          if (order.stripe_charge_id) {
-            refundParams.charge = order.stripe_charge_id;
-          } else {
-            refundParams.payment_intent = order.payment_intent_id;
-          }
           // 退款前先释放 ReserveHold（解冻商家资金）
           const holdIdOP = (item as any).stripe_reserve_hold_id as string | null;
           const reservesEnabledOP = Deno.env.get('STRIPE_RESERVES_ENABLED') !== 'false';
@@ -489,52 +492,87 @@ Deno.serve(async (req) => {
             await releaseReserveHold(merchantStripeAccountId, holdIdOP, Deno.env.get('STRIPE_SECRET_KEY') ?? '');
           }
 
-          // Stripe Connect 分账路径：
-          // ❌ 不用 reverse_transfer: true —— 会让 Stripe 从商家账户拉走全额退款，商家多付 commission+税
-          // ✅ 手动 createReversal：只逆向本 item 实际收到的 transfer 金额，其余由平台从 application_fee 里出
-          if (order.payment_intent_id && !order.payment_intent_id.startsWith('store_credit_')) {
+          // ── Step 1: 从商家 Connect 账户 reverse 商家实收部分 ──
+          // 只逆向 stripe_transfer_amount（商家的 net），其余（commission + stripe_fee + tax）由平台出
+          // 两种路径：A. Store Credit 订单用 stripe_transfer_id 直接 reverse
+          //           B. 刷卡订单通过 PI → charge → transfer 查 transfer ID
+          const storedTransferAmountOP = Number((item as any).stripe_transfer_amount ?? 0);
+          const storedTransferIdOP = (item as any).stripe_transfer_id as string | null;
+          const isStoreCreditOrderOP = (order.payment_intent_id ?? '').startsWith('store_credit_');
+
+          if (isStoreCreditOrderOP && storedTransferIdOP && storedTransferAmountOP > 0) {
+            // Store Credit 订单：直接用 stripe_transfer_id reverse
+            try {
+              const reversalCents = Math.round(storedTransferAmountOP * 100);
+              await stripe.transfers.createReversal(storedTransferIdOP, {
+                amount: reversalCents,
+                metadata: { order_item_id: orderItemId, reason: 'original_payment_refund_sc' },
+              });
+              console.log(`[OP Refund] SC order reversed $${storedTransferAmountOP} from transfer ${storedTransferIdOP}`);
+            } catch (reversalErr) {
+              console.error('[OP Refund] SC transfer reversal failed:', reversalErr);
+            }
+          } else if (hasConnectRouting && order.payment_intent_id && !isStoreCreditOrderOP) {
+            // 刷卡订单：通过 PI 查 transfer
             try {
               const piForReversal = await stripe.paymentIntents.retrieve(order.payment_intent_id, {
                 expand: ['latest_charge.transfer'],
               });
-              const transferForReversal = (piForReversal as any).latest_charge?.transfer;
-              const transferIdForReversal = typeof transferForReversal === 'string' ? transferForReversal : transferForReversal?.id;
+              const transferObj = (piForReversal as any).latest_charge?.transfer;
+              const transferId = typeof transferObj === 'string' ? transferObj : transferObj?.id;
 
-              if (transferIdForReversal) {
-                const storedTransferAmountOP = Number((item as any).stripe_transfer_amount ?? 0);
-                let reversalCentsOP: number;
+              if (transferId) {
+                let reversalCents: number;
 
                 if (storedTransferAmountOP > 0) {
-                  // 新订单：直接使用下单时记录的精确 transfer 金额
-                  reversalCentsOP = Math.round(storedTransferAmountOP * 100);
+                  reversalCents = Math.round(storedTransferAmountOP * 100);
                 } else {
-                  // 旧订单兜底：从实际 transfer.amount 按比例计算
-                  const transferAmountCentsOP: number | null =
-                    transferForReversal && typeof transferForReversal === 'object'
-                      ? Number(transferForReversal.amount)
-                      : null;
-                  if (transferAmountCentsOP !== null && transferAmountCentsOP > 0) {
-                    const itemMerchantNetOP = unitPrice - promoDiscount - commissionAmount;
-                    reversalCentsOP = await calcProportionalReversalCents(
-                      supabaseAdmin, order.id, itemMerchantNetOP, transferAmountCentsOP,
+                  const actualTransferCents: number | null =
+                    transferObj && typeof transferObj === 'object' ? Number(transferObj.amount) : null;
+                  if (actualTransferCents !== null && actualTransferCents > 0) {
+                    const itemMerchantNet = unitPrice - promoDiscount - commissionAmount;
+                    reversalCents = await calcProportionalReversalCents(
+                      supabaseAdmin, order.id, itemMerchantNet, actualTransferCents,
                     );
                   } else {
-                    reversalCentsOP = 0;
+                    reversalCents = 0;
                   }
                 }
 
-                if (reversalCentsOP > 0) {
-                  await stripe.transfers.createReversal(transferIdForReversal, {
-                    amount: reversalCentsOP,
-                    metadata: { order_item_id: orderItemId, reason: 'original_payment_refund' },
+                if (reversalCents > 0) {
+                  await stripe.transfers.createReversal(transferId, {
+                    amount: reversalCents,
+                    metadata: {
+                      order_item_id: orderItemId,
+                      reason: 'original_payment_refund',
+                      merchant_portion: reversalCents.toString(),
+                      platform_portion: (Math.round(cardRefundAmount * 100) - reversalCents).toString(),
+                    },
                   });
+                  console.log(`[OP Refund] Reversed $${(reversalCents / 100).toFixed(2)} from merchant`);
                 }
               }
             } catch (reversalErr) {
-              console.error('[create-refund] 原路退款 transfer reversal 失败（降级平台垫付）:', reversalErr);
+              console.error('[OP Refund] Transfer reversal failed:', reversalErr);
             }
           }
-          // 退款由平台余额支付（不带 reverse_transfer），该 item 的 transfer 已通过上方 createReversal 归还平台
+
+          // ── Step 2: 从平台 Stripe 账户退款给用户（不带 reverse_transfer） ──
+          // 平台先 reverse 了商家的 transfer，再统一退给用户
+          const refundParams: Record<string, unknown> = {
+            amount: Math.round(cardRefundAmount * 100),
+            metadata: {
+              order_item_id: orderItemId,
+              merchant_reversed: storedTransferAmount > 0 ? storedTransferAmount.toFixed(2) : 'proportional',
+              platform_covered: (commissionAmount + stripeFeeAmount + taxAmount).toFixed(2),
+            },
+          };
+          if (order.stripe_charge_id) {
+            refundParams.charge = order.stripe_charge_id;
+          } else {
+            refundParams.payment_intent = order.payment_intent_id;
+          }
+
           const refund = await stripe.refunds.create(refundParams as any);
           stripeRefundId = refund.id;
         } catch (stripeErr: unknown) {

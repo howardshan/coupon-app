@@ -13,6 +13,8 @@ import '../widgets/shortcut_grid.dart';
 
 import '../../store/providers/store_provider.dart';
 import '../../deals/providers/deals_provider.dart';
+import '../../orders/pages/refund_requests_page.dart';
+import '../../after_sales/pages/after_sales_list_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// 直接查 brand_admins 表判断是否品牌管理员（不依赖 storeProvider）
@@ -487,7 +489,7 @@ class _TodoSection extends StatelessWidget {
     void pushRefundRequests() {
       Navigator.of(context).push<void>(
         MaterialPageRoute<void>(
-          builder: (_) => const RefundRequestsPage(),
+          builder: (_) => RefundRequestsPage(),
         ),
       );
     }
@@ -495,7 +497,7 @@ class _TodoSection extends StatelessWidget {
     void pushAfterSalesList() {
       Navigator.of(context).push<void>(
         MaterialPageRoute<void>(
-          builder: (_) => const AfterSalesListPage(),
+          builder: (_) => AfterSalesListPage(),
         ),
       );
     }

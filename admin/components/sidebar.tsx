@@ -28,6 +28,7 @@ const adminNav: NavEntry[] = [
     children: [
       { href: '/finance', label: 'Withdrawals' },
       { href: '/finance/tax-revenue', label: 'Tax Revenue' },
+      { href: '/finance/store-credits', label: 'Store Credits' },
     ],
   },
   {
