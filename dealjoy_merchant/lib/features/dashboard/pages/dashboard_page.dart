@@ -493,7 +493,9 @@ class _TodoSection extends StatelessWidget {
       );
     }
 
-    // pendingRefunds 仍为后端「待处理退款相关」计数；入口统一打开 After-Sales 列表
+    // pendingRefunds + pendingAfterSales 合并为一条，避免重复入口；均打开 After-Sales 列表
+    final afterSalesAttentionCount = todos.afterSalesAttentionCount;
+
     final specs =
         <({
           IconData icon,
@@ -512,21 +514,12 @@ class _TodoSection extends StatelessWidget {
         onTap: () => context.go('/reviews'),
       ));
     }
-    if (todos.pendingRefunds > 0) {
+    if (afterSalesAttentionCount > 0) {
       specs.add((
         icon: Icons.support_agent_outlined,
         iconColor: const Color(0xFF00897B),
         label: 'After-sales',
-        count: todos.pendingRefunds,
-        onTap: pushAfterSalesList,
-      ));
-    }
-    if (todos.pendingAfterSales > 0) {
-      specs.add((
-        icon: Icons.support_agent_outlined,
-        iconColor: const Color(0xFF00897B),
-        label: 'After-sales pending',
-        count: todos.pendingAfterSales,
+        count: afterSalesAttentionCount,
         onTap: pushAfterSalesList,
       ));
     }

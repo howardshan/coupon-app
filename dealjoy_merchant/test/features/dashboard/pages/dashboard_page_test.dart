@@ -43,6 +43,10 @@ class MockDashboardService extends DashboardService {
 DashboardData _buildData({
   bool isOnline = true,
   bool hasTodos = false,
+  int? pendingReviews,
+  int? pendingRefunds,
+  int? pendingAfterSales,
+  int? influencerRequests,
 }) {
   return DashboardData(
     stats: DashboardStats(
@@ -64,10 +68,10 @@ DashboardData _buildData({
       ),
     ),
     todos: TodoCounts(
-      pendingReviews: hasTodos ? 2 : 0,
-      pendingRefunds: hasTodos ? 1 : 0,
-      pendingAfterSales: 0,
-      influencerRequests: 0,
+      pendingReviews: pendingReviews ?? (hasTodos ? 2 : 0),
+      pendingRefunds: pendingRefunds ?? (hasTodos ? 1 : 0),
+      pendingAfterSales: pendingAfterSales ?? 0,
+      influencerRequests: influencerRequests ?? 0,
     ),
   );
 }
@@ -253,6 +257,22 @@ void main() {
       // 待回复评价 (pendingReviews = 2)；pendingRefunds 待办入口已统一为 After-sales 列表
       expect(find.text('Reviews to reply'), findsOneWidget);
       expect(find.text('After-sales'), findsOneWidget);
+    });
+
+    testWidgets('pendingRefunds 与 pendingAfterSales 同时存在时仅一条 After-sales', (tester) async {
+      final mockService = MockDashboardService()
+        ..stubbedData = _buildData(
+          hasTodos: false,
+          pendingReviews: 0,
+          pendingRefunds: 2,
+          pendingAfterSales: 3,
+        );
+
+      await tester.pumpWidget(buildTestApp(mockService: mockService));
+      await tester.pumpAndSettle();
+
+      expect(find.text('After-sales'), findsOneWidget);
+      expect(find.text('After-sales pending'), findsNothing);
     });
   });
 

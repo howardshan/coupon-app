@@ -150,6 +150,9 @@ class TodoCounts {
   /// 待办总数
   int get totalCount =>
       pendingReviews + pendingRefunds + pendingAfterSales + influencerRequests;
+
+  /// Dashboard 一条「After-sales」待办：退款相关计数 + 售后待处理数（入口均打开售后列表）
+  int get afterSalesAttentionCount => pendingRefunds + pendingAfterSales;
 }
 
 // ============================================================
