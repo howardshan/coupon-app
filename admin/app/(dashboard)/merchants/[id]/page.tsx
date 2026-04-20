@@ -264,6 +264,14 @@ export default async function MerchantReviewPage({
             </Link>
             <h1 className="text-2xl font-bold text-gray-900">Merchant Profile</h1>
             <p className="text-xs text-gray-400 mt-1">ID: <CopyableId id={merchant.id} showFull /></p>
+            <p className="mt-2">
+              <Link
+                href={`/merchants/${merchant.id}/menu`}
+                className="text-sm font-medium text-blue-600 hover:underline"
+              >
+                Menu items (product catalog)
+              </Link>
+            </p>
           </div>
           {showMerchantOperations && (
             <div className="shrink-0">

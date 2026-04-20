@@ -1081,16 +1081,22 @@ async function handleStoreConfirm(
 
     // 如果关联了菜品，读取菜品单价
     if (menuItemId) {
-      const { data: menuItem } = await admin
+      // 未定价行不可作为门店确认关联菜品
+      const { data: menuItem, error: menuItemErr } = await admin
         .from("menu_items")
         .select("price")
         .eq("id", menuItemId)
         .eq("merchant_id", merchantId)
+        .not("price", "is", null)
         .single();
 
-      if (menuItem?.price) {
-        storeOriginalPrice = Number(menuItem.price);
+      if (menuItemErr || menuItem == null || menuItem.price == null) {
+        return errorResponse(
+          "Menu item not found, not in this store, or has no price set.",
+          400,
+        );
       }
+      storeOriginalPrice = Number(menuItem.price);
     }
 
     const { error } = await admin.rpc("accept_deal_store", {

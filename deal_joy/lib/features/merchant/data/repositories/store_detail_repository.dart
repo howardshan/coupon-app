@@ -123,6 +123,8 @@ class StoreDetailRepository {
           .from('menu_items')
           .select()
           .eq('merchant_id', merchantId)
+          // 未定价商品不对顾客展示
+          .not('price', 'is', null)
           .order('sort_order');
       return (data as List)
           .map((d) => MenuItemModel.fromJson(d as Map<String, dynamic>))

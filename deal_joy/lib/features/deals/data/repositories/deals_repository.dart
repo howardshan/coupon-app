@@ -121,6 +121,7 @@ class DealsRepository {
               .from('menu_items')
               .select('merchant_id')
               .ilike('name', '%$search%')
+              .not('price', 'is', null)
               .limit(30);
           for (final m in (menuData as List)) {
             merchantIds.add(m['merchant_id'] as String);
