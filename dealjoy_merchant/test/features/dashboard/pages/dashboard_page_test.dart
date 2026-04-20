@@ -250,9 +250,9 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Action Required'), findsOneWidget);
-      // 待回复评价 (pendingReviews = 2) 和 待退款 (pendingRefunds = 1)
+      // 待回复评价 (pendingReviews = 2)；pendingRefunds 待办入口已统一为 After-sales 列表
       expect(find.text('Reviews to reply'), findsOneWidget);
-      expect(find.text('Refund requests'),  findsOneWidget);
+      expect(find.text('After-sales'), findsOneWidget);
     });
   });
 
