@@ -53,8 +53,32 @@ export type MenuItemRow = {
   image_url: string | null
   price: number | null
   category: string
+  category_id: string | null
+  /** join menu_categories.name，无分类或旧数据为 null */
+  category_name: string | null
+  /** active = 在售，inactive = 下架（与商家端一致） */
+  status: string
   sort_order: number
   created_at: string
+}
+
+export type MenuCategoryRow = {
+  id: string
+  name: string
+  sort_order: number
+}
+
+/** 拉取商家自定义分类（用于后台下拉） */
+export async function fetchMenuCategoriesForMerchant(merchantId: string): Promise<MenuCategoryRow[]> {
+  await requireAdmin()
+  const db = getServiceRoleClient()
+  const { data, error } = await db
+    .from('menu_categories')
+    .select('id, name, sort_order')
+    .eq('merchant_id', merchantId)
+    .order('sort_order', { ascending: true })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as MenuCategoryRow[]
 }
 
 export async function updateMenuItemPrice(
@@ -75,6 +99,64 @@ export async function updateMenuItemPrice(
   const { error } = await db
     .from('menu_items')
     .update({ price })
+    .eq('id', itemId)
+    .eq('merchant_id', merchantId)
+  if (error) throw new Error(error.message)
+  revalidatePath(`/merchants/${merchantId}/menu`)
+}
+
+export async function updateMenuItemStatus(
+  merchantId: string,
+  itemId: string,
+  status: 'active' | 'inactive'
+): Promise<void> {
+  await requireAdmin()
+  const db = getServiceRoleClient()
+  const { data: row } = await db
+    .from('menu_items')
+    .select('id')
+    .eq('id', itemId)
+    .eq('merchant_id', merchantId)
+    .maybeSingle()
+  if (!row) throw new Error('Item not found for this merchant')
+
+  const { error } = await db
+    .from('menu_items')
+    .update({ status })
+    .eq('id', itemId)
+    .eq('merchant_id', merchantId)
+  if (error) throw new Error(error.message)
+  revalidatePath(`/merchants/${merchantId}/menu`)
+}
+
+export async function updateMenuItemCategoryId(
+  merchantId: string,
+  itemId: string,
+  categoryId: string | null
+): Promise<void> {
+  await requireAdmin()
+  const db = getServiceRoleClient()
+  const { data: row } = await db
+    .from('menu_items')
+    .select('id')
+    .eq('id', itemId)
+    .eq('merchant_id', merchantId)
+    .maybeSingle()
+  if (!row) throw new Error('Item not found for this merchant')
+
+  if (categoryId) {
+    const { data: cat } = await db
+      .from('menu_categories')
+      .select('id')
+      .eq('id', categoryId)
+      .eq('merchant_id', merchantId)
+      .maybeSingle()
+    if (!cat) throw new Error('Category not found for this merchant')
+  }
+
+  const { error } = await db
+    .from('menu_items')
+    .update({ category_id: categoryId })
     .eq('id', itemId)
     .eq('merchant_id', merchantId)
   if (error) throw new Error(error.message)
@@ -154,6 +236,7 @@ export async function batchUploadMenuImages(merchantId: string, formData: FormDa
           image_url: null,
           price: null,
           category: 'regular',
+          status: 'active',
         })
         .select('id')
         .single()

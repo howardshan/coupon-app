@@ -6,7 +6,10 @@ import {
   batchUploadMenuImages,
   importMenuItemPricesFromCsv,
   updateMenuItemPrice,
+  updateMenuItemStatus,
+  updateMenuItemCategoryId,
   deleteMenuItem,
+  type MenuCategoryRow,
   type MenuItemRow,
   type BatchUploadResult,
 } from '@/app/actions/menu-items'
@@ -17,6 +20,7 @@ const MAX_BYTES = 8 * 1024 * 1024
 type Props = {
   merchantId: string
   initialItems: MenuItemRow[]
+  initialCategories: MenuCategoryRow[]
 }
 
 function IconUpload(props: { className?: string }) {
@@ -45,7 +49,11 @@ function IconDownload(props: { className?: string }) {
   )
 }
 
-export default function MerchantMenuItemsClient({ merchantId, initialItems }: Props) {
+export default function MerchantMenuItemsClient({
+  merchantId,
+  initialItems,
+  initialCategories,
+}: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [items, setItems] = useState(initialItems)
@@ -156,6 +164,45 @@ export default function MerchantMenuItemsClient({ merchantId, initialItems }: Pr
       })
     }
     reader.readAsText(f, 'utf-8')
+  }
+
+  const onToggleListing = (row: MenuItemRow) => {
+    setMessage(null)
+    setError(null)
+    const next: 'active' | 'inactive' = row.status === 'active' ? 'inactive' : 'active'
+    startTransition(async () => {
+      try {
+        await updateMenuItemStatus(merchantId, row.id, next)
+        setItems((prev) => prev.map((i) => (i.id === row.id ? { ...i, status: next } : i)))
+        setMessage(next === 'active' ? 'Item is now on menu' : 'Item hidden from menu')
+        router.refresh()
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Update failed')
+      }
+    })
+  }
+
+  const onCategoryChange = (row: MenuItemRow, categoryId: string | null) => {
+    setMessage(null)
+    setError(null)
+    startTransition(async () => {
+      try {
+        await updateMenuItemCategoryId(merchantId, row.id, categoryId)
+        const label =
+          categoryId == null
+            ? null
+            : (initialCategories.find((c) => c.id === categoryId)?.name ?? null)
+        setItems((prev) =>
+          prev.map((i) =>
+            i.id === row.id ? { ...i, category_id: categoryId, category_name: label } : i
+          )
+        )
+        setMessage('Category updated')
+        router.refresh()
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Update failed')
+      }
+    })
   }
 
   const onDelete = (id: string) => {
@@ -332,8 +379,9 @@ export default function MerchantMenuItemsClient({ merchantId, initialItems }: Pr
           ⚠
         </span>
         <p className="leading-relaxed">
-          <strong className="font-semibold">Draft rule:</strong> unpriced rows stay internal only — they are hidden from
-          the customer app and cannot be used as deal-linked menu items until a price is set.
+          <strong className="font-semibold">Visibility:</strong> unpriced rows stay internal only (no customer listing /
+          deal link) until a price is set. <strong className="font-semibold">Off menu</strong> (inactive) hides the item
+          from the customer app even if priced — same as merchant app toggle.
         </p>
       </aside>
 
@@ -346,23 +394,24 @@ export default function MerchantMenuItemsClient({ merchantId, initialItems }: Pr
           />
         )}
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[640px] text-left text-sm">
+          <table className="w-full min-w-[960px] text-left text-sm">
             <thead>
               <tr className="border-b border-stone-200 bg-gradient-to-b from-stone-100 to-stone-50/90">
                 <th className="px-4 py-3.5 text-[11px] font-bold uppercase tracking-wider text-stone-500">Image</th>
                 <th className="px-4 py-3.5 text-[11px] font-bold uppercase tracking-wider text-stone-500">Name</th>
                 <th className="px-4 py-3.5 text-[11px] font-bold uppercase tracking-wider text-stone-500">ID</th>
+                <th className="px-4 py-3.5 text-[11px] font-bold uppercase tracking-wider text-stone-500">Category</th>
+                <th className="px-4 py-3.5 text-[11px] font-bold uppercase tracking-wider text-stone-500">On menu</th>
                 <th className="px-4 py-3.5 text-[11px] font-bold uppercase tracking-wider text-stone-500">
                   Price <span className="font-normal normal-case text-stone-400">(USD)</span>
                 </th>
-                <th className="px-4 py-3.5 text-[11px] font-bold uppercase tracking-wider text-stone-500">Status</th>
                 <th className="px-4 py-3.5 text-[11px] font-bold uppercase tracking-wider text-stone-500">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-100">
               {items.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-6 py-16 text-center">
+                  <td colSpan={7} className="px-6 py-16 text-center">
                     <p className="text-base font-medium text-stone-700">No menu items yet</p>
                     <p className="mx-auto mt-2 max-w-sm text-sm text-stone-500">
                       Upload one or more images above — each file creates a row named after the file.
@@ -372,10 +421,11 @@ export default function MerchantMenuItemsClient({ merchantId, initialItems }: Pr
               )}
               {items.map((row) => {
                 const draft = row.price == null
+                const inactive = row.status !== 'active'
                 return (
                   <tr
                     key={row.id}
-                    className={`transition-colors hover:bg-stone-50/90 ${draft ? 'bg-amber-50/25' : 'bg-white'}`}
+                    className={`transition-colors hover:bg-stone-50/90 ${draft || inactive ? 'bg-amber-50/20' : 'bg-white'}`}
                   >
                     <td className="px-4 py-3 align-middle">
                       {row.image_url ? (
@@ -399,6 +449,55 @@ export default function MerchantMenuItemsClient({ merchantId, initialItems }: Pr
                       </code>
                     </td>
                     <td className="px-4 py-3 align-middle">
+                      <select
+                        className="max-w-[11rem] rounded-lg border border-stone-300 bg-white px-2 py-2 text-xs font-medium text-stone-800 shadow-sm outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20 disabled:opacity-50"
+                        value={row.category_id ?? ''}
+                        onChange={(e) => {
+                          const v = e.target.value
+                          onCategoryChange(row, v === '' ? null : v)
+                        }}
+                        disabled={isPending}
+                        aria-label={`Category for ${row.name}`}
+                      >
+                        <option value="">Uncategorized</option>
+                        {initialCategories.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="min-w-[9rem] px-4 py-3 align-middle">
+                      {/* 用 flex 轨道 + justify 控制圆点位置，避免 translate 任意值在构建中未生效导致只显示白块 */}
+                      <div className="flex flex-col gap-1.5">
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={row.status === 'active'}
+                          aria-label={
+                            row.status === 'active'
+                              ? 'On menu — click to hide from customers'
+                              : 'Off menu — click to show to customers'
+                          }
+                          disabled={isPending}
+                          onClick={() => onToggleListing(row)}
+                          className={`flex h-9 w-[3.75rem] shrink-0 cursor-pointer items-center rounded-full p-1 transition-colors focus:outline-none focus:ring-2 focus:ring-teal-600 focus:ring-offset-2 focus:ring-offset-white disabled:cursor-not-allowed disabled:opacity-50 ${
+                            row.status === 'active'
+                              ? 'justify-end bg-teal-600'
+                              : 'justify-start bg-stone-400'
+                          }`}
+                        >
+                          <span
+                            aria-hidden
+                            className="pointer-events-none block h-7 w-7 shrink-0 rounded-full bg-white shadow-md ring-1 ring-black/5"
+                          />
+                        </button>
+                        <span className="whitespace-nowrap text-xs font-semibold leading-none text-stone-700">
+                          {row.status === 'active' ? 'On menu' : 'Off menu'}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 align-middle">
                       <div className="flex max-w-[8rem] flex-col gap-1">
                         <input
                           type="text"
@@ -412,18 +511,16 @@ export default function MerchantMenuItemsClient({ merchantId, initialItems }: Pr
                           aria-label={`Price for ${row.name}`}
                         />
                         <span className="text-[10px] text-stone-400">Tab out to save</span>
+                        {draft ? (
+                          <span className="inline-flex w-fit items-center rounded-full border border-amber-200/80 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900">
+                            Unpriced
+                          </span>
+                        ) : (
+                          <span className="inline-flex w-fit items-center rounded-full border border-emerald-200/80 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-900">
+                            Priced
+                          </span>
+                        )}
                       </div>
-                    </td>
-                    <td className="px-4 py-3 align-middle">
-                      {draft ? (
-                        <span className="inline-flex items-center rounded-full border border-amber-200/80 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-amber-900">
-                          Draft
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center rounded-full border border-emerald-200/80 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-900">
-                          Priced
-                        </span>
-                      )}
                     </td>
                     <td className="px-4 py-3 align-middle">
                       <button
