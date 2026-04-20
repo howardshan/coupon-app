@@ -167,7 +167,7 @@ class _StoreDealConfirmPageState extends ConsumerState<StoreDealConfirmPage> {
               'recommendation_count, is_signature, sort_order, status, created_at')
           .eq('merchant_id', merchantId)
           .eq('status', 'active')
-          // 门店确认价仅针对已定价菜品
+          // 门店确认价仅针对已定价且在售菜品
           .not('price', 'is', null);
 
       // 构建 menu 名称→价格映射（用于匹配和计算门店原价）

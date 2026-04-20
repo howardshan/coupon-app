@@ -241,6 +241,7 @@ class MerchantRepository {
           .from('menu_items')
           .select('merchant_id')
           .ilike('name', pattern)
+          .eq('status', 'active')
           .not('price', 'is', null)
           .limit(30);
 

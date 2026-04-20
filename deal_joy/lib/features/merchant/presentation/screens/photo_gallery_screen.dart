@@ -67,6 +67,7 @@ class _PhotoGalleryScreenState extends ConsumerState<PhotoGalleryScreen> {
           .from('menu_items')
           .select('name, image_url, price')
           .eq('merchant_id', widget.merchantId)
+          .eq('status', 'active')
           .not('price', 'is', null)
           .not('image_url', 'is', null)
           .neq('image_url', '');

@@ -1087,6 +1087,7 @@ async function handleStoreConfirm(
         .select("price")
         .eq("id", menuItemId)
         .eq("merchant_id", merchantId)
+        .eq("status", "active")
         .not("price", "is", null)
         .single();
 

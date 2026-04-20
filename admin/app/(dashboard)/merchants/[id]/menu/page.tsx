@@ -4,7 +4,35 @@ import { getServiceRoleClient } from '@/lib/supabase/service'
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import MerchantMenuItemsClient from '@/components/merchant-menu-items-client'
-import type { MenuItemRow } from '@/app/actions/menu-items'
+import type { MenuCategoryRow, MenuItemRow } from '@/app/actions/menu-items'
+
+/** 将 PostgREST 嵌套 join 展平为 MenuItemRow */
+function mapMenuItemRows(raw: unknown): MenuItemRow[] {
+  if (!Array.isArray(raw)) return []
+  return raw.map((r) => {
+    const row = r as Record<string, unknown>
+    const join = row.menu_categories
+    let category_name: string | null = null
+    if (join && typeof join === 'object' && join !== null && 'name' in join) {
+      const n = (join as { name: unknown }).name
+      category_name = typeof n === 'string' && n.trim() !== '' ? n : null
+    }
+    return {
+      id: String(row.id),
+      merchant_id: String(row.merchant_id),
+      name: String(row.name),
+      name_normalized: String(row.name_normalized ?? ''),
+      image_url: (row.image_url as string | null) ?? null,
+      price: row.price != null ? Number(row.price) : null,
+      category: String(row.category ?? 'regular'),
+      category_id: (row.category_id as string | null) ?? null,
+      category_name,
+      status: String(row.status ?? 'active'),
+      sort_order: Number(row.sort_order ?? 0),
+      created_at: String(row.created_at ?? ''),
+    }
+  })
+}
 
 export default async function MerchantMenuPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: merchantId } = await params
@@ -24,21 +52,36 @@ export default async function MerchantMenuPage({ params }: { params: Promise<{ i
   if (!merchant) notFound()
 
   const db = getServiceRoleClient()
-  const { data: rows, error } = await db
-    .from('menu_items')
-    .select('id, merchant_id, name, name_normalized, image_url, price, category, sort_order, created_at')
-    .eq('merchant_id', merchantId)
-    .order('sort_order', { ascending: true })
-    .order('created_at', { ascending: true })
-  if (error) {
+  const [itemsRes, catsRes] = await Promise.all([
+    db
+      .from('menu_items')
+      .select(
+        'id, merchant_id, name, name_normalized, image_url, price, category, category_id, status, sort_order, created_at, menu_categories(name)'
+      )
+      .eq('merchant_id', merchantId)
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true }),
+    db
+      .from('menu_categories')
+      .select('id, name, sort_order')
+      .eq('merchant_id', merchantId)
+      .order('sort_order', { ascending: true }),
+  ])
+
+  if (itemsRes.error) {
     return (
       <div className="text-red-600 p-4">
-        Failed to load menu items. Run DB migration if <code>name_normalized</code> is missing: {error.message}
+        Failed to load menu items. Run DB migrations for{' '}
+        <code>name_normalized</code>, <code>status</code>, <code>menu_categories</code> if needed:{' '}
+        {itemsRes.error.message}
       </div>
     )
   }
 
-  const initialItems: MenuItemRow[] = (rows ?? []) as MenuItemRow[]
+  const initialItems = mapMenuItemRows(itemsRes.data)
+  const initialCategories: MenuCategoryRow[] = catsRes.error
+    ? []
+    : ((catsRes.data ?? []) as MenuCategoryRow[])
 
   return (
     <div
@@ -79,7 +122,11 @@ export default async function MerchantMenuPage({ params }: { params: Promise<{ i
         </p>
       </header>
 
-      <MerchantMenuItemsClient merchantId={merchantId} initialItems={initialItems} />
+      <MerchantMenuItemsClient
+        merchantId={merchantId}
+        initialItems={initialItems}
+        initialCategories={initialCategories}
+      />
     </div>
   )
 }
