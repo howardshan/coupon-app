@@ -594,6 +594,85 @@ async function handleRedeem(
     }
   }
 
+  // ── Store Credit 订单核销：从平台 Stripe 余额 transfer 给商家 ──
+  // Store Credit 支付不经过 Stripe，核销时需主动从平台余额给商家 Connect 转账
+  console.log(`[StoreCreditRedeem] checking: order_item_id=${coupon.order_item_id ?? 'null'} order_id=${coupon.order_id ?? 'null'}`);
+  if (coupon.order_item_id) {
+    const { data: orderForSC, error: orderSCErr } = await supabase
+      .from('orders')
+      .select('payment_intent_id')
+      .eq('id', coupon.order_id)
+      .maybeSingle();
+    console.log(`[StoreCreditRedeem] order query: pi=${(orderForSC as any)?.payment_intent_id ?? 'null'} err=${orderSCErr?.message ?? 'none'}`);
+    const piIdForSC = (orderForSC as any)?.payment_intent_id as string | null;
+
+    if (piIdForSC && piIdForSC.startsWith('store_credit_')) {
+      console.log(`[StoreCreditRedeem] IS store_credit order, proceeding...`);
+      // 读取快照的 merchant_net（stripe_transfer_amount）
+      const { data: scItemData } = await supabase
+        .from('order_items')
+        .select('stripe_transfer_amount, unit_price, commission_amount, stripe_fee_amount')
+        .eq('id', coupon.order_item_id)
+        .maybeSingle();
+
+      const storedTransfer = Number((scItemData as any)?.stripe_transfer_amount ?? 0);
+      // fallback：没快照时手动算
+      const scMerchantNet = storedTransfer > 0
+        ? storedTransfer
+        : Number((scItemData as any)?.unit_price ?? 0) - Number((scItemData as any)?.commission_amount ?? 0) - Number((scItemData as any)?.stripe_fee_amount ?? 0);
+      const scMerchantNetCents = Math.round(scMerchantNet * 100);
+
+      if (scMerchantNetCents > 0) {
+        // 查核销商家的 Connect 账户
+        const { data: scMerchantData } = await supabase
+          .from('merchants')
+          .select('stripe_account_id')
+          .eq('id', merchantId)
+          .maybeSingle();
+        const scConnectId = (scMerchantData as any)?.stripe_account_id as string | null;
+        const scStripeKey = Deno.env.get('STRIPE_SECRET_KEY') ?? '';
+
+        if (scConnectId && scStripeKey) {
+          try {
+            // 从平台 Stripe 余额直接 transfer 给商家（不依赖 PaymentIntent）
+            const xferRes = await fetch('https://api.stripe.com/v1/transfers', {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${scStripeKey}`,
+                'Content-Type': 'application/x-www-form-urlencoded',
+              },
+              body: new URLSearchParams({
+                amount: String(scMerchantNetCents),
+                currency: 'usd',
+                destination: scConnectId,
+                'metadata[reason]': 'store_credit_redeem',
+                'metadata[order_item_id]': coupon.order_item_id,
+                'metadata[merchant_id]': merchantId,
+              }).toString(),
+            });
+
+            if (!xferRes.ok) {
+              const errText = await xferRes.text();
+              console.error(`[StoreCreditRedeem] Transfer 失败 merchant=${merchantId}: ${errText}`);
+            } else {
+              const xferJson = await xferRes.json();
+              console.log(`[StoreCreditRedeem] Transfer 成功 id=${xferJson.id} amount=${scMerchantNetCents}c to=${scConnectId}`);
+              // 记录 transfer ID 到 order_items
+              await supabase
+                .from('order_items')
+                .update({ stripe_redeeming_transfer_id: xferJson.id })
+                .eq('id', coupon.order_item_id);
+            }
+          } catch (scErr) {
+            console.error('[StoreCreditRedeem] Transfer 异常（需人工处理）:', scErr);
+          }
+        } else {
+          console.warn(`[StoreCreditRedeem] 商家 ${merchantId} 无 Connect 账户，Store Credit 订单资金需人工结算`);
+        }
+      }
+    }
+  }
+
   // 写入核销日志
   const { error: logError } = await supabase
     .from('redemption_log')
