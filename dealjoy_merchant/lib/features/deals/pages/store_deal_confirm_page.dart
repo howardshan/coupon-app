@@ -166,7 +166,9 @@ class _StoreDealConfirmPageState extends ConsumerState<StoreDealConfirmPage> {
           .select('id, merchant_id, name, price, image_url, category, category_id, '
               'recommendation_count, is_signature, sort_order, status, created_at')
           .eq('merchant_id', merchantId)
-          .eq('status', 'active');
+          .eq('status', 'active')
+          // 门店确认价仅针对已定价菜品
+          .not('price', 'is', null);
 
       // 构建 menu 名称→价格映射（用于匹配和计算门店原价）
       final menuMap = <String, double>{};
@@ -219,6 +221,7 @@ class _StoreDealConfirmPageState extends ConsumerState<StoreDealConfirmPage> {
                   'recommendation_count, is_signature, sort_order, status, created_at')
               .eq('merchant_id', merchantId)
               .eq('status', 'active')
+              .not('price', 'is', null)
               .ilike('name', '%$keyword%')
               .limit(1);
 
