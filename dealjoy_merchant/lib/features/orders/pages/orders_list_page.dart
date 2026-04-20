@@ -2,7 +2,7 @@
 // 顶部 4-Tab: All / Paid / Redeemed / Refunded
 // 筛选行: OrderFilterBar（日期范围 + Deal 筛选）
 // 列表: OrderTile 卡片，支持下拉刷新 + 上拉加载更多
-// 右上角: 导出 CSV 按钮（P2）
+// 右上角: After-Sales、导出 CSV（平台仲裁请用 Admin Web /approvals）
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,8 +12,6 @@ import '../providers/orders_provider.dart';
 import '../widgets/order_filter_bar.dart';
 import '../widgets/order_tile.dart';
 import 'order_detail_page.dart';
-import 'admin_refund_requests_page.dart';
-import 'refund_requests_page.dart';
 import '../../after_sales/pages/after_sales_list_page.dart';
 
 /// 订单列表主页
@@ -160,32 +158,6 @@ class _OrdersListPageState extends ConsumerState<OrdersListPage>
                 context,
                 MaterialPageRoute(
                   builder: (_) => const AfterSalesListPage(),
-                ),
-              );
-            },
-          ),
-          // 历史争议退款队列（refund_requests）；新申请已统一走 After-Sales
-          IconButton(
-            icon: const Icon(Icons.policy_outlined),
-            tooltip: 'Refund Requests (legacy)',
-            onPressed: () async {
-              await Navigator.push<bool>(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const RefundRequestsPage(),
-                ),
-              );
-            },
-          ),
-          // 管理员仲裁入口按钮
-          IconButton(
-            icon: const Icon(Icons.admin_panel_settings_outlined),
-            tooltip: 'Admin Arbitration',
-            onPressed: () async {
-              await Navigator.push<bool>(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const AdminRefundRequestsPage(),
                 ),
               );
             },

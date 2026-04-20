@@ -16,6 +16,7 @@ import RefundDisputeDrawer from '@/components/approvals/refund-dispute-drawer'
 import AfterSalesDrawer from '@/components/approvals/after-sales-drawer'
 import StripeUnlinkDrawer from '@/components/approvals/stripe-unlink-drawer'
 import { batchApproveDeal, batchRejectDeal } from '@/app/actions/admin'
+import AdminTableScroll from '@/components/admin-table-scroll'
 
 // ─── 类型 ────────────────────────────────────────────────────────────────
 type Counts = {
@@ -164,7 +165,12 @@ export default function ApprovalsPageClient({
 
   // 当前 tab 的总条数（用于分页）
   const totalMap: Record<string, number> = {
-    all: counts.merchants + counts.deals + counts.refundDisputes + counts.afterSales,
+    all:
+      counts.merchants +
+      counts.deals +
+      counts.refundDisputes +
+      counts.afterSales +
+      counts.stripeUnlink,
     merchants: merchantsTotal,
     deals: dealsTotal,
     'refund-disputes': refundDisputesTotal,
@@ -231,7 +237,12 @@ export default function ApprovalsPageClient({
       <div className="flex flex-nowrap gap-1 overflow-x-auto border-b border-gray-200">
         {TABS.map(t => {
           const countMap: Record<string, number> = {
-            all: counts.merchants + counts.deals + counts.refundDisputes + counts.afterSales,
+            all:
+              counts.merchants +
+              counts.deals +
+              counts.refundDisputes +
+              counts.afterSales +
+              counts.stripeUnlink,
             merchants: counts.merchants,
             deals: counts.deals,
             'refund-disputes': counts.refundDisputes,
@@ -332,8 +343,9 @@ export default function ApprovalsPageClient({
       )}
 
       {/* ── 列表 ── */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <table className="w-full text-sm">
+      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+        <AdminTableScroll>
+        <table className="w-full min-w-[720px] text-sm">
           <thead className="bg-gray-50 border-b border-gray-200 text-gray-600">
             <tr>
               {dealsPendingMode && <th className="px-4 py-3 w-8" />}
@@ -439,6 +451,7 @@ export default function ApprovalsPageClient({
             })}
           </tbody>
         </table>
+        </AdminTableScroll>
 
         {/* 空状态 */}
         {currentTotal === 0 && (
@@ -509,7 +522,10 @@ export default function ApprovalsPageClient({
         <StripeUnlinkDrawer
           item={drawerRow.data}
           onClose={() => setDrawerRow(null)}
-          canDecide={tab === 'stripe-unlink' && approvalQueue === 'pending'}
+          canDecide={
+            drawerRow.data.status === 'pending' &&
+            (tab === 'all' || (tab === 'stripe-unlink' && approvalQueue === 'pending'))
+          }
         />
       )}
 

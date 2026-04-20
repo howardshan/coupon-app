@@ -1,9 +1,9 @@
 # Stripe Connect 解绑申请 v1 规格
 
-**文档版本**: v1.4  
+**文档版本**: v1.6  
 **创建日期**: 2026-04-08  
 **受众**: 产品、研发（DealJoy 全栈：Admin Next.js、商家端 Flutter、Supabase）  
-**状态**: Sprint 1–4 已按清单落地；Sprint 5 待实现  
+**状态**: Sprint 1–4 已按清单落地；Sprint 5 为可执行任务清单（见下）  
 
 ---
 
@@ -16,6 +16,8 @@
 | v1.2 | 2026-04-08 | 同步 Sprint 1、Sprint 2 已交付内容：迁移路径、Edge 路由、M19 模板、预检与 API 说明 |
 | v1.3 | 2026-04-08 | Sprint 3 落地：Admin 审批、解绑、M20/M21、审计 event、商家详情卡；`20260419100000` |
 | v1.4 | 2026-04-08 | Sprint 4 落地：商家端 `EarningsService` 拉取/提交解绑 API、`Payment Account` 与 `Brand Stripe Connect` 双入口、状态条与底部申请表单、Riverpod 列表 provider |
+| v1.5 | 2026-04-08 | Sprint 5：可执行任务清单（预检补全 + Admin **All** Tab 必含 Stripe Unlink）；与 §六「All」口径对齐 |
+| v1.6 | 2026-04-08 | Sprint 5 代码落地：Edge 预检、`20260420120000_admin_unified_page_stripe_unlink`、Admin All Tab 与角标；§3.2 脚注 |
 
 ---
 
@@ -68,6 +70,8 @@
 - 存在**负余额**或其它你们定义的**阻塞性风控状态**。
 
 *注：若某类状态当前库中尚不可查，v1 可先实现「能查的 subset」，余量在文档/代码 TODO 中列出。*
+
+**Sprint 5 / v1 实际拦截（Edge `POST …/stripe-unlink/request`）**：① 在途提现（`withdrawals` pending/processing，既有）；② 待支付结算批次（`settlements.status = pending`，覆盖关联门店）；③ 未终结退款争议（`refund_requests` 处于 `pending_merchant` / `approved_merchant` / `rejected_merchant` / `pending_admin` / `approved_admin`）；④ 未结案售后（`after_sales_requests` 处于 `pending` / `merchant_approved` / `awaiting_platform` / `platform_approved`）。品牌解绑时②③④ 对**品牌下全部门店**聚合判断。**未在 v1 自动拦截**：Stripe Connect 账户负余额、仅 Stripe Dashboard 可见的 chargeback（库内无可靠镜像时），留人工或 v1.1。
 
 ### 3.3 解绑在系统中的语义（**与产品确认**）
 
@@ -233,18 +237,38 @@
 
 ---
 
-### Sprint 5 — 预检补全、All Tab（可选）、测试与上线
+### Sprint 5 — 预检补全、All Tab（含 Stripe Unlink）、测试与上线
 
-**目标**：生产可上；与产品对「待结算/在途」等定义对齐。
+**目标**：生产可上；与产品对「待结算/在途」等定义对齐；**审批中心 All Tab 与独立 Tab 口径一致**（含待办计数、分页、列表中出现 Stripe Unlink）。
 
-- [ ] **预检补全**（原 §5.2 余量）：待结算、在途、争议、负余额等**以库表/RPC 可行为准**；不可行项关闭 TODO 或移入 v1.1。
-- [ ] **（可选）All Tab**（原 §5.5）：扩展 `admin_pending_approvals_unified_page` 或文档约定二期；若本期不做，在 **§六** 明确「All 未含 Stripe Unlink」。
-- [ ] **测试**（原 §5.7）：Staging E2E；拒审理由前后端双端校验；解绑后商家端 Refresh 为未连接。
-- [ ] **上线**：`COMPLETED.md`、发版说明、Edge/migration/Admin 发布顺序（先库后 Function 后 Admin）。
+#### A. 预检补全（`POST …/stripe-unlink/request`，原 §5.2 余量）
 
-**对应原清单**：**§5.2** 补全、**§5.5** 的 All（可选）、**§5.7** 全部。
+- [x] **A1 — 现状盘点**：对照 §3.2，列出每条阻塞条件在库内/Stripe API 的**可查询证据**（表名、字段、或「当前不可行」）。
+- [x] **A2 — 实现可落地的检查**：在 `deal_joy/supabase/functions/merchant-withdrawal/index.ts` 的 `handlePostStripeUnlinkRequest` 中，于现有「待审唯一 + 已连接 + 无在途提现」之后，加入**已确认可行**的预检；返回 **英文** `errorResponse(...)`，HTTP 码与现网风格一致（如业务冲突用 409）。
+- [x] **A3 — 不可行项收口**：对仍无法自动判断的项：在代码中**删除或改写** `// TODO(Sprint5): 争议 / Stripe balance / 在途分账…`，改为指向 §3.2 脚注或 **v1.1 backlog** 的单行说明（避免无限期 TODO）。
+- [x] **A4 — 规格脚注**：在本规格 **§3.2** 或 Sprint 5 交付说明中，用 1～2 句写清「v1 实际拦截了哪些 / 哪些留人工或二期」。
 
-**交付物**： sign-off 检查表 + 回滚说明（如仅回滚 Admin 不破坏已解绑数据）。
+#### B. Admin「All」Tab — 合并 Stripe Unlink 待办（原 §5.5，**本期必做**）
+
+> 现状：`admin_pending_approvals_unified_page` 仅含四类；`fetchUnifiedAllTab` 未拉取 `stripe_connect_unlink_requests`。`UnifiedApprovalRow` 已支持 `kind: 'stripe-unlink'`，但 All 数据源未填充。另：**All Tab 角标与 `totalMap.all` 目前未加 `stripeUnlink` 计数**（与页头「pending」总和不一致），一并修复。
+
+- [x] **B1 — 数据库（新迁移）**：扩展 `public.admin_pending_approvals_unified_page` 内 `unified` CTE：对 `stripe_connect_unlink_requests` 中 `status = 'pending'` 的行 `UNION ALL`，返回 `approval_kind`（建议 **`stripe_unlink`**，与现有 snake 风格一致）、`entity_id` = 申请 `id`、`sort_at` = `created_at`（与单列 Tab 排序语义一致）。更新函数注释；`GRANT` 保持仅 `service_role`。
+- [x] **B2 — Admin Server** `admin/app/(dashboard)/approvals/page.tsx`：`fetchUnifiedAllTab` 中根据 RPC 行收集 `stripe_unlink` 的 `entity_id`，批量 `select` 与 `fetchStripeUnlink` 同构的字段，复用/抽取 `mapStripeUnlinkRow`，在 `switch` 中增加 `case 'stripe_unlink':` → `rows.push({ kind: 'stripe-unlink', data })`。
+- [x] **B3 — Admin Client** `admin/components/approvals-page-client.tsx`：
+  - [x] **B3a**：`countMap.all` 与 `totalMap.all` **加上** `counts.stripeUnlink`，使 All Tab **角标**与页头 pending 总和一致，且分页 `totalPages` 覆盖五类待办。
+  - [x] **B3b**：All 列表点击 Stripe Unlink 行打开 `StripeUnlinkDrawer` 时，若该行 `status === 'pending'`，**允许** `canDecide={true}`（与 Stripe Unlink 单列 Tab 的 Pending 行为一致）；历史类行保持只读。
+- [ ] **B4 — 手工验收**：Staging 上同时存在多类待办时，All 中顺序与 RPC 一致；仅 Stripe Unlink 待办时 All 非空；从商家详情链到 `?tab=stripe-unlink` 与 All 内打开同一申请，数据一致。
+
+#### C. 测试与上线（原 §5.7）
+
+- [ ] **C1 — Staging E2E**：提交解绑 → Admin **All** 与 **Stripe Unlink** 双入口可见 → 通过/拒审（拒审 ≥10 字）→ M20/M21 → 商家端列表与 Refresh 未连接。
+- [ ] **C2 — 回归**：现有四类在 All 中仍正常；`router.refresh` / `?tab=` 深链无回归。
+- [x] **C3 — 上线清单**：更新根目录 `COMPLETED.md`（若本 Sprint 将 Stripe Unlink / All 标为完成）；发版说明；**部署顺序**：`db push`（含 B1 迁移）→ Edge `merchant-withdrawal`（若 A 有改）→ Admin 部署。
+- [ ] **C4 — Sign-off + 回滚**：检查表（含 All Tab）；回滚说明（例：仅回滚 Admin 不影响已解绑数据；若回滚迁移需评估 RPC 版本）。
+
+**对应原清单**：**§5.2** 补全、**§5.5** All Tab（本期含 Stripe Unlink）、**§5.7** 全部。
+
+**交付物**：A～C 全部勾选可视为 Sprint 5 完成；附简短 sign-off 与回滚说明。
 
 ---
 
@@ -256,7 +280,7 @@
 | **§5.2** 预检 | 阻塞条件 | 2（最小）+ 5（补全） |
 | **§5.3** Edge / RPC | 提交 + 解绑 | 2 + 3 |
 | **§5.4** 邮件 | 三封模板 | 2 + 3 |
-| **§5.5** Admin | 审批页、抽屉、侧栏、All 可选 | 3 + 5 |
+| **§5.5** Admin | 审批页、抽屉、侧栏、**All 含 Stripe Unlink** | 3 + 5 |
 | **§5.6** Flutter | 商家端 | 4 |
 | **§5.7** 测试上线 |  | 5 |
 
@@ -274,8 +298,8 @@
 
 ## 六、待产品后续拍板（不影响本 v1 文档结构）
 
-- 「待结算/在途」的**精确定义**以你们财务/风控字段为准，实现清单中以第一次落地版本为准做文档脚注。
-- **All** Tab 与统一 RPC 是否**一期**就合并新类型：建议研发评估工作量后二选一（见 **§5.0 / Sprint 5** 与 **§5.5** 原意）。
+- 「待结算/在途」的**精确定义**以你们财务/风控字段为准；Sprint 5 **A4** 以第一次落地版本为准做文档脚注。
+- **All** Tab：Sprint 5 **§5.0 / B** 已列为**必做**——统一 RPC 合并 `pending` 的 Stripe Unlink 待办；若排期极端紧张需砍范围，须**产品书面确认**后再改计划书。
 
 ---
 

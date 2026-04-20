@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import MerchantActionButtons from '@/components/merchant-action-buttons'
 import { CopyableId } from '@/components/copyable-id'
+import AdminTableScroll from '@/components/admin-table-scroll'
 
 export default async function MerchantsPage({
   searchParams,
@@ -38,8 +39,8 @@ export default async function MerchantsPage({
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-bold text-gray-900">Merchants</h1>
           {pendingCount > 0 && (
             <span className="text-sm bg-yellow-100 text-yellow-700 px-3 py-1 rounded-full font-medium">
@@ -47,15 +48,15 @@ export default async function MerchantsPage({
             </span>
           )}
         </div>
-        {/* 品牌筛选 */}
-        <div className="flex items-center gap-2">
-          <label className="text-sm text-gray-500">Brand:</label>
+        <div className="flex min-w-0 flex-col gap-2 sm:items-end">
+          <label className="text-sm text-gray-500">Brand</label>
           <BrandFilter brands={allBrands ?? []} currentBrand={brandFilter} />
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <table className="w-full text-sm">
+      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+        <AdminTableScroll>
+        <table className="w-full min-w-[720px] text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Merchant ID</th>
@@ -116,6 +117,7 @@ export default async function MerchantsPage({
             ))}
           </tbody>
         </table>
+        </AdminTableScroll>
         {merchantsError && (
           <p className="text-center text-red-500 py-4 text-xs">Error: {merchantsError.message} | Code: {merchantsError.code}</p>
         )}

@@ -1078,10 +1078,102 @@ async function handleGetStripeUnlinkRequests(
   return jsonResponse({ items: data ?? [] });
 }
 
+/** 退款争议未终结的状态（与 refund_requests.status 约束一致） */
+const OPEN_REFUND_REQUEST_STATUSES = [
+  "pending_merchant",
+  "approved_merchant",
+  "rejected_merchant",
+  "pending_admin",
+  "approved_admin",
+] as const;
+
+/** 售后流程未终结的状态（after_sale_status） */
+const OPEN_AFTER_SALES_STATUSES = [
+  "pending",
+  "merchant_approved",
+  "awaiting_platform",
+  "platform_approved",
+] as const;
+
+/**
+ * 解绑预检涉及的门店 id：单店仅当前店；品牌解绑为品牌下全部门店（财务/争议口径与品牌一致）。
+ */
+async function collectMerchantIdsForUnlinkPrecheck(
+  admin: ReturnType<typeof createClient>,
+  subjectType: "merchant" | "brand",
+  auth: AuthResult,
+  mRow: { id: string; brand_id?: string | null },
+): Promise<string[]> {
+  if (subjectType === "merchant") {
+    return [String(mRow.id)];
+  }
+  const bid = auth.brandId;
+  if (!bid) return [String(mRow.id)];
+  const { data: stores } = await admin
+    .from("merchants")
+    .select("id")
+    .eq("brand_id", bid);
+  const ids = (stores ?? []).map((s) => s.id as string).filter(Boolean);
+  return ids.length > 0 ? ids : [String(mRow.id)];
+}
+
+/**
+ * 库内可判定的阻塞项：待结算批次、未结案退款争议、未结案售后。
+ * Stripe 负余额 / 仅 Dashboard 可见的 chargeback：v1 不自动拦截，见规格 §3.2 脚注。
+ */
+async function assertStripeUnlinkPrechecks(
+  admin: ReturnType<typeof createClient>,
+  merchantIds: string[],
+): Promise<Response | null> {
+  const [pendRes, refundRes, afterRes] = await Promise.all([
+    admin
+      .from("settlements")
+      .select("id")
+      .in("merchant_id", merchantIds)
+      .eq("status", "pending")
+      .limit(1)
+      .maybeSingle(),
+    admin
+      .from("refund_requests")
+      .select("id")
+      .in("merchant_id", merchantIds)
+      .in("status", [...OPEN_REFUND_REQUEST_STATUSES])
+      .limit(1)
+      .maybeSingle(),
+    admin
+      .from("after_sales_requests")
+      .select("id")
+      .in("merchant_id", merchantIds)
+      .in("status", [...OPEN_AFTER_SALES_STATUSES])
+      .limit(1)
+      .maybeSingle(),
+  ]);
+
+  if (pendRes.data) {
+    return errorResponse(
+      "You have a pending settlement batch. Please wait until it is paid before requesting to unlink.",
+      409,
+    );
+  }
+  if (refundRes.data) {
+    return errorResponse(
+      "You have an open refund dispute. Please wait until it is fully resolved before requesting to unlink.",
+      409,
+    );
+  }
+  if (afterRes.data) {
+    return errorResponse(
+      "You have an open after-sales case. Please wait until it is resolved before requesting to unlink.",
+      409,
+    );
+  }
+  return null;
+}
+
 // =============================================================
 // POST /stripe-unlink/request — 创建解绑申请（M19、RLS 写入）
 // Sprint 2 预检：pending 唯一（DB+409）、有 Stripe 可解绑、无在途提现（当前门店）；
-// TODO：负余额/争议/待结算等，见产品规格
+// Sprint 5：settlements / refund_requests / after_sales_requests 见 assertStripeUnlinkPrechecks
 // =============================================================
 async function handlePostStripeUnlinkRequest(
   supabaseUser: ReturnType<typeof createClient>,
@@ -1164,7 +1256,14 @@ async function handlePostStripeUnlinkRequest(
     return errorResponse("You have a pending or in-flight withdrawal. Please wait for it to complete first.", 409);
   }
 
-  // TODO(Sprint5): 争议 / Stripe balance / 在途分账 等，见产品规格 5.2
+  const merchantIdsForPrecheck = await collectMerchantIdsForUnlinkPrecheck(
+    admin,
+    subjectType,
+    auth,
+    mRow as { id: string; brand_id?: string | null },
+  );
+  const precheckErr = await assertStripeUnlinkPrechecks(admin, merchantIdsForPrecheck);
+  if (precheckErr) return precheckErr;
 
   const subjectId = subjectType === "merchant" ? String(mRow.id) : String(auth.brandId);
 

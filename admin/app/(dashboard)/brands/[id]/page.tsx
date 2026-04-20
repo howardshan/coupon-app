@@ -322,7 +322,8 @@ export default async function BrandDetailPage({
                     </td>
                     <td className="py-2 text-gray-500 text-xs">{new Date(t.date).toLocaleDateString('en-US')}</td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           ) : (

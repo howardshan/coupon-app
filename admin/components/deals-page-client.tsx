@@ -7,6 +7,7 @@ import { useTransition } from 'react'
 import AdminDebouncedSearchForm from '@/components/admin-debounced-search-form'
 import { CopyableId } from '@/components/copyable-id'
 import AdminListScrollArea from '@/components/admin-list-scroll-area'
+import AdminTableScroll from '@/components/admin-table-scroll'
 import DealSortOrder from '@/components/deal-sort-order'
 import OrdersFilterMultiSelect from '@/components/orders-filter-multi-select'
 import { buildAdminListUrl, buildAdminListUrlPage } from '@/lib/admin-list-url'
@@ -255,7 +256,8 @@ export default function DealsPageClient({
 
       <AdminListScrollArea>
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
-        <table className="w-full text-sm">
+        <AdminTableScroll>
+        <table className="w-full min-w-[960px] text-sm">
           <thead className="border-b border-gray-200 bg-gray-50">
             <tr>
               <th className="px-4 py-3 text-left font-medium text-gray-600">Deal ID</th>
@@ -340,6 +342,7 @@ export default function DealsPageClient({
             })}
           </tbody>
         </table>
+        </AdminTableScroll>
         {(!initialDeals || initialDeals.length === 0) && (
           <div className="py-8 text-center">
             {initialFetchError ? (

@@ -11,6 +11,7 @@ import '../providers/dashboard_provider.dart';
 import '../widgets/stats_card.dart';
 import '../widgets/shortcut_grid.dart';
 
+import '../../after_sales/pages/after_sales_list_page.dart';
 import '../../store/providers/store_provider.dart';
 import '../../deals/providers/deals_provider.dart';
 import '../../orders/pages/refund_requests_page.dart';
@@ -502,7 +503,9 @@ class _TodoSection extends StatelessWidget {
       );
     }
 
-    // 与订单页一致：历史争议退款 vs 售后工单（新单仅售后）
+    // pendingRefunds + pendingAfterSales 合并为一条，避免重复入口；均打开 After-Sales 列表
+    final afterSalesAttentionCount = todos.afterSalesAttentionCount;
+
     final specs =
         <({
           IconData icon,
@@ -521,21 +524,12 @@ class _TodoSection extends StatelessWidget {
         onTap: () => context.go('/reviews'),
       ));
     }
-    if (todos.pendingRefunds > 0) {
-      specs.add((
-        icon: Icons.reply_outlined,
-        iconColor: const Color(0xFFF44336),
-        label: 'Refund requests',
-        count: todos.pendingRefunds,
-        onTap: pushRefundRequests,
-      ));
-    }
-    if (todos.pendingAfterSales > 0) {
+    if (afterSalesAttentionCount > 0) {
       specs.add((
         icon: Icons.support_agent_outlined,
         iconColor: const Color(0xFF00897B),
-        label: 'After-sales pending',
-        count: todos.pendingAfterSales,
+        label: 'After-sales',
+        count: afterSalesAttentionCount,
         onTap: pushAfterSalesList,
       ));
     }

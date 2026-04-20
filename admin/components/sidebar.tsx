@@ -3,12 +3,17 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
+import { APP_DISPLAY_NAME } from '@/lib/app-branding'
 import { createClient } from '@/lib/supabase/client'
 
 interface SidebarProps {
   role: string
   email: string
   pendingCount?: number
+  /** 导航链接被点击时回调（用于移动端关闭抽屉） */
+  onNavigate?: () => void
+  /** 移动端加大可点击区域 */
+  mobileTouchTargets?: boolean
 }
 
 type NavLink = { kind: 'link'; href: string; label: string; icon: string }
@@ -72,7 +77,27 @@ function isGroupActive(children: { href: string }[], pathname: string) {
   return children.some(c => pathname === c.href || pathname.startsWith(`${c.href}/`))
 }
 
-export default function Sidebar({ role, email, pendingCount = 0 }: SidebarProps) {
+const navItemClass = (active: boolean, touch: boolean) =>
+  `flex items-center gap-3 rounded-lg text-sm transition-colors ${
+    touch ? 'min-h-[44px] px-3 py-2 md:min-h-0 md:py-2' : 'px-3 py-2'
+  } ${
+    active ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+  }`
+
+const childLinkClass = (active: boolean, touch: boolean) =>
+  `flex items-center rounded-lg text-sm transition-colors ${
+    touch ? 'min-h-[44px] px-3 py-2 md:min-h-0 md:py-2' : 'px-3 py-2'
+  } ${
+    active ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+  }`
+
+export default function Sidebar({
+  role,
+  email,
+  pendingCount = 0,
+  onNavigate,
+  mobileTouchTargets = false,
+}: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
   const nav = role === 'admin' ? adminNav : null
@@ -111,7 +136,7 @@ export default function Sidebar({ role, email, pendingCount = 0 }: SidebarProps)
   return (
     <aside className="w-56 min-h-screen bg-gray-900 text-white flex flex-col">
       <div className="px-5 py-6 border-b border-gray-700">
-        <p className="text-lg font-bold">DealJoy</p>
+        <p className="text-lg font-bold">{APP_DISPLAY_NAME}</p>
         <p className="text-xs text-gray-400 mt-0.5 capitalize">{role} Portal</p>
       </div>
 
@@ -124,11 +149,8 @@ export default function Sidebar({ role, email, pendingCount = 0 }: SidebarProps)
                   <Link
                     key={entry.href}
                     href={entry.href}
-                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
-                      active
-                        ? 'bg-blue-600 text-white'
-                        : 'text-gray-300 hover:bg-gray-800 hover:text-white'
-                    }`}
+                    onClick={() => onNavigate?.()}
+                    className={navItemClass(active, mobileTouchTargets)}
                   >
                     <span>{entry.icon}</span>
                     <span className="flex-1">{entry.label}</span>
@@ -150,7 +172,9 @@ export default function Sidebar({ role, email, pendingCount = 0 }: SidebarProps)
                   <button
                     type="button"
                     onClick={() => setOpenGroups(prev => ({ ...prev, [entry.label]: !prev[entry.label] }))}
-                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors w-full text-left ${
+                    className={`flex w-full items-center gap-3 rounded-lg text-sm transition-colors ${
+                      mobileTouchTargets ? 'min-h-[44px] px-3 py-2 md:min-h-0 md:py-2' : 'px-3 py-2'
+                    } text-left ${
                       groupActive
                         ? 'bg-gray-800 text-white'
                         : 'text-gray-300 hover:bg-gray-800 hover:text-white'
@@ -170,11 +194,8 @@ export default function Sidebar({ role, email, pendingCount = 0 }: SidebarProps)
                           <Link
                             key={child.href}
                             href={child.href}
-                            className={`flex items-center px-3 py-2 rounded-lg text-sm transition-colors ${
-                              childActive
-                                ? 'bg-blue-600 text-white'
-                                : 'text-gray-400 hover:bg-gray-800 hover:text-white'
-                            }`}
+                            onClick={() => onNavigate?.()}
+                            className={childLinkClass(childActive, mobileTouchTargets)}
                           >
                             {child.label}
                           </Link>
@@ -191,11 +212,8 @@ export default function Sidebar({ role, email, pendingCount = 0 }: SidebarProps)
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
-                    active
-                      ? 'bg-blue-600 text-white'
-                      : 'text-gray-300 hover:bg-gray-800 hover:text-white'
-                  }`}
+                  onClick={() => onNavigate?.()}
+                  className={navItemClass(active, mobileTouchTargets)}
                 >
                   <span>{item.icon}</span>
                   {item.label}
@@ -207,8 +225,14 @@ export default function Sidebar({ role, email, pendingCount = 0 }: SidebarProps)
       <div className="px-4 py-4 border-t border-gray-700">
         <p className="text-xs text-gray-400 truncate mb-3">{email}</p>
         <button
-          onClick={handleSignOut}
-          className="w-full text-left text-sm text-gray-300 hover:text-white transition-colors"
+          type="button"
+          onClick={() => {
+            onNavigate?.()
+            void handleSignOut()
+          }}
+          className={`w-full text-left text-sm text-gray-300 transition-colors hover:text-white ${
+            mobileTouchTargets ? 'min-h-[44px] py-2 md:min-h-0' : ''
+          }`}
         >
           Sign out →
         </button>

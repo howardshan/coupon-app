@@ -10,6 +10,8 @@ import UserBillingAddressesPanel, {
   type BillingAddressRow,
 } from '@/components/user-billing-addresses-panel'
 import UserStoreCreditPanel from '@/components/user-store-credit-panel'
+import UserMerchantStaffSection from '@/components/user-merchant-staff-section'
+import type { MerchantStaffAdminRowModel } from '@/components/merchant-staff-admin-row'
 import { mapStoreCreditTransaction } from '@/lib/store-credit-map'
 import ConsentStatusCard from '@/components/consent-status-card'
 import LegalTimeline from '@/components/legal-timeline'
@@ -122,6 +124,62 @@ export default async function UserDetailPage({
     mapStoreCreditTransaction(r as unknown as Record<string, unknown>)
   )
 
+  // 商家店员身份（merchant_staff）— 客服排查
+  const { data: staffMemberships } = await serviceClient
+    .from('merchant_staff')
+    .select('id, merchant_id, user_id, role, nickname, is_active, created_at, merchants(name)')
+    .eq('user_id', id)
+    .order('created_at', { ascending: false })
+
+  const staffRows: MerchantStaffAdminRowModel[] = (staffMemberships ?? []).map((s: Record<string, unknown>) => {
+    const m = s.merchants as { name?: string } | { name?: string }[] | null | undefined
+    const merchantName = Array.isArray(m) ? m[0]?.name : m?.name
+    return {
+      id: s.id as string,
+      merchantId: s.merchant_id as string,
+      userId: s.user_id as string,
+      role: s.role as string,
+      isActive: Boolean(s.is_active),
+      nickname: (s.nickname as string | null) ?? null,
+      email: userInfo.email,
+      fullName: userInfo.full_name,
+      createdAt: s.created_at as string,
+      merchantName: merchantName ?? null,
+    }
+  })
+
+  const emailForInvites = (authEmail || userInfo.email || '').trim().toLowerCase()
+  let pendingInvitations: {
+    id: string
+    merchantId: string
+    merchantName: string | null
+    role: string
+    expiresAt: string
+    createdAt: string
+  }[] = []
+
+  if (emailForInvites.length > 0) {
+    const { data: invRaw } = await serviceClient
+      .from('staff_invitations')
+      .select('id, merchant_id, role, expires_at, created_at, merchants(name)')
+      .eq('invited_email', emailForInvites)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false })
+
+    pendingInvitations = (invRaw ?? []).map((r: Record<string, unknown>) => {
+      const m = r.merchants as { name?: string } | { name?: string }[] | null | undefined
+      const merchantName = Array.isArray(m) ? m[0]?.name : m?.name
+      return {
+        id: r.id as string,
+        merchantId: r.merchant_id as string,
+        merchantName: merchantName ?? null,
+        role: r.role as string,
+        expiresAt: r.expires_at as string,
+        createdAt: r.created_at as string,
+      }
+    })
+  }
+
   // 法律合规数据
   const consentStatus = await getUserConsentStatus(id)
   const { items: legalTimeline, total: legalTotal } = await getUserLegalTimeline(id, 1, 20)
@@ -225,6 +283,12 @@ export default async function UserDetailPage({
           </div>
 
           <UserBillingAddressesPanel userId={id} addresses={billingAddresses} />
+
+          <UserMerchantStaffSection
+            staffRows={staffRows}
+            pendingInvitations={pendingInvitations}
+            userEmail={emailForInvites}
+          />
         </div>
 
         {/* 右侧侧栏：固定宽度列，大屏贴顶 sticky */}

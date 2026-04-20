@@ -240,6 +240,15 @@
   - `admin/app/actions/tax-revenue.ts`
   - `admin/components/sidebar.tsx` — Finance 分组含 Tax Revenue 入口
 
+#### Stripe Connect 解绑申请 — Sprint 5（预检 + All Tab）✅
+- 状态：代码已落地；Staging E2E / sign-off 见 `docs/plans/2026-04-08-stripe-connect-unlink-request-v1.md` Sprint 5 的 B4/C1/C4
+- 改动内容：Edge 解绑申请预检（`settlements` pending、`refund_requests` / `after_sales_requests` 未结案）；Admin 审批 **All** Tab RPC 含 `stripe_unlink` 待办；All 角标/分页含 Stripe Unlink；All 内 pending 解绑抽屉可审批
+- 受保护文件：
+  - `deal_joy/supabase/functions/merchant-withdrawal/index.ts` — `assertStripeUnlinkPrechecks` / `collectMerchantIdsForUnlinkPrecheck` 及解绑申请路由
+  - `deal_joy/supabase/migrations/20260420120000_admin_unified_page_stripe_unlink.sql` — `admin_pending_approvals_unified_page`
+  - `admin/app/(dashboard)/approvals/page.tsx` — `fetchUnifiedAllTab`、`stripeUnlinkRowsToItems`
+  - `admin/components/approvals-page-client.tsx` — All 计数与 `StripeUnlinkDrawer` `canDecide`
+
 ---
 
 ## 更新记录
@@ -256,6 +265,7 @@
 | 2026-03-30 | Admin 售后时间线统一通用卡片 + `after-sales-admin-timeline.ts` | Claude |
 | 2026-03-30 | Admin Phase 5：审批抽屉 Activity preview + 订单跳转与说明 | Claude |
 | 2026-04-18 | Sales Tax 全链路 + Voucher Detail 改版 + Review 增强 + Gift 码重生成 + Dashboard Stats + Chat 自动创建 + Admin Tax Revenue | Claude |
+| 2026-04-08 | Stripe Connect 解绑 Sprint 5：预检补全 + Admin All Tab 合并 Stripe Unlink | Claude |
 
 ---
 

@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useTransition } from 'react'
 import AdminDebouncedSearchForm from '@/components/admin-debounced-search-form'
 import AdminListScrollArea from '@/components/admin-list-scroll-area'
+import AdminTableScroll from '@/components/admin-table-scroll'
 import OrdersFilterMultiSelect from '@/components/orders-filter-multi-select'
 import RoleSelect from '@/components/role-select'
 import { buildAdminListUrl, buildAdminListUrlPage } from '@/lib/admin-list-url'
@@ -203,7 +204,8 @@ export default function UsersPageClient({
 
       <AdminListScrollArea>
         <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
-          <table className="w-full text-sm">
+          <AdminTableScroll>
+          <table className="w-full min-w-[560px] text-sm">
             <thead className="border-b border-gray-200 bg-gray-50">
               <tr>
                 <th className="px-4 py-3 text-left font-medium text-gray-600">Name</th>
@@ -237,6 +239,7 @@ export default function UsersPageClient({
               ))}
             </tbody>
           </table>
+          </AdminTableScroll>
           {(!initialUsers || initialUsers.length === 0) && (
             <div className="py-8 text-center">
               {initialFetchError ? (
