@@ -62,3 +62,19 @@ body {
 .spinner-rotate {
   animation: spin 1s linear infinite;
 }
+
+/* Menu items 管理页：轻量入场动画（仅该页 wrapper 使用） */
+@keyframes menu-catalog-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.menu-catalog-animate-in {
+  animation: menu-catalog-fade-up 0.5s ease-out both;
+}
