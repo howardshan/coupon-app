@@ -31,7 +31,7 @@ class ProfileScreen extends ConsumerWidget {
             email: user.email,
             avatarUrl: user.avatarUrl,
             phone: user.phone,
-            showMerchantDashboard: user.role == 'merchant',
+            isMerchant: user.role == 'merchant',
             onSignOut: () => ref.read(authNotifierProvider.notifier).signOut(),
           );
         },
@@ -48,7 +48,8 @@ class _ProfileBody extends StatelessWidget {
   final String email;
   final String? avatarUrl;
   final String? phone;
-  final bool showMerchantDashboard;
+  /// 已注册为商家：不再展示「成为商家」卡片（产品已移除客户端 Merchant Dashboard 入口）
+  final bool isMerchant;
   final VoidCallback onSignOut;
 
   const _ProfileBody({
@@ -57,7 +58,7 @@ class _ProfileBody extends StatelessWidget {
     required this.email,
     this.avatarUrl,
     this.phone,
-    this.showMerchantDashboard = false,
+    this.isMerchant = false,
     required this.onSignOut,
   });
 
@@ -320,38 +321,9 @@ _IconGridItem(
             ),
           ),
 
-          if (showMerchantDashboard) ...[
+          if (!isMerchant) ...[
             const SizedBox(height: 12),
-            // ── Merchant dashboard link（仅 merchant 角色可见）──
-            _SectionCard(
-              child: ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: AppColors.surfaceVariant,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(
-                    Icons.store_outlined,
-                    color: AppColors.textSecondary,
-                    size: 20,
-                  ),
-                ),
-                title: const Text(
-                  'Merchant Dashboard',
-                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-                ),
-                trailing: const Icon(
-                  Icons.chevron_right,
-                  color: AppColors.textHint,
-                ),
-                onTap: () => context.push('/merchant/dashboard'),
-              ),
-            ),
-          ] else ...[
-            const SizedBox(height: 12),
-            // ── Become a merchant：联系方式（方案 A，仅非 merchant 可见）──
+            // ── Become a merchant：联系方式（方案 A，仅非商家账号可见）──
             _BecomeMerchantCard(),
           ],
 
