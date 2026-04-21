@@ -1,7 +1,13 @@
 // 商家认证服务层
 // 负责: Supabase Auth 注册、文件上传、申请提交、状态查询、重新提交
 
+import 'dart:convert' show utf8;
 import 'dart:io';
+
+import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/merchant_application.dart';
 
@@ -39,6 +45,85 @@ class MerchantAuthService {
       email: email,
       password: password,
     );
+  }
+
+  // ----------------------------------------------------------
+  // 2b. Apple 登录（iOS 原生，与消费者端共用同一 Supabase Auth）
+  //     同一 Apple 账号 → 同一 auth.users；是否可进商家端由 users.role / merchants 等决定。
+  //     See https://supabase.com/docs/guides/auth/social-login/auth-apple?platform=flutter
+  // ----------------------------------------------------------
+  Future<AuthResponse> signInWithApple() async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) {
+      throw const AuthException(
+        'Apple sign in is only available on the iOS app.',
+      );
+    }
+
+    final rawNonce = _supabase.auth.generateRawNonce();
+    final hashedNonce = sha256.convert(utf8.encode(rawNonce)).toString();
+
+    try {
+      final credential = await SignInWithApple.getAppleIDCredential(
+        scopes: const [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+        nonce: hashedNonce,
+      );
+
+      final idToken = credential.identityToken;
+      if (idToken == null) {
+        throw const AuthException('Apple sign in failed: no identity token.');
+      }
+
+      final response = await _supabase.auth.signInWithIdToken(
+        provider: OAuthProvider.apple,
+        idToken: idToken,
+        nonce: rawNonce,
+      );
+
+      if (response.user == null) {
+        throw const AuthException('Apple sign in failed');
+      }
+
+      if (credential.givenName != null || credential.familyName != null) {
+        final nameParts = <String>[];
+        if (credential.givenName != null &&
+            credential.givenName!.trim().isNotEmpty) {
+          nameParts.add(credential.givenName!.trim());
+        }
+        if (credential.familyName != null &&
+            credential.familyName!.trim().isNotEmpty) {
+          nameParts.add(credential.familyName!.trim());
+        }
+        if (nameParts.isNotEmpty) {
+          try {
+            await _supabase.auth.updateUser(
+              UserAttributes(
+                data: {
+                  'full_name': nameParts.join(' '),
+                  'given_name': credential.givenName,
+                  'family_name': credential.familyName,
+                },
+              ),
+            );
+          } catch (_) {
+            // 仅首次授权有姓名；更新失败不阻断登录
+          }
+        }
+      }
+
+      return response;
+    } on SignInWithAppleAuthorizationException catch (e) {
+      if (e.code == AuthorizationErrorCode.canceled) {
+        throw const AuthException('Apple sign in cancelled');
+      }
+      throw AuthException(e.message);
+    } on AuthException {
+      rethrow;
+    } catch (e) {
+      throw AuthException(e.toString());
+    }
   }
 
   // ----------------------------------------------------------
