@@ -54,7 +54,9 @@
 	<key>UIMainStoryboardFile</key>
 	<string>Main</string>
 	<key>NSCameraUsageDescription</key>
-	<string>The camera is used to scan voucher QR codes for redemption.</string>
+	<string>The camera is used to scan voucher QR codes and to capture photos for verification documents.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Photo library access lets you choose images for deals, menus, store photos, and support evidence.</string>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
