@@ -54,7 +54,11 @@
 	<key>UIMainStoryboardFile</key>
 	<string>Main</string>
 	<key>NSCameraUsageDescription</key>
-	<string>The camera is used to scan coupon QR codes for merchant verification.</string>
+	<string>The camera is used to take photos for your profile, chat attachments, and support requests, and to scan QR codes.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Photo library access lets you choose images for your profile, chat, and support requests.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Your location is used to show nearby deals and improve local recommendations.</string>
 	<!-- Gift deep link URL scheme（受赠方领取礼品券） -->
 	<key>CFBundleURLTypes</key>
 	<array>
