@@ -53,6 +53,8 @@
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
 	<string>Main</string>
+	<key>NSCameraUsageDescription</key>
+	<string>The camera is used to scan coupon QR codes for merchant verification.</string>
 	<!-- Gift deep link URL scheme（受赠方领取礼品券） -->
 	<key>CFBundleURLTypes</key>
 	<array>
