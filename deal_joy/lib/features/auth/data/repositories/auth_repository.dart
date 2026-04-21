@@ -63,14 +63,21 @@ class AuthRepository {
     return result != null;
   }
 
-  // ---- 检查邮箱是否已被注册 ----
+  // ---- 检查邮箱是否已被注册（查 auth.users，含商家账号）----
   Future<bool> isEmailTaken(String email) async {
-    final result = await _client
-        .from('users')
-        .select('id')
-        .eq('email', email)
-        .maybeSingle();
-    return result != null;
+    try {
+      final result = await _client
+          .rpc('is_email_registered', params: {'p_email': email.trim().toLowerCase()});
+      return result == true;
+    } catch (_) {
+      // RPC 失败时回退查 users 表
+      final row = await _client
+          .from('users')
+          .select('id')
+          .eq('email', email.trim().toLowerCase())
+          .maybeSingle();
+      return row != null;
+    }
   }
 
   // ---- 邮箱注册 ----
