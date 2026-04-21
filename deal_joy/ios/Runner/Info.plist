@@ -78,6 +78,14 @@
 			<key>CFBundleURLName</key>
 			<string>com.dealjoy.supabase_auth_callback</string>
 		</dict>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>io.supabase.crunchyplum</string>
+			</array>
+			<key>CFBundleURLName</key>
+			<string>com.crunchyplum.supabase_auth_callback</string>
+		</dict>
 	</array>
 	<!-- FCM 推送通知：后台远程通知 -->
 	<key>UIBackgroundModes</key>
