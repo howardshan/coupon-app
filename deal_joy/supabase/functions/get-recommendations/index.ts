@@ -281,15 +281,13 @@ serve(async (req: Request) => {
     const cleanResult = result.map(({ _finalScore, ...rest }) => rest);
 
     // 异步记录广告 impression（不阻塞响应）
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const svcKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     for (const deal of cleanResult) {
       if (deal.isSponsored && deal.campaignId) {
         fetch(`${supabaseUrl}/functions/v1/record-ad-event`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${svcKey}`,
+            'Authorization': `Bearer ${serviceRoleKey}`,
           },
           body: JSON.stringify({
             campaign_id: deal.campaignId,

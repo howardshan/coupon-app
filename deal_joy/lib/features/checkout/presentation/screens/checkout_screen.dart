@@ -1048,7 +1048,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
 
             // ── 支付按钮 ──────────────────────────────────────────
             AppButton(
-              label: 'Confirm Payment — \$${totalAmount.toStringAsFixed(2)}',
+              label: 'Confirm Payment — \$${(_useStoreCredit ? (totalAmount - min(_storeCreditBalance, totalAmount)) : totalAmount).toStringAsFixed(2)}',
               isLoading: _isProcessing,
               // 信用卡模式需要卡片完整且必填地址已填
               onPressed: (_selectedPayment == 'card' && !_canPayByCard)
@@ -1551,7 +1551,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
 
                 // ── 支付按钮 ─────────────────────────────────────
                 AppButton(
-                  label: 'Confirm Payment — \$${total.toStringAsFixed(2)}',
+                  label: 'Confirm Payment — \$${(_useStoreCredit ? (total - min(_storeCreditBalance, total)) : total).toStringAsFixed(2)}',
                   isLoading: _isProcessing,
                   // 信用卡模式需要卡片完整且必填地址已填
                   onPressed: (_selectedPayment == 'card' && !_canPayByCard)
