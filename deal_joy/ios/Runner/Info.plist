@@ -87,6 +87,12 @@
 			<string>com.crunchyplum.supabase_auth_callback</string>
 		</dict>
 	</array>
+	<!-- Allows url_launcher / Supabase OAuth to open https authorize URLs on iOS -->
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>https</string>
+		<string>http</string>
+	</array>
 	<!-- FCM 推送通知：后台远程通知 -->
 	<key>UIBackgroundModes</key>
 	<array>

@@ -1,5 +1,10 @@
-import 'package:flutter/foundation.dart';
+import 'dart:convert' show utf8;
+
+import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart'
+    show debugPrint, defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as sb;
 import '../../../../core/config/env.dart';
 import '../../../../core/errors/app_exception.dart';
@@ -166,25 +171,77 @@ class AuthRepository {
     }
   }
 
-  // ---- Apple OAuth 登录（iOS 必须） ----
+  // ---- Apple 登录（iOS 原生：sign_in_with_apple + Supabase idToken）----
+  // See https://supabase.com/docs/guides/auth/social-login/auth-apple?platform=flutter
   Future<UserModel> signInWithApple() async {
     try {
-      final response = await _client.auth.signInWithOAuth(
-        sb.OAuthProvider.apple,
-        redirectTo: 'io.supabase.crunchyplum://login-callback/',
+      if (kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) {
+        throw const AppAuthException(
+          'Apple sign in is only available on the iOS app.',
+        );
+      }
+
+      final rawNonce = _client.auth.generateRawNonce();
+      final hashedNonce = sha256.convert(utf8.encode(rawNonce)).toString();
+
+      final credential = await SignInWithApple.getAppleIDCredential(
+        scopes: const [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+        nonce: hashedNonce,
       );
-      // OAuth 方式会在浏览器中处理，此处返回 bool
-      // 实际用户数据通过 authStateChanges 流获取
-      if (!response) {
+
+      final idToken = credential.identityToken;
+      if (idToken == null) {
+        throw const AppAuthException(
+          'Apple sign in failed: no identity token.',
+        );
+      }
+
+      final response = await _client.auth.signInWithIdToken(
+        provider: sb.OAuthProvider.apple,
+        idToken: idToken,
+        nonce: rawNonce,
+      );
+
+      if (response.user == null) {
         throw const AppAuthException('Apple sign in failed');
       }
-      // 等待 auth state 变化，获取用户
-      await Future.delayed(const Duration(seconds: 2));
-      final user = _client.auth.currentUser;
-      if (user == null) {
-        throw const AppAuthException('Apple sign in failed');
+
+      if (credential.givenName != null || credential.familyName != null) {
+        final nameParts = <String>[];
+        if (credential.givenName != null &&
+            credential.givenName!.trim().isNotEmpty) {
+          nameParts.add(credential.givenName!.trim());
+        }
+        if (credential.familyName != null &&
+            credential.familyName!.trim().isNotEmpty) {
+          nameParts.add(credential.familyName!.trim());
+        }
+        if (nameParts.isNotEmpty) {
+          try {
+            await _client.auth.updateUser(
+              sb.UserAttributes(
+                data: {
+                  'full_name': nameParts.join(' '),
+                  'given_name': credential.givenName,
+                  'family_name': credential.familyName,
+                },
+              ),
+            );
+          } catch (_) {
+            // First sign-in only; metadata update must not block login.
+          }
+        }
       }
-      return _fetchUserProfile(user.id);
+
+      return _fetchUserProfile(response.user!.id);
+    } on SignInWithAppleAuthorizationException catch (e) {
+      if (e.code == AuthorizationErrorCode.canceled) {
+        throw const AppAuthException('Apple sign in cancelled');
+      }
+      throw AppAuthException(e.message);
     } on sb.AuthException catch (e) {
       throw AppAuthException(e.message, code: e.statusCode?.toString());
     } catch (e) {
