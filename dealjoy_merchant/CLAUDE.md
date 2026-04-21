@@ -21,7 +21,7 @@
 - Riverpod 2.6.1 (flutter_riverpod), **AsyncNotifier 模式**
 - go_router 14.3.0
 - supabase_flutter 2.8.0
-- mobile_scanner ^6.0.3 (扫码核销)
+- mobile_scanner ^7.2.0 (扫码核销；iOS 需 15.5+)
 - image_picker + cached_network_image
 
 ## 项目结构

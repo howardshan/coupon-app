@@ -23,8 +23,8 @@ dependencies:
   device_info_plus: ^11.1.0
   package_info_plus: ^8.0.2
 
-  # 扫码
-  mobile_scanner: ^6.0.3
+  # 扫码（7.x：iOS Vision，支持 Apple Silicon 模拟器 arm64）
+  mobile_scanner: ^7.2.0
 
   # 图片 / 售后证据（含 PDF）
   image_picker: ^1.1.2
