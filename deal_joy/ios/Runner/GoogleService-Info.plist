@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>447514243069-niasb0d7d0v1kg0ftri3pmv048h0uvd4.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.447514243069-niasb0d7d0v1kg0ftri3pmv048h0uvd4</string>
+	<key>ANDROID_CLIENT_ID</key>
+	<string>447514243069-u1bhe1r4bnst8evvs2j5tvrlfkmkkbna.apps.googleusercontent.com</string>
+	<key>API_KEY</key>
+	<string>AIzaSyCgyLoNy9zZbUeLW2IOx-acRTkEYCGASOk</string>
+	<key>GCM_SENDER_ID</key>
+	<string>447514243069</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.crunchyplum.crunchyPlum</string>
+	<key>PROJECT_ID</key>
+	<string>crunchy-plum</string>
+	<key>STORAGE_BUCKET</key>
+	<string>crunchy-plum.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:447514243069:ios:b18b715acbb15f21283394</string>
+</dict>
+</plist>

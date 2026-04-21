@@ -515,13 +515,9 @@ Deno.serve(async (req) => {
         }
       }
 
-      // ── B. ReserveHold（STRIPE_RESERVES_ENABLED=true 时强制，失败则回滚）──
+      // ── B. ReserveHold（STRIPE_RESERVES_ENABLED=true 时尝试，失败只记录日志不回滚）──
       // 混合支付跳过：section 6.7 会先 Transfer 再 Hold（这里执行时商家还没收到钱，hold 必然失败）
       if (reservesEnabled && !isMixedPayment) {
-        const holdFailures: string[] = [];
-        // createdHolds：已成功创建的 Hold，回滚时需要释放（Fix 2）
-        const createdHolds: Array<{ connectId: string; holdId: string }> = [];
-
         await Promise.allSettled(
           (insertedItems as any[]).map(async (dbItem: any) => {
             const connectId = dbItem.purchased_merchant_id
@@ -529,7 +525,7 @@ Deno.serve(async (req) => {
               : null;
             if (!connectId) return; // 商家无 Connect 账户，跳过（非失败）
 
-            // Fix 5：Transfer 失败的商家跳过 Hold（资金未在 Connect 账户）
+            // Transfer 失败的商家跳过 Hold（资金未在 Connect 账户）
             if (transferFailedConnectIds.has(connectId)) {
               console.warn(`[ReserveHold] 跳过 item=${dbItem.id}（Transfer 失败，资金未到 Connect）`);
               return;
@@ -542,93 +538,26 @@ Deno.serve(async (req) => {
 
             const holdId = await createReserveHold(connectId, merchantNetCents, stripeKey);
             if (!holdId) {
-              holdFailures.push(dbItem.id);
+              // Hold 失败：仅记录日志，不回滚订单
+              const errMsg = (globalThis as any).__lastReserveError ?? 'unknown';
+              console.error(`[ReserveHold] Hold 失败（不回滚）item=${dbItem.id} err=${errMsg}`);
+              await serviceClient.from('order_items').update({
+                stripe_reserve_hold_id: `FAILED:${errMsg.substring(0, 100)}`,
+              }).eq('id', dbItem.id);
               return;
             }
-
-            // Fix 2：先记录已创建的 Hold，再写库；无论写库是否成功都能在回滚时清理
-            createdHolds.push({ connectId, holdId });
 
             const { error: holdUpdateErr } = await serviceClient
               .from('order_items')
               .update({ stripe_reserve_hold_id: holdId })
               .eq('id', dbItem.id);
             if (holdUpdateErr) {
-              // Fix 3：DB 写库失败也进 holdFailures，触发回滚
               console.error(`[ReserveHold] 写入失败 item=${dbItem.id}:`, holdUpdateErr);
-              holdFailures.push(dbItem.id);
             } else {
               console.log(`[ReserveHold] 创建成功 item=${dbItem.id} hold=${holdId}`);
             }
           }),
         );
-
-        if (holdFailures.length > 0) {
-          console.error(`[ReserveHold] Hold 失败，回滚订单 items=${holdFailures.join(',')}`);
-
-          // Fix 2：释放所有已成功创建的 Hold
-          for (const { connectId, holdId } of createdHolds) {
-            try {
-              await fetch('https://api.stripe.com/v1/reserve/releases', {
-                method: 'POST',
-                headers: {
-                  Authorization: `Bearer ${stripeKey}`,
-                  'Stripe-Version': '2025-08-27.preview',
-                  'Stripe-Account': connectId,
-                  'Content-Type': 'application/x-www-form-urlencoded',
-                },
-                body: new URLSearchParams({ reserve_hold: holdId }).toString(),
-              });
-            } catch (err) {
-              console.error(`[ReserveHold] 回滚释放失败 hold=${holdId}，需人工处理:`, err);
-            }
-          }
-
-          // Fix 1：Reverse 所有已成功的 Transfer（确保资金回到平台再退款）
-          for (const [, transferId] of successfulTransfers) {
-            try {
-              const revRes = await fetch(`https://api.stripe.com/v1/transfers/${transferId}/reversals`, {
-                method: 'POST',
-                headers: {
-                  Authorization: `Bearer ${stripeKey}`,
-                  'Content-Type': 'application/x-www-form-urlencoded',
-                },
-              });
-              if (!revRes.ok) {
-                console.error(`[Transfer] Reversal 失败 transfer=${transferId}，需人工处理:`, await revRes.text());
-              } else {
-                console.log(`[Transfer] Reversal 成功 transfer=${transferId}`);
-              }
-            } catch (err) {
-              console.error(`[Transfer] Reversal 网络异常 transfer=${transferId}，需人工处理:`, err);
-            }
-          }
-
-          // 退款（Store Credit 全额覆盖时无 Stripe PI，跳过）
-          if (!skipStripeVerification) {
-            try {
-              const refundRes = await fetch('https://api.stripe.com/v1/refunds', {
-                method: 'POST',
-                headers: {
-                  Authorization: `Bearer ${stripeKey}`,
-                  'Content-Type': 'application/x-www-form-urlencoded',
-                },
-                body: new URLSearchParams({ payment_intent: paymentIntentId }).toString(),
-              });
-              if (!refundRes.ok) {
-                console.error('[ReserveHold] 退款调用失败，需人工处理:', await refundRes.text());
-              } else {
-                console.log('[ReserveHold] 退款成功 pi=', paymentIntentId);
-              }
-            } catch (err) {
-              console.error('[ReserveHold] 退款网络异常，需人工处理:', err);
-            }
-          }
-
-          // 删除订单（级联删除 order_items）
-          await serviceClient.from('orders').delete().eq('id', orderId);
-          return jsonResponse({ error: 'ReserveHold 创建失败，订单已取消，支付已退款' }, 500);
-        }
       }
     }
 
