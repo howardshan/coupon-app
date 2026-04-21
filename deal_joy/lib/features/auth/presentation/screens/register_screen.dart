@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -18,6 +19,33 @@ class RegisterScreen extends ConsumerStatefulWidget {
   ConsumerState<RegisterScreen> createState() => _RegisterScreenState();
 }
 
+/// 生日输入自动格式化：只接受数字，自动在第2、4位后插入 /
+/// 输入 01011990 → 显示 01/01/1990
+class _DobInputFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    // 只保留数字
+    final digits = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
+    // 最多 8 位（MMDDYYYY）
+    final limited = digits.length > 8 ? digits.substring(0, 8) : digits;
+
+    // 拼接格式化字符串：MM/DD/YYYY
+    final buf = StringBuffer();
+    for (int i = 0; i < limited.length; i++) {
+      if (i == 2 || i == 4) buf.write('/');
+      buf.write(limited[i]);
+    }
+    final formatted = buf.toString();
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
+  }
+}
+
 class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
 
@@ -27,6 +55,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   final _confirmPasswordCtrl = TextEditingController();
+
+  // 生日文字输入控制器（自动格式化 MM/DD/YYYY）
+  final _dobCtrl = TextEditingController();
 
   // 用于实时监听密码强度和确认密码匹配
   String _passwordValue = '';
@@ -48,6 +79,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   bool? _emailTaken;
   bool _emailChecking = false;
   Timer? _emailDebounce;
+  // 版本号：防止旧的异步查询结果覆盖较新的状态
+  int _emailCheckVersion = 0;
 
   // Username 查重状态: null=未检查, true=已占用, false=可用
   bool? _usernameTaken;
@@ -81,11 +114,16 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     _emailCtrl.addListener(_onEmailChanged);
     // 监听用户名变化，防抖查重
     _usernameCtrl.addListener(_onUsernameChanged);
+    // 监听生日文字输入，解析日期
+    _dobCtrl.addListener(_onDobChanged);
   }
 
   // 邮箱输入变化时，防抖 500ms 后查询是否已被注册
   void _onEmailChanged() {
     _emailDebounce?.cancel();
+    // 用户主动修改邮箱时，递增版本号，让飞行中的旧请求失效
+    _emailCheckVersion++;
+    final capturedVersion = _emailCheckVersion;
     final trimmed = _emailCtrl.text.trim();
     if (!_emailRegex.hasMatch(trimmed)) {
       setState(() {
@@ -99,7 +137,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       final taken = await ref
           .read(authRepositoryProvider)
           .isEmailTaken(trimmed);
-      if (mounted && _emailCtrl.text.trim() == trimmed) {
+      // 只有版本号未被更新（无更新的请求/提交覆盖）时才应用结果
+      if (mounted && _emailCheckVersion == capturedVersion) {
         setState(() {
           _emailTaken = taken;
           _emailChecking = false;
@@ -134,12 +173,39 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     });
   }
 
+  // 解析生日文本（MM/DD/YYYY），格式完整时更新 _dateOfBirth
+  void _onDobChanged() {
+    final text = _dobCtrl.text;
+    if (text.length == 10) {
+      try {
+        final parts = text.split('/');
+        if (parts.length == 3) {
+          final month = int.parse(parts[0]);
+          final day   = int.parse(parts[1]);
+          final year  = int.parse(parts[2]);
+          final date  = DateTime(year, month, day);
+          // 简单合法性校验：还原后与输入一致（防止 02/31 等）
+          if (date.month == month && date.day == day) {
+            setState(() => _dateOfBirth = date);
+            return;
+          }
+        }
+      } catch (_) {}
+    }
+    // 未完整或解析失败则清空
+    if (_dateOfBirth != null) {
+      setState(() => _dateOfBirth = null);
+    }
+  }
+
   @override
   void dispose() {
     _emailDebounce?.cancel();
     _emailCtrl.removeListener(_onEmailChanged);
     _usernameDebounce?.cancel();
     _usernameCtrl.removeListener(_onUsernameChanged);
+    _dobCtrl.removeListener(_onDobChanged);
+    _dobCtrl.dispose();
     _usernameCtrl.dispose();
     _fullNameCtrl.dispose();
     _emailCtrl.dispose();
@@ -210,7 +276,13 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
         // 邮箱已注册错误 → 设置状态并刷新表单
         final errMsg = state.error.toString();
         if (errMsg.contains('already registered')) {
-          setState(() => _emailTaken = true);
+          // 递增版本号，使任何飞行中的 isEmailTaken 查询失效
+          _emailDebounce?.cancel();
+          _emailCheckVersion++;
+          setState(() {
+            _emailTaken = true;
+            _emailChecking = false;
+          });
           _formKey.currentState!.validate();
         }
       } else {
@@ -405,49 +477,30 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                 ),
                 const SizedBox(height: 16),
 
-                // ---- Date of Birth 字段 ----
-                GestureDetector(
-                  onTap: () async {
-                    final now = DateTime.now();
-                    final picked = await showDatePicker(
-                      context: context,
-                      initialDate: _dateOfBirth ?? DateTime(now.year - 18, now.month, now.day),
-                      firstDate: DateTime(1900),
-                      lastDate: now,
-                      helpText: 'SELECT YOUR DATE OF BIRTH',
-                    );
-                    if (picked != null) {
-                      setState(() => _dateOfBirth = picked);
-                    }
-                  },
-                  child: AbsorbPointer(
-                    child: TextFormField(
-                      key: const ValueKey('register_dob_field'),
-                      decoration: InputDecoration(
-                        labelText: 'Date of Birth',
-                        hintText: 'MM/DD/YYYY',
-                        prefixIcon: const Icon(Icons.cake_outlined, size: 20),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      controller: TextEditingController(
-                        text: _dateOfBirth != null
-                            ? '${_dateOfBirth!.month.toString().padLeft(2, '0')}/${_dateOfBirth!.day.toString().padLeft(2, '0')}/${_dateOfBirth!.year}'
-                            : '',
-                      ),
-                      validator: (_) {
-                        if (_dateOfBirth == null) {
-                          return 'Date of birth is required';
-                        }
-                        final age = DateTime.now().difference(_dateOfBirth!).inDays ~/ 365;
-                        if (age < 18) {
-                          return 'You must be at least 18 years old to register';
-                        }
-                        return null;
-                      },
+                // ---- Date of Birth 字段（输入数字自动补 /）----
+                TextFormField(
+                  key: const ValueKey('register_dob_field'),
+                  controller: _dobCtrl,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [_DobInputFormatter()],
+                  decoration: InputDecoration(
+                    labelText: 'Date of Birth',
+                    hintText: 'MM/DD/YYYY',
+                    prefixIcon: const Icon(Icons.cake_outlined, size: 20),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
                     ),
                   ),
+                  validator: (_) {
+                    if (_dateOfBirth == null) {
+                      return 'Date of birth is required (MM/DD/YYYY)';
+                    }
+                    final age = DateTime.now().difference(_dateOfBirth!).inDays ~/ 365;
+                    if (age < 18) {
+                      return 'You must be at least 18 years old to register';
+                    }
+                    return null;
+                  },
                 ),
                 // 未满 18 岁警告
                 if (_dateOfBirth != null &&
