@@ -38,7 +38,6 @@ import '../../features/profile/presentation/screens/change_phone_screen.dart';
 import '../../features/profile/presentation/screens/billing_address_screen.dart';
 import '../../features/reviews/presentation/screens/write_review_screen.dart';
 import '../../features/reviews/presentation/screens/my_reviews_screen.dart';
-import '../../features/merchant/presentation/screens/merchant_dashboard_screen.dart';
 import '../../features/merchant/presentation/screens/merchant_detail_screen.dart';
 import '../../features/merchant/presentation/screens/photo_gallery_screen.dart';
 import '../../features/merchant/presentation/screens/qr_scanner_screen.dart';
@@ -261,10 +260,6 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
 
       // Merchant static routes must come before parameterized /merchant/:id
-      GoRoute(
-        path: '/merchant/dashboard',
-        builder: (_, _) => const MerchantDashboardScreen(),
-      ),
       GoRoute(
         path: '/merchant/scan',
         builder: (_, _) => const QrScannerScreen(),
