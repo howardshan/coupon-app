@@ -261,6 +261,7 @@ class PhotoGrid extends ConsumerWidget {
         AndroidUiSettings(
           toolbarTitle: 'Crop ${photoType.displayLabel}',
           toolbarColor: const Color(0xFFFF6B35),
+          statusBarColor: const Color(0xFFCC4E1E),
           toolbarWidgetColor: Colors.white,
           lockAspectRatio: cropConfig.lock,
           hideBottomControls: false,

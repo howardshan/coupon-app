@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/store_info.dart';
 import '../models/store_summary.dart';
 import '../models/staff_member.dart';
+import '../models/store_facility_model.dart';
 
 // ============================================================
 // StoreService — 所有门店信息相关的 Supabase 操作
@@ -804,6 +805,188 @@ class StoreService {
 
     if (response.status != 200) {
       throw _handleError(response);
+    }
+  }
+
+  // ==========================================================
+  // 设施管理（store_facilities 表，调 merchant-store/facilities 路由）
+  // ==========================================================
+
+  // ----------------------------------------------------------
+  // 获取设施列表
+  // ----------------------------------------------------------
+  Future<List<StoreFacilityModel>> fetchFacilities() async {
+    await _ensureFreshSession();
+    final response = await _supabase.functions.invoke(
+      '$_functionName/facilities',
+      method: HttpMethod.get,
+      headers: _merchantHeaders,
+    );
+
+    if (response.status != 200) {
+      throw _handleError(response);
+    }
+
+    final data = response.data as Map<String, dynamic>;
+    final list = data['facilities'] as List<dynamic>? ?? [];
+    return list.map((e) => StoreFacilityModel.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  // ----------------------------------------------------------
+  // 新增设施
+  // ----------------------------------------------------------
+  Future<StoreFacilityModel> createFacility({
+    required String facilityType,
+    required String name,
+    String? description,
+    String? imageUrl,
+    int? capacity,
+    bool isFree = true,
+  }) async {
+    await _ensureFreshSession();
+    final body = <String, dynamic>{
+      'facility_type': facilityType,
+      'name': name,
+      'is_free': isFree,
+    };
+    if (description != null) body['description'] = description;
+    if (imageUrl != null) body['image_url'] = imageUrl;
+    if (capacity != null) body['capacity'] = capacity;
+
+    final response = await _supabase.functions.invoke(
+      '$_functionName/facilities',
+      method: HttpMethod.post,
+      body: body,
+      headers: _merchantHeaders,
+    );
+
+    if (response.status != 200 && response.status != 201) {
+      throw _handleError(response);
+    }
+
+    final data = response.data as Map<String, dynamic>;
+    return StoreFacilityModel.fromJson(data['facility'] as Map<String, dynamic>);
+  }
+
+  // ----------------------------------------------------------
+  // 更新设施
+  // ----------------------------------------------------------
+  Future<StoreFacilityModel> updateFacility(
+    String facilityId, {
+    String? facilityType,
+    String? name,
+    String? description,
+    String? imageUrl,
+    int? capacity,
+    bool? isFree,
+    bool clearImageUrl = false,
+    bool clearDescription = false,
+    bool clearCapacity = false,
+  }) async {
+    await _ensureFreshSession();
+    final body = <String, dynamic>{};
+    if (facilityType != null) body['facility_type'] = facilityType;
+    if (name != null) body['name'] = name;
+    if (isFree != null) body['is_free'] = isFree;
+    if (clearDescription) {
+      body['description'] = null;
+    } else if (description != null) {
+      body['description'] = description;
+    }
+    if (clearImageUrl) {
+      body['image_url'] = null;
+    } else if (imageUrl != null) {
+      body['image_url'] = imageUrl;
+    }
+    if (clearCapacity) {
+      body['capacity'] = null;
+    } else if (capacity != null) {
+      body['capacity'] = capacity;
+    }
+
+    final response = await _supabase.functions.invoke(
+      '$_functionName/facilities/$facilityId',
+      method: HttpMethod.patch,
+      body: body,
+      headers: _merchantHeaders,
+    );
+
+    if (response.status != 200) {
+      throw _handleError(response);
+    }
+
+    final data = response.data as Map<String, dynamic>;
+    return StoreFacilityModel.fromJson(data['facility'] as Map<String, dynamic>);
+  }
+
+  // ----------------------------------------------------------
+  // 删除设施
+  // ----------------------------------------------------------
+  Future<void> deleteFacility(String facilityId) async {
+    await _ensureFreshSession();
+    final response = await _supabase.functions.invoke(
+      '$_functionName/facilities/$facilityId',
+      method: HttpMethod.delete,
+      headers: _merchantHeaders,
+    );
+
+    if (response.status != 200) {
+      throw _handleError(response);
+    }
+  }
+
+  // ----------------------------------------------------------
+  // 重排序设施
+  // ----------------------------------------------------------
+  Future<void> reorderFacilities(List<String> orderedIds) async {
+    await _ensureFreshSession();
+    final response = await _supabase.functions.invoke(
+      '$_functionName/facilities/reorder',
+      method: HttpMethod.patch,
+      body: {'ordered_ids': orderedIds},
+      headers: _merchantHeaders,
+    );
+
+    if (response.status != 200) {
+      throw _handleError(response);
+    }
+  }
+
+  // ----------------------------------------------------------
+  // 上传设施图片（Storage 上传 → 返回 publicUrl）
+  // ----------------------------------------------------------
+  Future<String> uploadFacilityImage({
+    required String merchantId,
+    required XFile file,
+  }) async {
+    final fileName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
+    final storagePath = '$merchantId/facilities/$fileName';
+
+    final bytes = await file.readAsBytes();
+    await _supabase.storage.from('merchant-photos').uploadBinary(
+          storagePath,
+          bytes,
+          fileOptions: const FileOptions(
+            contentType: 'image/jpeg',
+            upsert: false,
+          ),
+        );
+
+    return _supabase.storage.from('merchant-photos').getPublicUrl(storagePath);
+  }
+
+  // ----------------------------------------------------------
+  // 删除设施图片（从 Storage 移除）
+  // ----------------------------------------------------------
+  Future<void> deleteFacilityImage(String imageUrl) async {
+    try {
+      final prefix = _supabase.storage.from('merchant-photos').getPublicUrl('');
+      if (imageUrl.startsWith(prefix)) {
+        final storagePath = imageUrl.replaceFirst(prefix, '');
+        await _supabase.storage.from('merchant-photos').remove([storagePath]);
+      }
+    } catch (_) {
+      // Storage 删除失败不阻塞
     }
   }
 

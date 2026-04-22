@@ -5,7 +5,9 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../models/store_facility_model.dart';
 import '../models/store_info.dart';
+import '../providers/facilities_provider.dart';
 import '../providers/store_provider.dart';
 import '../widgets/tag_chip_list.dart';
 
@@ -106,6 +108,14 @@ class StoreProfilePage extends ConsumerWidget {
                       title: 'Category & Tags',
                       onEdit: () => context.push('/store/tags'),
                       child: _TagsContent(store: store),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // 区块 7: 设施与服务
+                    _SectionCard(
+                      title: 'Facilities & Services',
+                      onEdit: () => context.push('/store/facilities'),
+                      child: _FacilitiesContent(),
                     ),
                     const SizedBox(height: 24),
                   ]),
@@ -1090,6 +1100,85 @@ class _ErrorView extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+// ============================================================
+// 设施区块内容（从 facilitiesProvider 读取，显示前 4 个）
+// ============================================================
+class _FacilitiesContent extends ConsumerWidget {
+  const _FacilitiesContent();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final facilitiesAsync = ref.watch(facilitiesProvider);
+
+    return facilitiesAsync.when(
+      loading: () => const SizedBox(
+        height: 32,
+        child: Center(
+          child: SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFFFF6B35)),
+          ),
+        ),
+      ),
+      error: (_, __) => const Text(
+        'Failed to load facilities',
+        style: TextStyle(fontSize: 13, color: Colors.grey),
+      ),
+      data: (facilities) {
+        if (facilities.isEmpty) {
+          return const Text(
+            'No facilities added',
+            style: TextStyle(fontSize: 13, color: Color(0xFF999999)),
+          );
+        }
+        final shown = facilities.take(4).toList();
+        final extra = facilities.length - shown.length;
+        return Wrap(
+          spacing: 8,
+          runSpacing: 6,
+          children: [
+            ...shown.map((f) => _FacilityChip(facility: f)),
+            if (extra > 0)
+              Chip(
+                label: Text(
+                  '+$extra more',
+                  style: const TextStyle(fontSize: 12, color: Color(0xFF888888)),
+                ),
+                backgroundColor: const Color(0xFFF0F0F0),
+                visualDensity: VisualDensity.compact,
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _FacilityChip extends StatelessWidget {
+  const _FacilityChip({required this.facility});
+
+  final StoreFacilityModel facility;
+
+  @override
+  Widget build(BuildContext context) {
+    return Chip(
+      avatar: Icon(facility.icon, size: 14, color: const Color(0xFFFF6B35)),
+      label: Text(
+        facility.name,
+        style: const TextStyle(fontSize: 12, color: Color(0xFF333333)),
+      ),
+      backgroundColor: const Color(0xFFFFF4EF),
+      visualDensity: VisualDensity.compact,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: BorderSide.none,
+      ),
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
     );
   }
 }

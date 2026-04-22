@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
@@ -27,19 +29,21 @@ final selectedCategoryProvider = StateProvider<String>((ref) => 'All');
 final searchQueryProvider = StateProvider<String>((ref) => '');
 
 // 首页展示券：sort_order 不为空的 active deal，按 sort_order 升序
-// Near Me 模式用 GPS 半径过滤；城市模式按选中城市过滤
+// Near Me 模式用 GPS 半径过滤；城市模式按选中城市过滤；跟随 selectedCategory 筛选
 final featuredDealsProvider = FutureProvider<List<DealModel>>((ref) async {
   final repo = ref.watch(dealsRepositoryProvider);
   final isNearMe = ref.watch(isNearMeProvider);
+  final category = ref.watch(selectedCategoryProvider);
 
   if (isNearMe) {
     // Near Me：用 searchDealsNearby RPC，只保留有 sort_order 的 deal
     final loc = await ref.watch(userLocationProvider.future);
-    debugPrint('[DEBUG] featuredDealsProvider → Near Me GPS=(${loc.lat}, ${loc.lng})');
+    debugPrint('[DEBUG] featuredDealsProvider → Near Me GPS=(${loc.lat}, ${loc.lng}), category=$category');
     final allNearby = await repo.searchDealsNearby(
       lat: loc.lat,
       lng: loc.lng,
       radiusMeters: 32187, // ~20 英里，和 store list 一致
+      category: category,
     );
     final results = allNearby.where((d) => d.sortOrder != null).toList();
     debugPrint('[DEBUG] featuredDealsProvider → Near Me 返回 ${results.length} 条 (总nearby=${allNearby.length})');
@@ -47,8 +51,8 @@ final featuredDealsProvider = FutureProvider<List<DealModel>>((ref) async {
   }
 
   final city = ref.watch(selectedLocationProvider).city;
-  debugPrint('[DEBUG] featuredDealsProvider → 城市模式, city=$city');
-  final results = await repo.fetchFeaturedDeals(city: city);
+  debugPrint('[DEBUG] featuredDealsProvider → 城市模式, city=$city, category=$category');
+  final results = await repo.fetchFeaturedDeals(city: city, category: category);
   debugPrint('[DEBUG] featuredDealsProvider → 返回 ${results.length} 条');
   return results;
 });
@@ -63,18 +67,64 @@ final dealsListProvider = FutureProvider.family<List<DealModel>, int>((
   final repo = ref.watch(dealsRepositoryProvider);
   final search = ref.watch(searchQueryProvider);
 
-  // 有搜索词时统一走 fetchDeals（支持 title/description/short_name 全文搜索）。
-  // 注意：搜索时故意忽略 selectedCategoryProvider，避免用户之前选中的分类
-  // 把与搜索词匹配的 deal 误过滤掉（UI 在搜索模式下也隐藏了分类选择器）。
+  // 搜索模式：
+  // - 有 GPS 授权 → 搜全部城市，按距离+评分+boosted 排序，并写回 distanceMeters 显示
+  // - 无 GPS 授权 → 只搜当前选中城市，按 featured+评分+销量 排序
   if (search.isNotEmpty) {
-    final city = isNearMe ? null : ref.watch(selectedLocationProvider).city;
-    debugPrint('[DEBUG] dealsListProvider → 搜索模式, city=$city, search="$search"');
+    final userLoc = await ref.watch(userLocationProvider.future);
+    final hasGps = userLoc.lat != 0.0 || userLoc.lng != 0.0;
+    final city = hasGps ? null : ref.watch(selectedLocationProvider).city;
+
+    debugPrint('[DEBUG] dealsListProvider → 搜索模式, hasGps=$hasGps, city=$city, search="$search"');
     final results = await repo.fetchDeals(
       city: city,
       category: null,
       search: search,
       page: page,
     );
+
+    // 有 GPS 时客户端算距离并写回 distanceMeters，同时按距离排序
+    if (hasGps) {
+      // Haversine 公式算距离 meters
+      double calcMeters(DealModel d) {
+        if (d.lat == null || d.lng == null) return double.infinity;
+        final dLat = (d.lat! - userLoc.lat) * pi / 180;
+        final dLng = (d.lng! - userLoc.lng) * pi / 180;
+        final a2 = sin(dLat / 2) * sin(dLat / 2) +
+            cos(userLoc.lat * pi / 180) *
+            cos(d.lat! * pi / 180) *
+            sin(dLng / 2) * sin(dLng / 2);
+        return 2 * 6371000 * asin(sqrt(a2)); // 返回 meters
+      }
+
+      // 写回 distanceMeters 后排序
+      final withDist = results.map((d) {
+        final meters = calcMeters(d);
+        return d.copyWithDistance(meters.isFinite ? meters : null);
+      }).toList();
+
+      withDist.sort((a, b) {
+        // 1. featured / boosted 置顶
+        final aFeatured = (a.isFeatured || a.isSponsored) ? 0 : 1;
+        final bFeatured = (b.isFeatured || b.isSponsored) ? 0 : 1;
+        if (aFeatured != bFeatured) return aFeatured.compareTo(bFeatured);
+
+        // 2. 距离近→远（差距 > 160m ≈ 0.1 mile 才区分）
+        final aDist = a.distanceMeters ?? double.infinity;
+        final bDist = b.distanceMeters ?? double.infinity;
+        if ((aDist - bDist).abs() > 160) return aDist.compareTo(bDist);
+
+        // 3. 评分高→低
+        if (a.rating != b.rating) return b.rating.compareTo(a.rating);
+
+        // 4. 销量高→低
+        return b.totalSold.compareTo(a.totalSold);
+      });
+
+      debugPrint('[DEBUG] dealsListProvider → 搜索返回 ${withDist.length} 条（含距离）');
+      return withDist;
+    }
+
     debugPrint('[DEBUG] dealsListProvider → 搜索返回 ${results.length} 条');
     return results;
   }
@@ -93,12 +143,13 @@ final dealsListProvider = FutureProvider.family<List<DealModel>, int>((
   }
 
   final city = ref.watch(selectedLocationProvider).city;
-  final userLoc = ref.watch(userLocationProvider).valueOrNull;
+  // 等待 GPS 权限/坐标解析完成，避免 valueOrNull 返回 null 导致距离缺失
+  final userLoc = await ref.watch(userLocationProvider.future);
 
   return repo.searchDealsByCity(
     city: city,
-    userLat: userLoc?.lat,
-    userLng: userLoc?.lng,
+    userLat: userLoc.lat,
+    userLng: userLoc.lng,
     category: category,
     page: page,
   );
@@ -146,20 +197,32 @@ final dealReviewsProvider = FutureProvider.family<List<ReviewModel>, String>((
 final locationPermissionDeniedProvider = StateProvider<bool>((ref) => false);
 
 // ---- GPS 位置 Provider ----
-// 获取当前 GPS 坐标，权限被拒则返回 Dallas 默认坐标
+// 获取当前 GPS 坐标，权限被拒或超时则返回 Dallas 默认坐标
 final userLocationProvider = FutureProvider<({double lat, double lng})>((
   ref,
 ) async {
   try {
+    return await _fetchUserLocation(ref).timeout(
+      const Duration(seconds: 15),
+      onTimeout: () {
+        debugPrint('[DEBUG] userLocationProvider → GPS 超时，使用 Dallas 默认坐标');
+        ref.read(locationPermissionDeniedProvider.notifier).state = true;
+        return (lat: AppConstants.dallasLat, lng: AppConstants.dallasLng);
+      },
+    );
+  } catch (e) {
+    debugPrint('[DEBUG] userLocationProvider → 异常: $e，使用 Dallas 默认坐标');
+    return (lat: AppConstants.dallasLat, lng: AppConstants.dallasLng);
+  }
+});
+
+Future<({double lat, double lng})> _fetchUserLocation(Ref ref) async {
+  try {
     LocationPermission permission = await Geolocator.checkPermission();
     debugPrint('[DEBUG] userLocationProvider → checkPermission=$permission');
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      debugPrint('[DEBUG] userLocationProvider → requestPermission 结果=$permission');
-    }
+    // 不在 provider 内弹权限对话框，避免与 UI 层竞态；UI 层（postFrameCallback / banner）负责 requestPermission
     if (permission == LocationPermission.deniedForever ||
         permission == LocationPermission.denied) {
-      // 权限被拒，标记状态并使用 Dallas 默认坐标
       debugPrint('[DEBUG] userLocationProvider → 权限被拒，使用 Dallas 默认坐标');
       ref.read(locationPermissionDeniedProvider.notifier).state = true;
       return (lat: AppConstants.dallasLat, lng: AppConstants.dallasLng);
@@ -189,7 +252,7 @@ final userLocationProvider = FutureProvider<({double lat, double lng})>((
     debugPrint('[DEBUG] userLocationProvider → 异常: $e，使用 Dallas 默认坐标');
     return (lat: AppConstants.dallasLat, lng: AppConstants.dallasLng);
   }
-});
+}
 
 // 后台异步获取 medium 精度 GPS，完成后缓存到 Geolocator 内部，
 // 用户下拉刷新 invalidate userLocationProvider 时会通过 getLastKnownPosition 拿到更精确的值
@@ -268,6 +331,23 @@ final savedDealsNotifierProvider =
     NotifierProvider<SavedDealsNotifier, AsyncValue<void>>(
       SavedDealsNotifier.new,
     );
+
+// ---- 数据库分类列表 Provider（动态替代硬编码 AppConstants.categoryItems）----
+// 返回 categories 表全部记录（id, name, icon URL/emoji, order）
+final dbCategoriesProvider =
+    FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  return ref.watch(dealsRepositoryProvider).fetchCategoriesFromDB();
+});
+
+// ---- 可用分类 Provider（首页隐藏空分类用）----
+// 返回当前位置下有 active deal 的分类名集合
+final availableCategoriesProvider = FutureProvider<Set<String>>((ref) async {
+  final repo = ref.watch(dealsRepositoryProvider);
+  final isNearMe = ref.watch(isNearMeProvider);
+  // Near Me 模式不做城市过滤，返回全部有 deal 的分类
+  final city = isNearMe ? null : ref.watch(selectedLocationProvider).city;
+  return repo.fetchAvailableCategories(city: city);
+});
 
 // ---- 选项组选择状态 Provider ----
 // 存储每个 deal 的选项选择：dealId -> { groupId: Set<itemId> }

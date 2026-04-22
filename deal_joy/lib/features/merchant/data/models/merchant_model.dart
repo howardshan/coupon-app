@@ -15,6 +15,8 @@ class MerchantModel {
   final double? bestDiscount;
   // Near Me 模式下的距离（英里）
   final double? distanceMiles;
+  // 主分类（取第一个 active deal 的 category）
+  final String? primaryCategory;
 
   MerchantModel({
     required this.id,
@@ -31,10 +33,11 @@ class MerchantModel {
     this.activeDealCount,
     this.bestDiscount,
     this.distanceMiles,
+    this.primaryCategory,
   });
 
   /// 复制并设置距离
-  MerchantModel copyWith({double? distanceMiles}) {
+  MerchantModel copyWith({double? distanceMiles, String? primaryCategory}) {
     return MerchantModel(
       id: id,
       name: name,
@@ -50,6 +53,7 @@ class MerchantModel {
       activeDealCount: activeDealCount,
       bestDiscount: bestDiscount,
       distanceMiles: distanceMiles ?? this.distanceMiles,
+      primaryCategory: primaryCategory ?? this.primaryCategory,
     );
   }
 
@@ -59,6 +63,7 @@ class MerchantModel {
     int? totalReviewCount;
     int? activeDealCount;
     double? bestDiscount;
+    String? primaryCategory;
 
     final deals = json['deals'];
     if (deals is List && deals.isNotEmpty) {
@@ -81,6 +86,7 @@ class MerchantModel {
         if (prices.isNotEmpty) {
           bestDiscount = prices.reduce((a, b) => a < b ? a : b);
         }
+        primaryCategory = active.first['category'] as String?;
       }
     }
 
@@ -99,6 +105,7 @@ class MerchantModel {
       activeDealCount: activeDealCount,
       bestDiscount: bestDiscount,
       distanceMiles: (json['distance_miles'] as num?)?.toDouble(),
+      primaryCategory: primaryCategory,
     );
   }
 }
