@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/config/env.dart';
+import 'features/deals/domain/providers/deals_provider.dart';
 import 'app.dart';
 
 // FCM 后台消息处理器（必须是顶层函数）
@@ -71,9 +73,35 @@ void main() async {
     debugPrint('[CrunchyPlum] Stripe init failed: $e — payments disabled');
   }
 
+  // 读取上次地区选择，首次启动默认 Near Me = true
+  final prefs = await SharedPreferences.getInstance();
+  // 用 location_setup_done 标记真正的「首次」——无论旧版遗留什么值，只要该 key 不存在就强制 Near Me
+  final setupDone = prefs.getBool('location_setup_done') ?? false;
+  final bool savedIsNearMe;
+  if (!setupDone) {
+    savedIsNearMe = true;
+    await prefs.setBool('location_is_near_me', true);
+    await prefs.setBool('location_setup_done', true);
+  } else {
+    savedIsNearMe = prefs.getBool('location_is_near_me') ?? true;
+  }
+  final savedCity = prefs.getString('location_city') ?? 'Dallas';
+  final savedState = prefs.getString('location_state') ?? 'Texas';
+  final savedMetro = prefs.getString('location_metro') ?? 'DFW';
+
+  // 用 ProviderContainer 直接写入 state，确保第一帧就是正确值
+  final container = ProviderContainer();
+  container.read(isNearMeProvider.notifier).state = savedIsNearMe;
+  container.read(selectedLocationProvider.notifier).state = (
+    state: savedState,
+    metro: savedMetro,
+    city: savedCity,
+  );
+
   runApp(
-    const ProviderScope(
-      child: CrunchyPlumApp(),
+    UncontrolledProviderScope(
+      container: container,
+      child: const CrunchyPlumApp(),
     ),
   );
 }

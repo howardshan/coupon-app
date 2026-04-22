@@ -9,29 +9,56 @@ class MerchantRepository {
   MerchantRepository(this._client);
 
   /// 获取商家列表（按城市 + 分类筛选，含 deals 聚合数据）
+  /// 分类匹配逻辑：deals.category 直接匹配 OR merchant_categories 关联匹配
   Future<List<MerchantModel>> fetchMerchants({String? city, String? category}) async {
     try {
-      // 当选择了具体分类时，通过 inner join deals 过滤只返回有该分类 deal 的商家
       final hasCategory = category != null && category.isNotEmpty && category != 'All';
-      final dealFilter = hasCategory
-          ? 'deals!inner(rating, review_count, discount_price, is_active, category)'
-          : 'deals(rating, review_count, discount_price, is_active)';
 
+      // Step 1：如果有分类筛选，先获取 merchant_categories 里该分类对应的商家 ID
+      Set<String> catMerchantIds = {};
+      if (hasCategory) {
+        final catRows = await _client
+            .from('merchant_categories')
+            .select('merchant_id, categories!inner(name)')
+            .eq('categories.name', category!);
+        catMerchantIds = (catRows as List)
+            .map((e) => e['merchant_id'] as String?)
+            .whereType<String>()
+            .toSet();
+      }
+
+      // Step 2：查询商家（不再用 deals!inner 做分类过滤，改在应用层过滤）
       var query = _client
           .from('merchants')
-          .select('*, $dealFilter')
+          .select('*, deals(rating, review_count, discount_price, is_active, category)')
           .eq('status', 'approved');
 
       if (city != null && city.isNotEmpty) {
         query = query.ilike('city', '%$city%');
       }
 
-      if (hasCategory) {
+      // 分类过滤：merchant_categories 匹配的商家 OR deals.category 匹配
+      if (hasCategory && catMerchantIds.isNotEmpty) {
+        // 优先用 id.in 范围，保证包含 merchant_categories 关联的商家
+        query = query.inFilter('id', catMerchantIds.toList());
+      } else if (hasCategory) {
+        // 无 merchant_categories 数据时，回退到 deals.category 过滤
         query = query.eq('deals.category', category!);
       }
 
       final data = await query.order('name').limit(30);
-      return (data as List).map((e) => MerchantModel.fromJson(e)).toList();
+      var results = (data as List).map((e) => MerchantModel.fromJson(e)).toList();
+
+      // 应用层补充：如果有分类，过滤掉没有任何 active deal 的商家
+      // （纯靠 merchant_categories 不能保证有 active deal）
+      if (hasCategory) {
+        results = results.where((m) {
+          // activeDealCount > 0 说明 fromJson 时计算出了有效 deal
+          return (m.activeDealCount ?? 0) > 0 || catMerchantIds.contains(m.id);
+        }).toList();
+      }
+
+      return results;
     } on PostgrestException catch (e) {
       throw AppException(
         'Failed to fetch merchants: ${e.message}',
@@ -55,7 +82,7 @@ class MerchantRepository {
         'p_limit': 30,
         'p_offset': 0,
       });
-      return (data as List).map((e) {
+      final results = (data as List).map((e) {
         final json = e as Map<String, dynamic>;
         return MerchantModel(
           id: json['id'] as String,
@@ -76,6 +103,28 @@ class MerchantRepository {
               : null,
         );
       }).toList();
+
+      // 批量查各商家的主分类（取第一个 active deal 的 category）
+      if (results.isNotEmpty) {
+        final ids = results.map((m) => m.id).toList();
+        final catData = await _client
+            .from('deals')
+            .select('merchant_id, category')
+            .eq('is_active', true)
+            .inFilter('merchant_id', ids)
+            .limit(ids.length * 5);
+        final catMap = <String, String>{};
+        for (final row in catData as List) {
+          final mid = row['merchant_id'] as String;
+          if (!catMap.containsKey(mid)) {
+            catMap[mid] = row['category'] as String? ?? '';
+          }
+        }
+        return results
+            .map((m) => m.copyWith(primaryCategory: catMap[m.id]))
+            .toList();
+      }
+      return results;
     } on PostgrestException catch (e) {
       throw AppException(
         'Failed to fetch nearby merchants: ${e.message}',

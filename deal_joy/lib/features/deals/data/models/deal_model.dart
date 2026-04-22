@@ -168,6 +168,25 @@ class DealModel {
     this.campaignId,
   });
 
+  /// 仅更新 distanceMeters，其余字段不变（用于搜索模式客户端计算距离后写回）
+  DealModel copyWithDistance(double? distanceMeters) => DealModel(
+    id: id, merchantId: merchantId, title: title, description: description,
+    category: category, originalPrice: originalPrice, discountPrice: discountPrice,
+    discountPercent: discountPercent, discountLabel: discountLabel,
+    imageUrls: imageUrls, products: products, rating: rating,
+    reviewCount: reviewCount, totalSold: totalSold, stockLimit: stockLimit,
+    expiresAt: expiresAt, isFeatured: isFeatured, refundPolicy: refundPolicy,
+    lat: lat, lng: lng, address: address, merchantHours: merchantHours,
+    merchant: merchant, distanceMeters: distanceMeters, merchantCity: merchantCity,
+    dealType: dealType, dealCategoryId: dealCategoryId, badgeText: badgeText,
+    sortOrder: sortOrder, applicableMerchantIds: applicableMerchantIds,
+    activeStoreCount: activeStoreCount, shortName: shortName,
+    usageNotes: usageNotes, optionGroups: optionGroups, detailImages: detailImages,
+    validityType: validityType, validityDays: validityDays,
+    usageRules: usageRules, usageDays: usageDays, maxPerAccount: maxPerAccount,
+    isSponsored: isSponsored, campaignId: campaignId,
+  );
+
   factory DealModel.fromJson(Map<String, dynamic> json) => DealModel(
         id: json['id'] as String,
         merchantId: json['merchant_id'] as String,
@@ -189,8 +208,14 @@ class DealModel {
         isFeatured: json['is_featured'] as bool? ?? false,
         refundPolicy: json['refund_policy'] as String? ??
             'Refund anytime before use, refund when expired',
-        lat: (json['lat'] as num?)?.toDouble(),
-        lng: (json['lng'] as num?)?.toDouble(),
+        // deals 表本身可能没有 lat/lng，优先取 deals.lat，
+        // 其次 fallback 到 merchants.lat（用于客户端 Haversine 距离计算）
+        lat: (json['lat'] as num?)?.toDouble() ??
+            ((json['merchants'] as Map<String, dynamic>?)?['lat'] as num?)
+                ?.toDouble(),
+        lng: (json['lng'] as num?)?.toDouble() ??
+            ((json['merchants'] as Map<String, dynamic>?)?['lng'] as num?)
+                ?.toDouble(),
         address: json['address'] as String?,
         merchantHours: json['merchant_hours'] as String?,
         merchant: json['merchants'] != null

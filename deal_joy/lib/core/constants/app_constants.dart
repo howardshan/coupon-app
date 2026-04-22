@@ -24,7 +24,7 @@ class AppConstants {
 
   // Deal categories — single source of truth (used by HomeScreen icons + filters)
   static const List<CategoryItem> categoryItems = [
-    CategoryItem('hot', 'Hot Deals', Icons.local_fire_department),
+    CategoryItem('hot', 'All', Icons.local_fire_department),
     CategoryItem('bbq', 'BBQ', Icons.outdoor_grill),
     CategoryItem('hotpot', 'Hot Pot', Icons.ramen_dining),
     CategoryItem('coffee', 'Coffee', Icons.coffee),

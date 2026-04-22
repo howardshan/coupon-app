@@ -1,6 +1,7 @@
 // 全局分类选择页面
 // 商家可以多选分类（最多5个），用于用户端首页分类筛选
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -221,7 +222,7 @@ class _StoreCategoriesPageState extends ConsumerState<StoreCategoriesPage> {
                             },
                             child: Container(
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 16, vertical: 14),
+                                  horizontal: 16, vertical: 10),
                               decoration: BoxDecoration(
                                 color: isSelected
                                     ? const Color(0xFFFFF3EE)
@@ -256,7 +257,11 @@ class _StoreCategoriesPageState extends ConsumerState<StoreCategoriesPage> {
                                       borderRadius: BorderRadius.circular(10),
                                     ),
                                     child: Center(
-                                      child: _categoryIcon(catName, isSelected),
+                                      child: _categoryIcon(
+                                        catName,
+                                        cat['icon'] as String?,
+                                        isSelected,
+                                      ),
                                     ),
                                   ),
                                   const SizedBox(width: 14),
@@ -341,11 +346,33 @@ class _StoreCategoriesPageState extends ConsumerState<StoreCategoriesPage> {
     );
   }
 
-  // 根据分类名返回对应图标
-  Widget _categoryIcon(String name, bool isSelected) {
+  // 渲染分类图标：优先使用 DB 的 icon 字段（URL / emoji），无则用内置映射
+  Widget _categoryIcon(String name, String? iconValue, bool isSelected) {
     final color =
         isSelected ? const Color(0xFFFF6B35) : const Color(0xFF999999);
-    final iconMap = <String, IconData>{
+
+    // URL 图标 → 网络图片
+    if (iconValue != null && iconValue.startsWith('http')) {
+      return CachedNetworkImage(
+        imageUrl: iconValue,
+        width: 22,
+        height: 22,
+        fit: BoxFit.contain,
+        placeholder: (_, __) =>
+            Icon(Icons.category_outlined, color: color, size: 22),
+        errorWidget: (_, __, ___) =>
+            Icon(Icons.category_outlined, color: color, size: 22),
+      );
+    }
+
+    // emoji 图标 → 文字
+    if (iconValue != null && iconValue.isNotEmpty &&
+        !iconValue.startsWith('Icons.')) {
+      return Text(iconValue, style: const TextStyle(fontSize: 20));
+    }
+
+    // 内置映射（向下兼容旧分类）
+    const iconMap = <String, IconData>{
       'BBQ': Icons.outdoor_grill,
       'Hot Pot': Icons.ramen_dining,
       'Coffee': Icons.coffee,
@@ -356,7 +383,6 @@ class _StoreCategoriesPageState extends ConsumerState<StoreCategoriesPage> {
       'Ramen': Icons.ramen_dining,
       'Korean': Icons.rice_bowl,
     };
-    final icon = iconMap[name] ?? Icons.category_outlined;
-    return Icon(icon, color: color, size: 22);
+    return Icon(iconMap[name] ?? Icons.category_outlined, color: color, size: 22);
   }
 }

@@ -18,9 +18,10 @@ class DealsRepository {
     try {
       // 用 merchants!inner 做 join 过滤（city 字段权威来源于 merchants.city，
       // 不再依赖 deals.address 文本匹配，避免 address 为空或格式不一致漏掉 deal）
+      // 注意：lat/lng 也从 merchants 读取，用于客户端 Haversine 距离计算
       final merchantSelect = (city != null && city.isNotEmpty)
-          ? 'merchants!inner(id, name, logo_url, phone, homepage_cover_url, brand_id, metro_area, brands(name, logo_url), city)'
-          : 'merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, city, metro_area, brands(name, logo_url))';
+          ? 'merchants!inner(id, name, logo_url, phone, homepage_cover_url, brand_id, metro_area, brands(name, logo_url), city, lat, lng)'
+          : 'merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, city, metro_area, brands(name, logo_url), lat, lng)';
 
       var query = _client
           .from('deals')
@@ -132,7 +133,7 @@ class DealsRepository {
             final existingIds = results.map((d) => d.id).toSet();
             final extraData = await _client
                 .from('deals')
-                .select('*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, city, metro_area, brands(name, logo_url))')
+                .select('*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, city, metro_area, brands(name, logo_url), lat, lng)')
                 .eq('is_active', true)
                 .gt('expires_at', DateTime.now().toIso8601String())
                 .inFilter('merchant_id', merchantIds.toList())
@@ -160,7 +161,7 @@ class DealsRepository {
   }
 
   // 获取首页展示券：sort_order 不为空的 active deal，按 sort_order 升序
-  Future<List<DealModel>> fetchFeaturedDeals({String? city}) async {
+  Future<List<DealModel>> fetchFeaturedDeals({String? city, String? category}) async {
     try {
       // 有城市过滤时用 !inner join，确保只返回 merchant.city 匹配的 deal
       final merchantSelect = (city != null && city.isNotEmpty)
@@ -175,6 +176,10 @@ class DealsRepository {
       // 通过 merchant 的 city 字段过滤
       if (city != null && city.isNotEmpty) {
         query = query.eq('merchants.city', city);
+      }
+      // 分类筛选
+      if (category != null && category.isNotEmpty && category != 'All') {
+        query = query.eq('category', category);
       }
       final data = await query
           .order('sort_order', ascending: true)
@@ -409,6 +414,70 @@ class DealsRepository {
     } on PostgrestException catch (e) {
       throw AppException('Failed to search deals by city: ${e.message}',
           code: e.code);
+    }
+  }
+
+  /// 查询当前城市下有 active deal 的分类名集合（用于首页隐藏空分类图标）
+  /// 同时覆盖两条路径：
+  ///   ① deals.category 文字字段（旧逻辑兼容）
+  ///   ② merchant_categories → categories.name（商家在后台重新分类后自动生效）
+  Future<Set<String>> fetchAvailableCategories({String? city}) async {
+    try {
+      // Step 1: 获取有 active deal 的商家 ID + deals.category 旧值
+      final merchantSelect = (city != null && city.isNotEmpty)
+          ? 'merchant_id, category, merchants!inner(city)'
+          : 'merchant_id, category';
+      var dealQuery = _client
+          .from('deals')
+          .select(merchantSelect)
+          .eq('is_active', true)
+          .gt('expires_at', DateTime.now().toIso8601String());
+      if (city != null && city.isNotEmpty) {
+        dealQuery = dealQuery.ilike('merchants.city', '%$city%');
+      }
+      final deals = await dealQuery;
+
+      final dealCategories = <String>{};
+      final merchantIds = <String>{};
+      for (final d in deals as List) {
+        final cat = d['category'] as String?;
+        if (cat != null && cat.isNotEmpty) dealCategories.add(cat);
+        final mid = d['merchant_id'] as String?;
+        if (mid != null) merchantIds.add(mid);
+      }
+
+      if (merchantIds.isEmpty) return dealCategories;
+
+      // Step 2: 通过 merchant_categories 获取这些商家所属的分类名
+      final catRows = await _client
+          .from('merchant_categories')
+          .select('categories!inner(name)')
+          .inFilter('merchant_id', merchantIds.toList());
+
+      final merchantCategories = (catRows as List)
+          .map((row) =>
+              (row['categories'] as Map<String, dynamic>?)?['name'] as String?)
+          .whereType<String>()
+          .toSet();
+
+      return dealCategories.union(merchantCategories);
+    } on PostgrestException catch (e) {
+      throw AppException(
+          'Failed to fetch categories: ${e.message}', code: e.code);
+    }
+  }
+
+  /// 从 categories 表获取全部分类（顺序、图标）供客户端动态渲染
+  Future<List<Map<String, dynamic>>> fetchCategoriesFromDB() async {
+    try {
+      final data = await _client
+          .from('categories')
+          .select('id, name, icon, order')
+          .order('order');
+      return (data as List).cast<Map<String, dynamic>>();
+    } on PostgrestException catch (e) {
+      throw AppException(
+          'Failed to fetch DB categories: ${e.message}', code: e.code);
     }
   }
 
