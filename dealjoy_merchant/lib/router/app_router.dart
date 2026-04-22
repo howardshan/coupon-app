@@ -41,6 +41,7 @@ import '../features/store/pages/business_hours_page.dart';
 import '../features/store/pages/store_photos_page.dart';
 import '../features/store/pages/store_tags_page.dart';
 import '../features/store/pages/store_categories_page.dart';
+import '../features/store/pages/store_facilities_page.dart';
 import '../features/store/pages/store_selector_page.dart';
 import '../features/store/pages/brand_manage_page.dart';
 import '../features/store/pages/brand_info_page.dart';
@@ -491,6 +492,10 @@ final appRouter = GoRouter(
         GoRoute(
           path: 'categories',
           builder: (context, state) => const StoreCategoriesPage(),
+        ),
+        GoRoute(
+          path: 'facilities',
+          builder: (context, state) => const StoreFacilitiesPage(),
         ),
         // 菜品管理
         GoRoute(

@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../data/models/deal_model.dart';
 import '../../../../core/utils/location_utils.dart';
@@ -33,8 +33,25 @@ Future<void> _recordAdClick(String campaignId) async {
   }
 }
 
-// Use first 6 categories from centralized constants for the icon grid
-final _categories = AppConstants.categoryItems.take(6).toList();
+// 分类图标：URL → 网络图片；emoji → Text；null → 默认图标
+Widget _buildCategoryIcon(String? icon, bool isSelected) {
+  final color = isSelected ? AppColors.primary : AppColors.textSecondary;
+  if (icon == null || icon.isEmpty) {
+    return Icon(Icons.category_outlined, color: color, size: 26);
+  }
+  if (icon.startsWith('http')) {
+    return CachedNetworkImage(
+      imageUrl: icon,
+      width: 28,
+      height: 28,
+      fit: BoxFit.contain,
+      placeholder: (_, __) => Icon(Icons.category_outlined, color: color, size: 26),
+      errorWidget: (_, __, ___) => Icon(Icons.category_outlined, color: color, size: 26),
+    );
+  }
+  // emoji 文字
+  return Text(icon, style: const TextStyle(fontSize: 24));
+}
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -58,15 +75,44 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     super.initState();
     // 监听输入框内容变化，触发 rebuild 以更新小叉按钮的显示/隐藏
     _searchCtrl.addListener(() => setState(() {}));
-    // 页面重建时将 Provider 中保存的搜索词同步回输入框，
-    // 避免导航离开再回来时搜索框显示为空但仍处于搜索模式的问题
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // 页面重建时将 Provider 中保存的搜索词同步回输入框
       final currentQuery = ref.read(searchQueryProvider);
       if (currentQuery.isNotEmpty && _searchCtrl.text != currentQuery) {
         _searchCtrl.text = currentQuery;
         _searchCtrl.selection = TextSelection.collapsed(
           offset: currentQuery.length,
         );
+      }
+
+      // Near Me 模式：延迟 2 秒再请求 GPS，避免与 Android 自动弹出的通知权限弹窗冲突
+      if (!mounted) return;
+      if (ref.read(isNearMeProvider)) {
+        await Future.delayed(const Duration(seconds: 2));
+        if (!mounted) return;
+        final permission = await Geolocator.checkPermission();
+        if (!mounted) return;
+        if (permission == LocationPermission.denied) {
+          final result = await Geolocator.requestPermission();
+          if (!mounted) return;
+          if (result == LocationPermission.whileInUse ||
+              result == LocationPermission.always) {
+            // 授权成功，立即清除 banner
+            ref.read(locationPermissionDeniedProvider.notifier).state = false;
+          } else if (result == LocationPermission.deniedForever) {
+            ref.read(locationPermissionDeniedProvider.notifier).state = true;
+          }
+          ref.invalidate(userLocationProvider);
+          ref.invalidate(merchantListProvider);
+          ref.invalidate(featuredDealsProvider);
+          ref.invalidate(dealsListProvider);
+        } else if (permission == LocationPermission.deniedForever) {
+          ref.read(locationPermissionDeniedProvider.notifier).state = true;
+        } else {
+          // 已授权，清除 banner 并刷新
+          ref.read(locationPermissionDeniedProvider.notifier).state = false;
+          ref.invalidate(userLocationProvider);
+        }
       }
     });
   }
@@ -384,76 +430,143 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       ),
                     ),
 
-                  // Category icons
+                  // Category icons（动态从 DB 读取，≤5 个 1 行，更多 2 行，空分类隐藏）
                   SliverToBoxAdapter(
-                    child: SizedBox(
-                      height: 88,
-                      child: ListView.separated(
-                        scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 8,
-                        ),
-                        itemCount: _categories.length,
-                        separatorBuilder: (_, _) =>
-                            const SizedBox(width: 16),
-                        itemBuilder: (_, i) {
-                          final cat = _categories[i];
-                          final selectedCat =
-                              ref.watch(selectedCategoryProvider);
-                          final isHot = cat.id == 'hot';
-                          final catValue = isHot ? 'All' : cat.name;
-                          final isSelected = selectedCat == catValue;
-                          return GestureDetector(
-                            onTap: () {
-                              ref
-                                  .read(selectedCategoryProvider.notifier)
-                                  .state = catValue;
-                            },
-                            child: Column(
-                              children: [
-                                Container(
-                                  width: 52,
-                                  height: 52,
-                                  decoration: BoxDecoration(
-                                    color: isSelected
-                                        ? AppColors.primary
-                                            .withValues(alpha: 0.15)
-                                        : Colors.white,
-                                    borderRadius: BorderRadius.circular(16),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.black
-                                            .withValues(alpha: 0.06),
-                                        blurRadius: 8,
-                                        offset: const Offset(0, 2),
-                                      ),
-                                    ],
-                                  ),
-                                  child: Icon(
-                                    cat.icon,
-                                    color: isSelected
-                                        ? AppColors.primary
-                                        : AppColors.textSecondary,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  cat.name,
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: isSelected
-                                        ? FontWeight.bold
-                                        : FontWeight.w500,
-                                    color: isSelected
-                                        ? AppColors.primary
-                                        : AppColors.textPrimary,
-                                  ),
-                                ),
-                              ],
+                    child: Consumer(
+                      builder: (context, ref, _) {
+                        final availSet =
+                            ref.watch(availableCategoriesProvider).valueOrNull
+                                ?? <String>{};
+                        final dbCats =
+                            ref.watch(dbCategoriesProvider).valueOrNull
+                                ?? <Map<String, dynamic>>[];
+                        final selectedCat =
+                            ref.watch(selectedCategoryProvider);
+
+                        // 构建展示列表：固定 "All" 排在最前；
+                        // 其余从 DB 读取，仅保留在 availSet 中有 deal 的分类
+                        final visible = <Map<String, dynamic>>[
+                          {'name': 'All', 'icon': null, '_isAll': true},
+                          ...dbCats.where((c) {
+                            final name = c['name'] as String? ?? '';
+                            return availSet.contains(name);
+                          }),
+                        ];
+
+                        if (visible.length <= 1) return const SizedBox.shrink();
+
+                        // ≤5 个用 1 行；更多用 2 行
+                        final rows = visible.length <= 5 ? 1 : 2;
+                        final cols = (visible.length / rows).ceil();
+
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 8,
+                          ),
+                          child: GridView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            gridDelegate:
+                                SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: cols,
+                              mainAxisSpacing: 8,
+                              crossAxisSpacing: 8,
+                              // 固定每格高度：52px 图标 + 4px gap + 16px 文字
+                              mainAxisExtent: 72,
                             ),
-                          );
-                        },
+                            itemCount: visible.length,
+                            itemBuilder: (_, i) {
+                              final cat = visible[i];
+                              final catName = cat['name'] as String;
+                              final isAll = cat['_isAll'] == true;
+                              final isSelected = selectedCat == catName;
+                              final iconVal = cat['icon'] as String?;
+
+                              return GestureDetector(
+                                onTap: () {
+                                  ref
+                                      .read(selectedCategoryProvider.notifier)
+                                      .state = catName;
+                                },
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      width: 52,
+                                      height: 52,
+                                      decoration: BoxDecoration(
+                                        color: isSelected
+                                            ? AppColors.primary
+                                                .withValues(alpha: 0.15)
+                                            : Colors.white,
+                                        borderRadius:
+                                            BorderRadius.circular(16),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.black
+                                                .withValues(alpha: 0.06),
+                                            blurRadius: 8,
+                                            offset: const Offset(0, 2),
+                                          ),
+                                        ],
+                                      ),
+                                      alignment: Alignment.center,
+                                      child: isAll
+                                          ? Icon(
+                                              Icons.local_fire_department,
+                                              color: isSelected
+                                                  ? AppColors.primary
+                                                  : AppColors.textSecondary,
+                                            )
+                                          : _buildCategoryIcon(
+                                              iconVal, isSelected),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      catName,
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: isSelected
+                                            ? FontWeight.bold
+                                            : FontWeight.w500,
+                                        color: isSelected
+                                            ? AppColors.primary
+                                            : AppColors.textPrimary,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+
+                  // Hot Deal section 标题
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.local_fire_department,
+                            size: 18,
+                            color: Colors.deepOrange,
+                          ),
+                          const SizedBox(width: 6),
+                          const Text(
+                            'Hot Deal',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -567,6 +680,34 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       },
                     ),
 
+                  // Near Me / 城市 section 标题
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                      child: Row(
+                        children: [
+                          Icon(
+                            ref.watch(isNearMeProvider)
+                                ? Icons.my_location
+                                : Icons.location_city,
+                            size: 18,
+                            color: AppColors.primary,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            ref.watch(isNearMeProvider)
+                                ? 'Near Me'
+                                : ref.watch(selectedLocationProvider).city,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
                   // 商家双列网格
                   merchantList.when(
                     data: (merchants) => merchants.isEmpty
@@ -588,18 +729,39 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         : SliverPadding(
                             padding:
                                 const EdgeInsets.fromLTRB(16, 8, 16, 100),
-                            sliver: SliverGrid(
-                              gridDelegate:
-                                  const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 2,
-                                mainAxisSpacing: 12,
-                                crossAxisSpacing: 12,
-                                childAspectRatio: 0.72,
-                              ),
-                              delegate: SliverChildBuilderDelegate(
-                                (_, i) => _MerchantGridCard(
-                                    merchant: merchants[i]),
-                                childCount: merchants.length,
+                            sliver: SliverToBoxAdapter(
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // 左列（偶数索引）
+                                  Expanded(
+                                    child: Column(
+                                      children: [
+                                        for (int i = 0; i < merchants.length; i += 2)
+                                          Padding(
+                                            padding: const EdgeInsets.only(bottom: 12),
+                                            child: _MerchantGridCard(merchant: merchants[i]),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  // 右列（奇数索引），向下偏移 44px 产生错位效果
+                                  Expanded(
+                                    child: Padding(
+                                      padding: const EdgeInsets.only(top: 44),
+                                      child: Column(
+                                        children: [
+                                          for (int i = 1; i < merchants.length; i += 2)
+                                            Padding(
+                                              padding: const EdgeInsets.only(bottom: 12),
+                                              child: _MerchantGridCard(merchant: merchants[i]),
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ),
@@ -647,7 +809,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 onMetroChange: (metro) => setState(() {
                   _pendingMetro = metro;
                 }),
-                onCitySelected: (city) {
+                onCitySelected: (city) async {
                   ref.read(isNearMeProvider.notifier).state = false;
                   ref.read(selectedLocationProvider.notifier).state = (
                     state: _pendingState,
@@ -658,16 +820,39 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ref.invalidate(featuredDealsProvider);
                   ref.invalidate(dealsListProvider);
                   setState(() => _locationMenuOpen = false);
+                  // 持久化用户选择
+                  final prefs = await SharedPreferences.getInstance();
+                  await prefs.setBool('location_is_near_me', false);
+                  await prefs.setString('location_city', city);
+                  await prefs.setString('location_state', _pendingState);
+                  await prefs.setString('location_metro', _pendingMetro);
                 },
-                onNearMeSelected: () {
+                onNearMeSelected: () async {
                   debugPrint('[DEBUG] HomeScreen → Near Me 被选中');
                   ref.read(isNearMeProvider.notifier).state = true;
-                  debugPrint('[DEBUG] HomeScreen → isNearMe 设为 true, 开始 invalidate providers');
-                  ref.invalidate(userLocationProvider); // 重新获取 GPS 坐标
+                  setState(() => _locationMenuOpen = false);
+                  // UI 层请求 GPS 权限（避免在 provider 内部竞态）
+                  final perm = await Geolocator.checkPermission();
+                  if (perm == LocationPermission.denied) {
+                    final result = await Geolocator.requestPermission();
+                    if (result == LocationPermission.whileInUse ||
+                        result == LocationPermission.always) {
+                      ref.read(locationPermissionDeniedProvider.notifier).state = false;
+                    } else {
+                      ref.read(locationPermissionDeniedProvider.notifier).state = true;
+                    }
+                  } else if (perm == LocationPermission.deniedForever) {
+                    ref.read(locationPermissionDeniedProvider.notifier).state = true;
+                  } else {
+                    ref.read(locationPermissionDeniedProvider.notifier).state = false;
+                  }
+                  ref.invalidate(userLocationProvider);
                   ref.invalidate(merchantListProvider);
                   ref.invalidate(featuredDealsProvider);
                   ref.invalidate(dealsListProvider);
-                  setState(() => _locationMenuOpen = false);
+                  // 持久化用户选择
+                  final prefs = await SharedPreferences.getInstance();
+                  await prefs.setBool('location_is_near_me', true);
                 },
                 isNearMeSelected: ref.read(isNearMeProvider),
               ),
@@ -1313,33 +1498,30 @@ class _MerchantGridCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 图片
-            Expanded(
-              child: SizedBox.expand(
-                child: ClipRRect(
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(12),
-                  ),
-                  child: () {
-                    // 优先 homepage cover，fallback 到 logo
-                    final coverUrl = merchant.homepageCoverUrl ?? merchant.logoUrl;
-                    return coverUrl != null && coverUrl.isNotEmpty
-                      ? CachedNetworkImage(
-                          imageUrl: coverUrl,
-                          width: double.infinity,
-                          height: double.infinity,
-                          fit: BoxFit.cover,
-                        )
-                      : Container(
-                          color: AppColors.surfaceVariant,
-                          child: const Center(
-                            child: Icon(Icons.restaurant,
-                                size: 40, color: AppColors.textHint),
-                          ),
-                        );
-                  }(),
-                ),
+            // 图片（固定高度，支持错位布局）
+            ClipRRect(
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(12),
               ),
+              child: () {
+                final coverUrl = merchant.homepageCoverUrl ?? merchant.logoUrl;
+                return coverUrl != null && coverUrl.isNotEmpty
+                    ? CachedNetworkImage(
+                        imageUrl: coverUrl,
+                        width: double.infinity,
+                        height: 130,
+                        fit: BoxFit.cover,
+                      )
+                    : Container(
+                        width: double.infinity,
+                        height: 130,
+                        color: AppColors.surfaceVariant,
+                        child: const Center(
+                          child: Icon(Icons.restaurant,
+                              size: 40, color: AppColors.textHint),
+                        ),
+                      );
+              }(),
             ),
             // 信息区
             Padding(
@@ -1357,7 +1539,27 @@ class _MerchantGridCard extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 4),
+                  // 分类标签
+                  if (merchant.primaryCategory != null &&
+                      merchant.primaryCategory!.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 3, bottom: 3),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 5, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(3),
+                        ),
+                        child: Text(
+                          merchant.primaryCategory!,
+                          style: const TextStyle(
+                            fontSize: 10,
+                            color: Colors.orange,
+                          ),
+                        ),
+                      ),
+                    ),
                   // 评分 + 评价数
                   Row(
                     children: [
@@ -1396,27 +1598,19 @@ class _MerchantGridCard extends StatelessWidget {
                       ],
                     ],
                   ),
-                  // 折扣价
-                  if (merchant.bestDiscount != null) ...[
-                    const SizedBox(height: 4),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary
-                            .withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
+                  // 最低价格（大字醒目）
+                  if (merchant.bestDiscount != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
                       child: Text(
-                        'From \$${merchant.bestDiscount!.toStringAsFixed(0)}',
+                        '\$${merchant.bestDiscount!.toStringAsFixed(0)}',
                         style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
                           color: AppColors.primary,
                         ),
                       ),
                     ),
-                  ],
                 ],
               ),
             ),

@@ -178,6 +178,40 @@ Deno.serve(async (req: Request) => {
       return await handleDeletePhoto(supabaseAdmin, merchantId, photoId);
     }
 
+    // --- GET /merchant-store/facilities ---
+    if (req.method === "GET" && pathSegments[0] === "facilities" && pathSegments.length === 1) {
+      return await handleGetFacilities(supabaseAdmin, merchantId);
+    }
+
+    // --- POST /merchant-store/facilities ---
+    if (req.method === "POST" && pathSegments[0] === "facilities" && pathSegments.length === 1) {
+      requirePermission(auth, "store");
+      const body = await req.json();
+      return await handlePostFacility(supabaseAdmin, merchantId, body);
+    }
+
+    // --- PATCH /merchant-store/facilities/reorder ---（需在 /:id 之前匹配）
+    if (req.method === "PATCH" && pathSegments[0] === "facilities" && pathSegments[1] === "reorder" && pathSegments.length === 2) {
+      requirePermission(auth, "store");
+      const body = await req.json();
+      return await handleReorderFacilities(supabaseAdmin, merchantId, body);
+    }
+
+    // --- PATCH /merchant-store/facilities/:id ---
+    if (req.method === "PATCH" && pathSegments[0] === "facilities" && pathSegments.length === 2) {
+      requirePermission(auth, "store");
+      const facilityId = pathSegments[1];
+      const body = await req.json();
+      return await handlePatchFacility(supabaseAdmin, merchantId, facilityId, body);
+    }
+
+    // --- DELETE /merchant-store/facilities/:id ---
+    if (req.method === "DELETE" && pathSegments[0] === "facilities" && pathSegments.length === 2) {
+      requirePermission(auth, "store");
+      const facilityId = pathSegments[1];
+      return await handleDeleteFacility(supabaseAdmin, merchantId, facilityId);
+    }
+
     // -------------------------------------------------------
     // POST /merchant-store/close — 闭店
     // 仅 store_owner 可操作，流程：
@@ -756,6 +790,212 @@ async function handleReorderPhotos(
     if (error) {
       return errorResponse(`Failed to update sort_order for ${ordered_ids[i]}`, 500);
     }
+  }
+
+  return jsonResponse({ success: true, count: ordered_ids.length });
+}
+
+// =============================================================
+// Handler: GET /merchant-store/facilities
+// 返回门店所有设施列表（按 sort_order 排序）
+// =============================================================
+async function handleGetFacilities(
+  supabase: ReturnType<typeof createClient>,
+  merchantId: string
+): Promise<Response> {
+  const { data, error } = await supabase
+    .from("store_facilities")
+    .select("*")
+    .eq("merchant_id", merchantId)
+    .order("sort_order");
+
+  if (error) {
+    return errorResponse(`Failed to fetch facilities: ${error.message}`, 500);
+  }
+
+  return jsonResponse({ facilities: data ?? [] });
+}
+
+// =============================================================
+// Handler: POST /merchant-store/facilities
+// 新增一条设施记录
+// =============================================================
+async function handlePostFacility(
+  supabase: ReturnType<typeof createClient>,
+  merchantId: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  body: Record<string, any>
+): Promise<Response> {
+  const { facility_type, name, description, image_url, capacity, is_free } = body;
+
+  if (!name || typeof name !== "string" || name.trim() === "") {
+    return errorResponse("name is required", 400);
+  }
+
+  const validTypes = ["private_room", "parking", "wifi", "baby_chair", "large_table", "no_smoking", "reservation", "other"];
+  const type = facility_type ?? "other";
+  if (!validTypes.includes(type)) {
+    return errorResponse(`facility_type must be one of: ${validTypes.join(", ")}`, 400);
+  }
+
+  // 获取当前最大 sort_order，新记录排末尾
+  const { data: existing } = await supabase
+    .from("store_facilities")
+    .select("sort_order")
+    .eq("merchant_id", merchantId)
+    .order("sort_order", { ascending: false })
+    .limit(1);
+  const nextOrder = existing && existing.length > 0 ? (existing[0].sort_order as number) + 1 : 0;
+
+  const { data, error } = await supabase
+    .from("store_facilities")
+    .insert({
+      merchant_id: merchantId,
+      facility_type: type,
+      name: name.trim(),
+      description: description ?? null,
+      image_url: image_url ?? null,
+      capacity: capacity ?? null,
+      is_free: is_free !== undefined ? is_free : true,
+      sort_order: nextOrder,
+    })
+    .select("*")
+    .single();
+
+  if (error) {
+    return errorResponse(`Failed to create facility: ${error.message}`, 500);
+  }
+
+  return jsonResponse({ facility: data }, 201);
+}
+
+// =============================================================
+// Handler: PATCH /merchant-store/facilities/:id
+// 更新设施字段
+// =============================================================
+async function handlePatchFacility(
+  supabase: ReturnType<typeof createClient>,
+  merchantId: string,
+  facilityId: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  body: Record<string, any>
+): Promise<Response> {
+  const allowedFields = ["facility_type", "name", "description", "image_url", "capacity", "is_free", "sort_order"];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const updateData: Record<string, any> = {};
+
+  for (const field of allowedFields) {
+    if (body[field] !== undefined) {
+      updateData[field] = body[field];
+    }
+  }
+
+  if (Object.keys(updateData).length === 0) {
+    return errorResponse("No valid fields to update", 400);
+  }
+
+  const { data, error } = await supabase
+    .from("store_facilities")
+    .update(updateData)
+    .eq("id", facilityId)
+    .eq("merchant_id", merchantId)
+    .select("*")
+    .single();
+
+  if (error || !data) {
+    return errorResponse(`Failed to update facility: ${error?.message ?? "not found"}`, 500);
+  }
+
+  return jsonResponse({ facility: data });
+}
+
+// =============================================================
+// Handler: DELETE /merchant-store/facilities/:id
+// 删除设施记录（同时从 Storage 删除图片）
+// =============================================================
+async function handleDeleteFacility(
+  supabase: ReturnType<typeof createClient>,
+  merchantId: string,
+  facilityId: string
+): Promise<Response> {
+  const { data: facility, error: fetchErr } = await supabase
+    .from("store_facilities")
+    .select("id, image_url")
+    .eq("id", facilityId)
+    .eq("merchant_id", merchantId)
+    .single();
+
+  if (fetchErr || !facility) {
+    return errorResponse("Facility not found or access denied", 404);
+  }
+
+  const { error: deleteErr } = await supabase
+    .from("store_facilities")
+    .delete()
+    .eq("id", facilityId)
+    .eq("merchant_id", merchantId);
+
+  if (deleteErr) {
+    return errorResponse(`Failed to delete facility: ${deleteErr.message}`, 500);
+  }
+
+  // 如果有图片，尝试从 Storage 删除
+  if (facility.image_url) {
+    try {
+      const storageUrl = Deno.env.get("SUPABASE_URL") ?? "";
+      const prefix = `${storageUrl}/storage/v1/object/public/merchant-photos/`;
+      if (facility.image_url.startsWith(prefix)) {
+        const storagePath = facility.image_url.replace(prefix, "");
+        await supabase.storage.from("merchant-photos").remove([storagePath]);
+      }
+    } catch (_) {
+      // Storage 删除失败不阻塞
+    }
+  }
+
+  return jsonResponse({ success: true, deleted_id: facilityId });
+}
+
+// =============================================================
+// Handler: PATCH /merchant-store/facilities/reorder
+// 批量更新设施排序
+// =============================================================
+async function handleReorderFacilities(
+  supabase: ReturnType<typeof createClient>,
+  merchantId: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  body: Record<string, any>
+): Promise<Response> {
+  const { ordered_ids } = body;
+
+  if (!Array.isArray(ordered_ids) || ordered_ids.length === 0) {
+    return errorResponse("ordered_ids must be a non-empty array", 400);
+  }
+
+  // 验证所有 ID 属于当前商家
+  const { data: owned, error: fetchErr } = await supabase
+    .from("store_facilities")
+    .select("id")
+    .eq("merchant_id", merchantId)
+    .in("id", ordered_ids);
+
+  if (fetchErr) {
+    return errorResponse("Failed to verify facility ownership", 500);
+  }
+
+  const ownedSet = new Set((owned ?? []).map((f: { id: string }) => f.id));
+  for (const id of ordered_ids) {
+    if (!ownedSet.has(id)) {
+      return errorResponse(`Facility ${id} not found or access denied`, 403);
+    }
+  }
+
+  for (let i = 0; i < ordered_ids.length; i++) {
+    await supabase
+      .from("store_facilities")
+      .update({ sort_order: i })
+      .eq("id", ordered_ids[i])
+      .eq("merchant_id", merchantId);
   }
 
   return jsonResponse({ success: true, count: ordered_ids.length });

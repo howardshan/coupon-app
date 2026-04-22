@@ -648,16 +648,27 @@ class _MerchantDetailScreenState extends ConsumerState<MerchantDetailScreen> {
         if (facilities.isNotEmpty) ...[
           _aboutSectionTitle('Facilities & Services'),
           SliverToBoxAdapter(
-            child: SizedBox(
-              height: facilities.any((f) => f.imageUrl != null) ? 220 : 130,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                itemCount: facilities.length,
-                separatorBuilder: (_, _) => const SizedBox(width: 12),
-                itemBuilder: (_, i) => FacilityCard(facility: facilities[i]),
-              ),
-            ),
+            child: facilities.any((f) => f.imageUrl != null)
+                // 有图片：横向滑动卡片列表
+                ? SizedBox(
+                    height: 220,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemCount: facilities.length,
+                      separatorBuilder: (_, __) => const SizedBox(width: 12),
+                      itemBuilder: (_, i) => FacilityCard(facility: facilities[i]),
+                    ),
+                  )
+                // 无图片：Wrap chip 布局
+                : Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: facilities.map((f) => FacilityCard(facility: f)).toList(),
+                    ),
+                  ),
           ),
           const SliverToBoxAdapter(child: SizedBox(height: 20)),
         ],

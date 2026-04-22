@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../shared/providers/supabase_provider.dart';
@@ -30,16 +32,77 @@ final merchantListProvider = FutureProvider<List<MerchantModel>>((ref) async {
 
   final city = ref.watch(selectedLocationProvider).city;
   debugPrint('[DEBUG] merchantListProvider → 城市模式, city=$city, category=$category');
+  // 等待 GPS 解析完毕，用于客户端计算并写回距离
+  final userLoc = await ref.watch(userLocationProvider.future);
+  // 权限被拒时 userLoc 是 Dallas 默认坐标，不应显示距离
+  final permDenied = ref.watch(locationPermissionDeniedProvider);
+  final hasGps = !permDenied && (userLoc.lat != 0.0 || userLoc.lng != 0.0);
   final results = await repo.fetchMerchants(city: city, category: category);
   debugPrint('[DEBUG] merchantListProvider → 城市模式返回 ${results.length} 家店');
+
+  // 有 GPS 时客户端计算 Haversine 距离并写回 distanceMiles
+  if (hasGps) {
+    double calcMiles(MerchantModel m) {
+      if (m.lat == null || m.lng == null) return double.infinity;
+      final dLat = (m.lat! - userLoc.lat) * pi / 180;
+      final dLng = (m.lng! - userLoc.lng) * pi / 180;
+      final a2 = sin(dLat / 2) * sin(dLat / 2) +
+          cos(userLoc.lat * pi / 180) *
+          cos(m.lat! * pi / 180) *
+          sin(dLng / 2) * sin(dLng / 2);
+      return 2 * 6371000 * asin(sqrt(a2)) / 1609.34; // 转英里
+    }
+
+    return results.map((m) {
+      final miles = calcMiles(m);
+      return m.copyWith(distanceMiles: miles.isFinite ? miles : null);
+    }).toList();
+  }
+
   return results;
 });
 
-/// 搜索商家 — 由 searchQueryProvider 驱动
+/// 搜索商家 — 由 searchQueryProvider 驱动，有 GPS 时写回 distanceMiles 并按距离排序
 final merchantSearchProvider = FutureProvider<List<MerchantModel>>((ref) async {
   final query = ref.watch(searchQueryProvider);
   if (query.isEmpty) return [];
-  return ref.watch(merchantRepositoryProvider).searchMerchants(query);
+
+  final results = await ref.watch(merchantRepositoryProvider).searchMerchants(query);
+
+  // 尝试获取 GPS（非阻塞方式，若已缓存则直接返回）
+  final userLoc = await ref.watch(userLocationProvider.future);
+  // 权限被拒时 userLoc 是 Dallas 默认坐标，不应显示距离
+  final permDenied = ref.watch(locationPermissionDeniedProvider);
+  final hasGps = !permDenied && (userLoc.lat != 0.0 || userLoc.lng != 0.0);
+
+  if (!hasGps) return results;
+
+  // 有 GPS：客户端 Haversine 计算距离 → 写回 distanceMiles → 按距离排序
+  double calcMiles(MerchantModel m) {
+    if (m.lat == null || m.lng == null) return double.infinity;
+    final dLat = (m.lat! - userLoc.lat) * pi / 180;
+    final dLng = (m.lng! - userLoc.lng) * pi / 180;
+    final a2 = sin(dLat / 2) * sin(dLat / 2) +
+        cos(userLoc.lat * pi / 180) *
+        cos(m.lat! * pi / 180) *
+        sin(dLng / 2) * sin(dLng / 2);
+    return 2 * 6371000 * asin(sqrt(a2)) / 1609.34; // 转英里
+  }
+
+  final withDist = results.map((m) {
+    final miles = calcMiles(m);
+    return m.copyWith(distanceMiles: miles.isFinite ? miles : null);
+  }).toList();
+
+  // 按距离近→远排序
+  withDist.sort((a, b) {
+    final aDist = a.distanceMiles ?? double.infinity;
+    final bDist = b.distanceMiles ?? double.infinity;
+    return aDist.compareTo(bDist);
+  });
+
+  debugPrint('[DEBUG] merchantSearchProvider → 搜索返回 ${withDist.length} 家店（含距离）');
+  return withDist;
 });
 
 /// 搜索无结果时的相似推荐商家
