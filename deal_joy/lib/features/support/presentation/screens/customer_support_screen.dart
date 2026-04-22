@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -41,13 +42,13 @@ class CustomerSupportScreen extends ConsumerWidget {
             ),
           ),
 
-          // Email Us
+          // Email Us（打开系统邮件 或 复制 support 地址）
           _SupportOptionCard(
             icon: Icons.email_outlined,
             iconColor: AppColors.info,
             title: 'Email Us',
             subtitle: 'Send us an email and we\'ll respond within 24 hours',
-            onTap: () => _launchEmail(),
+            onTap: () => _showEmailOptions(context),
           ),
           const SizedBox(height: 12),
 
@@ -74,15 +75,111 @@ class CustomerSupportScreen extends ConsumerWidget {
     );
   }
 
-  Future<void> _launchEmail() async {
-    final uri = Uri(
-      scheme: 'mailto',
-      path: AppConstants.supportEmail,
-      query: 'subject=DealJoy Support Request',
+  /// 发邮件：系统邮件应用 与 复制地址 二选一（无邮件客户端时仍可联系）
+  void _showEmailOptions(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceVariant,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  child: Text(
+                    'How would you like to email us?',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ),
+                ListTile(
+                  leading: Icon(Icons.open_in_new, color: AppColors.info),
+                  title: const Text('Open in Mail app'),
+                  subtitle: const Text(
+                    'Use your default email app',
+                    style: TextStyle(fontSize: 12, color: AppColors.textHint),
+                  ),
+                  onTap: () async {
+                    Navigator.of(sheetContext).pop();
+                    final uri = Uri(
+                      scheme: 'mailto',
+                      path: AppConstants.supportEmail,
+                      query: 'subject=DealJoy Support Request',
+                    );
+                    final canOpen = await canLaunchUrl(uri);
+                    if (canOpen) {
+                      await launchUrl(
+                        uri,
+                        mode: LaunchMode.externalApplication,
+                      );
+                    } else if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'Could not open a mail app. Try “Copy email address” instead.',
+                          ),
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    }
+                  },
+                ),
+                ListTile(
+                  leading: Icon(Icons.copy, color: AppColors.textSecondary),
+                  title: const Text('Copy email address'),
+                  subtitle: Text(
+                    AppConstants.supportEmail,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textHint,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  onTap: () async {
+                    await Clipboard.setData(
+                      ClipboardData(text: AppConstants.supportEmail),
+                    );
+                    if (sheetContext.mounted) {
+                      Navigator.of(sheetContext).pop();
+                    }
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Email address copied to clipboard'),
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
   }
 
   void _showCallbackSheet(BuildContext context, String? phone) {
