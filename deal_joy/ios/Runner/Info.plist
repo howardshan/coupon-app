@@ -86,6 +86,15 @@
 			<key>CFBundleURLName</key>
 			<string>com.crunchyplum.supabase_auth_callback</string>
 		</dict>
+		<!-- Google Sign-In iOS：须与 Google Cloud 控制台 OAuth iOS 客户端的 REVERSED_CLIENT_ID 一致 -->
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.447514243069-niasb0d7d0v1kg0ftri3pmv048h0uvd4</string>
+			</array>
+		</dict>
 	</array>
 	<!-- Allows url_launcher / Supabase OAuth to open https authorize URLs on iOS -->
 	<key>LSApplicationQueriesSchemes</key>

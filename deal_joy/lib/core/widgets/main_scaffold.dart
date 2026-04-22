@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../features/auth/domain/providers/auth_provider.dart';
+import '../../features/cart/domain/providers/cart_provider.dart';
 import '../../shared/providers/legal_provider.dart';
 import '../../shared/widgets/consent_barrier.dart';
 import '../theme/app_colors.dart';
@@ -79,6 +80,8 @@ class _MainScaffoldState extends ConsumerState<MainScaffold>
 
     final location = GoRouterState.of(context).matchedLocation;
     final currentIndex = _locationToIndex(location);
+    final cartCount = ref.watch(cartTotalCountProvider);
+
     return Scaffold(
       body: widget.child,
       bottomNavigationBar: NavigationBar(
@@ -92,23 +95,23 @@ class _MainScaffoldState extends ConsumerState<MainScaffold>
             case 3: context.go('/profile');
           }
         },
-        destinations: const [
-          NavigationDestination(
+        destinations: [
+          const NavigationDestination(
             icon: Icon(Icons.home_outlined),
             selectedIcon: Icon(Icons.home),
             label: 'Deals',
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.chat_bubble_outline),
             selectedIcon: Icon(Icons.chat_bubble),
             label: 'Chat',
           ),
           NavigationDestination(
-            icon: Icon(Icons.shopping_cart_outlined),
-            selectedIcon: Icon(Icons.shopping_cart),
+            icon: _cartTabIcon(cartCount, selected: false),
+            selectedIcon: _cartTabIcon(cartCount, selected: true),
             label: 'Cart',
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.person_outline),
             selectedIcon: Icon(Icons.person),
             label: 'Profile',
@@ -117,6 +120,25 @@ class _MainScaffoldState extends ConsumerState<MainScaffold>
       ),
     );
   }
+}
+
+/// 底部导航 Cart：与 Deal 详情底栏购物车角标风格一致（券总张数）
+Widget _cartTabIcon(int count, {required bool selected}) {
+  final iconData =
+      selected ? Icons.shopping_cart : Icons.shopping_cart_outlined;
+  if (count <= 0) {
+    return Icon(iconData);
+  }
+  final label = count > 99 ? '99+' : '$count';
+  return Badge(
+    isLabelVisible: true,
+    label: Text(
+      label,
+      style: const TextStyle(fontSize: 10, color: Colors.white),
+    ),
+    backgroundColor: AppColors.primary,
+    child: Icon(iconData),
+  );
 }
 
 // 邮箱未验证提示横幅
