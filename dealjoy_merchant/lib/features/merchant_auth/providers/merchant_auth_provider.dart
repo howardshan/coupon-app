@@ -63,18 +63,25 @@ class MerchantAuthNotifier extends AsyncNotifier<MerchantApplication?> {
 
   // ----------------------------------------------------------
   // Step 1: 暂存邮箱密码（不调 signUp，延迟到最终提交时）
+  // password 为空时表示 Apple / 已有 Session，仅暂存邮箱（可为空，联系邮箱在 Step 2 填写）
   // ----------------------------------------------------------
   void updateAccountInfo({
     required String email,
-    required String password,
+    String? password,
   }) {
-    _regEmail = email;
-    _regPassword = password;
+    _regEmail = email.trim().isEmpty ? null : email.trim();
+    _regPassword =
+        password != null && password.isNotEmpty ? password : null;
     final current = state.value;
+    final prev = current ?? const MerchantApplication();
+    final resolvedEmail = email.trim().isNotEmpty ? email.trim() : prev.email;
+    final resolvedContact = email.trim().isNotEmpty
+        ? email.trim()
+        : (prev.contactEmail.isNotEmpty ? prev.contactEmail : email.trim());
     state = AsyncData(
-      (current ?? const MerchantApplication()).copyWith(
-        email: email,
-        contactEmail: email,
+      prev.copyWith(
+        email: resolvedEmail,
+        contactEmail: resolvedContact,
       ),
     );
   }
@@ -93,43 +100,61 @@ class MerchantAuthNotifier extends AsyncNotifier<MerchantApplication?> {
 
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
-      String? userId;
-      try {
-        // 1. 尝试注册 Supabase Auth 账号
-        final response = await _service.registerWithEmail(
-          email: _regEmail!,
-          password: _regPassword!,
-        );
-        if (response.user == null) {
-          throw Exception('Registration failed. Please try again.');
+      late final String userId;
+
+      // 已有 Session（Apple 或从登录页保留）：跳过邮箱注册与密码登录
+      if (_service.currentUser != null) {
+        userId = _service.currentUser!.id;
+        _regPassword = null;
+      } else {
+        if (_regEmail == null || _regPassword == null) {
+          throw Exception('Account email and password are required.');
         }
-        if (_service.currentUser == null) {
+        try {
+          // 1. 尝试注册 Supabase Auth 账号
+          final response = await _service.registerWithEmail(
+            email: _regEmail!,
+            password: _regPassword!,
+          );
+          if (response.user == null) {
+            throw Exception('Registration failed. Please try again.');
+          }
+          if (_service.currentUser == null) {
+            await _service.signInWithEmail(
+              email: _regEmail!,
+              password: _regPassword!,
+            );
+          }
+          _regPassword = null;
+          final uid = _service.currentUser?.id;
+          if (uid == null) {
+            throw Exception('Not signed in. Please sign in and try again.');
+          }
+          userId = uid;
+        } on AuthException catch (e) {
+          // 邮箱已注册：改为登录，再判断是否已有申请
+          final msg = e.message.toLowerCase();
+          final isAlreadyRegistered = (msg.contains('already') &&
+                  msg.contains('registered')) ||
+              msg.contains('user_already_exists');
+          if (!isAlreadyRegistered) rethrow;
           await _service.signInWithEmail(
             email: _regEmail!,
             password: _regPassword!,
           );
+          _regPassword = null;
+          final uid = _service.currentUser?.id;
+          if (uid == null) {
+            throw Exception('Not signed in. Please sign in and try again.');
+          }
+          userId = uid;
+          final existing = await _service.getApplicationStatus();
+          if (existing != null) {
+            return existing; // 已有申请，不重复提交，由 UI 跳转 /auth/review
+          }
         }
         _regPassword = null;
-        userId = _service.currentUser!.id;
-      } on AuthException catch (e) {
-        // 邮箱已注册：改为登录，再判断是否已有申请
-        final msg = (e.message ?? e.toString()).toLowerCase();
-        final isAlreadyRegistered = msg.contains('already') && msg.contains('registered') ||
-            msg.contains('user_already_exists');
-        if (!isAlreadyRegistered) rethrow;
-        await _service.signInWithEmail(
-          email: _regEmail!,
-          password: _regPassword!,
-        );
-        _regPassword = null;
-        userId = _service.currentUser!.id;
-        final existing = await _service.getApplicationStatus();
-        if (existing != null) {
-          return existing; // 已有申请，不重复提交，由 UI 跳转 /auth/review
-        }
       }
-      _regPassword = null;
-      userId ??= _service.currentUser!.id;
 
       // 2. 上传所有本地暂存的证件文件
       final uploadedDocs = <MerchantDocument>[];
@@ -138,7 +163,7 @@ class MerchantAuthNotifier extends AsyncNotifier<MerchantApplication?> {
           final fileUrl = await _service.uploadDocument(
             localFilePath: doc.localPath!,
             documentType: doc.documentType,
-            userId: userId!,
+            userId: userId,
             customFileName: doc.fileName,
           );
           uploadedDocs.add(doc.copyWith(fileUrl: fileUrl));
