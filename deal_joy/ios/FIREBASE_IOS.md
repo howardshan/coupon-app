@@ -7,9 +7,9 @@ The consumer app (`deal_joy`) calls `Firebase.initializeApp()` in `lib/main.dart
 1. Open [Firebase Console](https://console.firebase.google.com/) → your project.
 2. Add an **iOS app** with the **same Bundle ID** as in Xcode (`Runner` → *General* → *Bundle Identifier*, e.g. `com.crunchyplum.crunchyPlum`).
 3. Download `**GoogleService-Info.plist`**.
-4. Place the file at `**ios/Runner/GoogleService-Info.plist**` (next to `Info.plist`).
-5. In Xcode, open `**ios/Runner.xcworkspace**` → select **Runner** → *Build Phases* → *Copy Bundle Resources* → ensure `GoogleService-Info.plist` is listed (Flutter usually picks it up automatically once the file is in `Runner/`).
-6. Run `**flutter clean`** then `**flutter run**` on a device or simulator.
+4. Place the file at `**ios/Runner/GoogleService-Info.plist`** (next to `Info.plist`).
+5. In Xcode, open `**ios/Runner.xcworkspace`** → select **Runner** → *Build Phases* → *Copy Bundle Resources* → ensure `GoogleService-Info.plist` is listed (Flutter usually picks it up automatically once the file is in `Runner/`).
+6. Run `**flutter clean`** then `**flutter run`** on a device or simulator.
 
 If the plist is missing, Firebase init may fail at runtime; the app catches errors and continues without push (`main.dart`).
 

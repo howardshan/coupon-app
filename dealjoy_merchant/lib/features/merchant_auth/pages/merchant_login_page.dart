@@ -52,9 +52,9 @@ class _MerchantLoginPageState extends ConsumerState<MerchantLoginPage> {
         .maybeSingle();
     final role = roleRow?['role'] as String?;
     if (role != 'merchant' && role != 'admin') {
-      await client.auth.signOut();
+      // Keep session so Apple / OAuth users can complete merchant onboarding.
       if (!mounted) return;
-      setState(() => _error = 'Your account is not a merchant account.');
+      context.go('/auth/register?from=non_merchant');
       return;
     }
 
