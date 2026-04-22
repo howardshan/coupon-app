@@ -146,6 +146,11 @@ Deno.serve(async (req: Request) => {
       .delete()
       .eq("merchant_id", merchantId);
   } else {
+    // public.users.email 为 NOT NULL；OAuth（如 Apple）可能无 auth.users.email，用业务联系邮箱回填
+    const profileEmail =
+      (user.email && String(user.email).trim()) ||
+      body.contact_email.trim();
+
     // 新商家：先查 users 表确认用户存在
     const { data: userProfile } = await adminSupabase
       .from("users")
@@ -157,16 +162,19 @@ Deno.serve(async (req: Request) => {
       // users 表由 trigger 自动创建，如果不存在则手动插入
       await adminSupabase.from("users").insert({
         id: user.id,
-        email: user.email!,
+        email: profileEmail,
         full_name: body.contact_name,
         role: "merchant",
       });
     } else {
-      // 更新 role 为 merchant
-      await adminSupabase
-        .from("users")
-        .update({ role: "merchant" })
-        .eq("id", user.id);
+      const authEmail = user.email && String(user.email).trim();
+      const userPatch: { role: string; email?: string } = {
+        role: "merchant",
+      };
+      if (!authEmail) {
+        userPatch.email = body.contact_email.trim();
+      }
+      await adminSupabase.from("users").update(userPatch).eq("id", user.id);
     }
 
     // 插入新的 merchants 记录
@@ -347,6 +355,10 @@ function validateRequest(body: RegisterRequest): string | null {
   if (!body.company_name?.trim()) return "Company name is required";
   if (!body.contact_name?.trim()) return "Contact name is required";
   if (!body.contact_email?.trim()) return "Contact email is required";
+  const contactTrim = body.contact_email.trim();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(contactTrim)) {
+    return "Contact email must be a valid email address";
+  }
   if (!body.phone?.trim()) return "Phone number is required";
   if (!body.category?.trim()) return "Business category is required";
   if (!body.ein?.trim()) return "EIN/Tax ID is required";

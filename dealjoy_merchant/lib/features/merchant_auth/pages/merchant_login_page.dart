@@ -1,24 +1,27 @@
 // 商家登录页
-// 邮箱 + 密码登录，成功后根据 merchant 状态跳转：
+// 邮箱 + 密码登录，或 iOS 上 Apple 登录；成功后根据 merchant 状态跳转：
 //   无记录 → /auth/register
 //   pending/rejected → /auth/review
 //   approved → /dashboard
 
+import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../router/app_router.dart';
+import '../providers/merchant_auth_provider.dart';
 
 const _primaryOrange = Color(0xFFFF6B35);
 
-class MerchantLoginPage extends StatefulWidget {
+class MerchantLoginPage extends ConsumerStatefulWidget {
   const MerchantLoginPage({super.key});
 
   @override
-  State<MerchantLoginPage> createState() => _MerchantLoginPageState();
+  ConsumerState<MerchantLoginPage> createState() => _MerchantLoginPageState();
 }
 
-class _MerchantLoginPageState extends State<MerchantLoginPage> {
+class _MerchantLoginPageState extends ConsumerState<MerchantLoginPage> {
   final _formKey = GlobalKey<FormState>();
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
@@ -33,6 +36,71 @@ class _MerchantLoginPageState extends State<MerchantLoginPage> {
     super.dispose();
   }
 
+  /// 邮箱密码或 Apple 登录成功后：校验角色与 merchant 状态并跳转。
+  Future<void> _continueAfterAuthenticatedSession() async {
+    final client = Supabase.instance.client;
+    final user = client.auth.currentUser;
+    if (user == null) {
+      if (mounted) context.go('/dashboard');
+      return;
+    }
+
+    final roleRow = await client
+        .from('users')
+        .select('role')
+        .eq('id', user.id)
+        .maybeSingle();
+    final role = roleRow?['role'] as String?;
+    if (role != 'merchant' && role != 'admin') {
+      // Keep session so Apple / OAuth users can complete merchant onboarding.
+      if (!mounted) return;
+      context.go('/auth/register?from=non_merchant');
+      return;
+    }
+
+    if (role == 'admin') {
+      final brandAdmin = await client
+          .from('brand_admins')
+          .select('brand_id')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+      if (!mounted) return;
+
+      if (brandAdmin == null) {
+        await client.auth.signOut();
+        setState(() => _error = 'Your account is not a merchant account.');
+        return;
+      }
+      MerchantStatusCache.setStatus('approved', user.id, roleType: 'brand_admin');
+      context.go('/store-selector');
+      return;
+    }
+
+    final data = await client
+        .from('merchants')
+        .select('status')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+    if (!mounted) return;
+
+    if (data == null) {
+      context.go('/auth/register');
+      return;
+    }
+    if (data['status'] == 'approved') {
+      MerchantStatusCache.setStatus('approved', user.id);
+      context.go('/dashboard');
+    } else {
+      MerchantStatusCache.setStatus(
+        data['status'] as String? ?? 'pending',
+        user.id,
+      );
+      context.go('/auth/review');
+    }
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() {
@@ -45,72 +113,25 @@ class _MerchantLoginPageState extends State<MerchantLoginPage> {
         password: _passwordCtrl.text,
       );
       if (!mounted) return;
+      await _continueAfterAuthenticatedSession();
+    } on AuthException catch (e) {
+      setState(() => _error = _friendlyAuthError(e));
+    } catch (_) {
+      setState(() => _error = 'Login failed. Please try again.');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
 
-      // 登录成功后校验角色并查询 merchant 状态，决定跳转目标
-      final user = Supabase.instance.client.auth.currentUser;
-      if (user == null) {
-        context.go('/dashboard');
-        return;
-      }
-
-      // 校验 users.role：仅允许 merchant（门店 owner）和 admin（品牌管理员）登录商家端
-      final roleRow = await Supabase.instance.client
-          .from('users')
-          .select('role')
-          .eq('id', user.id)
-          .maybeSingle();
-      final role = roleRow?['role'] as String?;
-      if (role != 'merchant' && role != 'admin') {
-        await Supabase.instance.client.auth.signOut();
-        if (!mounted) return;
-        setState(() => _error = 'Your account is not a merchant account.');
-        return;
-      }
-
-      // 品牌管理员（role='admin'）：不需要 merchants 记录，直接通过
-      if (role == 'admin') {
-        // 检查 brand_admins 确认确实是品牌管理员
-        final brandAdmin = await Supabase.instance.client
-            .from('brand_admins')
-            .select('brand_id')
-            .eq('user_id', user.id)
-            .maybeSingle();
-
-        if (!mounted) return;
-
-        if (brandAdmin == null) {
-          await Supabase.instance.client.auth.signOut();
-          setState(() => _error = 'Your account is not a merchant account.');
-          return;
-        }
-        // 品牌管理员标记为 approved，跳转门店选择页
-        MerchantStatusCache.setStatus('approved', user.id, roleType: 'brand_admin');
-        context.go('/store-selector');
-        return;
-      }
-
-      // 门店 owner（role='merchant'）：需要 merchants 记录
-      final data = await Supabase.instance.client
-          .from('merchants')
-          .select('status')
-          .eq('user_id', user.id)
-          .maybeSingle();
-
+  Future<void> _signInWithApple() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      await ref.read(merchantAuthServiceProvider).signInWithApple();
       if (!mounted) return;
-
-      if (data == null) {
-        // 角色已是 merchant 但无 merchants 记录 → 去补填资料（与注册流程一致）
-        context.go('/auth/register');
-        return;
-      }
-      if (data['status'] == 'approved') {
-        MerchantStatusCache.setStatus('approved', user.id);
-        context.go('/dashboard');
-      } else {
-        MerchantStatusCache.setStatus(
-          data['status'] as String? ?? 'pending', user.id);
-        context.go('/auth/review');
-      }
+      await _continueAfterAuthenticatedSession();
     } on AuthException catch (e) {
       setState(() => _error = _friendlyAuthError(e));
     } catch (_) {
@@ -122,7 +143,8 @@ class _MerchantLoginPageState extends State<MerchantLoginPage> {
 
   String _friendlyAuthError(AuthException e) {
     final code = e.code ?? e.message;
-    if (code.contains('invalid_credentials') || code.contains('Invalid login credentials')) {
+    if (code.contains('invalid_credentials') ||
+        code.contains('Invalid login credentials')) {
       return 'No account found with this email, or the password is incorrect.';
     }
     if (code.contains('email_not_confirmed')) {
@@ -131,11 +153,16 @@ class _MerchantLoginPageState extends State<MerchantLoginPage> {
     if (code.contains('too_many_requests')) {
       return 'Too many attempts. Please try again later.';
     }
+    if (e.message.contains('Apple sign in cancelled')) {
+      return 'Apple sign in was cancelled.';
+    }
     return e.message;
   }
 
   @override
   Widget build(BuildContext context) {
+    final showApple = defaultTargetPlatform == TargetPlatform.iOS;
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
@@ -147,7 +174,6 @@ class _MerchantLoginPageState extends State<MerchantLoginPage> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const SizedBox(height: 40),
-                // Logo / Title
                 const Icon(Icons.storefront, size: 64, color: _primaryOrange),
                 const SizedBox(height: 16),
                 const Text(
@@ -167,7 +193,6 @@ class _MerchantLoginPageState extends State<MerchantLoginPage> {
                 ),
                 const SizedBox(height: 40),
 
-                // Email
                 TextFormField(
                   key: const ValueKey('login_email_field'),
                   controller: _emailCtrl,
@@ -178,14 +203,15 @@ class _MerchantLoginPageState extends State<MerchantLoginPage> {
                     prefixIcon: Icon(Icons.email_outlined),
                   ),
                   validator: (v) {
-                    if (v == null || v.trim().isEmpty) return 'Email is required';
+                    if (v == null || v.trim().isEmpty) {
+                      return 'Email is required';
+                    }
                     if (!v.contains('@')) return 'Enter a valid email';
                     return null;
                   },
                 ),
                 const SizedBox(height: 16),
 
-                // Password
                 TextFormField(
                   key: const ValueKey('login_password_field'),
                   controller: _passwordCtrl,
@@ -205,9 +231,44 @@ class _MerchantLoginPageState extends State<MerchantLoginPage> {
                   validator: (v) =>
                       v == null || v.isEmpty ? 'Password is required' : null,
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 16),
 
-                // Error message
+                if (showApple) ...[
+                  Row(
+                    children: [
+                      const Expanded(child: Divider(thickness: 1)),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Text(
+                          'or',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                      ),
+                      const Expanded(child: Divider(thickness: 1)),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      key: const ValueKey('login_apple_btn'),
+                      onPressed: _loading ? null : _signInWithApple,
+                      icon: const Icon(Icons.apple, size: 22),
+                      label: const Text('Continue with Apple'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF1A1A2E),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        side: const BorderSide(color: Color(0xFFE0E0E0)),
+                        alignment: Alignment.center,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+
                 if (_error != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 8),
@@ -218,7 +279,6 @@ class _MerchantLoginPageState extends State<MerchantLoginPage> {
                   ),
                 const SizedBox(height: 24),
 
-                // Sign In button
                 ElevatedButton(
                   key: const ValueKey('login_submit_btn'),
                   onPressed: _loading ? null : _submit,
@@ -227,15 +287,20 @@ class _MerchantLoginPageState extends State<MerchantLoginPage> {
                           height: 20,
                           width: 20,
                           child: CircularProgressIndicator(
-                              strokeWidth: 2, color: Colors.white),
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
                         )
-                      : const Text('Sign In',
+                      : const Text(
+                          'Sign In',
                           style: TextStyle(
-                              fontSize: 16, fontWeight: FontWeight.w600)),
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                 ),
                 const SizedBox(height: 24),
 
-                // Register link
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [

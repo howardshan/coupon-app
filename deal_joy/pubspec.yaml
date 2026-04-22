@@ -48,6 +48,8 @@ dependencies:
 
   # Auth
   google_sign_in: ^6.2.2
+  sign_in_with_apple: ^6.1.4
+  crypto: ^3.0.6
 
   # Local Storage
   shared_preferences: ^2.3.3

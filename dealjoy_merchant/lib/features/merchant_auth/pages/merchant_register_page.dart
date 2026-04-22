@@ -1,6 +1,8 @@
 // 商家注册多步骤向导页
 // 5个步骤: 账号注册 → 公司信息 → 类别选择 → 证件上传 → 地址与提交
 
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -77,6 +79,9 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
   // 最后一步：用户是否勾选了法律协议复选框
   bool _agreementAccepted = false;
 
+  /// Step 0：Continue with Apple 进行中
+  bool _appleSignInBusy = false;
+
   static const _primaryOrange = Color(0xFFFF6B35);
   static const _bgColor = Color(0xFFF8F9FA);
 
@@ -97,8 +102,53 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
         if (user?.email != null && user!.email!.isNotEmpty) {
           _emailCtrl.text = user.email!;
         }
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          final from =
+              GoRouterState.of(context).uri.queryParameters['from'];
+          if (from == 'non_merchant') {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Complete merchant registration to use this account on the merchant app.',
+                ),
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+            context.go('/auth/register');
+          }
+        });
       }
     });
+  }
+
+  Future<void> _handleAppleSignInOnRegister() async {
+    setState(() => _appleSignInBusy = true);
+    try {
+      await ref.read(merchantAuthServiceProvider).signInWithApple();
+      if (!mounted) return;
+      final u = Supabase.instance.client.auth.currentUser;
+      if (u?.email != null && u!.email!.isNotEmpty) {
+        _emailCtrl.text = u.email!;
+      }
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Signed in with Apple. Continue to the next step.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } on AuthException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.message),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _appleSignInBusy = false);
+    }
   }
 
   @override
@@ -245,18 +295,26 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
   }
 
   // ----------------------------------------------------------
-  // Step 1: 账号注册表单（邮箱+密码）
+  // Step 1: 账号注册表单（邮箱+密码，或已登录 / Apple 无密码）
   // ----------------------------------------------------------
   Widget _buildStep1AccountForm() {
+    final sessionUser = Supabase.instance.client.auth.currentUser;
+    final passwordless = sessionUser != null;
+    final emailFromAuth =
+        sessionUser?.email != null && sessionUser!.email!.isNotEmpty;
+    final showAppleOnRegister = !passwordless &&
+        defaultTargetPlatform == TargetPlatform.iOS;
+
     return Form(
       key: _step1FormKey,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _SectionHeader(
+          _SectionHeader(
             title: 'Create your merchant account',
-            subtitle:
-                'Use your business email address to get started.',
+            subtitle: passwordless
+                ? 'You are signed in. Add a business email if needed, then continue. Your contact email for verification is collected in the next step.'
+                : 'Use your business email address to get started.',
           ),
           const SizedBox(height: 24),
           _AppTextField(
@@ -265,9 +323,13 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
             hint: 'you@business.com',
             valueKey: 'register_email_field',
             keyboardType: TextInputType.emailAddress,
-            readOnly: Supabase.instance.client.auth.currentUser != null,
+            readOnly: passwordless && emailFromAuth,
             validator: (v) {
-              if (v == null || v.trim().isEmpty) return 'Email is required';
+              if (passwordless) {
+                if (v == null || v.trim().isEmpty) return null;
+              } else {
+                if (v == null || v.trim().isEmpty) return 'Email is required';
+              }
               final emailReg = RegExp(r'^[^@]+@[^@]+\.[^@]+$');
               if (!emailReg.hasMatch(v.trim())) {
                 return 'Enter a valid email address';
@@ -275,57 +337,98 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
               return null;
             },
           ),
-          const SizedBox(height: 16),
-          _AppTextField(
-            controller: _passwordCtrl,
-            label: 'Password',
-            hint: 'At least 8 characters',
-            valueKey: 'register_password_field',
-            obscureText: !_passwordVisible,
-            suffixIcon: IconButton(
-              icon: Icon(
-                _passwordVisible ? Icons.visibility_off : Icons.visibility,
-                color: const Color(0xFF9E9E9E),
+          if (!passwordless) ...[
+            const SizedBox(height: 16),
+            _AppTextField(
+              controller: _passwordCtrl,
+              label: 'Password',
+              hint: 'At least 8 characters',
+              valueKey: 'register_password_field',
+              obscureText: !_passwordVisible,
+              suffixIcon: IconButton(
+                icon: Icon(
+                  _passwordVisible ? Icons.visibility_off : Icons.visibility,
+                  color: const Color(0xFF9E9E9E),
+                ),
+                onPressed: () =>
+                    setState(() => _passwordVisible = !_passwordVisible),
               ),
-              onPressed: () =>
-                  setState(() => _passwordVisible = !_passwordVisible),
+              validator: (v) {
+                if (v == null || v.isEmpty) return 'Password is required';
+                if (v.length < 8) {
+                  return 'Password must be at least 8 characters';
+                }
+                if (!RegExp(r'[A-Z]').hasMatch(v)) {
+                  return 'Must contain at least one uppercase letter';
+                }
+                if (!RegExp(r'[a-z]').hasMatch(v)) {
+                  return 'Must contain at least one lowercase letter';
+                }
+                if (!RegExp(r'[0-9]').hasMatch(v)) {
+                  return 'Must contain at least one digit';
+                }
+                if (!RegExp(r'[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\\/~`]')
+                    .hasMatch(v)) {
+                  return 'Must contain at least one special character (!@#\$%...)';
+                }
+                return null;
+              },
             ),
-            validator: (v) {
-              if (v == null || v.isEmpty) return 'Password is required';
-              if (v.length < 8) {
-                return 'Password must be at least 8 characters';
-              }
-              if (!RegExp(r'[A-Z]').hasMatch(v)) {
-                return 'Must contain at least one uppercase letter';
-              }
-              if (!RegExp(r'[a-z]').hasMatch(v)) {
-                return 'Must contain at least one lowercase letter';
-              }
-              if (!RegExp(r'[0-9]').hasMatch(v)) {
-                return 'Must contain at least one digit';
-              }
-              if (!RegExp(r'[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\\/~`]').hasMatch(v)) {
-                return 'Must contain at least one special character (!@#\$%...)';
-              }
-              return null;
-            },
-          ),
-          const SizedBox(height: 16),
-          _AppTextField(
-            controller: _confirmPasswordCtrl,
-            label: 'Confirm Password',
-            hint: 'Re-enter your password',
-            valueKey: 'register_confirm_password_field',
-            obscureText: !_passwordVisible,
-            validator: (v) {
-              if (v != _passwordCtrl.text) {
-                return 'Passwords do not match';
-              }
-              return null;
-            },
-          ),
+            const SizedBox(height: 16),
+            _AppTextField(
+              controller: _confirmPasswordCtrl,
+              label: 'Confirm Password',
+              hint: 'Re-enter your password',
+              valueKey: 'register_confirm_password_field',
+              obscureText: !_passwordVisible,
+              validator: (v) {
+                if (v != _passwordCtrl.text) {
+                  return 'Passwords do not match';
+                }
+                return null;
+              },
+            ),
+          ],
+          if (showAppleOnRegister) ...[
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                const Expanded(child: Divider(thickness: 1)),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Text(
+                    'or',
+                    style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                  ),
+                ),
+                const Expanded(child: Divider(thickness: 1)),
+              ],
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                key: const ValueKey('register_apple_btn'),
+                onPressed:
+                    _appleSignInBusy ? null : _handleAppleSignInOnRegister,
+                icon: _appleSignInBusy
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.apple, size: 22),
+                label: const Text('Continue with Apple'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF1A1A2E),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  side: const BorderSide(color: Color(0xFFE0E0E0)),
+                  alignment: Alignment.center,
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 24),
-          // 已有账号，跳转登录
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -336,7 +439,7 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
               GestureDetector(
                 onTap: () async {
                   await Supabase.instance.client.auth.signOut();
-                  if (!context.mounted) return;
+                  if (!mounted) return;
                   context.go('/auth/login');
                 },
                 child: const Text(
@@ -857,12 +960,24 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
 
     switch (_currentStep) {
       case 0:
-        // Step 0: 仅做本地校验，暂存邮箱密码（不调 signUp）
+        // Step 0: 已登录（含 Apple）→ 无密码；否则邮箱+密码
         if (!(_step1FormKey.currentState?.validate() ?? false)) return;
-        notifier.updateAccountInfo(
-          email: _emailCtrl.text.trim(),
-          password: _passwordCtrl.text,
-        );
+        final sessionUser = Supabase.instance.client.auth.currentUser;
+        if (sessionUser != null) {
+          final trimmed = _emailCtrl.text.trim();
+          final emailForState = trimmed.isNotEmpty
+              ? trimmed
+              : (sessionUser.email ?? '');
+          notifier.updateAccountInfo(
+            email: emailForState,
+            password: null,
+          );
+        } else {
+          notifier.updateAccountInfo(
+            email: _emailCtrl.text.trim(),
+            password: _passwordCtrl.text,
+          );
+        }
         _goNext();
 
       case 1:
