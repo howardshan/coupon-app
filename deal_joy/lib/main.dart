@@ -61,6 +61,7 @@ void main() async {
     final stripeKey = Env.stripePublishableKey;
     if (stripeKey.startsWith('pk_')) {
       Stripe.publishableKey = stripeKey;
+      Stripe.merchantIdentifier = Env.stripeApplePayMerchantId;
       await Stripe.instance.applySettings();
     } else {
       debugPrint('[CrunchyPlum] Invalid Stripe key format — '
