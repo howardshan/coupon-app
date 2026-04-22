@@ -251,15 +251,19 @@ class _MerchantLoginPageState extends ConsumerState<MerchantLoginPage> {
                     ],
                   ),
                   const SizedBox(height: 16),
-                  OutlinedButton.icon(
-                    key: const ValueKey('login_apple_btn'),
-                    onPressed: _loading ? null : _signInWithApple,
-                    icon: const Icon(Icons.apple, size: 22),
-                    label: const Text('Continue with Apple'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF1A1A2E),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      side: const BorderSide(color: Color(0xFFE0E0E0)),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      key: const ValueKey('login_apple_btn'),
+                      onPressed: _loading ? null : _signInWithApple,
+                      icon: const Icon(Icons.apple, size: 22),
+                      label: const Text('Continue with Apple'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF1A1A2E),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        side: const BorderSide(color: Color(0xFFE0E0E0)),
+                        alignment: Alignment.center,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 8),

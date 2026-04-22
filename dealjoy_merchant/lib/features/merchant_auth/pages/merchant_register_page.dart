@@ -405,21 +405,26 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
               ],
             ),
             const SizedBox(height: 16),
-            OutlinedButton.icon(
-              key: const ValueKey('register_apple_btn'),
-              onPressed: _appleSignInBusy ? null : _handleAppleSignInOnRegister,
-              icon: _appleSignInBusy
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.apple, size: 22),
-              label: const Text('Continue with Apple'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFF1A1A2E),
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                side: const BorderSide(color: Color(0xFFE0E0E0)),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                key: const ValueKey('register_apple_btn'),
+                onPressed:
+                    _appleSignInBusy ? null : _handleAppleSignInOnRegister,
+                icon: _appleSignInBusy
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.apple, size: 22),
+                label: const Text('Continue with Apple'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF1A1A2E),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  side: const BorderSide(color: Color(0xFFE0E0E0)),
+                  alignment: Alignment.center,
+                ),
               ),
             ),
           ],
