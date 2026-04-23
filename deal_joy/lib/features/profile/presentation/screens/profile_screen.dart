@@ -298,11 +298,12 @@ _IconGridItem(
                   onTap: () => context.push('/profile/change-phone'),
                 ),
                 const Divider(height: 1),
+                // 产品策略：不在客户端提供自助改邮箱，避免与 Auth/对账/通知错发等问题
                 _SettingsTile(
                   icon: Icons.email_outlined,
                   title: 'Email',
                   subtitle: email,
-                  onTap: () => context.push('/profile/change-email'),
+                  showChevron: false,
                 ),
                 const Divider(height: 1),
                 _SettingsTile(
@@ -602,12 +603,14 @@ class _SettingsTile extends StatelessWidget {
   final String title;
   final String? subtitle;
   final VoidCallback? onTap;
+  final bool showChevron;
 
   const _SettingsTile({
     required this.icon,
     required this.title,
     this.subtitle,
     this.onTap,
+    this.showChevron = true,
   });
 
   @override
@@ -634,11 +637,13 @@ class _SettingsTile extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
             )
           : null,
-      trailing: const Icon(
-        Icons.chevron_right,
-        color: AppColors.textHint,
-        size: 18,
-      ),
+      trailing: showChevron
+          ? const Icon(
+              Icons.chevron_right,
+              color: AppColors.textHint,
+              size: 18,
+            )
+          : null,
       onTap: onTap,
     );
   }
