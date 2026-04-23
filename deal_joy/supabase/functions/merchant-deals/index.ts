@@ -463,7 +463,7 @@ async function handleCreateDeal(
   }
 
   // 查询商家时区（用于 fixed_date 过期时间转换）
-  const { data: tzData } = await supabaseAdmin
+  const { data: tzData } = await admin
     .from("merchants")
     .select("timezone")
     .eq("id", merchantId)
@@ -481,7 +481,7 @@ async function handleCreateDeal(
     const rawDate = String(body.expires_at).substring(0, 10); // 取纯日期 YYYY-MM-DD
     const endOfDayLocal = `${rawDate} 23:59:59`;
     // 用 PostgreSQL AT TIME ZONE 做精确转换（自动处理 DST）
-    const { data: tzResult } = await supabaseAdmin.rpc("convert_local_to_utc", {
+    const { data: tzResult } = await admin.rpc("convert_local_to_utc", {
       p_local_timestamp: endOfDayLocal,
       p_timezone: merchantTimezone,
     });

@@ -183,14 +183,11 @@ class DealsRepository {
               r['campaign_id'] as String?,
       };
 
-      final deals = await fetchDealsByIds(ids);
+      // 仅上架中的 deal 可作赞助展示（DealModel 无 is_active 字段，在查询层过滤）
+      final deals = await fetchDealsByIds(ids, activeOnly: true);
       final now = DateTime.now().toUtc();
       return deals
-          .where((d) {
-            if (!d.isActive) return false;
-            if (d.expiresAt != null && d.expiresAt!.isBefore(now)) return false;
-            return true;
-          })
+          .where((d) => !d.expiresAt.isBefore(now))
           .map((d) => d.copyWithSponsored(
                 isSponsored: true,
                 campaignId: campaignMap[d.id],
@@ -373,13 +370,23 @@ class DealsRepository {
   }
 
   /// 按 ID 列表批量获取 deal（保持原顺序）
-  Future<List<DealModel>> fetchDealsByIds(List<String> ids) async {
+  /// [activeOnly] 为 true 时仅返回 `is_active = true` 的行（赞助位等场景）
+  Future<List<DealModel>> fetchDealsByIds(
+    List<String> ids, {
+    bool activeOnly = false,
+  }) async {
     if (ids.isEmpty) return [];
     try {
-      final data = await _client
+      var query = _client
           .from('deals')
-          .select('*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, city, metro_area, brands(name, logo_url))')
+          .select(
+            '*, merchants(id, name, logo_url, phone, homepage_cover_url, brand_id, city, metro_area, brands(name, logo_url))',
+          )
           .inFilter('id', ids);
+      if (activeOnly) {
+        query = query.eq('is_active', true);
+      }
+      final data = await query;
       final map = {
         for (final d in data as List)
           (d as Map<String, dynamic>)['id'] as String: DealModel.fromJson(d),
