@@ -41,6 +41,7 @@ dependencies:
   uuid: ^4.5.1
   flutter_dotenv: ^5.2.1
   url_launcher: ^6.3.1
+  flutter_stripe: ^11.1.0
 
   # Auth：iOS 原生 Sign in with Apple → Supabase signInWithIdToken
   sign_in_with_apple: ^6.1.4

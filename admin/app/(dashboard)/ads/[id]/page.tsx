@@ -39,7 +39,7 @@ export default async function CampaignDetailPage({
   // 查询 campaign 详情
   const { data: campaign } = await serviceClient
     .from('ad_campaigns')
-    .select('*, merchants(id, name), ad_accounts(balance, total_deposit, total_spend)')
+    .select('*, merchants(id, name), ad_accounts(balance, total_recharged, total_spent)')
     .eq('id', id)
     .single()
 
@@ -141,18 +141,18 @@ export default async function CampaignDetailPage({
             </div>
             <div className="flex justify-between">
               <dt className="text-gray-500">Bid Amount</dt>
-              <dd className="text-gray-900 font-medium">${Number(campaign.bid_amount ?? 0).toFixed(2)}</dd>
+              <dd className="text-gray-900 font-medium">${Number(campaign.bid_price ?? 0).toFixed(2)}</dd>
             </div>
             <div className="flex justify-between">
               <dt className="text-gray-500">Daily Budget</dt>
               <dd className="text-gray-900 font-medium">${Number(campaign.daily_budget ?? 0).toFixed(2)}</dd>
             </div>
-            {campaign.deal_id && (
+            {campaign.target_id && (
               <div className="flex justify-between">
-                <dt className="text-gray-500">Deal ID</dt>
+                <dt className="text-gray-500">{campaign.target_type === 'deal' ? 'Deal ID' : 'Store ID'}</dt>
                 <dd>
-                  <Link href={`/deals/${campaign.deal_id}`} className="text-blue-600 hover:underline font-mono text-xs">
-                    {campaign.deal_id.slice(0, 8)}...
+                  <Link href={`/${campaign.target_type === 'deal' ? 'deals' : 'merchants'}/${campaign.target_id}`} className="text-blue-600 hover:underline font-mono text-xs">
+                    {campaign.target_id.slice(0, 8)}...
                   </Link>
                 </dd>
               </div>
@@ -161,16 +161,16 @@ export default async function CampaignDetailPage({
               <dt className="text-gray-500">Created</dt>
               <dd className="text-gray-700">{new Date(campaign.created_at).toLocaleString('en-US')}</dd>
             </div>
-            {campaign.start_date && (
+            {campaign.start_at && (
               <div className="flex justify-between">
                 <dt className="text-gray-500">Start Date</dt>
-                <dd className="text-gray-700">{campaign.start_date}</dd>
+                <dd className="text-gray-700">{new Date(campaign.start_at).toLocaleString('en-US')}</dd>
               </div>
             )}
-            {campaign.end_date && (
+            {campaign.end_at && (
               <div className="flex justify-between">
                 <dt className="text-gray-500">End Date</dt>
-                <dd className="text-gray-700">{campaign.end_date}</dd>
+                <dd className="text-gray-700">{new Date(campaign.end_at).toLocaleString('en-US')}</dd>
               </div>
             )}
             {campaign.admin_note && (
@@ -218,11 +218,11 @@ export default async function CampaignDetailPage({
                 </div>
                 <div>
                   <p className="text-xs text-gray-500">Total Deposit</p>
-                  <p className="text-xl font-bold text-green-700">${Number(campaign.ad_accounts.total_deposit ?? 0).toFixed(2)}</p>
+                  <p className="text-xl font-bold text-green-700">${Number(campaign.ad_accounts.total_recharged ?? 0).toFixed(2)}</p>
                 </div>
                 <div>
                   <p className="text-xs text-gray-500">Total Spend</p>
-                  <p className="text-xl font-bold text-red-700">${Number(campaign.ad_accounts.total_spend ?? 0).toFixed(2)}</p>
+                  <p className="text-xl font-bold text-red-700">${Number(campaign.ad_accounts.total_spent ?? 0).toFixed(2)}</p>
                 </div>
               </div>
             </div>

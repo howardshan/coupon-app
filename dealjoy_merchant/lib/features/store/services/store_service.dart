@@ -733,7 +733,7 @@ class StoreService {
     final staffList = (data['staff'] as List<dynamic>? ?? [])
         .map((e) => StaffMember.fromJson(e as Map<String, dynamic>))
         .toList();
-    final invitationList = (data['invitations'] as List<dynamic>? ?? [])
+    final invitationList = (data['pending_invitations'] as List<dynamic>? ?? [])
         .map((e) => StaffInvitation.fromJson(e as Map<String, dynamic>))
         .toList();
 

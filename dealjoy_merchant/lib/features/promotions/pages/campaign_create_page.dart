@@ -12,6 +12,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/promotions_models.dart';
 import '../providers/promotions_provider.dart';
+import '../../store/services/store_service.dart';
 
 // =============================================================
 // CampaignCreatePage — 创建 Campaign 页面（ConsumerStatefulWidget）
@@ -107,13 +108,16 @@ class _CampaignCreatePageState extends ConsumerState<CampaignCreatePage> {
       final user = supabase.auth.currentUser;
       if (user == null) return;
 
-      // 查当前商家 ID
-      final merchantRow = await supabase
-          .from('merchants')
-          .select('id')
-          .eq('user_id', user.id)
-          .maybeSingle();
-      final merchantId = merchantRow?['id'] as String? ?? '';
+      // 优先用 store switcher 的活跃门店 ID（品牌管理员多门店支持）
+      String merchantId = StoreService.globalActiveMerchantId ?? '';
+      if (merchantId.isEmpty) {
+        final merchantRow = await supabase
+            .from('merchants')
+            .select('id')
+            .eq('user_id', user.id)
+            .maybeSingle();
+        merchantId = merchantRow?['id'] as String? ?? '';
+      }
       if (merchantId.isEmpty) return;
 
       // 始终加载 active deals（供 splash link type = deal 选择用）

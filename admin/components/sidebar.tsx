@@ -63,6 +63,7 @@ const adminNav: NavEntry[] = [
       { href: '/settings/email-types', label: 'Email Types' },
       { href: '/settings/email-logs', label: 'Email Logs' },
       { href: '/settings/algorithm', label: 'Algorithm' },
+      { href: '/settings/search-ranking', label: 'Search Ranking' },
       { href: '/settings/legal', label: 'Legal Docs' },
     ],
   },

@@ -28,33 +28,50 @@ final selectedCategoryProvider = StateProvider<String>((ref) => 'All');
 // 搜索关键词
 final searchQueryProvider = StateProvider<String>((ref) => '');
 
-// 首页展示券：sort_order 不为空的 active deal，按 sort_order 升序
-// Near Me 模式用 GPS 半径过滤；城市模式按选中城市过滤；跟随 selectedCategory 筛选
+// 首页展示券：广告竞价赢家（Sponsored）优先，后接 sort_order 手动排序 deal
+// Near Me / 城市模式均支持；跟随 selectedCategory 筛选（广告侧客户端过滤）
 final featuredDealsProvider = FutureProvider<List<DealModel>>((ref) async {
   final repo = ref.watch(dealsRepositoryProvider);
   final isNearMe = ref.watch(isNearMeProvider);
   final category = ref.watch(selectedCategoryProvider);
 
+  // 并发发起广告请求（失败时内部返回空列表，不影响手动排序内容）
+  final sponsoredFuture = repo.fetchSponsoredDeals();
+
+  final List<DealModel> manual;
   if (isNearMe) {
-    // Near Me：用 searchDealsNearby RPC，只保留有 sort_order 的 deal
     final loc = await ref.watch(userLocationProvider.future);
     debugPrint('[DEBUG] featuredDealsProvider → Near Me GPS=(${loc.lat}, ${loc.lng}), category=$category');
     final allNearby = await repo.searchDealsNearby(
       lat: loc.lat,
       lng: loc.lng,
-      radiusMeters: 32187, // ~20 英里，和 store list 一致
+      radiusMeters: 32187,
       category: category,
     );
-    final results = allNearby.where((d) => d.sortOrder != null).toList();
-    debugPrint('[DEBUG] featuredDealsProvider → Near Me 返回 ${results.length} 条 (总nearby=${allNearby.length})');
-    return results;
+    manual = allNearby.where((d) => d.sortOrder != null).toList();
+    debugPrint('[DEBUG] featuredDealsProvider → Near Me 手动 ${manual.length} 条');
+  } else {
+    final city = ref.watch(selectedLocationProvider).city;
+    debugPrint('[DEBUG] featuredDealsProvider → 城市模式, city=$city, category=$category');
+    manual = await repo.fetchFeaturedDeals(city: city, category: category);
+    debugPrint('[DEBUG] featuredDealsProvider → 手动 ${manual.length} 条');
   }
 
-  final city = ref.watch(selectedLocationProvider).city;
-  debugPrint('[DEBUG] featuredDealsProvider → 城市模式, city=$city, category=$category');
-  final results = await repo.fetchFeaturedDeals(city: city, category: category);
-  debugPrint('[DEBUG] featuredDealsProvider → 返回 ${results.length} 条');
-  return results;
+  var sponsored = await sponsoredFuture;
+
+  // 分类筛选：客户端过滤广告 deal 的 category 字段
+  if (category != 'All' && category.isNotEmpty) {
+    sponsored = sponsored
+        .where((d) => d.category.toLowerCase() == category.toLowerCase())
+        .toList();
+  }
+
+  // 去重：手动排序中排除已在广告列表里出现的 deal
+  final sponsoredIds = sponsored.map((d) => d.id).toSet();
+  final dedupedManual = manual.where((d) => !sponsoredIds.contains(d.id)).toList();
+
+  debugPrint('[DEBUG] featuredDealsProvider → sponsored=${sponsored.length}, manual=${dedupedManual.length}');
+  return [...sponsored, ...dedupedManual];
 });
 
 // Deals 列表（Near Me 用 GPS 搜索；城市模式用精确 city 匹配）

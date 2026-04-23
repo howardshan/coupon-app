@@ -15,7 +15,10 @@ import '../providers/merchant_auth_provider.dart';
 const _primaryOrange = Color(0xFFFF6B35);
 
 class MerchantLoginPage extends ConsumerStatefulWidget {
-  const MerchantLoginPage({super.key});
+  const MerchantLoginPage({super.key, this.invitationId});
+
+  /// 从 staff 邀请页跳来时携带的邀请 ID；登录成功后直接跳回邀请页
+  final String? invitationId;
 
   @override
   ConsumerState<MerchantLoginPage> createState() => _MerchantLoginPageState();
@@ -36,68 +39,37 @@ class _MerchantLoginPageState extends ConsumerState<MerchantLoginPage> {
     super.dispose();
   }
 
-  /// 邮箱密码或 Apple 登录成功后：校验角色与 merchant 状态并跳转。
+  /// 邮箱密码或 Apple 登录成功后：通过 MerchantStatusCache 统一判断跳转目标。
   Future<void> _continueAfterAuthenticatedSession() async {
-    final client = Supabase.instance.client;
-    final user = client.auth.currentUser;
-    if (user == null) {
-      if (mounted) context.go('/dashboard');
+    if (!mounted) return;
+    // 如果是从 staff 邀请页跳来的，登录后直接回到邀请页完成接受
+    if (widget.invitationId != null) {
+      context.go('/staff/accept?invitation_id=${widget.invitationId}');
       return;
     }
-
-    final roleRow = await client
-        .from('users')
-        .select('role')
-        .eq('id', user.id)
-        .maybeSingle();
-    final role = roleRow?['role'] as String?;
-    if (role != 'merchant' && role != 'admin') {
-      // Keep session so Apple / OAuth users can complete merchant onboarding.
-      if (!mounted) return;
-      context.go('/auth/register?from=non_merchant');
-      return;
-    }
-
-    if (role == 'admin') {
-      final brandAdmin = await client
-          .from('brand_admins')
-          .select('brand_id')
-          .eq('user_id', user.id)
-          .maybeSingle();
-
-      if (!mounted) return;
-
-      if (brandAdmin == null) {
-        await client.auth.signOut();
-        setState(() => _error = 'Your account is not a merchant account.');
-        return;
-      }
-      MerchantStatusCache.setStatus('approved', user.id, roleType: 'brand_admin');
-      context.go('/store-selector');
-      return;
-    }
-
-    final data = await client
-        .from('merchants')
-        .select('status')
-        .eq('user_id', user.id)
-        .maybeSingle();
-
+    // 清除缓存，确保重新查询最新状态（含 staff 检查）
+    MerchantStatusCache.clear();
+    final status = await MerchantStatusCache.getStatus();
     if (!mounted) return;
 
-    if (data == null) {
-      context.go('/auth/register');
-      return;
-    }
-    if (data['status'] == 'approved') {
-      MerchantStatusCache.setStatus('approved', user.id);
-      context.go('/dashboard');
-    } else {
-      MerchantStatusCache.setStatus(
-        data['status'] as String? ?? 'pending',
-        user.id,
-      );
-      context.go('/auth/review');
+    switch (status) {
+      case 'approved':
+        final roleType = MerchantStatusCache.roleType;
+        if (roleType == 'brand_admin' || roleType == 'staff_regional_manager') {
+          context.go('/store-selector');
+        } else if (roleType == 'staff_cashier' || roleType == 'staff_trainee') {
+          context.go('/scan');
+        } else if (roleType == 'staff_finance') {
+          context.go('/earnings');
+        } else {
+          context.go('/dashboard');
+        }
+      case 'pending':
+      case 'rejected':
+        context.go('/auth/review');
+      default:
+        // 无商家/员工记录 → 引导注册
+        context.go('/auth/register');
     }
   }
 
@@ -319,6 +291,20 @@ class _MerchantLoginPageState extends ConsumerState<MerchantLoginPage> {
                       ),
                     ),
                   ],
+                ),
+                const SizedBox(height: 4),
+                TextButton(
+                  onPressed: () => context.go('/staff/accept'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: const Color(0xFF757575),
+                  ),
+                  child: const Text(
+                    'Have a staff invitation?',
+                    style: TextStyle(
+                      fontSize: 13,
+                      decoration: TextDecoration.underline,
+                    ),
+                  ),
                 ),
               ],
             ),

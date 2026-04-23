@@ -1399,6 +1399,27 @@ class _SmallDealCard extends StatelessWidget {
                       ),
                     ),
                   ),
+                  if (deal.isSponsored)
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: Colors.black54,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: const Text(
+                          'Sponsored',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -1417,13 +1438,28 @@ class _SmallDealCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 4),
-                  Text(
-                    '\$${deal.discountPrice.toStringAsFixed(0)}',
-                    style: const TextStyle(
-                      color: AppColors.primary,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 15,
-                    ),
+                  Row(
+                    children: [
+                      Text(
+                        '\$${deal.discountPrice.toStringAsFixed(0)}',
+                        style: const TextStyle(
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                        ),
+                      ),
+                      const Spacer(),
+                      const Icon(Icons.star, size: 12, color: Colors.amber),
+                      const SizedBox(width: 2),
+                      Text(
+                        deal.rating.toStringAsFixed(1),
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -1482,7 +1518,12 @@ class _MerchantGridCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => context.push('/merchant/${merchant.id}'),
+      onTap: () {
+        if (merchant.isSponsored && merchant.campaignId != null) {
+          _recordAdClick(merchant.campaignId!);
+        }
+        context.push('/merchant/${merchant.id}');
+      },
       child: Container(
         decoration: BoxDecoration(
           color: Colors.white,
@@ -1503,25 +1544,49 @@ class _MerchantGridCard extends StatelessWidget {
               borderRadius: const BorderRadius.vertical(
                 top: Radius.circular(12),
               ),
-              child: () {
-                final coverUrl = merchant.homepageCoverUrl ?? merchant.logoUrl;
-                return coverUrl != null && coverUrl.isNotEmpty
-                    ? CachedNetworkImage(
-                        imageUrl: coverUrl,
-                        width: double.infinity,
-                        height: 130,
-                        fit: BoxFit.cover,
-                      )
-                    : Container(
-                        width: double.infinity,
-                        height: 130,
-                        color: AppColors.surfaceVariant,
-                        child: const Center(
-                          child: Icon(Icons.restaurant,
-                              size: 40, color: AppColors.textHint),
+              child: Stack(
+                children: [
+                  () {
+                    final coverUrl = merchant.homepageCoverUrl ?? merchant.logoUrl;
+                    return coverUrl != null && coverUrl.isNotEmpty
+                        ? CachedNetworkImage(
+                            imageUrl: coverUrl,
+                            width: double.infinity,
+                            height: 130,
+                            fit: BoxFit.cover,
+                          )
+                        : Container(
+                            width: double.infinity,
+                            height: 130,
+                            color: AppColors.surfaceVariant,
+                            child: const Center(
+                              child: Icon(Icons.restaurant,
+                                  size: 40, color: AppColors.textHint),
+                            ),
+                          );
+                  }(),
+                  if (merchant.isSponsored)
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: Colors.black54,
+                          borderRadius: BorderRadius.circular(4),
                         ),
-                      );
-              }(),
+                        child: const Text(
+                          'Sponsored',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
             // 信息区
             Padding(

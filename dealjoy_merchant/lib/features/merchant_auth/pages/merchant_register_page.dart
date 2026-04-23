@@ -196,7 +196,10 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
                       }
                     },
                   )
-                : null,
+                : IconButton(
+                    icon: const Icon(Icons.arrow_back, color: Color(0xFF212121)),
+                    onPressed: () => context.go('/auth/login'),
+                  ),
         title: Text(
           _stepTitle(_currentStep),
           style: const TextStyle(

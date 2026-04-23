@@ -10,8 +10,27 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'features/store/providers/store_provider.dart';
+import 'router/app_router.dart';
 import 'shared/providers/legal_provider.dart';
 import 'shared/widgets/consent_barrier.dart';
+
+/// 根据 roleType 推算默认权限（用于 storeProvider 尚未加载时）
+List<String> _defaultPermissionsForRole(String? roleType) {
+  switch (roleType) {
+    case 'staff_cashier':
+    case 'staff_trainee':
+      return ['scan', 'orders'];
+    case 'staff_finance':
+      return ['earnings'];
+    case 'staff_regional_manager':
+      return ['analytics', 'scan', 'orders', 'reviews', 'staff', 'earnings'];
+    case 'staff_manager':
+      return ['analytics', 'scan', 'orders', 'reviews', 'staff', 'earnings'];
+    default:
+      // store_owner / brand_admin / unknown → 显示全部
+      return ['analytics', 'scan', 'orders', 'reviews', 'staff', 'earnings', 'brand'];
+  }
+}
 
 /// 定义一个 Tab 项（路由 + 图标 + 标签 + 所需权限）
 class _TabItem {
@@ -33,17 +52,18 @@ class _TabItem {
 
 // 所有可能的 Tab（按顺序）
 // 权限控制:
-// - 核销员(cashier): scan, orders → 2 tab
+// - 核销员(cashier): scan, orders, profile → 3 tab
 // - 客服(service): scan, orders, reviews → 3 tab
 // - 店长(manager): 全部 → 5 tab
 // - 门店老板/品牌管理员: 全部 → 5 tab
+// 特殊权限标记：'!staff' 表示「没有 staff 权限时才显示」（cashier/trainee 专用）
 const _allTabs = [
   _TabItem(
     path: '/dashboard',
     icon: Icons.dashboard_outlined,
     selectedIcon: Icons.dashboard,
     label: 'Dashboard',
-    requiredPermission: 'analytics', // 核销员/客服没有此权限
+    requiredPermission: 'analytics',
   ),
   _TabItem(
     path: '/scan',
@@ -64,14 +84,22 @@ const _allTabs = [
     icon: Icons.rate_review_outlined,
     selectedIcon: Icons.rate_review,
     label: 'Reviews',
-    requiredPermission: 'reviews', // 核销员没有此权限
+    requiredPermission: 'reviews',
   ),
   _TabItem(
     path: '/me',
+    icon: Icons.settings_outlined,
+    selectedIcon: Icons.settings,
+    label: 'Me',
+    requiredPermission: 'staff',
+  ),
+  // cashier/trainee 专用 Profile tab（有 staff 权限的角色用 Me tab）
+  _TabItem(
+    path: '/staff/profile',
     icon: Icons.person_outline,
     selectedIcon: Icons.person,
-    label: 'Me',
-    requiredPermission: 'staff', // 核销员/客服没有此权限
+    label: 'Profile',
+    requiredPermission: '!staff',
   ),
 ];
 
@@ -88,6 +116,11 @@ class _AppShellState extends ConsumerState<AppShell>
     with WidgetsBindingObserver {
   // 当前是否有 ConsentBarrier dialog 正在显示（避免重复弹出）
   bool _consentDialogVisible = false;
+
+  // 供 BackButtonListener 回调读取，build() 每次更新
+  List<_TabItem> _visibleTabs = [];
+  int _currentIndex = 0;
+
 
   @override
   void initState() {
@@ -156,12 +189,18 @@ class _AppShellState extends ConsumerState<AppShell>
     final storeAsync = ref.watch(storeProvider);
     final permissions = storeAsync.valueOrNull?.permissions ?? [];
 
+    // 权限未加载时用 roleType 推算默认权限，避免短暂显示全部 Tab
+    final effectivePermissions = permissions.isEmpty
+        ? _defaultPermissionsForRole(MerchantStatusCache.roleType)
+        : permissions;
+
     // 根据权限过滤可见 Tab
+    // '!xxx' 表示「没有 xxx 权限时才显示」
     final visibleTabs = _allTabs.where((tab) {
-      if (tab.requiredPermission == null) return true;
-      // 如果没有加载到权限信息（首次加载中），显示所有 tab
-      if (permissions.isEmpty) return true;
-      return permissions.contains(tab.requiredPermission);
+      final req = tab.requiredPermission;
+      if (req == null) return true;
+      if (req.startsWith('!')) return !effectivePermissions.contains(req.substring(1));
+      return effectivePermissions.contains(req);
     }).toList();
 
     // 如果没有可见 tab（极端情况），至少显示 Me
@@ -171,22 +210,38 @@ class _AppShellState extends ConsumerState<AppShell>
 
     final currentIndex = _tabIndex(location, visibleTabs);
 
-    return Scaffold(
-      body: widget.child,
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: currentIndex,
-        onDestinationSelected: (i) {
-          if (i < visibleTabs.length) {
-            context.go(visibleTabs[i].path);
-          }
-        },
-        destinations: visibleTabs
-            .map((tab) => NavigationDestination(
-                  icon: Icon(tab.icon),
-                  selectedIcon: Icon(tab.selectedIcon),
-                  label: tab.label,
-                ))
-            .toList(),
+    // 每次 build 更新缓存值，供 BackButtonListener 回调使用
+    _visibleTabs = visibleTabs;
+    _currentIndex = currentIndex;
+
+    return BackButtonListener(
+      // go_router 还有子页面可 pop 时返回 false，让 go_router 自己处理
+      // 在 root tab 且非首页时跳首页，在首页时返回 false 让系统退出 App
+      onBackButtonPressed: () async {
+        if (GoRouter.of(context).canPop()) return false;
+        if (_currentIndex > 0 && _visibleTabs.isNotEmpty) {
+          context.go(_visibleTabs[0].path);
+          return true;
+        }
+        return false; // 首页 → 系统处理（退出 App）
+      },
+      child: Scaffold(
+        body: widget.child,
+        bottomNavigationBar: NavigationBar(
+          selectedIndex: currentIndex,
+          onDestinationSelected: (i) {
+            if (i < visibleTabs.length) {
+              context.go(visibleTabs[i].path);
+            }
+          },
+          destinations: visibleTabs
+              .map((tab) => NavigationDestination(
+                    icon: Icon(tab.icon),
+                    selectedIcon: Icon(tab.selectedIcon),
+                    label: tab.label,
+                  ))
+              .toList(),
+        ),
       ),
     );
   }

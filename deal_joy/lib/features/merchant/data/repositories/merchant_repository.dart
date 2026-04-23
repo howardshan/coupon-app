@@ -30,7 +30,7 @@ class MerchantRepository {
       // Step 2：查询商家（不再用 deals!inner 做分类过滤，改在应用层过滤）
       var query = _client
           .from('merchants')
-          .select('*, deals(rating, review_count, discount_price, is_active, category)')
+          .select('*, deals(rating, review_count, discount_price, is_active, category), reviews(rating)')
           .eq('status', 'approved');
 
       if (city != null && city.isNotEmpty) {
@@ -202,6 +202,51 @@ class MerchantRepository {
   }
 
   /// 按 ID 列表批量获取 merchant（保持原顺序）
+  /// 获取广告竞价赢家（home_store_top placement），用于商家列表顶部插入
+  Future<List<MerchantModel>> fetchSponsoredMerchants() async {
+    try {
+      final data = await _client.rpc('get_active_ads', params: {
+        'p_placement': 'home_store_top',
+        'p_limit': 20,
+      });
+      final rows = data as List<dynamic>;
+      final entries = rows
+          .where((r) => (r as Map<String, dynamic>)['target_type'] == 'store')
+          .toList();
+      if (entries.isEmpty) return [];
+
+      final ids = entries
+          .map((r) => (r as Map<String, dynamic>)['target_id'] as String)
+          .toList();
+      final campaignMap = {
+        for (final r in entries)
+          (r as Map<String, dynamic>)['target_id'] as String:
+              r['campaign_id'] as String?,
+      };
+
+      // 只取 status='approved' 的商家
+      final merchantData = await _client
+          .from('merchants')
+          .select('*, deals(rating, review_count, discount_price, is_active)')
+          .inFilter('id', ids)
+          .eq('status', 'approved');
+      final map = <String, MerchantModel>{};
+      for (final raw in merchantData as List) {
+        final d = raw as Map<String, dynamic>;
+        map[d['id'] as String] = MerchantModel.fromJson(d);
+      }
+      final merchants = ids.map((id) => map[id]).whereType<MerchantModel>().toList();
+      return merchants
+          .map((m) => m.copyWithSponsored(
+                isSponsored: true,
+                campaignId: campaignMap[m.id],
+              ))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
   Future<List<MerchantModel>> fetchMerchantsByIds(List<String> ids) async {
     if (ids.isEmpty) return [];
     try {

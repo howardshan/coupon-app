@@ -17,6 +17,9 @@ class MerchantModel {
   final double? distanceMiles;
   // 主分类（取第一个 active deal 的 category）
   final String? primaryCategory;
+  // 广告投放标记
+  final bool isSponsored;
+  final String? campaignId;
 
   MerchantModel({
     required this.id,
@@ -34,6 +37,8 @@ class MerchantModel {
     this.bestDiscount,
     this.distanceMiles,
     this.primaryCategory,
+    this.isSponsored = false,
+    this.campaignId,
   });
 
   /// 复制并设置距离
@@ -54,31 +59,60 @@ class MerchantModel {
       bestDiscount: bestDiscount,
       distanceMiles: distanceMiles ?? this.distanceMiles,
       primaryCategory: primaryCategory ?? this.primaryCategory,
+      isSponsored: isSponsored,
+      campaignId: campaignId,
+    );
+  }
+
+  /// 复制并标记为广告投放商家
+  MerchantModel copyWithSponsored({required bool isSponsored, String? campaignId}) {
+    return MerchantModel(
+      id: id,
+      name: name,
+      description: description,
+      logoUrl: logoUrl,
+      homepageCoverUrl: homepageCoverUrl,
+      address: address,
+      phone: phone,
+      lat: lat,
+      lng: lng,
+      avgRating: avgRating,
+      totalReviewCount: totalReviewCount,
+      activeDealCount: activeDealCount,
+      bestDiscount: bestDiscount,
+      distanceMiles: distanceMiles,
+      primaryCategory: primaryCategory,
+      isSponsored: isSponsored,
+      campaignId: campaignId ?? this.campaignId,
     );
   }
 
   factory MerchantModel.fromJson(Map<String, dynamic> json) {
-    // 聚合关联 deals 数据
     double? avgRating;
     int? totalReviewCount;
     int? activeDealCount;
     double? bestDiscount;
     String? primaryCategory;
 
+    // 评分从 reviews 直接聚合，不随 deal 过期而消失
+    final reviews = json['reviews'];
+    if (reviews is List && reviews.isNotEmpty) {
+      final ratings = reviews
+          .map((r) => (r['rating'] as num?)?.toDouble())
+          .whereType<double>()
+          .toList();
+      if (ratings.isNotEmpty) {
+        avgRating = ratings.reduce((a, b) => a + b) / ratings.length;
+        totalReviewCount = ratings.length;
+      }
+    }
+
+    // deals 只用于 activeDealCount / bestDiscount / primaryCategory
     final deals = json['deals'];
     if (deals is List && deals.isNotEmpty) {
       final active = deals.where((d) => d['is_active'] == true).toList();
       activeDealCount = active.length;
       if (active.isNotEmpty) {
-        final ratings = active
-            .map((d) => (d['rating'] as num?)?.toDouble())
-            .whereType<double>()
-            .toList();
-        if (ratings.isNotEmpty) {
-          avgRating = ratings.reduce((a, b) => a + b) / ratings.length;
-        }
-        totalReviewCount = active.fold<int>(
-            0, (sum, d) => sum + ((d['review_count'] as num?)?.toInt() ?? 0));
         final prices = active
             .map((d) => (d['discount_price'] as num?)?.toDouble())
             .whereType<double>()
@@ -87,6 +121,19 @@ class MerchantModel {
           bestDiscount = prices.reduce((a, b) => a < b ? a : b);
         }
         primaryCategory = active.first['category'] as String?;
+        // reviews 为空时回退到 deals.rating（Near Me RPC 路径不带 reviews 字段）
+        if (avgRating == null) {
+          final dealRatings = active
+              .map((d) => (d['rating'] as num?)?.toDouble())
+              .where((r) => r != null && r > 0)
+              .whereType<double>()
+              .toList();
+          if (dealRatings.isNotEmpty) {
+            avgRating = dealRatings.reduce((a, b) => a + b) / dealRatings.length;
+            totalReviewCount = active.fold<int>(
+                0, (sum, d) => sum + ((d['review_count'] as num?)?.toInt() ?? 0));
+          }
+        }
       }
     }
 

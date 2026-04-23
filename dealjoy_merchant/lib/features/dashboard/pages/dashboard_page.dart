@@ -219,10 +219,10 @@ class DashboardPage extends ConsumerWidget {
             const SizedBox(height: 12),
             ShortcutGrid(
               onTap: (action) => _onShortcutTap(context, action),
-              // 同时检查 storeProvider 和直接查 brand_admins 表
               isBrandAdmin: ref.watch(storeProvider).valueOrNull?.isBrandAdmin ??
                   ref.watch(_isBrandAdminDirectProvider).valueOrNull ??
                   false,
+              permissions: ref.watch(storeProvider).valueOrNull?.permissions ?? [],
             ),
 
             // ------------------------------------------------
