@@ -6,21 +6,26 @@
 
 **Architecture:** Deal 级配置小费规则（是否启用、百分比或固定金额、三档预设 + 自选含 0）；核销仍由 `merchant-scan/redeem` 完成；小费作为**独立支付意图**在核销后发起，数据落在专用表并关联 `coupon_id` / `order_item_id`；签名以私有存储关联 `tip` 记录；Gift 场景默认由**持券核销方**（`coupons.current_holder_user_id` 对应用户）付款。**商家端 UI 与 Edge 鉴权**须与现有 `Permission` / `ROLE_PERMISSIONS`（`_shared/auth.ts`）及 `StoreInfo.hasPermission` / 底部 Tab 过滤逻辑一致，避免「无权限角色看到 Collect tip」或「有权限角色被前端误藏」。
 
-**Tech Stack:** Supabase（PostgreSQL + RLS + Storage）、Deno Edge Functions、Stripe（PaymentIntent、Customer、已保存支付方式）、Flutter（`deal_joy` 用户端、`dealjoy_merchant` 商家端）、Admin（`dealjoy-cc` 若订单展示在此）。
+**Tech Stack:** Supabase（PostgreSQL + RLS + Storage）、Deno Edge Functions、Stripe（PaymentIntent、Customer、已保存支付方式）、Flutter（`deal_joy` 用户端、`dealjoy_merchant` 商家端）、Admin（仓库内 `admin/` Next 订单详情；`dealjoy-cc` 为文档/工具子项目无订单 UI 代码）。
 
-**文档版本:** v1.1  
+**文档版本:** v1.3  
 **创建日期:** 2026-04-23  
 **受众:** 产品、研发（DealJoy：Flutter 双端、Supabase Edge、可选 Admin）  
-**状态:** 规划稿 — 实现前需与产品/法务确认税务与小费分账口径  
+**状态:** v1 已交付 — 全链路代码已合入；税务口径仍以法务为准  
+**当前阶段:** P0–P7 已完成（见 §十、§五 Sprint 标记）  
 
 ---
 
 ## 变更记录
 
-| 版本 | 日期 | 变更内容 |
-| ---- | ---- | -------- |
-| v1.0 | 2026-04-23 | 初版：产品流程、数据模型、分阶段任务、与现网代码对齐的注意点 |
-| v1.1 | 2026-04-23 | 对齐现网商家端 **V2.3 角色/权限**：`_shared/auth.ts`、`merchant-store` 下发、`StoreInfo` / `app_shell` Tab；明确小费能力按权限拆分；Sprint 与代码锚点增补 |
+
+| 版本   | 日期         | 变更内容                                                                                                                                             |
+| ---- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| v1.0 | 2026-04-23 | 初版：产品流程、数据模型、分阶段任务、与现网代码对齐的注意点                                                                                                                   |
+| v1.1 | 2026-04-23 | 对齐现网商家端 **V2.3 角色/权限**：`_shared/auth.ts`、`merchant-store` 下发、`StoreInfo` / `app_shell` Tab；明确小费能力按权限拆分；Sprint 与代码锚点增补                            |
+| v1.2 | 2026-04-23 | 增加 **§十 开发进度跟踪**、§五 Sprint 状态约定；**P0 开放问题**工程默认决议写入 §3.2 / §4.2 / §九；启动 P1–P7 代码实现                                                               |
+| v1.3 | 2026-04-23 | P1–P7 落地：`coupon_tips` 迁移与 RLS、Edge/Webhook、双端 Flutter、`admin` 订单小费展示、`user-order-detail`/`merchant-orders` 附加 `tip`、Deal 创建/编辑小费配置、curl 样例与测试修复 |
+
 
 ---
 
@@ -48,13 +53,15 @@
 
 ## 二、范围与依赖
 
-| 包含（v1） | 不包含 / 后续 |
-| ---------- | ------------- |
-| Deal 级小费配置与校验 | 多币种、非 USD |
-| 核销后独立小费 PaymentIntent | 无卡用户除当场绑卡/钱包外的「信用赊账」 |
-| 签名采集与私密存储 | OCR / 笔迹司法鉴定级存证 |
-| 单券粒度小费记录 + 可选「会话级」UI 合并 | 强制改 `merchant-scan` 原子内扣小费 |
-| `stripe-webhook` 同步小费支付状态 | Stripe Terminal 专用硬件流程 |
+
+| 包含（v1）                    | 不包含 / 后续                   |
+| ------------------------- | -------------------------- |
+| Deal 级小费配置与校验             | 多币种、非 USD                  |
+| 核销后独立小费 PaymentIntent     | 无卡用户除当场绑卡/钱包外的「信用赊账」       |
+| 签名采集与私密存储                 | OCR / 笔迹司法鉴定级存证            |
+| 单券粒度小费记录 + 可选「会话级」UI 合并   | 强制改 `merchant-scan` 原子内扣小费 |
+| `stripe-webhook` 同步小费支付状态 | Stripe Terminal 专用硬件流程     |
+
 
 **文案语言：** 与现网一致，**用户可见 UI / 错误提示为英文**；本计划正文中文便于评审。
 
@@ -76,7 +83,7 @@
 ### 3.2 核销后流程（商家端为主）
 
 1. `merchant-scan/redeem` 成功返回后，若 Deal `tips_enabled`，商家端展示「Collect tip」类入口（英文文案）。
-2. 打开小费页：展示三档 + Custom；展示**计算后金额**（百分比基于何种基准 — **需产品拍板**：常见为「券面值 / 实付 / 固定档位」；v1 建议在规格中锁定一种并在服务端统一计算，防篡改）。
+2. 打开小费页：展示三档 + Custom；展示**计算后金额**。**v1 已决议（P0）：** 百分比小费以关联 `**order_items.unit_price`**（即购买时 Deal 的券面/成交价快照）为基数；无 `order_item` 时回退为 `**deals.discount_price`**。服务端按 Deal 配置重算可收区间并校验，不信任客户端裸金额。
 3. 顾客确认 → 画布签名 → 提交：创建待支付小费记录 + 上传签名 → 调 Edge 创建 Stripe PaymentIntent → 客户端确认（PaymentSheet 或已有支付组件模式）。
 4. 支付成功：Webhook 更新状态；商家端关闭弹窗并提示成功。
 
@@ -94,14 +101,16 @@
 
 以下角色与权限表以 `deal_joy/supabase/functions/_shared/auth.ts` 中 `ROLE_PERMISSIONS` 为准（`merchant-scan` 已 `requirePermission(auth, 'scan')`；`merchant-deals` 已 `requirePermission(auth, 'deals')`；`merchant-orders` 入口已 `requirePermission(auth, 'orders')`）。
 
-| 角色 (`UserRole`) | `scan` | `orders` | `orders_detail` | `deals` | 与小费 v1 的对应关系（建议） |
-| ----------------- | ------ | -------- | ----------------- | ------- | ----------------------------- |
-| `brand_owner` / `brand_admin` / `store_owner` | ✓ | ✓ | ✓ | ✓ | 可配置 Deal 小费；可核销后收取；订单中可见摘要 |
-| `regional_manager` / `manager` | ✓ | ✓ | ✓ | ✓ | 同上 |
-| `finance` | ✗ | ✓ | ✓ | ✗ | **无扫码 Tab/无 `scan`**：不宜承担「柜台向顾客收小费」流程；可在订单/报表中看小费数据（与订单权限一致即可） |
-| `service` | ✓ | ✓ | ✓ | ✗ | **可核销与收小费**；**不可**在商家端编辑 Deal 小费配置（无 `deals`）— 配置由店长/老板完成 |
-| `cashier` | ✓ | ✓ | ✗ | ✗ | 同上：可收小费，不可改 Deal 小费字段 |
-| `trainee` | ✓ | ✗ | ✗ | ✗ | **与产品确认**：`auth` 注释为「只读扫码、不能核销」，但当前 `CouponVerifyPage` 未按角色隐藏「Confirm Redemption」；小费 v1 应 **要么** 在后端拒绝 `trainee` 的 `redeem`/收小费，**要么** 在前端与核销策略一致后，再决定 `trainee` 是否出现 Collect tip |
+
+| 角色 (`UserRole`)                               | `scan` | `orders` | `orders_detail` | `deals` | 与小费 v1 的对应关系（建议）                                                                                                                                                                  |
+| --------------------------------------------- | ------ | -------- | --------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `brand_owner` / `brand_admin` / `store_owner` | ✓      | ✓        | ✓               | ✓       | 可配置 Deal 小费；可核销后收取；订单中可见摘要                                                                                                                                                        |
+| `regional_manager` / `manager`                | ✓      | ✓        | ✓               | ✓       | 同上                                                                                                                                                                                |
+| `finance`                                     | ✗      | ✓        | ✓               | ✗       | **无扫码 Tab/无 `scan`**：不宜承担「柜台向顾客收小费」流程；可在订单/报表中看小费数据（与订单权限一致即可）                                                                                                                    |
+| `service`                                     | ✓      | ✓        | ✓               | ✗       | **可核销与收小费**；**不可**在商家端编辑 Deal 小费配置（无 `deals`）— 配置由店长/老板完成                                                                                                                         |
+| `cashier`                                     | ✓      | ✓        | ✗               | ✗       | 同上：可收小费，不可改 Deal 小费字段                                                                                                                                                             |
+| `trainee`                                     | ✓      | ✗        | ✗               | ✗       | **与产品确认**：`auth` 注释为「只读扫码、不能核销」，但当前 `CouponVerifyPage` 未按角色隐藏「Confirm Redemption」；小费 v1 应 **要么** 在后端拒绝 `trainee` 的 `redeem`/收小费，**要么** 在前端与核销策略一致后，再决定 `trainee` 是否出现 Collect tip |
+
 
 **Flutter 侧注意：**
 
@@ -134,7 +143,7 @@
 
 - 新建 Edge Function（示例名）`create-tip-payment-intent`：入参 `tip_id` 或 `coupon_id` + 金额 + 鉴权用户；校验 Deal 配置、券已 `used`、金额在允许范围；创建 **独立** `PaymentIntent`，`metadata` 含 `coupon_id`, `order_item_id`, `tip_id`, `merchant_id`。
 - 使用已有 Stripe Customer；优先默认 PaymentMethod；必要时客户端确认（SCA）。
-- **Connect**：明确小费 `transfer_data[destination]` 为**核销门店** `merchants.stripe_account_id`（与现网跨店逻辑区分：小费不走路径错误的 `reverse_transfer` 团购逻辑）。
+- **Connect**：明确小费 `transfer_data[destination]` 为**核销门店** `merchants.stripe_account_id`（与现网跨店逻辑区分：小费不走路径错误的 `reverse_transfer` 团购逻辑）。**v1 已决议（P0）：** 平台**不**从小费抽成（`application_fee_amount = 0`）；后续若抽成再改 Edge 与报表。
 - `stripe-webhook`：处理 `payment_intent.succeeded` / `failed`，更新 `coupon_tips.status`（幂等：`tip_id` 或 `pi.id`）。
 
 ### 4.3 与核销解耦
@@ -151,7 +160,9 @@
 
 ## 五、实现任务（分 Sprint）
 
-### Sprint 0：口径冻结（0.5–1 天）
+**Sprint 状态约定：** 每个 Sprint 标题行后缀 `【状态：未开始 | 进行中 | 已完成】`；完成后补 **完成日期** 与 **PR/commit**（可选）。子任务可用 `- [x]` 勾选。
+
+### Sprint 0：口径冻结（0.5–1 天）【状态：已完成】2026-04-23
 
 **Files:** 无代码 — 更新本计划或 PRD 附件。
 
@@ -162,7 +173,7 @@
 
 ---
 
-### Sprint 1：数据库与 RLS
+### Sprint 1：数据库与 RLS【状态：已完成】2026-04-23
 
 **Files:**
 
@@ -183,7 +194,7 @@
 
 ---
 
-### Sprint 2：Edge Functions
+### Sprint 2：Edge Functions【状态：已完成】2026-04-23
 
 **Files:**
 
@@ -205,7 +216,7 @@
 
 ---
 
-### Sprint 3：商家端 Flutter（`dealjoy_merchant`）— **权限与扫码模块为主**
+### Sprint 3：商家端 Flutter（`dealjoy_merchant`）— **权限与扫码模块为主**【状态：已完成】2026-04-23
 
 **Files:**
 
@@ -231,7 +242,7 @@
 
 ---
 
-### Sprint 4：用户端 Flutter（`deal_joy`）
+### Sprint 4：用户端 Flutter（`deal_joy`）【状态：已完成】2026-04-23
 
 **Files:**
 
@@ -246,9 +257,9 @@
 
 ---
 
-### Sprint 5：管理端（`dealjoy-cc`）
+### Sprint 5：管理端（`admin/`）【状态：已完成】2026-04-23
 
-**Files:** 订单详情相关页面（搜索 `order_items`、`coupon` 展示处）。
+**Files:** `admin/app/(dashboard)/orders/[id]/page.tsx`（`order_items` + `coupon` 展示处；`coupon_tips` 经 service role 查询）。
 
 **Step 1:** 管理订单详情增加小费行：金额、状态、PI id、 payer、核销门店。
 
@@ -258,14 +269,14 @@
 
 ---
 
-### Sprint 6：Deal 配置编辑
+### Sprint 6：Deal 配置编辑【状态：已完成】2026-04-23
 
 **Files:**
 
 - `dealjoy_merchant` Deal 创建/编辑表单（**仅 `canManageDeals` / `deals` 权限**展示与提交小费配置；`service`/`cashier` 进入 Deal 页须不可改小费字段）
 - `dealjoy_merchant/lib/features/deals/pages/deal_detail_page.dart`（及关联 editor，与现有 `_hasPermission` 模式对齐）
 - `deal_joy/supabase/functions/merchant-deals/index.ts`（PATCH/POST body 扩展 + 小费字段**数值/枚举服务端校验**；现网入口已统一 `requirePermission(auth, "deals")`，`cashier`/`service` 等**无法调用**该 Edge — Flutter 隐藏表单仅为 UX，不能替代鉴权）
-- 若有 Admin 维护 deals：`dealjoy-cc` 对应表单
+- 若有 Admin 维护 deals：以仓库内 `admin/` 对应表单为准（`dealjoy-cc` 无 Deal 维护 UI）
 
 **Step 1:** 表单字段 + 校验 + API payload。
 
@@ -275,7 +286,7 @@
 
 ---
 
-### Sprint 7：测试、观测与文档
+### Sprint 7：测试、观测与文档【状态：已完成】2026-04-23
 
 **Files:**
 
@@ -294,14 +305,16 @@
 
 ## 六、风险与缓解
 
-| 风险 | 缓解 |
-| ---- | ---- |
-| Store Credit 用户无保存卡 | 小费流引导当场绑卡 / Apple Pay；无法支付则允许跳过并记 `skipped`（若产品允许） |
-| SCA 导致 off_session 失败 | 当面 PaymentSheet 确认 |
-| 跨店团购资金逻辑与小费混淆 | 小费 PI 单独 metadata + 独立 transfer 目标账户 |
-| 签名 GDPR / 存储成本 | 保留期政策 + 压缩图像 + 仅关联 tip 行 |
+
+| 风险                                          | 缓解                                                                                                                                 |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Store Credit 用户无保存卡                         | 小费流引导当场绑卡 / Apple Pay；无法支付则允许跳过并记 `skipped`（若产品允许）                                                                                 |
+| SCA 导致 off_session 失败                       | 当面 PaymentSheet 确认                                                                                                                 |
+| 跨店团购资金逻辑与小费混淆                               | 小费 PI 单独 metadata + 独立 transfer 目标账户                                                                                               |
+| 签名 GDPR / 存储成本                              | 保留期政策 + 压缩图像 + 仅关联 tip 行                                                                                                           |
 | 角色权限漂移（Flutter Tab 与 Edge `Permission` 不一致） | 以 `_shared/auth.ts` 为唯一真相；`StoreInfo` 便捷 getter 与 `requirePermission` 使用同一字符串；新增权限时同步 `merchant-brand` / `merchant-store` 若存在硬编码列表 |
-| `trainee` 能否核销/收小费与注释不一致 | Sprint 2 Step 0 产品裁定 + 前后端统一拦截 |
+| `trainee` 能否核销/收小费与注释不一致                    | Sprint 2 Step 0 产品裁定 + 前后端统一拦截                                                                                                     |
+
 
 ---
 
@@ -318,31 +331,52 @@
 
 ## 八、主要代码锚点（便于跳转）
 
-| 区域 | 路径 |
-| ---- | ---- |
-| 核销 | `deal_joy/supabase/functions/merchant-scan/index.ts`（`handleRedeem`） |
-| 下单支付 | `deal_joy/supabase/functions/create-payment-intent/index.ts` |
-| 卡管理 | `deal_joy/supabase/functions/manage-payment-methods/index.ts` |
-| Webhook | `deal_joy/supabase/functions/stripe-webhook/index.ts` |
-| 商家扫码服务 | `dealjoy_merchant/lib/features/scan/services/scan_service.dart` |
-| 商家权限模型 | `deal_joy/supabase/functions/_shared/auth.ts`（`ROLE_PERMISSIONS` / `requirePermission`） |
-| 门店上下文与 permissions 下发 | `deal_joy/supabase/functions/merchant-store/index.ts` |
-| Flutter 权限便捷方法 / Tab | `dealjoy_merchant/lib/features/store/models/store_info.dart`、`dealjoy_merchant/lib/app_shell.dart` |
-| Deal 页权限隐藏示例 | `dealjoy_merchant/lib/features/deals/pages/deal_detail_page.dart` |
-| 核销成功页 | `dealjoy_merchant/lib/features/scan/pages/redemption_success_page.dart` |
-| 礼品迁移 | `deal_joy/supabase/migrations/20260325000001_gift_feature.sql` |
-| 项目规范 | `.claude/skills/dealjoy-context/SKILL.md` |
+
+| 区域                    | 路径                                                                                                 |
+| --------------------- | -------------------------------------------------------------------------------------------------- |
+| 核销                    | `deal_joy/supabase/functions/merchant-scan/index.ts`（`handleRedeem`）                               |
+| 下单支付                  | `deal_joy/supabase/functions/create-payment-intent/index.ts`                                       |
+| 卡管理                   | `deal_joy/supabase/functions/manage-payment-methods/index.ts`                                      |
+| Webhook               | `deal_joy/supabase/functions/stripe-webhook/index.ts`                                              |
+| 商家扫码服务                | `dealjoy_merchant/lib/features/scan/services/scan_service.dart`                                    |
+| 商家权限模型                | `deal_joy/supabase/functions/_shared/auth.ts`（`ROLE_PERMISSIONS` / `requirePermission`）            |
+| 门店上下文与 permissions 下发 | `deal_joy/supabase/functions/merchant-store/index.ts`                                              |
+| Flutter 权限便捷方法 / Tab  | `dealjoy_merchant/lib/features/store/models/store_info.dart`、`dealjoy_merchant/lib/app_shell.dart` |
+| Deal 页权限隐藏示例          | `dealjoy_merchant/lib/features/deals/pages/deal_detail_page.dart`                                  |
+| 核销成功页                 | `dealjoy_merchant/lib/features/scan/pages/redemption_success_page.dart`                            |
+| 礼品迁移                  | `deal_joy/supabase/migrations/20260325000001_gift_feature.sql`                                     |
+| 项目规范                  | `.claude/skills/dealjoy-context/SKILL.md`                                                          |
+
 
 ---
 
 ## 九、开放问题（实现前建议关闭）
 
-1. 百分比小费的计算基数（券原价 / 实付 / 固定表外字段）。
-2. 同一券是否允许「小费失败」后无限重试直至一笔 `paid`。
-3. 平台是否从小费抽取费用；若抽，Stripe 字段如何表达。
-4. 合并小费会话是否 v1 必做，或 v1 仅 per-coupon。
-5. **`trainee`：** 是否允许核销与收小费；若否，后端 `merchant-scan/redeem` 与前端 `CouponVerifyPage` 需同时收紧（现网需产品+研发共同确认行为）。
+1. ~~百分比小费的计算基数~~ **已决议（P0）：** 见 §3.2 — `order_items.unit_price` 优先，否则 `deals.discount_price`。
+2. ~~同一券是否允许多笔失败重试~~ **已决议（P0）：** 允许同一券多条 `coupon_tips` 为 `pending`/`failed`，**仅允许一条 `paid`**（部分唯一索引 `UNIQUE (coupon_id) WHERE status = 'paid'`）；失败后可再发起直至成功一笔。
+3. ~~平台是否从小费抽取费用~~ **已决议（P0）：** v1 不抽成；见 §4.2。
+4. ~~合并小费会话~~ **已决议（P0）：** v1 **不做**合并会话 UI，仅 **per-coupon**；后续可加 `tip_redemption_sessions`。
+5. ~~`trainee` 核销/收小费~~ **已决议（P0）：** **不允许**核销与收小费；`merchant-scan/redeem`（及 verify 如需）拒绝 `trainee`；`CouponVerifyPage` 隐藏确认核销；小费 Edge 拒绝 `trainee`。
 
 ---
 
-*本计划由研发根据当前仓库结构整理；开放问题以产品/法务最终结论为准。*
+## 十、开发进度跟踪
+
+
+| 阶段  | 说明                                  | 状态  | 完成日期       | PR / 备注                                                                    |
+| --- | ----------------------------------- | --- | ---------- | -------------------------------------------------------------------------- |
+| P0  | Sprint 0 口径冻结                       | 已完成 | 2026-04-23 | 见 §九 已决议                                                                   |
+| P1  | Sprint 1 DB / RLS / Storage         | 已完成 | 2026-04-23 | 迁移 `20260423120000_post_redemption_tipping.sql`                            |
+| P2  | Sprint 2 Edge + Webhook + redeem 扩展 | 已完成 | 2026-04-23 | `create-tip-payment-intent`、`merchant-scan`、`stripe-webhook`               |
+| P3  | Sprint 3 商家端 Flutter                | 已完成 | 2026-04-23 | `dealjoy_merchant` tips + scan + `merchant-orders` 行级 `tip`                |
+| P4  | Sprint 4 用户端 Flutter                | 已完成 | 2026-04-23 | `user-order-detail` + `deal_joy` 订单详情英文展示                                  |
+| P5  | Sprint 5 管理端                        | 已完成 | 2026-04-23 | `admin/app/(dashboard)/orders/[id]/page.tsx`（service role 读 `coupon_tips`） |
+| P6  | Sprint 6 Deal 配置                    | 已完成 | 2026-04-23 | `merchant-deals` + Deal 创建/编辑表单                                            |
+| P7  | Sprint 7 测试与收尾                      | 已完成 | 2026-04-23 | Scan 相关单测、`docs/curl/tipping/`                                             |
+
+
+*每完成一个阶段：更新本表「状态/完成日期」、递增文档版本、在「变更记录」追加一行。*
+
+---
+
+*本计划由研发根据当前仓库结构整理；税务等仍以法务最终结论为准。*

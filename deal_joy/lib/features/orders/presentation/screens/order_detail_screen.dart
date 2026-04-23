@@ -1261,6 +1261,18 @@ class _CouponDetailRow extends ConsumerWidget {
                           fontSize: 11, color: AppColors.textHint),
                     ),
                   ],
+                  if (item.tipAmountUsd != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      item.tipPaidAt != null
+                          ? 'Tip \$${item.tipAmountUsd!.toStringAsFixed(2)} · paid ${DateFormat('MMM d, yyyy').format(item.tipPaidAt!.toLocal())}'
+                          : 'Tip \$${item.tipAmountUsd!.toStringAsFixed(2)}',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: AppColors.success,
+                      ),
+                    ),
+                  ],
                   if (item.couponId != null && item.couponId!.isNotEmpty) ...[
                     Builder(
                       builder: (context) {

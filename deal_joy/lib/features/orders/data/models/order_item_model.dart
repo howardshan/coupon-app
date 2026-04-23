@@ -185,6 +185,12 @@ class OrderItemModel {
   /// 当前有效的赠送记录（pending 或 claimed）
   final CouponGiftModel? activeGift;
 
+  /// 已支付小费（来自 user-order-detail `tip` 字段；无则为 null）
+  final double? tipAmountUsd;
+
+  /// 小费支付时间
+  final DateTime? tipPaidAt;
+
   const OrderItemModel({
     required this.id,
     required this.orderId,
@@ -223,6 +229,8 @@ class OrderItemModel {
     this.dealImageUrl,
     this.merchantName,
     this.activeGift,
+    this.tipAmountUsd,
+    this.tipPaidAt,
   });
 
   // =============================================================
@@ -322,6 +330,16 @@ class OrderItemModel {
       return v != null ? DateTime.tryParse(v as String) : null;
     }
 
+    final tipObj = (json['tip'] ?? json['Tip']) as Map<String, dynamic>?;
+    double? tipUsd;
+    DateTime? tipPaid;
+    if (tipObj != null && tipObj['amount_cents'] != null) {
+      tipUsd = (tipObj['amount_cents'] as num).toDouble() / 100.0;
+    }
+    if (tipObj != null && tipObj['paid_at'] != null) {
+      tipPaid = DateTime.tryParse(tipObj['paid_at'] as String);
+    }
+
     return OrderItemModel(
       id: json['id'] as String? ?? '',
       orderId: pick<String>('order_id', 'orderId') ?? '',
@@ -384,6 +402,8 @@ class OrderItemModel {
           (dealsObj?['original_price'] as num?))?.toDouble(),
       // 解析 active gift（从 coupon_gifts join）
       activeGift: _parseActiveGift(json['coupon_gifts']),
+      tipAmountUsd: tipUsd,
+      tipPaidAt: tipPaid,
     );
   }
 

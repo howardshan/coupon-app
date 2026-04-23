@@ -700,6 +700,30 @@ async function handleDetail(
     };
   });
 
+  const tipCouponIds = formattedItems
+    .map((it) => it.coupon_id as string | null)
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
+  if (tipCouponIds.length > 0) {
+    const { data: tipRows } = await client
+      .from("coupon_tips")
+      .select("coupon_id, amount_cents, currency, status, paid_at, stripe_payment_intent_id")
+      .in("coupon_id", tipCouponIds)
+      .eq("status", "paid");
+    const tipMap = new Map<string, Record<string, unknown>>();
+    for (const row of tipRows ?? []) {
+      tipMap.set(row.coupon_id as string, {
+        amount_cents: row.amount_cents,
+        currency: row.currency ?? "usd",
+        paid_at: row.paid_at,
+        stripe_payment_intent_id: row.stripe_payment_intent_id,
+      });
+    }
+    for (const it of formattedItems) {
+      const cid = it.coupon_id as string | null;
+      (it as Record<string, unknown>).tip = cid ? tipMap.get(cid) ?? null : null;
+    }
+  }
+
   // 计算该商家在本订单中的金额汇总（仅统计属于该商家的 items）
   const merchantItemsAmount = formattedItems.reduce(
     (sum, item) => sum + ((item.unit_price as number) || 0), 0

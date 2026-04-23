@@ -322,6 +322,20 @@ class OrderDetailPage extends ConsumerWidget {
               ],
             ),
 
+            if (item.tipAmountUsd != null) ...[
+              const SizedBox(height: 6),
+              Text(
+                item.tipPaidAt != null
+                    ? 'Tip: ${amountFmt.format(item.tipAmountUsd!)} · paid ${DateFormat('MMM d, yyyy').format(item.tipPaidAt!.toLocal())}'
+                    : 'Tip: ${amountFmt.format(item.tipAmountUsd!)}',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.green.shade700,
+                ),
+              ),
+            ],
+
             // 券过期时间
             if (item.couponExpiresAt != null) ...[
               const SizedBox(height: 4),
