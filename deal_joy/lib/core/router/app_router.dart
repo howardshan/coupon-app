@@ -32,7 +32,6 @@ import '../../features/profile/presentation/screens/profile_screen.dart';
 import '../../features/profile/presentation/screens/edit_profile_screen.dart';
 import '../../features/profile/presentation/screens/store_credit_screen.dart';
 import '../../features/profile/presentation/screens/payment_methods_screen.dart';
-import '../../features/profile/presentation/screens/change_email_screen.dart';
 import '../../features/profile/presentation/screens/change_password_screen.dart';
 import '../../features/profile/presentation/screens/change_phone_screen.dart';
 import '../../features/profile/presentation/screens/billing_address_screen.dart';
@@ -233,12 +232,6 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/profile/payment-methods',
         builder: (_, _) => const PaymentMethodsScreen(),
-      ),
-
-      // Change Email 修改邮箱页
-      GoRoute(
-        path: '/profile/change-email',
-        builder: (_, _) => const ChangeEmailScreen(),
       ),
 
       // Change Password 修改密码页
