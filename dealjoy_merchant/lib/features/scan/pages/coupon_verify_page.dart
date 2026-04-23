@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import '../../../router/app_router.dart';
 import '../models/coupon_info.dart';
 import '../providers/scan_provider.dart';
 
@@ -25,7 +26,7 @@ class _CouponVerifyPageState extends ConsumerState<CouponVerifyPage> {
   Future<void> _confirmRedemption() async {
     setState(() => _isRedeeming = true);
     try {
-      final redeemedAt = await ref
+      final redeemResult = await ref
           .read(scanNotifierProvider.notifier)
           .redeem(widget.couponInfo.id);
 
@@ -35,9 +36,17 @@ class _CouponVerifyPageState extends ConsumerState<CouponVerifyPage> {
       context.pushReplacement(
         '/scan/success',
         extra: {
-          'redeemed_at': redeemedAt.toIso8601String(),
+          'redeemed_at': redeemResult.redeemedAt.toIso8601String(),
           'deal_title': widget.couponInfo.dealTitle,
           'coupon_id': widget.couponInfo.id,
+          'tip_base_cents': redeemResult.tip.tipBaseCents,
+          'deal': {
+            'tips_enabled': redeemResult.tip.tipsEnabled,
+            'tips_mode': redeemResult.tip.tipsMode,
+            'tips_preset_1': redeemResult.tip.preset1,
+            'tips_preset_2': redeemResult.tip.preset2,
+            'tips_preset_3': redeemResult.tip.preset3,
+          },
         },
       );
     } on ScanException catch (e) {
@@ -62,6 +71,8 @@ class _CouponVerifyPageState extends ConsumerState<CouponVerifyPage> {
       if (mounted) setState(() => _isRedeeming = false);
     }
   }
+
+  bool get _isTrainee => MerchantStatusCache.roleType == 'staff_trainee';
 
   @override
   Widget build(BuildContext context) {
@@ -182,11 +193,21 @@ class _CouponVerifyPageState extends ConsumerState<CouponVerifyPage> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   // Confirm Redemption 按钮（仅 active 状态启用）
+                  if (_isTrainee) ...[
+                    Text(
+                      'Trainee accounts cannot redeem vouchers.',
+                      style: TextStyle(fontSize: 13, color: Colors.orange.shade800),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   SizedBox(
                     width: double.infinity,
                     height: 52,
                     child: ElevatedButton(
-                      onPressed: coupon.isRedeemable && !_isRedeeming
+                      onPressed: coupon.isRedeemable &&
+                              !_isRedeeming &&
+                              !_isTrainee
                           ? _confirmRedemption
                           : null,
                       style: ElevatedButton.styleFrom(

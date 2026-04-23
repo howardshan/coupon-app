@@ -92,10 +92,65 @@ async function handleAdRechargeSucceeded(paymentIntent: Stripe.PaymentIntent): P
 // ─── 事件处理：payment_intent.succeeded（订单支付分支）────────────────────────
 // 支付成功：写入 payments 审计记录，同时更新 orders.paid_at（如为 null）
 // 幂等：payments 表 payment_intent_id 有 UNIQUE 约束
+async function handleTipPaymentSucceeded(paymentIntent: Stripe.PaymentIntent): Promise<void> {
+  const tipId = paymentIntent.metadata?.tip_id;
+  if (!tipId) {
+    console.warn('[tip.succeeded] missing tip_id metadata');
+    return;
+  }
+  const paidAt = new Date().toISOString();
+  const { data: updated, error } = await supabase
+    .from('coupon_tips')
+    .update({
+      status: 'paid',
+      paid_at: paidAt,
+      stripe_payment_intent_id: paymentIntent.id,
+      updated_at: paidAt,
+    })
+    .eq('id', tipId)
+    .eq('status', 'pending')
+    .select('id')
+    .maybeSingle();
+
+  if (error) {
+    console.error('[tip.succeeded] update failed', error);
+    throw new Error(`coupon_tips update failed: ${error.message}`);
+  }
+  if (!updated) {
+    console.log(`[tip.succeeded] tip ${tipId} already finalized or missing, skip`);
+  } else {
+    console.log(`[tip.succeeded] tip=${tipId} pi=${paymentIntent.id}`);
+  }
+}
+
+async function handleTipPaymentFailed(paymentIntent: Stripe.PaymentIntent): Promise<void> {
+  const tipId = paymentIntent.metadata?.tip_id;
+  if (!tipId) return;
+  const { error } = await supabase
+    .from('coupon_tips')
+    .update({
+      status: 'failed',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', tipId)
+    .eq('status', 'pending');
+
+  if (error) {
+    console.error('[tip.failed] update failed', error);
+  } else {
+    console.log(`[tip.failed] tip=${tipId} pi=${paymentIntent.id}`);
+  }
+}
+
 async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent): Promise<void> {
   // 广告充值走独立逻辑
   if (paymentIntent.metadata?.type === 'ad_recharge') {
     return handleAdRechargeSucceeded(paymentIntent);
+  }
+
+  // 核销后小费（独立 PI，metadata.type = tip）
+  if (paymentIntent.metadata?.type === 'tip') {
+    return handleTipPaymentSucceeded(paymentIntent);
   }
 
   const paymentIntentId = paymentIntent.id;
@@ -199,6 +254,11 @@ async function handlePaymentFailed(paymentIntent: Stripe.PaymentIntent): Promise
   console.warn(
     `[payment_intent.payment_failed] pi=${paymentIntentId} code=${failureCode} msg=${failureMessage}`,
   );
+
+  if (paymentIntent.metadata?.type === 'tip') {
+    await handleTipPaymentFailed(paymentIntent);
+    return;
+  }
 
   // 广告充值失败：更新 ad_recharges 状态为 failed
   if (paymentIntent.metadata?.type === 'ad_recharge') {

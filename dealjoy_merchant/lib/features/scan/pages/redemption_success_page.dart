@@ -1,5 +1,6 @@
 // 核销成功页
 // 大 checkmark 动画 + 核销时间 + Scan Another / 回仪表盘
+// 若 Deal 启用小费且当前角色可收小费，显示 Collect tip
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,6 +8,8 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../providers/scan_provider.dart';
 import '../../orders/providers/orders_provider.dart';
+import '../../store/providers/store_provider.dart';
+import '../../tips/models/tip_models.dart';
 
 class RedemptionSuccessPage extends ConsumerStatefulWidget {
   const RedemptionSuccessPage({
@@ -14,12 +17,15 @@ class RedemptionSuccessPage extends ConsumerStatefulWidget {
     required this.redeemedAt,
     required this.dealTitle,
     required this.couponId,
+    this.redeemPayload,
   });
 
   final DateTime redeemedAt;
   final String dealTitle;
-  /// 保留参数供路由/深链兼容，当前页不再发起撤销等请求
+  /// 保留参数供路由/深链兼容
   final String couponId;
+  /// 核销接口完整返回（含 deal / tip_base_cents），用于小费入口
+  final Map<String, dynamic>? redeemPayload;
 
   @override
   ConsumerState<RedemptionSuccessPage> createState() =>
@@ -64,10 +70,36 @@ class _RedemptionSuccessPageState
     super.dispose();
   }
 
+  TipDealConfig? get _tipConfig {
+    final p = widget.redeemPayload;
+    if (p == null) return null;
+    return TipDealConfig.fromRedeemPayload(p);
+  }
+
+  Future<void> _openCollectTip() async {
+    final cfg = _tipConfig;
+    final payload = widget.redeemPayload;
+    if (cfg == null || payload == null) return;
+    await context.push<bool>(
+      '/scan/collect-tip',
+      extra: {
+        'coupon_id': widget.couponId,
+        'deal_title': widget.dealTitle,
+        'deal': payload['deal'],
+        'tip_base_cents': payload['tip_base_cents'],
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final timeStr =
         DateFormat('MMM d, yyyy h:mm a').format(widget.redeemedAt.toLocal());
+    final store = ref.watch(storeProvider).valueOrNull;
+    final tipCfg = _tipConfig;
+    final showTip = tipCfg != null &&
+        tipCfg.tipsEnabled &&
+        (store?.canCollectTips ?? false);
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -147,6 +179,31 @@ class _RedemptionSuccessPageState
               ),
 
               const Spacer(flex: 2),
+
+              if (showTip) ...[
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: OutlinedButton(
+                    onPressed: _openCollectTip,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFFFF6B35),
+                      side: const BorderSide(color: Color(0xFFFF6B35)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text(
+                      'Collect tip',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
 
               SizedBox(
                 width: double.infinity,

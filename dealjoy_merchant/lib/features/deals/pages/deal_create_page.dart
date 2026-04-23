@@ -73,6 +73,13 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
   // 每账户限购输入框（-1=无限制）
   late final TextEditingController _maxPerAccountController;
 
+  // 核销后小费（可选）
+  bool _tipsEnabled = false;
+  String _tipsMode = 'percent';
+  late final TextEditingController _tipsP1Controller;
+  late final TextEditingController _tipsP2Controller;
+  late final TextEditingController _tipsP3Controller;
+
   // Step 4b: 多店适用（仅连锁店显示）
   bool _isMultiStore = false;
   final Set<String> _selectedStoreIds = {};
@@ -157,6 +164,18 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
           : '',
     );
 
+    _tipsEnabled = deal?.tipsEnabled ?? false;
+    _tipsMode = deal?.tipsMode ?? 'percent';
+    _tipsP1Controller = TextEditingController(
+      text: deal != null ? _fmtTipPreset(deal.tipsPreset1) : '',
+    );
+    _tipsP2Controller = TextEditingController(
+      text: deal != null ? _fmtTipPreset(deal.tipsPreset2) : '',
+    );
+    _tipsP3Controller = TextEditingController(
+      text: deal != null ? _fmtTipPreset(deal.tipsPreset3) : '',
+    );
+
     if (deal != null) {
       _dealPrice      = deal.discountPrice;
       _isUnlimited    = deal.isUnlimited;
@@ -187,7 +206,16 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
     _validityDaysController.dispose();
     _maxPerPersonController.dispose();
     _maxPerAccountController.dispose();
+    _tipsP1Controller.dispose();
+    _tipsP2Controller.dispose();
+    _tipsP3Controller.dispose();
     super.dispose();
+  }
+
+  String _fmtTipPreset(double? v) {
+    if (v == null) return '';
+    if (v % 1 == 0) return v.toInt().toString();
+    return v.toString();
   }
 
   // --------------------------------------------------------
@@ -227,7 +255,34 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
         }
         return true;
       case 3:
-        return _step4Key.currentState?.validate() ?? true;
+        if (!(_step4Key.currentState?.validate() ?? true)) return false;
+        if (_tipsEnabled) {
+          final p1 = _tipsP1Controller.text.trim();
+          final p2 = _tipsP2Controller.text.trim();
+          final p3 = _tipsP3Controller.text.trim();
+          if ([p1, p2, p3].every((s) => s.isEmpty)) {
+            _showSnack('Add at least one tip preset when tips are enabled');
+            return false;
+          }
+          for (final entry in <(String, String)>[
+            ('Preset 1', p1),
+            ('Preset 2', p2),
+            ('Preset 3', p3),
+          ]) {
+            final txt = entry.$2;
+            if (txt.isEmpty) continue;
+            final v = double.tryParse(txt);
+            if (v == null || v <= 0) {
+              _showSnack('${entry.$1} must be a positive number');
+              return false;
+            }
+            if (_tipsMode == 'percent' && v > 100) {
+              _showSnack('Percent presets cannot exceed 100');
+              return false;
+            }
+          }
+        }
+        return true;
       case 4:
         if (_selectedImages.isEmpty && widget.editDeal == null) {
           _showSnack('Please upload at least 1 image');
@@ -342,6 +397,17 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
         maxPerAccount:   _maxPerAccountController.text.isNotEmpty
             ? (int.tryParse(_maxPerAccountController.text) ?? -1)
             : -1,
+        tipsEnabled: _tipsEnabled,
+        tipsMode: _tipsEnabled ? _tipsMode : null,
+        tipsPreset1: _tipsEnabled && _tipsP1Controller.text.trim().isNotEmpty
+            ? double.tryParse(_tipsP1Controller.text.trim())
+            : null,
+        tipsPreset2: _tipsEnabled && _tipsP2Controller.text.trim().isNotEmpty
+            ? double.tryParse(_tipsP2Controller.text.trim())
+            : null,
+        tipsPreset3: _tipsEnabled && _tipsP3Controller.text.trim().isNotEmpty
+            ? double.tryParse(_tipsP3Controller.text.trim())
+            : null,
         images:          widget.editDeal?.images ?? [],
         createdAt:       widget.editDeal?.createdAt ?? DateTime.now(),
         updatedAt:       DateTime.now(),
@@ -2066,6 +2132,62 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
                 ],
               ),
             ),
+
+            const SizedBox(height: 20),
+            _sectionLabel('Tipping (after redemption)'),
+            const SizedBox(height: 8),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Enable optional tips after redemption'),
+              value: _tipsEnabled,
+              activeThumbColor: const Color(0xFFFF6B35),
+              onChanged: (v) => setState(() => _tipsEnabled = v),
+            ),
+            if (_tipsEnabled) ...[
+              const SizedBox(height: 4),
+              const Text('Tip type', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+              const SizedBox(height: 6),
+              SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(value: 'percent', label: Text('Percent')),
+                  ButtonSegment(value: 'fixed', label: Text('Fixed USD')),
+                ],
+                selected: {_tipsMode},
+                onSelectionChanged: (s) => setState(() => _tipsMode = s.first),
+              ),
+              const SizedBox(height: 12),
+              _buildTextField(
+                fieldKey: const ValueKey('deal_create_tips_p1'),
+                controller: _tipsP1Controller,
+                label: _tipsMode == 'percent' ? 'Preset 1 (%, e.g. 10)' : 'Preset 1 (USD)',
+                hint: _tipsMode == 'percent' ? '10' : '2.00',
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
+              ),
+              const SizedBox(height: 8),
+              _buildTextField(
+                fieldKey: const ValueKey('deal_create_tips_p2'),
+                controller: _tipsP2Controller,
+                label: _tipsMode == 'percent' ? 'Preset 2 (%)' : 'Preset 2 (USD)',
+                hint: _tipsMode == 'percent' ? '15' : '3.00',
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
+              ),
+              const SizedBox(height: 8),
+              _buildTextField(
+                fieldKey: const ValueKey('deal_create_tips_p3'),
+                controller: _tipsP3Controller,
+                label: _tipsMode == 'percent' ? 'Preset 3 (%)' : 'Preset 3 (USD)',
+                hint: _tipsMode == 'percent' ? '20' : '5.00',
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Customers will also see a custom amount option (including \$0).',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              ),
+            ],
 
             // 多店适用（仅连锁店显示）
             _buildMultiStoreSection(),

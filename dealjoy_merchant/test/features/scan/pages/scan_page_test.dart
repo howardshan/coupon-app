@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:dealjoy_merchant/features/scan/models/coupon_info.dart';
+import 'package:dealjoy_merchant/features/tips/models/tip_models.dart';
 import 'package:dealjoy_merchant/features/scan/services/scan_service.dart';
 import 'package:dealjoy_merchant/features/scan/providers/scan_provider.dart';
 import 'package:dealjoy_merchant/features/scan/pages/scan_page.dart';
@@ -171,8 +172,15 @@ void main() {
       );
 
       // 安排：redeemCoupon 不会被调用（只测按钮启用状态）
-      when(() => mockService.redeemCoupon(any()))
-          .thenAnswer((_) async => DateTime.now());
+      when(() => mockService.redeemCoupon(any())).thenAnswer(
+        (_) async => RedeemResult(
+          redeemedAt: DateTime.now(),
+          tip: const TipDealConfig(
+            tipsEnabled: false,
+            tipBaseCents: 0,
+          ),
+        ),
+      );
 
       await tester.pumpWidget(
         ProviderScope(

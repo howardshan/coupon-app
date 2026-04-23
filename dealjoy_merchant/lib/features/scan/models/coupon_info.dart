@@ -142,6 +142,8 @@ enum ScanError {
   serverError,
   /// 超过10分钟无法撤销
   revertExpired,
+  /// 权限不足（如 trainee 核销）
+  forbidden,
   /// 未知错误
   unknown;
 
@@ -162,6 +164,8 @@ enum ScanError {
         return ScanError.invalidCode;
       case 'revert_expired':
         return ScanError.revertExpired;
+      case 'forbidden':
+        return ScanError.forbidden;
       case 'server_error':
         return ScanError.serverError;
       default:
@@ -190,6 +194,8 @@ enum ScanError {
         return 'Server Error';
       case ScanError.revertExpired:
         return 'Cannot Undo';
+      case ScanError.forbidden:
+        return 'Not allowed';
       case ScanError.unknown:
         return 'Error';
     }

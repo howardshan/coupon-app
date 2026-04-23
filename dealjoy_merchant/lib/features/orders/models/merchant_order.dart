@@ -365,6 +365,12 @@ class MerchantOrderItem {
   /// 赠礼 / 收回事件（与退款块类似的多段展示）
   final List<MerchantGiftEvent> giftEvents;
 
+  /// 已支付小费金额（USD，来自 merchant-orders `tip.amount_cents`）
+  final double? tipAmountUsd;
+
+  /// 小费支付时间
+  final DateTime? tipPaidAt;
+
   const MerchantOrderItem({
     required this.orderItemId,
     required this.orderId,
@@ -390,6 +396,8 @@ class MerchantOrderItem {
     this.stripeFee = 0.0,
     this.netAmount = 0.0,
     this.giftEvents = const [],
+    this.tipAmountUsd,
+    this.tipPaidAt,
   });
 
   /// 从 Edge Function 返回的 JSON 构造（null-safe）
@@ -400,6 +408,16 @@ class MerchantOrderItem {
         : ge
             .map((e) => MerchantGiftEvent.fromJson(e as Map<String, dynamic>))
             .toList();
+
+    final tipObj = json['tip'] as Map<String, dynamic>?;
+    double? tipUsd;
+    DateTime? tipPaid;
+    if (tipObj != null && tipObj['amount_cents'] != null) {
+      tipUsd = (tipObj['amount_cents'] as num).toDouble() / 100.0;
+    }
+    if (tipObj != null && tipObj['paid_at'] != null) {
+      tipPaid = DateTime.tryParse(tipObj['paid_at'] as String);
+    }
 
     return MerchantOrderItem(
       orderItemId: json['order_item_id'] as String? ?? json['id'] as String? ?? '',
@@ -432,6 +450,8 @@ class MerchantOrderItem {
       stripeFee: (json['stripe_fee'] as num?)?.toDouble() ?? 0.0,
       netAmount: (json['net_amount'] as num?)?.toDouble() ?? 0.0,
       giftEvents: giftEvents,
+      tipAmountUsd: tipUsd,
+      tipPaidAt: tipPaid,
     );
   }
 
