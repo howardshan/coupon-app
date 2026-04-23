@@ -139,7 +139,7 @@ export default async function AdsPage({
                   </td>
                   <td className="px-4 py-3 text-gray-700">{c.placement ?? '—'}</td>
                   <td className="px-4 py-3 text-right font-medium text-gray-900">
-                    ${Number(c.bid_amount ?? 0).toFixed(2)}
+                    ${Number(c.bid_price ?? 0).toFixed(2)}
                   </td>
                   <td className="px-4 py-3 text-right text-gray-700">
                     ${Number(c.daily_budget ?? 0).toFixed(2)}

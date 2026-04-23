@@ -160,6 +160,47 @@ class DealsRepository {
     }
   }
 
+  /// 获取广告竞价赢家（home_deal_top placement），用于 Hot Deal 区顶部插入
+  /// 返回已标记 isSponsored=true 的 DealModel 列表（最多 3 条）
+  Future<List<DealModel>> fetchSponsoredDeals() async {
+    try {
+      final data = await _client.rpc('get_active_ads', params: {
+        'p_placement': 'home_deal_top',
+        'p_limit': 20,
+      });
+      final rows = data as List<dynamic>;
+      final entries = rows
+          .where((r) => (r as Map<String, dynamic>)['target_type'] == 'deal')
+          .toList();
+      if (entries.isEmpty) return [];
+
+      final ids = entries
+          .map((r) => (r as Map<String, dynamic>)['target_id'] as String)
+          .toList();
+      final campaignMap = {
+        for (final r in entries)
+          (r as Map<String, dynamic>)['target_id'] as String:
+              r['campaign_id'] as String?,
+      };
+
+      final deals = await fetchDealsByIds(ids);
+      final now = DateTime.now().toUtc();
+      return deals
+          .where((d) {
+            if (!d.isActive) return false;
+            if (d.expiresAt != null && d.expiresAt!.isBefore(now)) return false;
+            return true;
+          })
+          .map((d) => d.copyWithSponsored(
+                isSponsored: true,
+                campaignId: campaignMap[d.id],
+              ))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
   // 获取首页展示券：sort_order 不为空的 active deal，按 sort_order 升序
   Future<List<DealModel>> fetchFeaturedDeals({String? city, String? category}) async {
     try {

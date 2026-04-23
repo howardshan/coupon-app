@@ -19,6 +19,7 @@
 // ============================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2?target=deno';
+import Stripe from 'https://esm.sh/stripe@14?target=deno';
 import { resolveAuth, requirePermission } from "../_shared/auth.ts";
 
 // ---------- Supabase 客户端（使用 service role，绕过 RLS） ----------
@@ -879,6 +880,150 @@ async function handleDeleteCampaign(
 }
 
 // ============================================================
+// action: create_recharge — 创建充值（Stripe Checkout Session）
+// 参数: { amount: number }  最小 $20
+// 流程: 创建 Stripe Checkout Session → 预写 ad_recharges(pending) → 返回 checkout_url
+// 支付成功后 stripe-webhook 调 add_ad_balance RPC 更新余额
+// ============================================================
+async function handleCreateRecharge(
+  merchantId: string,
+  params: Record<string, unknown>
+): Promise<Response> {
+  const amount = Number(params.amount);
+  if (isNaN(amount) || amount < 20) {
+    return errorResponse('amount must be >= 20');
+  }
+
+  // 查广告账户
+  const { data: account, error: accountErr } = await supabase
+    .from('ad_accounts')
+    .select('id')
+    .eq('merchant_id', merchantId)
+    .maybeSingle();
+
+  if (accountErr || !account) {
+    console.error('[create_recharge] 查广告账户失败:', accountErr);
+    return errorResponse('Ad account not found', 500);
+  }
+
+  // 创建 Stripe PaymentIntent（立即返回 id + client_secret，供 App 内 PaymentSheet 使用）
+  const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {
+    apiVersion: '2023-10-16',
+    httpClient: Stripe.createFetchHttpClient(),
+  });
+
+  let paymentIntent: Stripe.PaymentIntent;
+  try {
+    paymentIntent = await stripe.paymentIntents.create({
+      amount:               Math.round(amount * 100),
+      currency:             'usd',
+      payment_method_types: ['card'],
+      metadata: {
+        type:          'ad_recharge',
+        merchant_id:   merchantId,
+        ad_account_id: account.id,
+        amount:        amount.toString(),
+      },
+    });
+  } catch (stripeErr) {
+    console.error('[create_recharge] Stripe 创建 PaymentIntent 失败:', stripeErr);
+    return errorResponse(`Failed to create payment: ${stripeErr}`, 500);
+  }
+
+  // 预建 ad_recharges 记录（PI ID 创建时即可用，无 null 风险）
+  const { error: insertErr } = await supabase
+    .from('ad_recharges')
+    .insert({
+      merchant_id:              merchantId,
+      ad_account_id:            account.id,
+      amount,
+      stripe_payment_intent_id: paymentIntent.id,
+      status:                   'pending',
+    });
+
+  if (insertErr) {
+    console.error('[create_recharge] 写入 ad_recharges 失败:', JSON.stringify(insertErr));
+    // 回滚：取消 PaymentIntent，防止孤儿支付
+    try { await stripe.paymentIntents.cancel(paymentIntent.id); } catch (_) {}
+    return errorResponse(`Failed to create recharge record: ${insertErr.message}`, 500);
+  }
+
+  return jsonResponse({
+    client_secret:     paymentIntent.client_secret,
+    payment_intent_id: paymentIntent.id,
+    amount,
+  });
+}
+
+// ============================================================
+// action: complete_recharge — 支付完成后主动触发余额更新
+// 参数: { payment_intent_id: string }
+// 流程: 查 Stripe 验证 PI 状态为 succeeded → 调 add_ad_balance RPC
+// 目的: 不依赖 webhook 时序，App 端支付成功后立即到账
+// ============================================================
+async function handleCompleteRecharge(
+  merchantId: string,
+  params: Record<string, unknown>
+): Promise<Response> {
+  const paymentIntentId = params.payment_intent_id as string;
+  if (!paymentIntentId) {
+    return errorResponse('payment_intent_id is required');
+  }
+
+  const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {
+    apiVersion: '2023-10-16',
+    httpClient: Stripe.createFetchHttpClient(),
+  });
+
+  // 查 Stripe 验证 PI 状态
+  let pi: Stripe.PaymentIntent;
+  try {
+    pi = await stripe.paymentIntents.retrieve(paymentIntentId);
+  } catch (e) {
+    console.error('[complete_recharge] Stripe 查询 PI 失败:', e);
+    return errorResponse('Payment not found', 404);
+  }
+
+  // 安全校验：PI 必须属于当前商家
+  if (pi.metadata?.merchant_id !== merchantId) {
+    return errorResponse('Unauthorized: payment does not belong to this merchant', 403);
+  }
+
+  if (pi.status !== 'succeeded') {
+    return errorResponse(`Payment not completed: status is ${pi.status}`, 400);
+  }
+
+  const amount = pi.amount / 100;
+
+  // 调 add_ad_balance RPC（内部幂等，重复调用安全）
+  const { data: result, error: rpcErr } = await supabase.rpc('add_ad_balance', {
+    p_merchant_id:       merchantId,
+    p_amount:            amount,
+    p_payment_intent_id: paymentIntentId,
+  });
+
+  if (rpcErr) {
+    console.error('[complete_recharge] add_ad_balance 失败:', rpcErr);
+    return errorResponse(`Failed to update balance: ${rpcErr.message}`, 500);
+  }
+
+  console.log(`[complete_recharge] 余额更新结果: ${result} merchant=${merchantId} amount=${amount}`);
+
+  // 返回最新余额
+  const { data: account } = await supabase
+    .from('ad_accounts')
+    .select('balance')
+    .eq('merchant_id', merchantId)
+    .maybeSingle();
+
+  return jsonResponse({
+    result,
+    amount,
+    new_balance: account?.balance ?? 0,
+  });
+}
+
+// ============================================================
 // action: list_recharges — 充值记录
 // 参数: { page?: number, page_size?: number }
 // ============================================================
@@ -1131,6 +1276,12 @@ Deno.serve(async (req: Request) => {
 
       case 'delete_campaign':
         return await handleDeleteCampaign(merchantId, userId, params);
+
+      case 'create_recharge':
+        return await handleCreateRecharge(merchantId, params);
+
+      case 'complete_recharge':
+        return await handleCompleteRecharge(merchantId, params);
 
       case 'list_recharges':
         return await handleListRecharges(merchantId, params);

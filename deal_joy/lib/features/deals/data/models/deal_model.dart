@@ -187,6 +187,26 @@ class DealModel {
     isSponsored: isSponsored, campaignId: campaignId,
   );
 
+  /// 标记为广告赞助 deal（用于广告竞价注入 Hot Deal 区时覆盖 isSponsored 和 campaignId）
+  DealModel copyWithSponsored({required bool isSponsored, String? campaignId}) => DealModel(
+    id: id, merchantId: merchantId, title: title, description: description,
+    category: category, originalPrice: originalPrice, discountPrice: discountPrice,
+    discountPercent: discountPercent, discountLabel: discountLabel,
+    imageUrls: imageUrls, products: products, rating: rating,
+    reviewCount: reviewCount, totalSold: totalSold, stockLimit: stockLimit,
+    expiresAt: expiresAt, isFeatured: isFeatured, refundPolicy: refundPolicy,
+    lat: lat, lng: lng, address: address, merchantHours: merchantHours,
+    merchant: merchant, distanceMeters: distanceMeters, merchantCity: merchantCity,
+    dealType: dealType, dealCategoryId: dealCategoryId, badgeText: badgeText,
+    sortOrder: sortOrder, applicableMerchantIds: applicableMerchantIds,
+    activeStoreCount: activeStoreCount, shortName: shortName,
+    usageNotes: usageNotes, optionGroups: optionGroups, detailImages: detailImages,
+    validityType: validityType, validityDays: validityDays,
+    usageRules: usageRules, usageDays: usageDays, maxPerAccount: maxPerAccount,
+    isSponsored: isSponsored,
+    campaignId: campaignId ?? this.campaignId,
+  );
+
   factory DealModel.fromJson(Map<String, dynamic> json) => DealModel(
         id: json['id'] as String,
         merchantId: json['merchant_id'] as String,

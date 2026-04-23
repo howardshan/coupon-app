@@ -13,6 +13,7 @@ import '../../analytics/providers/analytics_provider.dart';
 import '../../earnings/providers/earnings_provider.dart';
 import '../../scan/providers/scan_provider.dart';
 import '../../notifications/providers/notifications_provider.dart';
+import '../../promotions/providers/promotions_provider.dart';
 
 // ============================================================
 // StoreSelector — 品牌管理员门店切换下拉组件
@@ -125,6 +126,9 @@ void invalidateAllStoreProviders(WidgetRef ref) {
   ref.invalidate(redemptionHistoryProvider);
   ref.invalidate(notificationsNotifierProvider);
   ref.invalidate(unreadCountProvider);
+  // 广告推广数据随门店切换刷新
+  ref.invalidate(adAccountProvider);
+  ref.invalidate(campaignsProvider);
 }
 
 // ============================================================

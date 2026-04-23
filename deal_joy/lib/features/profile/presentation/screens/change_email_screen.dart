@@ -13,7 +13,7 @@ import '../../../../shared/widgets/app_text_field.dart';
 import '../../../auth/domain/providers/auth_provider.dart';
 
 /// 与 auth_repository 中 OAuth / 密码重置一致，便于 Supabase 回调打开 App
-const _emailChangeRedirectTo = 'io.supabase.dealjoy://login-callback/';
+const _emailChangeRedirectTo = 'io.supabase.crunchyplum://login-callback/';
 
 class ChangeEmailScreen extends ConsumerStatefulWidget {
   const ChangeEmailScreen({super.key});

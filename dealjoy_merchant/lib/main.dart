@@ -6,6 +6,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'router/app_router.dart';
@@ -48,6 +49,17 @@ Future<void> main() async {
     url: dotenv.env['SUPABASE_URL']!,
     anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
   );
+
+  // 初始化 Stripe（商家端广告充值 PaymentSheet）
+  try {
+    final stripeKey = dotenv.env['STRIPE_PUBLISHABLE_KEY'] ?? '';
+    if (stripeKey.startsWith('pk_')) {
+      Stripe.publishableKey = stripeKey;
+      await Stripe.instance.applySettings();
+    }
+  } catch (e) {
+    debugPrint('[DealJoyMerchant] Stripe init failed: $e');
+  }
 
   runApp(
     // Riverpod 全局 Provider 容器

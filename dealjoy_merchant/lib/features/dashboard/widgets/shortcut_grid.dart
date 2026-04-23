@@ -35,8 +35,20 @@ class _ShortcutItem {
   });
 }
 
+// 各 ShortcutAction 对应所需权限（null = 所有人可见）
+const _actionPermission = <ShortcutAction, String?>{
+  ShortcutAction.redeem:    'scan',
+  ShortcutAction.deals:     'analytics',
+  ShortcutAction.orders:    'orders',
+  ShortcutAction.reviews:   'reviews',
+  ShortcutAction.analytics: 'analytics',
+  ShortcutAction.store:     'staff',
+  ShortcutAction.menu:      'staff',
+  ShortcutAction.brand:     'brand',
+};
+
 // ============================================================
-// ShortcutGrid — 6 格快捷入口
+// ShortcutGrid — 快捷入口网格
 // ============================================================
 class ShortcutGrid extends StatelessWidget {
   /// 点击回调，参数为对应的 ShortcutAction
@@ -45,7 +57,15 @@ class ShortcutGrid extends StatelessWidget {
   /// 是否品牌管理员（控制 Brand 入口显示）
   final bool isBrandAdmin;
 
-  const ShortcutGrid({super.key, required this.onTap, this.isBrandAdmin = false});
+  /// 当前用户权限列表（来自 storeProvider）
+  final List<String> permissions;
+
+  const ShortcutGrid({
+    super.key,
+    required this.onTap,
+    this.isBrandAdmin = false,
+    this.permissions = const [],
+  });
 
   // 6 个快捷入口定义（美团工作台风格）
   static const List<_ShortcutItem> _items = [
@@ -101,10 +121,14 @@ class ShortcutGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 非品牌管理员过滤掉 Brand 入口
-    final visibleItems = isBrandAdmin
-        ? _items
-        : _items.where((i) => i.action != ShortcutAction.brand).toList();
+    final visibleItems = _items.where((item) {
+      final required = _actionPermission[item.action];
+      if (required == null) return true;
+      if (required == 'brand') return isBrandAdmin;
+      // 权限列表为空时默认全部显示（未加载完毕）
+      if (permissions.isEmpty) return true;
+      return permissions.contains(required);
+    }).toList();
 
     return GridView.count(
       crossAxisCount: 4,

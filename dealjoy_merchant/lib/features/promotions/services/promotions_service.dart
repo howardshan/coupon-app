@@ -222,9 +222,10 @@ class PromotionsService {
   // 充值
   // =============================================================
 
-  /// 发起广告余额充值，返回 Stripe PaymentIntent clientSecret
-  /// [amount] — 充值金额（美元），最小 10.0
-  Future<String> createRecharge(double amount) async {
+  /// 发起广告余额充值，返回 (clientSecret, paymentIntentId)
+  /// [amount] — 充值金额（美元），最小 20.0
+  Future<({String clientSecret, String paymentIntentId})> createRecharge(
+      double amount) async {
     final response = await _supabase.functions.invoke(
       _adsFn,
       method: HttpMethod.post,
@@ -237,14 +238,30 @@ class PromotionsService {
     final data = _parseResponse(response);
     _checkError(data);
 
-    final clientSecret = data['client_secret'] as String?;
-    if (clientSecret == null || clientSecret.isEmpty) {
+    final clientSecret    = data['client_secret']     as String? ?? '';
+    final paymentIntentId = data['payment_intent_id'] as String? ?? '';
+    if (clientSecret.isEmpty || paymentIntentId.isEmpty) {
       throw const PromotionsException(
         code:    'recharge_error',
-        message: 'Failed to get payment client secret.',
+        message: 'Failed to get payment session.',
       );
     }
-    return clientSecret;
+    return (clientSecret: clientSecret, paymentIntentId: paymentIntentId);
+  }
+
+  /// 支付完成后主动触发余额更新（不依赖 webhook 时序）
+  Future<void> completeRecharge(String paymentIntentId) async {
+    final response = await _supabase.functions.invoke(
+      _adsFn,
+      method: HttpMethod.post,
+      headers: _headers,
+      body: {
+        'action':             'complete_recharge',
+        'payment_intent_id':  paymentIntentId,
+      },
+    );
+    final data = _parseResponse(response);
+    _checkError(data);
   }
 
   /// 获取充值记录列表（分页）

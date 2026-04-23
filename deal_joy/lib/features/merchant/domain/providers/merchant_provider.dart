@@ -13,11 +13,16 @@ final merchantRepositoryProvider = Provider<MerchantRepository>((ref) {
 });
 
 /// 首页商家列表 — Near Me 时按 GPS 半径搜索；否则按城市 + 分类筛选
+/// 广告竞价赢家（home_store_top）置顶，带 Sponsored 标签
 final merchantListProvider = FutureProvider<List<MerchantModel>>((ref) async {
   final isNearMe = ref.watch(isNearMeProvider);
   final category = ref.watch(selectedCategoryProvider);
   final repo = ref.watch(merchantRepositoryProvider);
 
+  // 并发发起广告请求（失败时内部返回空列表，不影响主内容）
+  final sponsoredFuture = repo.fetchSponsoredMerchants();
+
+  final List<MerchantModel> merchants;
   if (isNearMe) {
     final loc = await ref.watch(userLocationProvider.future);
     debugPrint('[DEBUG] merchantListProvider → Near Me 模式, GPS=(${loc.lat}, ${loc.lng}), category=$category');
@@ -27,39 +32,54 @@ final merchantListProvider = FutureProvider<List<MerchantModel>>((ref) async {
       category: category,
     );
     debugPrint('[DEBUG] merchantListProvider → Near Me 返回 ${results.length} 家店');
-    return results;
-  }
+    merchants = results;
+  } else {
+    final city = ref.watch(selectedLocationProvider).city;
+    debugPrint('[DEBUG] merchantListProvider → 城市模式, city=$city, category=$category');
+    // 等待 GPS 解析完毕，用于客户端计算并写回距离
+    final userLoc = await ref.watch(userLocationProvider.future);
+    // 权限被拒时 userLoc 是 Dallas 默认坐标，不应显示距离
+    final permDenied = ref.watch(locationPermissionDeniedProvider);
+    final hasGps = !permDenied && (userLoc.lat != 0.0 || userLoc.lng != 0.0);
+    final results = await repo.fetchMerchants(city: city, category: category);
+    debugPrint('[DEBUG] merchantListProvider → 城市模式返回 ${results.length} 家店');
 
-  final city = ref.watch(selectedLocationProvider).city;
-  debugPrint('[DEBUG] merchantListProvider → 城市模式, city=$city, category=$category');
-  // 等待 GPS 解析完毕，用于客户端计算并写回距离
-  final userLoc = await ref.watch(userLocationProvider.future);
-  // 权限被拒时 userLoc 是 Dallas 默认坐标，不应显示距离
-  final permDenied = ref.watch(locationPermissionDeniedProvider);
-  final hasGps = !permDenied && (userLoc.lat != 0.0 || userLoc.lng != 0.0);
-  final results = await repo.fetchMerchants(city: city, category: category);
-  debugPrint('[DEBUG] merchantListProvider → 城市模式返回 ${results.length} 家店');
-
-  // 有 GPS 时客户端计算 Haversine 距离并写回 distanceMiles
-  if (hasGps) {
-    double calcMiles(MerchantModel m) {
-      if (m.lat == null || m.lng == null) return double.infinity;
-      final dLat = (m.lat! - userLoc.lat) * pi / 180;
-      final dLng = (m.lng! - userLoc.lng) * pi / 180;
-      final a2 = sin(dLat / 2) * sin(dLat / 2) +
-          cos(userLoc.lat * pi / 180) *
-          cos(m.lat! * pi / 180) *
-          sin(dLng / 2) * sin(dLng / 2);
-      return 2 * 6371000 * asin(sqrt(a2)) / 1609.34; // 转英里
+    // 有 GPS 时客户端计算 Haversine 距离并写回 distanceMiles
+    if (hasGps) {
+      double calcMiles(MerchantModel m) {
+        if (m.lat == null || m.lng == null) return double.infinity;
+        final dLat = (m.lat! - userLoc.lat) * pi / 180;
+        final dLng = (m.lng! - userLoc.lng) * pi / 180;
+        final a2 = sin(dLat / 2) * sin(dLat / 2) +
+            cos(userLoc.lat * pi / 180) *
+            cos(m.lat! * pi / 180) *
+            sin(dLng / 2) * sin(dLng / 2);
+        return 2 * 6371000 * asin(sqrt(a2)) / 1609.34; // 转英里
+      }
+      merchants = results.map((m) {
+        final miles = calcMiles(m);
+        return m.copyWith(distanceMiles: miles.isFinite ? miles : null);
+      }).toList();
+    } else {
+      merchants = results;
     }
-
-    return results.map((m) {
-      final miles = calcMiles(m);
-      return m.copyWith(distanceMiles: miles.isFinite ? miles : null);
-    }).toList();
   }
 
-  return results;
+  var sponsored = await sponsoredFuture;
+
+  // 分类筛选：客户端过滤广告商家的 primaryCategory
+  if (category != 'All' && category.isNotEmpty) {
+    sponsored = sponsored
+        .where((m) => m.primaryCategory?.toLowerCase() == category.toLowerCase())
+        .toList();
+  }
+
+  // 去重：普通列表中排除已在广告列表里出现的商家
+  final sponsoredIds = sponsored.map((m) => m.id).toSet();
+  final dedupedMerchants = merchants.where((m) => !sponsoredIds.contains(m.id)).toList();
+
+  debugPrint('[DEBUG] merchantListProvider → sponsored=${sponsored.length}, merchants=${dedupedMerchants.length}');
+  return [...sponsored, ...dedupedMerchants];
 });
 
 /// 搜索商家 — 由 searchQueryProvider 驱动，有 GPS 时写回 distanceMiles 并按距离排序

@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CrunchyPlum — Opening App</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 24px;
+    }
+    .card {
+      text-align: center;
+      max-width: 360px;
+      width: 100%;
+    }
+    .logo {
+      width: 72px;
+      height: 72px;
+      background: #E535351A;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 20px;
+      font-size: 36px;
+    }
+    h1 {
+      font-size: 20px;
+      font-weight: 700;
+      color: #1A1A2E;
+      margin-bottom: 8px;
+    }
+    p {
+      color: #757575;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    .spinner {
+      width: 36px;
+      height: 36px;
+      border: 3px solid #f0f0f0;
+      border-top-color: #E53935;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      margin: 20px auto;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .error {
+      color: #E53935;
+      font-size: 14px;
+      margin-top: 16px;
+      padding: 12px;
+      background: #FFF5F5;
+      border-radius: 8px;
+      display: none;
+    }
+    .hint {
+      margin-top: 20px;
+      font-size: 12px;
+      color: #BDBDBD;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">🍒</div>
+    <h1 id="title">Opening CrunchyPlum…</h1>
+    <div class="spinner" id="spinner"></div>
+    <p id="msg">Verifying your link, please wait.</p>
+    <div class="error" id="error"></div>
+    <p class="hint" id="hint">
+      The app did not open automatically. Make sure the
+      <strong>CrunchyPlum</strong> app is installed on this device and try again.
+    </p>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script>
+    var SUPABASE_URL  = 'https://kqyolvmgrdekybjrwizx.supabase.co';
+    var SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtxeW9sdm1ncmRla3lianJ3aXp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIzMTk2NTksImV4cCI6MjA4Nzg5NTY1OX0.1edjpxO5lT191vv2tjVc25EcXHf6cEJkc0lL4QyXV8k';
+
+    // 默认 App URL scheme；若 URL 里有合法的 redirect_to 则优先用它
+    var DEFAULT_SCHEME = 'io.supabase.crunchyplum://login-callback/';
+    var ALLOWED_SCHEMES = ['io.supabase.crunchyplum://', 'io.supabase.dealjoy://'];
+    var params0 = new URLSearchParams(window.location.search);
+    var rawRedirect = params0.get('redirect_to') || '';
+    var APP_SCHEME = ALLOWED_SCHEMES.some(function(s){ return rawRedirect.startsWith(s); })
+      ? rawRedirect
+      : DEFAULT_SCHEME;
+
+    var client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+    function showError(msg) {
+      document.getElementById('spinner').style.display = 'none';
+      document.getElementById('msg').style.display    = 'none';
+      document.getElementById('title').textContent    = 'Something went wrong';
+      var el = document.getElementById('error');
+      el.textContent  = msg;
+      el.style.display = 'block';
+    }
+
+    async function main() {
+      var params     = new URLSearchParams(window.location.search);
+      var token_hash = params.get('token_hash');
+      var type       = params.get('type');      // 'recovery' | 'email_change' | 'signup'
+      var next       = params.get('next') || '/';
+
+      if (!token_hash || !type) {
+        showError('Invalid or expired link. Please request a new one.');
+        return;
+      }
+
+      try {
+        // 用 token_hash 换取 session
+        var res = await client.auth.verifyOtp({ token_hash: token_hash, type: type });
+        if (res.error) throw res.error;
+
+        var session = res.data && res.data.session;
+        if (!session) throw new Error('Verification succeeded but no session was returned.');
+
+        var access_token  = session.access_token;
+        var refresh_token = session.refresh_token;
+
+        // 构造深度链接，把 token 带给 App（supabase_flutter 会自动处理）
+        var deepLink = APP_SCHEME
+          + '#access_token='  + encodeURIComponent(access_token)
+          + '&refresh_token=' + encodeURIComponent(refresh_token)
+          + '&type='          + encodeURIComponent(type);
+
+        document.getElementById('msg').textContent = 'Opening the app…';
+        window.location.href = deepLink;
+
+        // 2 秒后若 App 没打开，显示提示
+        setTimeout(function () {
+          document.getElementById('spinner').style.display = 'none';
+          document.getElementById('hint').style.display    = 'block';
+        }, 2000);
+
+      } catch (err) {
+        var msg = (err && err.message) ? err.message : 'Unknown error.';
+        if (msg.toLowerCase().includes('expired') || msg.toLowerCase().includes('invalid')) {
+          showError('This link has expired or already been used. Please request a new one.');
+        } else {
+          showError(msg);
+        }
+      }
+    }
+
+    main();
+  </script>
+</body>
+</html>

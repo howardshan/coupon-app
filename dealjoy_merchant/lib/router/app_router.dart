@@ -33,6 +33,8 @@ import '../features/support/pages/support_chat_page.dart';
 import '../features/merchant_auth/pages/merchant_login_page.dart';
 import '../features/merchant_auth/pages/merchant_register_page.dart';
 import '../features/merchant_auth/pages/merchant_review_status_page.dart';
+import '../features/merchant_auth/pages/staff_accept_page.dart';
+import '../features/settings/pages/staff_profile_page.dart';
 
 // ── 门店 ─────────────────────────────────────────────────────
 import '../features/store/pages/store_profile_page.dart';
@@ -210,7 +212,7 @@ final _authNotifier = _AuthChangeNotifier();
 // 不需要登录的公开路由前缀
 // 注意：/store-selector 需要登录（调用 Edge Function），不能放在公开路由里，
 // 否则 session 过期后用户会停在 StoreSelectorPage 看到 "Failed to load stores"
-const _publicRoutes = ['/auth/login', '/auth/register', '/auth/review'];
+const _publicRoutes = ['/auth/login', '/auth/register', '/auth/review', '/staff/accept'];
 
 final appRouter = GoRouter(
   initialLocation: '/dashboard',
@@ -361,6 +363,12 @@ final appRouter = GoRouter(
           builder: (context, state) => const ReviewsPage(),
         ),
 
+        // Staff Profile（cashier/trainee 专用 Tab）
+        GoRoute(
+          path: '/staff/profile',
+          builder: (context, state) => const StaffProfilePage(),
+        ),
+
         // Tab 4: Me（设置）+ 子页面
         GoRoute(
           path: '/me',
@@ -402,7 +410,10 @@ final appRouter = GoRouter(
     // 认证流程
     GoRoute(
       path: '/auth/login',
-      builder: (context, state) => const MerchantLoginPage(),
+      builder: (context, state) {
+        final invitationId = state.uri.queryParameters['invitation_id'];
+        return MerchantLoginPage(invitationId: invitationId);
+      },
     ),
     GoRoute(
       path: '/auth/register',
@@ -415,7 +426,13 @@ final appRouter = GoRouter(
       path: '/auth/review',
       builder: (context, state) => const MerchantReviewStatusPage(),
     ),
-
+    GoRoute(
+      path: '/staff/accept',
+      builder: (context, state) {
+        final invitationId = state.uri.queryParameters['invitation_id'];
+        return StaffAcceptPage(invitationId: invitationId);
+      },
+    ),
     // 品牌管理员门店选择页
     GoRoute(
       path: '/store-selector',
