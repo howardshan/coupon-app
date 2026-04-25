@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import type { DealItem } from '@/app/(dashboard)/approvals/page'
 import { setDealActive, rejectDeal } from '@/app/actions/admin'
 import AdminActivityTimelineCard from '@/components/admin-activity-timeline-card'
+import DealTipsSummary from '@/components/deal-tips-summary'
 import { buildDealTimeline } from '@/lib/deal-admin-timeline'
 
 type RejectionRecord = {
@@ -128,7 +129,6 @@ export default function DealDrawer({
   }
 
   const dishes = Array.isArray(deal.dishes) ? deal.dishes : []
-
   return (
     <div className="fixed inset-0 z-40 flex justify-end">
       <div className="flex-1 bg-black/30" onClick={onClose} />
@@ -287,6 +287,21 @@ export default function DealDrawer({
                 <dd className="text-sm text-gray-700 whitespace-pre-line">{deal.usageNotes}</dd>
               </div>
             )}
+          </section>
+
+          {/* 小费配置 */}
+          <section className="rounded-xl border border-gray-200 p-4">
+            <h3 className="font-semibold text-gray-800 mb-3">Post-redemption tipping</h3>
+            <DealTipsSummary
+              tipsEnabled={deal.tipsEnabled}
+              tipsMode={deal.tipsMode}
+              tipsPreset1={deal.tipsPreset1}
+              tipsPreset2={deal.tipsPreset2}
+              tipsPreset3={deal.tipsPreset3}
+              titleClassName="text-gray-500"
+              valueClassName="font-medium"
+              gridClassName="grid grid-cols-2 gap-x-4 gap-y-3 text-sm"
+            />
           </section>
 
           {/* 商家信息 */}
