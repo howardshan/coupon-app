@@ -310,6 +310,49 @@ class _DealDetailView extends StatelessWidget {
             ),
             const SizedBox(height: 12),
 
+            // 核销后可选小费（与编辑页配置一致，便于商家核对）
+            _InfoCard(
+              title: 'Post-Redemption Tips',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (!deal.tipsEnabled)
+                    const Text(
+                      'Optional tips after redemption are turned off for this deal.',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Color(0xFF555555),
+                        height: 1.5,
+                      ),
+                    )
+                  else ...[
+                    _DetailRow(
+                      icon: Icons.volunteer_activism_outlined,
+                      label: 'Status',
+                      value: 'Enabled',
+                    ),
+                    const SizedBox(height: 10),
+                    _DetailRow(
+                      icon: deal.tipsMode == 'fixed'
+                          ? Icons.attach_money
+                          : Icons.percent_outlined,
+                      label: 'Mode',
+                      value: deal.tipsMode == 'fixed'
+                          ? 'Fixed amount (USD)'
+                          : 'Percent of purchase',
+                    ),
+                    const SizedBox(height: 10),
+                    _DetailRow(
+                      icon: Icons.tune_outlined,
+                      label: 'Presets',
+                      value: _merchantDealTipsPresetsDisplay(deal),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+
             // 套餐内容卡片
             if (deal.packageContents.isNotEmpty) ...[
               _InfoCard(
@@ -1471,4 +1514,23 @@ class _FullScreenImageViewer extends StatelessWidget {
       ),
     );
   }
+}
+
+// ── 小费预设展示（与 deal_edit_page 数字格式对齐）────────────────
+String _formatMerchantTipPresetForDisplay(double? v) {
+  if (v == null) return '';
+  if (v % 1 == 0) return v.toInt().toString();
+  return v.toString();
+}
+
+String _merchantDealTipsPresetsDisplay(MerchantDeal deal) {
+  final values = <double>[
+    for (final p in [deal.tipsPreset1, deal.tipsPreset2, deal.tipsPreset3])
+      if (p != null) p,
+  ];
+  if (values.isEmpty) return '—';
+  if (deal.tipsMode == 'fixed') {
+    return values.map((v) => '\$${v.toStringAsFixed(2)}').join(', ');
+  }
+  return values.map((v) => '${_formatMerchantTipPresetForDisplay(v)}%').join(', ');
 }
