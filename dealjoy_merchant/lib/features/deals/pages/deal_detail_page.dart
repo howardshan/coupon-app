@@ -1087,7 +1087,7 @@ class _ActionButtonsState extends State<_ActionButtons> {
           .deleteDeal(widget.deal.id);
 
       if (!mounted) return;
-      context.pop(); // 删除成功后返回列表
+      context.pop(true); // 列表页据此展示删除成功提示
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

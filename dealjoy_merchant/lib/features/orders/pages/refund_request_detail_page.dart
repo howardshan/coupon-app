@@ -9,6 +9,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+
+import '../../deals/open_merchant_deal_detail.dart';
 import '../providers/orders_provider.dart';
 
 class RefundRequestDetailPage extends ConsumerStatefulWidget {
@@ -883,7 +885,9 @@ class _RefundOrderVoucherCard extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(left: 132, bottom: 8),
                 child: TextButton(
-                  onPressed: () => context.push('/deals/$dealId'),
+                  onPressed: () {
+                    openMerchantDealDetail(context, dealId!);
+                  },
                   style: TextButton.styleFrom(
                     padding: EdgeInsets.zero,
                     minimumSize: Size.zero,
