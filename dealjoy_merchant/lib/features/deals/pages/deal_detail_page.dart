@@ -599,72 +599,107 @@ class _StatusBanner extends StatelessWidget {
 
 // ============================================================
 // 图片画廊（横向滚动）
+// 单张图：不能用横向 ListView + width: infinity（子项在水平方向为无界约束，会画不出来）
+// 多张图：固定宽度 tile 横向滚动
 // ============================================================
 class _ImageGallery extends StatelessWidget {
   const _ImageGallery({required this.images});
 
   final List<DealImage> images;
+  static const double _rowHeight = 200;
+  static const double _tileWidth = 220;
 
   @override
   Widget build(BuildContext context) {
+    if (images.length == 1) {
+      // 在 Column 内有界宽度，可用全宽
+      return _galleryTile(
+        image: images.first,
+        useFullWidth: true,
+      );
+    }
     return SizedBox(
-      height: 200,
+      height: _rowHeight,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: images.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 8),
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
         itemBuilder: (context, index) {
-          final image = images[index];
-          return ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: Stack(
-              children: [
-                CachedNetworkImage(
-                  imageUrl: image.imageUrl,
-                  width: images.length == 1 ? double.infinity : 220,
-                  height: 200,
-                  fit: BoxFit.cover,
-                  placeholder: (_, _) => Container(
-                    color: const Color(0xFFEEEEEE),
-                    width: 220,
-                    height: 200,
-                  ),
-                  errorWidget: (_, _, _) => Container(
-                    color: const Color(0xFFEEEEEE),
-                    width: 220,
-                    height: 200,
-                    child: const Icon(Icons.broken_image_outlined,
-                        color: Color(0xFFCCCCCC)),
-                  ),
-                ),
-                // Cover 标签
-                if (image.isPrimary)
-                  Positioned(
-                    left: 8,
-                    bottom: 8,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFF6B35),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: const Text(
-                        'Cover',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
+          return _galleryTile(
+            image: images[index],
+            useFullWidth: false,
           );
         },
+      ),
+    );
+  }
+
+  Widget _galleryTile({
+    required DealImage image,
+    required bool useFullWidth,
+  }) {
+    final tileW = useFullWidth ? double.infinity : _tileWidth;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: Stack(
+        children: [
+          SizedBox(
+            width: useFullWidth ? double.infinity : _tileWidth,
+            height: _rowHeight,
+            child: CachedNetworkImage(
+              imageUrl: image.imageUrl,
+              width: tileW,
+              height: _rowHeight,
+              fit: BoxFit.cover,
+              placeholder: (_, __) => Container(
+                color: const Color(0xFFEEEEEE),
+                width: tileW,
+                height: _rowHeight,
+              ),
+              errorWidget: (_, __, ___) => Container(
+                color: const Color(0xFFEEEEEE),
+                width: tileW,
+                height: _rowHeight,
+                child: const Icon(
+                  Icons.broken_image_outlined,
+                  color: Color(0xFFCCCCCC),
+                ),
+              ),
+            ),
+          ),
+          if (image.isPrimary) _coverBadge(),
+        ],
+      ),
+    );
+  }
+
+  Widget _coverBadge() {
+    return const Positioned(
+      left: 8,
+      bottom: 8,
+      child: _CoverLabel(),
+    );
+  }
+}
+
+class _CoverLabel extends StatelessWidget {
+  const _CoverLabel();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFF6B35),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: const Text(
+        'Cover',
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }
