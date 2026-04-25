@@ -107,6 +107,21 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
         .join('\n');
   }
 
+  /// 与 package 一致：未重选菜品时保留原 dishes，避免 toJson 发 [] 覆盖克隆行
+  List<String> get _dishesPayload {
+    if (_selectedMenuItems.isEmpty) {
+      return List<String>.from(widget.deal.dishes);
+    }
+    return _selectedMenuItems
+        .map((s) {
+          final name = s.menuItem.name;
+          final qty = s.quantity;
+          final subtotal = ((s.menuItem.price ?? 0) * qty).toStringAsFixed(0);
+          return '$name::$qty::$subtotal';
+        })
+        .toList();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -368,21 +383,22 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
         tipsPreset3: _tipsEnabled && _tipsP3Controller.text.trim().isNotEmpty
             ? double.tryParse(_tipsP3Controller.text.trim())
             : null,
+        dishes: _dishesPayload,
         images: widget.deal.images,
         createdAt: widget.deal.createdAt,
         updatedAt: DateTime.now(),
       );
 
-      await notifier.updateDeal(deal);
+      final newDeal = await notifier.updateDeal(deal);
 
-      // 上传新图片到新 deal（后端返回的是新 deal ID）
+      // 上传新图片到克隆后的新 deal（必须用服务端返回的 id）
       if (_newImages.isNotEmpty) {
         for (int i = 0; i < _newImages.length; i++) {
           await notifier.uploadImage(
-            dealId: widget.deal.id,
+            dealId: newDeal.id,
             file: _newImages[i],
-            sortOrder: widget.deal.images.length + i,
-            isPrimary: widget.deal.images.isEmpty && i == 0,
+            sortOrder: newDeal.images.length + i,
+            isPrimary: newDeal.images.isEmpty && i == 0,
           );
         }
       }

@@ -4,6 +4,7 @@ import Link from 'next/link'
 import RejectionHistory from '@/components/rejection-history'
 import DealOperationalActions from '@/components/deal-operational-actions'
 import AdminActivityTimelineCard from '@/components/admin-activity-timeline-card'
+import DealTipsSummary from '@/components/deal-tips-summary'
 import { buildDealTimeline } from '@/lib/deal-admin-timeline'
 import { CopyableId } from '@/components/copyable-id'
 
@@ -72,6 +73,7 @@ export default async function DealReviewPage({
       dishes, merchant_hours, expires_at,
       package_contents, usage_notes, usage_note_images,
       usage_days, max_per_person, is_stackable,
+      tips_enabled, tips_mode, tips_preset_1, tips_preset_2, tips_preset_3,
       validity_type, validity_days,
       deal_type, badge_text, deal_category_id, sort_order,
       detail_images, applicable_merchant_ids, store_confirmations,
@@ -123,7 +125,6 @@ export default async function DealReviewPage({
 
   // 使用日期
   const usageDays = Array.isArray(deal.usage_days) ? (deal.usage_days as string[]) : []
-
   // 查询适用门店名称
   const applicableIds = deal.applicable_merchant_ids as string[] | null
   let applicableStores: { id: string; name: string }[] = []
@@ -281,6 +282,18 @@ export default async function DealReviewPage({
             <div><dt className="text-gray-500">Max per person</dt><dd className="font-medium text-gray-900">{deal.max_per_person ?? 'No limit'}</dd></div>
             <div><dt className="text-gray-500">Stackable</dt><dd className="font-medium text-gray-900">{deal.is_stackable ? 'Yes' : 'No'}</dd></div>
           </dl>
+        </div>
+
+        {/* ── Post-redemption Tipping ── */}
+        <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">Post-redemption tipping</h2>
+          <DealTipsSummary
+            tipsEnabled={Boolean(deal.tips_enabled)}
+            tipsMode={(deal.tips_mode as string | null) ?? null}
+            tipsPreset1={deal.tips_preset_1 != null ? Number(deal.tips_preset_1) : null}
+            tipsPreset2={deal.tips_preset_2 != null ? Number(deal.tips_preset_2) : null}
+            tipsPreset3={deal.tips_preset_3 != null ? Number(deal.tips_preset_3) : null}
+          />
         </div>
 
         {/* ── Option Groups ── */}

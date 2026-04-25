@@ -80,8 +80,9 @@ class DealsNotifier extends AsyncNotifier<List<MerchantDeal>> {
   // ----------------------------------------------------------
   // 更新 Deal（修改后重新审核）
   //    乐观更新：先更新本地，失败时回滚
+  //    返回服务端 deal（克隆场景下为新的 id，供后续上传图片等使用）
   // ----------------------------------------------------------
-  Future<void> updateDeal(MerchantDeal deal) async {
+  Future<MerchantDeal> updateDeal(MerchantDeal deal) async {
     final current = state.valueOrNull ?? [];
 
     // 乐观更新本地状态（标记为 pending）
@@ -98,6 +99,7 @@ class DealsNotifier extends AsyncNotifier<List<MerchantDeal>> {
           .map((d) => d.id == deal.id ? updated : d)
           .toList();
       state = AsyncValue.data(finalList);
+      return updated;
     } catch (e, st) {
       // 失败回滚
       state = AsyncValue.data(current);
