@@ -47,6 +47,10 @@ MerchantDeal _makeDeal({
 void main() {
   late MockDealsService mockService;
 
+  setUpAll(() {
+    registerFallbackValue(_makeDeal(id: 'fallback-deal'));
+  });
+
   /// 构造 ProviderContainer，注入 mock service
   /// merchantId 从 Supabase auth 获取，这里通过重写 dealsProvider 的 build 来绕过
   ProviderContainer makeContainer(List<MerchantDeal> initialDeals) {
@@ -315,15 +319,7 @@ class _TestDealsNotifier extends DealsNotifier {
 
   @override
   Future<List<MerchantDeal>> build() async {
-    // 跳过 Supabase auth 查询，直接设置 merchantId 并返回测试数据
-    // ignore: invalid_use_of_protected_member
-    _merchantIdOverride = 'merchant-001';
+    bindDealsServiceForTest(ref.read(dealsServiceProvider));
     return _initialDeals;
   }
-
-  // 用于测试中覆盖 merchantId（原字段为 late，此处提供 getter 重写）
-  String _merchantIdOverride = 'merchant-001';
-
-  @override
-  String get merchantId => _merchantIdOverride;
 }

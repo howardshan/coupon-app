@@ -51,6 +51,12 @@ class DealsNotifier extends AsyncNotifier<List<MerchantDeal>> {
     return await _service.fetchDeals(_merchantId);
   }
 
+  /// 单元测试用：子类覆盖 [build] 且不走默认分支时，注入 service / merchantId。
+  void bindDealsServiceForTest(DealsService service, {String merchantId = 'merchant-001'}) {
+    _service = service;
+    _merchantId = merchantId;
+  }
+
   // ----------------------------------------------------------
   // 刷新列表（重新从服务器加载）
   // ----------------------------------------------------------
@@ -156,19 +162,16 @@ class DealsNotifier extends AsyncNotifier<List<MerchantDeal>> {
 
   // ----------------------------------------------------------
   // 删除 Deal（仅 inactive 状态）
-  //    乐观删除：先从列表移除，失败时恢复
+  //    接口成功后再从列表移除，避免详情页在 await 期间因列表缺项显示 Not Found
   // ----------------------------------------------------------
   Future<void> deleteDeal(String dealId) async {
     final current = state.valueOrNull ?? [];
 
-    // 乐观删除
-    final updatedList = current.where((d) => d.id != dealId).toList();
-    state = AsyncValue.data(updatedList);
-
     try {
       await _service.deleteDeal(dealId);
+      final updatedList = current.where((d) => d.id != dealId).toList();
+      state = AsyncValue.data(updatedList);
     } catch (e, st) {
-      // 失败回滚
       state = AsyncValue.data(current);
       state = AsyncValue.error(e, st);
       rethrow;
