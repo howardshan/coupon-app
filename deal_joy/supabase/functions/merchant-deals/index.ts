@@ -1005,6 +1005,20 @@ async function handleDeleteDeal(
     );
   }
 
+  // 删除前清理 user_events，避免外键 user_events_deal_id_fkey 阻止删除 deals
+  const { error: userEventsError } = await admin
+    .from("user_events")
+    .delete()
+    .eq("deal_id", dealId);
+
+  if (userEventsError) {
+    console.error("[handleDeleteDeal] user_events delete failed:", userEventsError);
+    return errorResponse(
+      `Failed to clear related analytics: ${userEventsError.message}`,
+      500,
+    );
+  }
+
   const { error } = await admin
     .from("deals")
     .delete()
