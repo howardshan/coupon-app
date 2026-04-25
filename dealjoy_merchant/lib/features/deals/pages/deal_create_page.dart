@@ -430,9 +430,8 @@ class _DealCreatePageState extends ConsumerState<DealCreatePage> {
       MerchantDeal savedDeal;
 
       if (widget.editDeal != null) {
-        // 编辑模式：更新
-        await notifier.updateDeal(deal);
-        savedDeal = deal;
+        // 编辑模式：克隆后服务端返回新 id，供后续图片/详情图上传
+        savedDeal = await notifier.updateDeal(deal);
       } else {
         // 创建模式：先创建 Deal，再上传图片
         savedDeal = await notifier.createDeal(deal);
