@@ -303,6 +303,11 @@ async function handleGetDeals(
     deal_type,
     deal_category_id,
     badge_text,
+    tips_enabled,
+    tips_mode,
+    tips_preset_1,
+    tips_preset_2,
+    tips_preset_3,
     deal_images (
       id,
       image_url,
