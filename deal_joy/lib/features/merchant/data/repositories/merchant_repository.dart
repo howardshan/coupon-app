@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/errors/app_exception.dart';
 import '../models/brand_detail_model.dart';
@@ -207,7 +208,7 @@ class MerchantRepository {
     try {
       final data = await _client.rpc('get_active_ads', params: {
         'p_placement': 'home_store_top',
-        'p_limit': 20,
+        'p_limit': 5,
       });
       final rows = data as List<dynamic>;
       final entries = rows
@@ -224,25 +225,15 @@ class MerchantRepository {
               r['campaign_id'] as String?,
       };
 
-      // 只取 status='approved' 的商家
-      final merchantData = await _client
-          .from('merchants')
-          .select('*, deals(rating, review_count, discount_price, is_active)')
-          .inFilter('id', ids)
-          .eq('status', 'approved');
-      final map = <String, MerchantModel>{};
-      for (final raw in merchantData as List) {
-        final d = raw as Map<String, dynamic>;
-        map[d['id'] as String] = MerchantModel.fromJson(d);
-      }
-      final merchants = ids.map((id) => map[id]).whereType<MerchantModel>().toList();
+      final merchants = await fetchMerchantsByIds(ids);
       return merchants
           .map((m) => m.copyWithSponsored(
                 isSponsored: true,
                 campaignId: campaignMap[m.id],
               ))
           .toList();
-    } catch (_) {
+    } catch (e, st) {
+      debugPrint('[DEBUG] fetchSponsoredMerchants → 异常: $e\n$st');
       return [];
     }
   }

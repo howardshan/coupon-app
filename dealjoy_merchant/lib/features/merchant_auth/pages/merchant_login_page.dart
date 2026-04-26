@@ -67,6 +67,8 @@ class _MerchantLoginPageState extends ConsumerState<MerchantLoginPage> {
       case 'pending':
       case 'rejected':
         context.go('/auth/review');
+      case 'disabled':
+        context.go('/auth/disabled');
       default:
         // 无商家/员工记录 → 引导注册
         context.go('/auth/register');

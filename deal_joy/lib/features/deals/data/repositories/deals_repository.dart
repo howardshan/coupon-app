@@ -166,7 +166,7 @@ class DealsRepository {
     try {
       final data = await _client.rpc('get_active_ads', params: {
         'p_placement': 'home_deal_top',
-        'p_limit': 20,
+        'p_limit': 5,
       });
       final rows = data as List<dynamic>;
       final entries = rows
@@ -186,11 +186,7 @@ class DealsRepository {
       final deals = await fetchDealsByIds(ids);
       final now = DateTime.now().toUtc();
       return deals
-          .where((d) {
-            if (!d.isActive) return false;
-            if (d.expiresAt != null && d.expiresAt!.isBefore(now)) return false;
-            return true;
-          })
+          .where((d) => !d.expiresAt.isBefore(now))
           .map((d) => d.copyWithSponsored(
                 isSponsored: true,
                 campaignId: campaignMap[d.id],

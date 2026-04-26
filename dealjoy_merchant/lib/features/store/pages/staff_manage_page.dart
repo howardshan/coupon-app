@@ -9,13 +9,27 @@ import '../providers/store_provider.dart';
 // ============================================================
 // StaffManagePage — 员工管理（替代原 V2 骨架 StaffAccountsPage）
 // ============================================================
-class StaffManagePage extends ConsumerWidget {
+class StaffManagePage extends ConsumerStatefulWidget {
   const StaffManagePage({super.key});
 
+  @override
+  ConsumerState<StaffManagePage> createState() => _StaffManagePageState();
+}
+
+class _StaffManagePageState extends ConsumerState<StaffManagePage> {
   static const _primaryColor = Color(0xFFFF6B35);
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  void initState() {
+    super.initState();
+    // 每次进入页面都重新拉取，确保切换门店后数据同步
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.invalidate(staffProvider);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final staffAsync = ref.watch(staffProvider);
 
     return Scaffold(
@@ -272,6 +286,7 @@ class StaffManagePage extends ConsumerWidget {
   // ----------------------------------------------------------
   Future<void> _showInviteDialog(BuildContext context, WidgetRef ref) async {
     final emailController = TextEditingController();
+    const allowedRoles = [StaffRole.cashier, StaffRole.manager];
     StaffRole selectedRole = StaffRole.cashier;
 
     final result = await showDialog<bool>(
@@ -305,14 +320,14 @@ class StaffManagePage extends ConsumerWidget {
                 ),
                 // 收起状态：只显示角色名，描述放 helperText
                 selectedItemBuilder: (context) {
-                  return StaffRole.values.map((role) {
+                  return allowedRoles.map((role) {
                     return Align(
                       alignment: Alignment.centerLeft,
                       child: Text(role.displayLabel),
                     );
                   }).toList();
                 },
-                items: StaffRole.values.map((role) {
+                items: allowedRoles.map((role) {
                   return DropdownMenuItem(
                     value: role,
                     child: Column(
@@ -398,14 +413,17 @@ class StaffManagePage extends ConsumerWidget {
   }
 
   // ----------------------------------------------------------
-  // 修改角色对话框
+  // 修改角色对话框（仅 cashier / manager 两个选项）
   // ----------------------------------------------------------
   Future<void> _showChangeRoleDialog(
     BuildContext context,
     WidgetRef ref,
     StaffMember staff,
   ) async {
-    StaffRole? newRole = staff.role;
+    const allowedRoles = [StaffRole.cashier, StaffRole.manager];
+    // 当前角色若不在允许列表内，默认选 cashier
+    StaffRole? newRole =
+        allowedRoles.contains(staff.role) ? staff.role : StaffRole.cashier;
 
     final result = await showDialog<bool>(
       context: context,
@@ -414,7 +432,7 @@ class StaffManagePage extends ConsumerWidget {
           title: Text('Change Role — ${staff.displayName}'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
-            children: StaffRole.values.map((role) {
+            children: allowedRoles.map((role) {
               return RadioListTile<StaffRole>(
                 value: role,
                 groupValue: newRole,
@@ -438,11 +456,24 @@ class StaffManagePage extends ConsumerWidget {
       ),
     );
 
-    if (result == true && newRole != null && newRole != staff.role) {
-      await ref.read(staffProvider.notifier).updateStaff(
-            staffId: staff.id,
-            role: newRole!.value,
+    if (result == true && newRole != null && context.mounted) {
+      try {
+        await ref.read(staffProvider.notifier).updateStaff(
+              staffId: staff.id,
+              role: newRole!.value,
+            );
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Role updated')),
           );
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to update role: $e')),
+          );
+        }
+      }
     }
   }
 

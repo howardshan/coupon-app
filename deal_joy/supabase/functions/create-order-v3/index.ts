@@ -83,6 +83,13 @@ Deno.serve(async (req) => {
     return new Response('ok', { headers: corsHeaders });
   }
 
+  // 热身请求：pg_cron 每 4 分钟调用，快速返回以保持函数热态
+  if (req.headers.get('x-warmup') === 'true') {
+    return new Response(JSON.stringify({ warmed: true }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
   try {
     // ----------------------------------------------------------------
     // 1. 验证 Authorization header，获取当前登录用户
@@ -477,35 +484,38 @@ Deno.serve(async (req) => {
             }
           }
 
-          for (const [connectId, amountCents] of merchantNetMap) {
-            try {
-              const transferRes = await fetch('https://api.stripe.com/v1/transfers', {
-                method: 'POST',
-                headers: {
-                  Authorization: `Bearer ${stripeKey}`,
-                  'Content-Type': 'application/x-www-form-urlencoded',
-                },
-                body: new URLSearchParams({
-                  amount: String(amountCents),
-                  currency: 'usd',
-                  destination: connectId,
-                  source_transaction: chargeId,
-                  transfer_group: orderId,
-                }).toString(),
-              });
-              if (!transferRes.ok) {
-                console.error(`[Transfer] 分账失败 dest=${connectId} amount=${amountCents}:`, await transferRes.text());
-                transferFailedConnectIds.add(connectId); // 标记失败，后续跳过 Hold
-              } else {
-                const transferData = await transferRes.json();
-                successfulTransfers.set(connectId, (transferData as any).id);
-                console.log(`[Transfer] 分账成功 dest=${connectId} transfer=${(transferData as any).id}`);
+          // 多商家 Transfer 并行执行（Promise.allSettled 替代串行 for 循环）
+          await Promise.allSettled(
+            Array.from(merchantNetMap.entries()).map(async ([connectId, amountCents]) => {
+              try {
+                const transferRes = await fetch('https://api.stripe.com/v1/transfers', {
+                  method: 'POST',
+                  headers: {
+                    Authorization: `Bearer ${stripeKey}`,
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                  },
+                  body: new URLSearchParams({
+                    amount: String(amountCents),
+                    currency: 'usd',
+                    destination: connectId,
+                    source_transaction: chargeId,
+                    transfer_group: orderId,
+                  }).toString(),
+                });
+                if (!transferRes.ok) {
+                  console.error(`[Transfer] 分账失败 dest=${connectId} amount=${amountCents}:`, await transferRes.text());
+                  transferFailedConnectIds.add(connectId);
+                } else {
+                  const transferData = await transferRes.json();
+                  successfulTransfers.set(connectId, (transferData as any).id);
+                  console.log(`[Transfer] 分账成功 dest=${connectId} transfer=${(transferData as any).id}`);
+                }
+              } catch (err) {
+                console.error(`[Transfer] 网络异常 dest=${connectId}:`, err);
+                transferFailedConnectIds.add(connectId);
               }
-            } catch (err) {
-              console.error(`[Transfer] 网络异常 dest=${connectId}:`, err);
-              transferFailedConnectIds.add(connectId);
-            }
-          }
+            }),
+          );
 
           if (transferFailedConnectIds.size > 0) {
             console.error(`[Transfer] 以下商家分账失败，需人工补 Transfer: ${[...transferFailedConnectIds].join(',')}`);

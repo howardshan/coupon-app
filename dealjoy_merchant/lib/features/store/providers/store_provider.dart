@@ -361,6 +361,8 @@ class StoreNotifier extends AsyncNotifier<StoreInfo> {
   // ----------------------------------------------------------
   Future<void> switchStore(String merchantId) async {
     _service.setActiveMerchantId(merchantId);
+    // 切换门店时清除员工列表缓存，确保进入 Staff Management 加载新门店数据
+    ref.invalidate(staffProvider);
     await refresh();
   }
 }

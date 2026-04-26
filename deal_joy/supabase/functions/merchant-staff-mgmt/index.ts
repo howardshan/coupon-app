@@ -372,13 +372,14 @@ Deno.serve(async (req: Request) => {
       if (existingByEmail) {
         const { data: existingStaff } = await supabaseAdmin
           .from("merchant_staff")
-          .select("id")
+          .select("id, is_active")
           .eq("merchant_id", auth.merchantId)
           .eq("user_id", existingByEmail.id)
           .maybeSingle();
 
-        if (existingStaff) {
-          return errorResponse("This user is already a staff member");
+        // 只阻止已有活跃员工记录；禁用的员工可以重新邀请
+        if (existingStaff && existingStaff.is_active) {
+          return errorResponse("This user is already an active staff member");
         }
       }
 

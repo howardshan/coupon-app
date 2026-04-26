@@ -154,10 +154,10 @@ class PromotionsService {
     }
     if (bidPrice != null) body['bid_price'] = bidPrice;
     if (startAt != null) {
-      body['start_at'] = startAt.toIso8601String();
+      body['start_at'] = startAt.toUtc().toIso8601String();
     }
     if (applyEndAt) {
-      body['end_at'] = endAt?.toIso8601String();
+      body['end_at'] = endAt?.toUtc().toIso8601String();
     }
 
     final response = await _supabase.functions.invoke(

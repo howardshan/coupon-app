@@ -164,27 +164,48 @@ class MerchantStatusCache {
         return _cachedStatus!;
       }
 
-      // 3. 检查是否为门店员工（merchant_staff 表）
-      final staffData = await supabase
+      // 3a. 检查是否为在职员工（is_active = true）
+      final activeStaff = await supabase
           .from('merchant_staff')
-          .select('merchant_id, is_active, role')
+          .select('merchant_id, role')
           .eq('user_id', user.id)
           .eq('is_active', true)
           .maybeSingle();
 
-      if (staffData != null) {
+      if (activeStaff != null) {
         _cachedStatus = 'approved';
         _cachedUserId = user.id;
-        final staffRole = staffData['role'] as String? ?? 'cashier';
-        // V2.3: 区域经理按品牌管理员路由，财务进 earnings，实习生进 scan
+        final staffRole = activeStaff['role'] as String? ?? 'cashier';
         _cachedRoleType = 'staff_$staffRole';
         return _cachedStatus!;
       }
 
+      // 3b. 检查是否为已禁用员工（is_active = false）— 独立查询避免 maybeSingle 多行报错
+      final disabledStaff = await supabase
+          .from('merchant_staff')
+          .select('id')
+          .eq('user_id', user.id)
+          .eq('is_active', false)
+          .limit(1)
+          .maybeSingle();
+
+      if (disabledStaff != null) {
+        // ignore: avoid_print
+        print('[MerchantStatusCache] disabled staff detected for ${user.email}');
+        _cachedStatus = 'disabled';
+        _cachedUserId = user.id;
+        _cachedRoleType = null;
+        return _cachedStatus!;
+      }
+      // ignore: avoid_print
+      print('[MerchantStatusCache] no staff record found → none');
+
       _cachedStatus = 'none';
       _cachedUserId = user.id;
       _cachedRoleType = null;
-    } catch (_) {
+    } catch (e, st) {
+      // ignore: avoid_print
+      print('[MerchantStatusCache] getStatus error: $e\n$st');
       return 'none';
     }
 
@@ -212,7 +233,7 @@ final _authNotifier = _AuthChangeNotifier();
 // 不需要登录的公开路由前缀
 // 注意：/store-selector 需要登录（调用 Edge Function），不能放在公开路由里，
 // 否则 session 过期后用户会停在 StoreSelectorPage 看到 "Failed to load stores"
-const _publicRoutes = ['/auth/login', '/auth/register', '/auth/review', '/staff/accept'];
+const _publicRoutes = ['/auth/login', '/auth/register', '/auth/review', '/auth/disabled', '/staff/accept'];
 
 final appRouter = GoRouter(
   initialLocation: '/dashboard',
@@ -223,6 +244,8 @@ final appRouter = GoRouter(
     final session = Supabase.instance.client.auth.currentSession;
     final loc = state.matchedLocation;
     final isPublic = _publicRoutes.any((r) => loc.startsWith(r));
+    // ignore: avoid_print
+    print('[REDIRECT] loc=$loc session=${session != null}');
 
     // 未登录 → 跳登录页
     if (session == null && !isPublic) return '/auth/login';
@@ -231,36 +254,32 @@ final appRouter = GoRouter(
     if (session == null) return null;
 
     // ── 已登录：检查商家审核状态 ──
-    // 在登录页 → 根据状态跳转
-    // 在注册/审核页 → 放行
-    // 在其他页面 → 检查是否已通过审核
-
-    if (loc.startsWith('/auth/register') || loc.startsWith('/auth/review')) {
-      return null; // 注册页和审核页始终允许访问
+    if (loc.startsWith('/auth/register') || loc.startsWith('/auth/review') || loc.startsWith('/auth/disabled')) {
+      // ignore: avoid_print
+      print('[REDIRECT] bypass → null');
+      return null;
     }
 
     final merchantStatus = await MerchantStatusCache.getStatus();
+    // ignore: avoid_print
+    print('[REDIRECT] status=$merchantStatus loc=$loc');
 
     if (loc.startsWith('/auth/login')) {
       // 已登录在登录页 → 根据角色和状态跳转
       switch (merchantStatus) {
         case 'approved':
           final roleType = MerchantStatusCache.roleType;
-          // 品牌管理员 → 门店选择页
           if (roleType == 'brand_admin') return '/store-selector';
-          // V2.3 区域经理 → 门店选择页（管理多店）
           if (roleType == 'staff_regional_manager') return '/store-selector';
-          // 核销员 / 实习生 → 直接进扫码页
           if (roleType == 'staff_cashier' || roleType == 'staff_trainee') return '/scan';
-          // V2.3 财务 → 直接进财务页
           if (roleType == 'staff_finance') return '/earnings';
-          // 其他（store_owner, manager, service）→ Dashboard
           return '/dashboard';
         case 'pending':
         case 'rejected':
           return '/auth/review';
+        case 'disabled':
+          return '/auth/disabled';
         default:
-          // 无商家记录 → 跳转注册流程（#93）
           return '/auth/register';
       }
     }
@@ -271,8 +290,9 @@ final appRouter = GoRouter(
         case 'pending':
         case 'rejected':
           return '/auth/review';
+        case 'disabled':
+          return '/auth/disabled';
         default:
-          // 无商家记录 → 跳转注册流程
           return '/auth/register';
       }
     }
@@ -425,6 +445,10 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/auth/review',
       builder: (context, state) => const MerchantReviewStatusPage(),
+    ),
+    GoRoute(
+      path: '/auth/disabled',
+      builder: (context, state) => const _StaffDisabledPage(),
     ),
     GoRoute(
       path: '/staff/accept',
@@ -683,3 +707,64 @@ final appRouter = GoRouter(
     ),
   ),
 );
+
+// ─── 员工账户已禁用提示页 ──────────────────────────────────────────
+class _StaffDisabledPage extends StatelessWidget {
+  const _StaffDisabledPage();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  color: Colors.orange.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.block_outlined, size: 40, color: Colors.orange),
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                'Account Disabled',
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: Color(0xFF1A1A2E)),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Your staff account has been deactivated.\nPlease contact your manager for assistance.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 15, color: Colors.grey[600], height: 1.5),
+              ),
+              const SizedBox(height: 40),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () async {
+                    await Supabase.instance.client.auth.signOut();
+                    MerchantStatusCache.clear();
+                    if (context.mounted) context.go('/auth/login');
+                  },
+                  icon: const Icon(Icons.logout, size: 18),
+                  label: const Text('Sign Out'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.red,
+                    side: const BorderSide(color: Colors.red),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

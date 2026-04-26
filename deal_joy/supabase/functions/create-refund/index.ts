@@ -85,6 +85,13 @@ Deno.serve(async (req) => {
     return new Response('ok', { headers: corsHeaders });
   }
 
+  // 热身请求：pg_cron 每 4 分钟调用，快速返回以保持函数热态
+  if (req.headers.get('x-warmup') === 'true') {
+    return new Response(JSON.stringify({ warmed: true }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
   try {
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
@@ -266,20 +273,29 @@ Deno.serve(async (req) => {
       // 退款金额包含 service fee 和 tax（平台承担手续费补偿用户，税款全额退还）
       const refundAmount = unitPrice + serviceFee + taxAmount;
 
-      // 退款前先释放 ReserveHold（解冻商家资金，确保 reverse_transfer 能成功执行）
-      const holdIdSC = (item as any).stripe_reserve_hold_id as string | null;
-      const reservesEnabledSC = Deno.env.get('STRIPE_RESERVES_ENABLED') !== 'false';
-      if (holdIdSC && merchantStripeAccountId && reservesEnabledSC) {
-        await releaseReserveHold(merchantStripeAccountId, holdIdSC, Deno.env.get('STRIPE_SECRET_KEY') ?? '');
-      }
-
-      // Stripe Connect 分账路径：从商家 Connect 账户回撤本 item 实际 transfer 金额
-      // 两种路径：
-      //   A. 刷卡订单：通过 PI → latest_charge → transfer 查 transfer ID
-      //   B. Store Credit 订单：直接用 order_items.stripe_transfer_id（下单时记录）
+      // Store Credit 分账路径预计算
       const storedTransferAmount = Number((item as any).stripe_transfer_amount ?? 0);
       const storedTransferId = (item as any).stripe_transfer_id as string | null;
       const isStoreCreditOrder = (order.payment_intent_id ?? '').startsWith('store_credit_');
+
+      // 退款前：releaseReserveHold 与 PI retrieve 并行（两者互不依赖）
+      const holdIdSC = (item as any).stripe_reserve_hold_id as string | null;
+      const reservesEnabledSC = Deno.env.get('STRIPE_RESERVES_ENABLED') !== 'false';
+      const stripeKey = Deno.env.get('STRIPE_SECRET_KEY') ?? '';
+
+      const needsRetrieve = order.payment_intent_id && !isStoreCreditOrder;
+      const [, piResult] = await Promise.allSettled([
+        // releaseReserveHold（仅 Store Credit 订单无 transfer_id 时需要，SC 订单直接 reverse 不需提前 release）
+        holdIdSC && merchantStripeAccountId && reservesEnabledSC
+          ? releaseReserveHold(merchantStripeAccountId, holdIdSC, stripeKey)
+          : Promise.resolve(),
+        // paymentIntents.retrieve（仅刷卡订单需要）
+        needsRetrieve
+          ? stripe.paymentIntents.retrieve(order.payment_intent_id!, {
+              expand: ['latest_charge.transfer'],
+            })
+          : Promise.resolve(null),
+      ]);
 
       if (isStoreCreditOrder && storedTransferId && storedTransferAmount > 0) {
         // ── Store Credit 订单：直接用 stripe_transfer_id reverse ──
@@ -293,13 +309,11 @@ Deno.serve(async (req) => {
         } catch (transferErr) {
           console.error('[SC Refund] Store Credit transfer reversal 失败:', transferErr);
         }
-      } else if (order.payment_intent_id && !isStoreCreditOrder) {
-        // ── 刷卡订单：通过 PI → latest_charge → transfer 查 transfer ID ──
+      } else if (needsRetrieve) {
+        // ── 刷卡订单：使用已并行获取的 PI 数据 ──
         try {
-          const pi = await stripe.paymentIntents.retrieve(order.payment_intent_id, {
-            expand: ['latest_charge.transfer'],
-          });
-          const transfer = (pi as any).latest_charge?.transfer;
+          const pi = piResult.status === 'fulfilled' ? piResult.value : null;
+          const transfer = (pi as any)?.latest_charge?.transfer;
           const transferId = typeof transfer === 'string' ? transfer : transfer?.id;
 
           if (transferId) {
@@ -485,13 +499,6 @@ Deno.serve(async (req) => {
         }
 
         try {
-          // 退款前先释放 ReserveHold（解冻商家资金）
-          const holdIdOP = (item as any).stripe_reserve_hold_id as string | null;
-          const reservesEnabledOP = Deno.env.get('STRIPE_RESERVES_ENABLED') !== 'false';
-          if (holdIdOP && merchantStripeAccountId && reservesEnabledOP) {
-            await releaseReserveHold(merchantStripeAccountId, holdIdOP, Deno.env.get('STRIPE_SECRET_KEY') ?? '');
-          }
-
           // ── Step 1: 从商家 Connect 账户 reverse 商家实收部分 ──
           // 只逆向 stripe_transfer_amount（商家的 net），其余（commission + stripe_fee + tax）由平台出
           // 两种路径：A. Store Credit 订单用 stripe_transfer_id 直接 reverse
@@ -499,6 +506,22 @@ Deno.serve(async (req) => {
           const storedTransferAmountOP = Number((item as any).stripe_transfer_amount ?? 0);
           const storedTransferIdOP = (item as any).stripe_transfer_id as string | null;
           const isStoreCreditOrderOP = (order.payment_intent_id ?? '').startsWith('store_credit_');
+          const holdIdOP = (item as any).stripe_reserve_hold_id as string | null;
+          const reservesEnabledOP = Deno.env.get('STRIPE_RESERVES_ENABLED') !== 'false';
+          const stripeKeyOP = Deno.env.get('STRIPE_SECRET_KEY') ?? '';
+
+          // releaseReserveHold 与 PI retrieve 并行（两者互不依赖）
+          const needsRetrieveOP = hasConnectRouting && order.payment_intent_id && !isStoreCreditOrderOP;
+          const [, piOPResult] = await Promise.allSettled([
+            holdIdOP && merchantStripeAccountId && reservesEnabledOP
+              ? releaseReserveHold(merchantStripeAccountId, holdIdOP, stripeKeyOP)
+              : Promise.resolve(),
+            needsRetrieveOP
+              ? stripe.paymentIntents.retrieve(order.payment_intent_id!, {
+                  expand: ['latest_charge.transfer'],
+                })
+              : Promise.resolve(null),
+          ]);
 
           if (isStoreCreditOrderOP && storedTransferIdOP && storedTransferAmountOP > 0) {
             // Store Credit 订单：直接用 stripe_transfer_id reverse
@@ -512,13 +535,11 @@ Deno.serve(async (req) => {
             } catch (reversalErr) {
               console.error('[OP Refund] SC transfer reversal failed:', reversalErr);
             }
-          } else if (hasConnectRouting && order.payment_intent_id && !isStoreCreditOrderOP) {
-            // 刷卡订单：通过 PI 查 transfer
+          } else if (needsRetrieveOP) {
+            // 刷卡订单：使用已并行获取的 PI 数据
             try {
-              const piForReversal = await stripe.paymentIntents.retrieve(order.payment_intent_id, {
-                expand: ['latest_charge.transfer'],
-              });
-              const transferObj = (piForReversal as any).latest_charge?.transfer;
+              const piForReversal = piOPResult.status === 'fulfilled' ? piOPResult.value : null;
+              const transferObj = (piForReversal as any)?.latest_charge?.transfer;
               const transferId = typeof transferObj === 'string' ? transferObj : transferObj?.id;
 
               if (transferId) {
@@ -563,7 +584,7 @@ Deno.serve(async (req) => {
             amount: Math.round(cardRefundAmount * 100),
             metadata: {
               order_item_id: orderItemId,
-              merchant_reversed: storedTransferAmount > 0 ? storedTransferAmount.toFixed(2) : 'proportional',
+              merchant_reversed: storedTransferAmountOP > 0 ? storedTransferAmountOP.toFixed(2) : 'proportional',
               platform_covered: (commissionAmount + stripeFeeAmount + taxAmount).toFixed(2),
             },
           };
