@@ -110,7 +110,7 @@ export default async function LegalDocumentsPage() {
                 <div className="mb-3">
                   {hasPublished ? (
                     <span className="inline-flex items-center rounded-md bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
-                      v{doc.current_version}
+                      {doc.current_version_label ?? `v${doc.current_version}`}
                     </span>
                   ) : (
                     <span className="inline-flex items-center rounded-md bg-orange-50 px-2 py-0.5 text-xs font-medium text-orange-600">

@@ -13,6 +13,7 @@ type LegalDocument = {
   document_type: string
   requires_re_consent: boolean
   current_version: number
+  current_version_label: string | null
   is_active: boolean
   created_at: string
   updated_at: string
@@ -22,6 +23,7 @@ type LegalDocVersion = {
   id: string
   document_id: string
   version: number
+  version_label: string | null
   content_html: string
   summary_of_changes: string | null
   published_at: string | null
@@ -67,6 +69,7 @@ export default function LegalDocEditor({ document, versions: initialVersions }: 
   // 发布对话框
   const [showPublishDialog, setShowPublishDialog] = useState(false)
   const [summaryOfChanges, setSummaryOfChanges] = useState('')
+  const [versionLabel, setVersionLabel] = useState('')
 
   // 版本历史
   const [versions, setVersions] = useState(initialVersions)
@@ -101,9 +104,10 @@ export default function LegalDocEditor({ document, versions: initialVersions }: 
     startPublish(async () => {
       try {
         // publishVersion 以 slug 为标识符
-        const result = await publishVersion(document.slug, contentHtml, summaryOfChanges.trim())
+        const result = await publishVersion(document.slug, contentHtml, summaryOfChanges.trim(), versionLabel.trim())
         setShowPublishDialog(false)
         setSummaryOfChanges('')
+        setVersionLabel('')
         toast.success(`Version ${result?.publishedVersion ?? ''} published successfully`)
       } catch (e: any) {
         toast.error(e.message || 'Failed to publish version')
@@ -283,7 +287,11 @@ export default function LegalDocEditor({ document, versions: initialVersions }: 
                   {isSavingDraft ? 'Saving...' : 'Save Draft'}
                 </button>
                 <button
-                  onClick={() => setShowPublishDialog(true)}
+                  onClick={() => {
+                    const nextNum = (document.current_version ?? 0) + 1
+                    setVersionLabel(`v${nextNum}`)
+                    setShowPublishDialog(true)
+                  }}
                   disabled={isPublishing}
                   className="inline-flex items-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors disabled:opacity-50"
                 >
@@ -321,7 +329,7 @@ export default function LegalDocEditor({ document, versions: initialVersions }: 
                     >
                       <div className="flex items-center justify-between mb-1">
                         <span className="text-sm font-semibold text-gray-900">
-                          v{ver.version}
+                          {ver.version_label ?? `v${ver.version}`}
                         </span>
                         {isPublished ? (
                           <span className="inline-flex items-center rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">
@@ -367,9 +375,20 @@ export default function LegalDocEditor({ document, versions: initialVersions }: 
           <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-2">Publish New Version</h3>
             <p className="text-sm text-gray-500 mb-4">
-              This will create a new published version (v{(document.current_version ?? 0) + 1}).
               Published versions are immutable.
             </p>
+
+            {/* 版本标签 */}
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Version Label
+            </label>
+            <input
+              type="text"
+              value={versionLabel}
+              onChange={(e) => setVersionLabel(e.target.value)}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 mb-4"
+              placeholder="e.g. v2.1"
+            />
 
             {/* 重新同意警告 */}
             {requiresReConsent && (
