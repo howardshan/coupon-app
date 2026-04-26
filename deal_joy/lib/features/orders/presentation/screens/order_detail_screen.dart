@@ -60,6 +60,91 @@ void showUnusedQrSheet(
   );
 }
 
+/// QR 弹层内复制券码：弹层会挡住底层 SnackBar，因此在行内显示「已复制」状态并辅以触觉反馈。
+class _VoucherCodeCopyRow extends StatefulWidget {
+  const _VoucherCodeCopyRow({
+    required this.formattedCode,
+    required this.hostContext,
+  });
+
+  final String formattedCode;
+  final BuildContext hostContext;
+
+  @override
+  State<_VoucherCodeCopyRow> createState() => _VoucherCodeCopyRowState();
+}
+
+class _VoucherCodeCopyRowState extends State<_VoucherCodeCopyRow> {
+  bool _copied = false;
+  Timer? _resetTimer;
+
+  @override
+  void dispose() {
+    _resetTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _onTap() async {
+    await Clipboard.setData(ClipboardData(text: widget.formattedCode));
+    if (!mounted) return;
+    HapticFeedback.lightImpact();
+    setState(() => _copied = true);
+    _resetTimer?.cancel();
+    _resetTimer = Timer(const Duration(milliseconds: 1600), () {
+      if (mounted) setState(() => _copied = false);
+    });
+
+    const bar = SnackBar(
+      content: Text('Coupon code copied'),
+      duration: Duration(seconds: 2),
+      behavior: SnackBarBehavior.floating,
+    );
+    final host = widget.hostContext;
+    if (host.mounted) {
+      ScaffoldMessenger.maybeOf(host)?.showSnackBar(bar);
+    }
+    if (mounted) {
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(bar);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: _onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceVariant,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              widget.formattedCode,
+              style: const TextStyle(
+                fontSize: 16,
+                fontFamily: 'monospace',
+                fontWeight: FontWeight.w700,
+                letterSpacing: 2,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Icon(
+              _copied ? Icons.check_circle_rounded : Icons.copy_rounded,
+              size: 18,
+              color: _copied
+                  ? const Color(0xFF2E7D32)
+                  : AppColors.textSecondary,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _UnusedQrSheet extends ConsumerStatefulWidget {
   /// 打开 QR 弹层的页面 context，用于关闭弹层后展示全屏成功与再次打开弹层
   final BuildContext hostContext;
@@ -293,42 +378,9 @@ class _UnusedQrSheetState extends ConsumerState<_UnusedQrSheet> {
                     ),
                     const SizedBox(height: 16),
                     if (formattedCode != null)
-                      GestureDetector(
-                        onTap: () {
-                          Clipboard.setData(ClipboardData(text: formattedCode));
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Coupon code copied'),
-                              duration: Duration(seconds: 2),
-                              behavior: SnackBarBehavior.floating,
-                            ),
-                          );
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 10),
-                          decoration: BoxDecoration(
-                            color: AppColors.surfaceVariant,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                formattedCode,
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontFamily: 'monospace',
-                                  fontWeight: FontWeight.w700,
-                                  letterSpacing: 2,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              const Icon(Icons.copy_rounded,
-                                  size: 16, color: AppColors.textSecondary),
-                            ],
-                          ),
-                        ),
+                      _VoucherCodeCopyRow(
+                        formattedCode: formattedCode,
+                        hostContext: widget.hostContext,
                       ),
                   ],
                 );
