@@ -5,7 +5,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import '../../store/providers/store_provider.dart';
 import '../models/merchant_order.dart';
 import '../providers/orders_provider.dart';
 import '../widgets/order_status_badge.dart';
@@ -52,7 +54,7 @@ class OrderDetailPage extends ConsumerWidget {
         ],
       ),
       body: detailAsync.when(
-        data: (detail) => _buildDetail(context, detail),
+        data: (detail) => _buildDetail(context, ref, detail),
         loading: () => const Center(
           child: CircularProgressIndicator(color: Color(0xFFFF6B35)),
         ),
@@ -64,7 +66,11 @@ class OrderDetailPage extends ConsumerWidget {
   // =============================================================
   // 主体内容
   // =============================================================
-  Widget _buildDetail(BuildContext context, MerchantOrderDetail detail) {
+  Widget _buildDetail(
+    BuildContext context,
+    WidgetRef ref,
+    MerchantOrderDetail detail,
+  ) {
     final amountFmt = NumberFormat.currency(symbol: '\$');
 
     return SingleChildScrollView(
@@ -89,7 +95,7 @@ class OrderDetailPage extends ConsumerWidget {
           ),
 
           // 区块2：Vouchers 列表（每张券一个卡片）
-          _buildVouchersSection(detail, amountFmt),
+          _buildVouchersSection(context, ref, detail, amountFmt),
 
           // 区块3：Payment 汇总（商家专属金额）
           _SectionCard(
@@ -187,7 +193,11 @@ class OrderDetailPage extends ConsumerWidget {
 
   // Vouchers 区块：展示每张券
   Widget _buildVouchersSection(
-      MerchantOrderDetail detail, NumberFormat amountFmt) {
+    BuildContext context,
+    WidgetRef ref,
+    MerchantOrderDetail detail,
+    NumberFormat amountFmt,
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -215,8 +225,15 @@ class OrderDetailPage extends ConsumerWidget {
         ...detail.items.asMap().entries.map((entry) {
           final index = entry.key;
           final item = entry.value;
-          return _buildVoucherCard(item, index + 1, detail.items.length,
-              amountFmt);
+          return _buildVoucherCard(
+            context,
+            ref,
+            detail,
+            item,
+            index + 1,
+            detail.items.length,
+            amountFmt,
+          );
         }),
         const SizedBox(height: 4),
       ],
@@ -224,8 +241,15 @@ class OrderDetailPage extends ConsumerWidget {
   }
 
   // 单张券卡片
-  Widget _buildVoucherCard(MerchantOrderItem item, int index, int total,
-      NumberFormat amountFmt) {
+  Widget _buildVoucherCard(
+    BuildContext context,
+    WidgetRef ref,
+    MerchantOrderDetail detail,
+    MerchantOrderItem item,
+    int index,
+    int total,
+    NumberFormat amountFmt,
+  ) {
     final itemStatus = OrderStatus.displayStatus(
       item.orderStatus,
       item.couponExpiresAt,
@@ -234,6 +258,12 @@ class OrderDetailPage extends ConsumerWidget {
         item.customerStatus == 'used' || item.customerStatus == 'redeemed';
     final isRefunded = item.customerStatus == 'refund_success' ||
         item.customerStatus == 'refunded';
+    final store = ref.watch(storeProvider).valueOrNull;
+    final showCollectTip = item.canCollectTip &&
+        (store?.canCollectTips ?? false) &&
+        item.couponId != null &&
+        item.couponId!.isNotEmpty &&
+        item.collectTipDealJson != null;
 
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
@@ -356,6 +386,45 @@ class OrderDetailPage extends ConsumerWidget {
                     ),
                   ),
                 ),
+            ],
+
+            // 核销成功页未收小费时：从订单详情补开收小费（与 /scan/collect-tip 同一路由）
+            if (showCollectTip) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                height: 44,
+                child: OutlinedButton(
+                  onPressed: () async {
+                    final tipped = await context.push<bool>(
+                      '/scan/collect-tip',
+                      extra: {
+                        'coupon_id': item.couponId!,
+                        'deal_title': item.dealTitle,
+                        'deal': item.collectTipDealJson!,
+                        'tip_base_cents': item.collectTipBaseCents,
+                      },
+                    );
+                    if (tipped == true && context.mounted) {
+                      ref.invalidate(orderDetailProvider(detail.id));
+                    }
+                  },
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFFFF6B35),
+                    side: const BorderSide(color: Color(0xFFFF6B35)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  child: const Text(
+                    'Collect tip',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
             ],
 
             // 退款信息
