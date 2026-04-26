@@ -946,18 +946,32 @@ class _CouponStatusRow extends ConsumerWidget {
           ),
         ),
 
-        // 展开后：每张券的详情
+        // 展开后：每张券的详情（独立小卡片，避免糊成一团）
         if (isExpanded && onToggle != null) ...[
           const Divider(height: 1, color: Color(0xFFF0F0F0)),
-          ...items.map((item) => _CouponDetailRow(
-                item: item,
-                allItems: items,
-                paymentIntentId: paymentIntentId,
-                onRefreshOrder: onRefreshOrder,
-                storeCreditUsed: storeCreditUsed,
-                orderTotalAmount: orderTotalAmount,
-                afterSalesByCoupon: afterSalesByCoupon,
-              )),
+          ...items.asMap().entries.map((e) {
+            final isLast = e.key == items.length - 1;
+            return Padding(
+              padding: EdgeInsets.fromLTRB(10, 0, 10, isLast ? 4 : 8),
+              child: Material(
+                color: Colors.white,
+                elevation: 0.5,
+                shadowColor: Colors.black26,
+                surfaceTintColor: Colors.transparent,
+                borderRadius: BorderRadius.circular(10),
+                clipBehavior: Clip.antiAlias,
+                child: _CouponDetailRow(
+                  item: e.value,
+                  allItems: items,
+                  paymentIntentId: paymentIntentId,
+                  onRefreshOrder: onRefreshOrder,
+                  storeCreditUsed: storeCreditUsed,
+                  orderTotalAmount: orderTotalAmount,
+                  afterSalesByCoupon: afterSalesByCoupon,
+                ),
+              ),
+            );
+          }),
         ],
 
         const Divider(height: 1, color: Color(0xFFF0F0F0)),
@@ -1000,92 +1014,98 @@ class _CouponDetailRow extends ConsumerWidget {
         }
       },
       child: Container(
-        color: const Color(0xFFFAFAFA),
+        color: Colors.transparent,
         padding: const EdgeInsets.fromLTRB(24, 12, 16, 12),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // 券码（可点击跳转 coupon 页面）
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      if (formattedCode != null)
-                        Expanded(
-                          child: Text(
-                            formattedCode,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontFamily: 'monospace',
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 1.5,
-                              color: AppColors.primary,
-                            ),
+            // 第一行：券码 + 箭头（全宽，不与右侧按钮抢空间）
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    if (formattedCode != null)
+                      Expanded(
+                        child: Text(
+                          formattedCode,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontFamily: 'monospace',
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1.5,
+                            color: AppColors.primary,
                           ),
-                        )
-                      else
-                        const Text(
-                          'No code',
-                          style: TextStyle(
-                              fontSize: 13, color: AppColors.textHint),
                         ),
-                      const SizedBox(width: 4),
-                      const Icon(Icons.arrow_forward_ios,
-                          size: 12, color: AppColors.primary),
-                    ],
+                      )
+                    else
+                      const Text(
+                        'No code',
+                        style: TextStyle(
+                            fontSize: 13, color: AppColors.textHint),
+                      ),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.arrow_forward_ios,
+                        size: 12, color: AppColors.primary),
+                  ],
+                ),
+                // 状态标签
+                const SizedBox(height: 2),
+                Text(
+                  item.customerStatus.displayLabel,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: _statusColor(item.customerStatus),
                   ),
-                  // 状态标签
+                ),
+                // 核销时间
+                if (item.redeemedAt != null) ...[
                   const SizedBox(height: 2),
                   Text(
-                    item.customerStatus.displayLabel,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: _statusColor(item.customerStatus),
-                    ),
+                    'Used ${DateFormat('MMM d, yyyy').format(item.redeemedAt!.toLocal())}',
+                    style: const TextStyle(
+                        fontSize: 11, color: AppColors.textHint),
                   ),
-                  // 核销时间
-                  if (item.redeemedAt != null) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      'Used ${DateFormat('MMM d, yyyy').format(item.redeemedAt!.toLocal())}',
-                      style: const TextStyle(
-                          fontSize: 11, color: AppColors.textHint),
-                    ),
-                  ],
                 ],
-              ),
-            ),
-            // 操作按钮
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (item.showCancel)
-                  _SmallButton(
-                    label: 'Cancel',
-                    color: AppColors.error,
-                    onTap: () => _showCancelSheet(context, ref, item),
-                  ),
-                if (showRefundButtonConsideringAfterSales(item, afterSalesByCoupon))
-                  _SmallButton(
-                    label: 'Refund',
-                    color: AppColors.warning,
-                    onTap: () => showUsedRefundEntry(context, ref, item),
-                  ),
-                if (item.showWriteReview)
-                  _SmallButton(
-                    label: 'Review',
-                    color: AppColors.accent,
-                    onTap: () {
-                      // 评价关联到实际核销门店（连锁店场景下可能与购买门店不同）
-                      final merchantId = item.redeemedMerchantId ?? item.purchasedMerchantId ?? '';
-                      context.push('/review/${item.dealId}?merchantId=$merchantId&orderItemId=${item.id}');
-                    },
-                  ),
               ],
             ),
+            // 第二行：操作按钮（右对齐，与券码行解耦）
+            if (item.showCancel ||
+                showRefundButtonConsideringAfterSales(item, afterSalesByCoupon) ||
+                item.showWriteReview) ...[
+              const SizedBox(height: 10),
+              Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  if (item.showCancel)
+                    _SmallButton(
+                      label: 'Cancel',
+                      color: AppColors.error,
+                      onTap: () => _showCancelSheet(context, ref, item),
+                    ),
+                  if (showRefundButtonConsideringAfterSales(item, afterSalesByCoupon))
+                    _SmallButton(
+                      label: 'Refund',
+                      color: AppColors.warning,
+                      onTap: () => showUsedRefundEntry(context, ref, item),
+                    ),
+                  if (item.showWriteReview)
+                    _SmallButton(
+                      label: 'Review',
+                      color: AppColors.accent,
+                      onTap: () {
+                        // 评价关联到实际核销门店（连锁店场景下可能与购买门店不同）
+                        final merchantId = item.redeemedMerchantId ?? item.purchasedMerchantId ?? '';
+                        context.push('/review/${item.dealId}?merchantId=$merchantId&orderItemId=${item.id}');
+                      },
+                    ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
