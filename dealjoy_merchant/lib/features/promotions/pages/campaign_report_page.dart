@@ -89,6 +89,11 @@ class _CampaignReportPageState extends ConsumerState<CampaignReportPage> {
     }
   }
 
+  Future<void> _onRefresh() async {
+    await ref.read(campaignsProvider.notifier).refresh();
+    ref.invalidate(campaignReportProvider(widget.campaignId));
+  }
+
   void _showError(String msg) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -121,7 +126,10 @@ class _CampaignReportPageState extends ConsumerState<CampaignReportPage> {
       body: Column(
         children: [
           Expanded(
-            child: SingleChildScrollView(
+            child: RefreshIndicator(
+              color: const Color(0xFFFF6B35),
+              onRefresh: _onRefresh,
+              child: SingleChildScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -195,6 +203,7 @@ class _CampaignReportPageState extends ConsumerState<CampaignReportPage> {
 
                   const SizedBox(height: 24),
                 ],
+              ),
               ),
             ),
           ),

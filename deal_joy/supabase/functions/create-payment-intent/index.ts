@@ -114,6 +114,13 @@ Deno.serve(async (req) => {
     return new Response('ok', { headers: corsHeaders });
   }
 
+  // 热身请求：pg_cron 每 4 分钟调用，快速返回以保持函数热态
+  if (req.headers.get('x-warmup') === 'true') {
+    return new Response(JSON.stringify({ warmed: true }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
   try {
     const body = await req.json();
     const { items, userId, paymentMethod, storeCreditUsed, saveCard } = body;
@@ -257,35 +264,28 @@ Deno.serve(async (req) => {
 
     const userOrderIds = (userOrders ?? []).map((o: { id: string }) => o.id);
 
-    // 对每个 distinct deal 校验限购
-    for (const dealId of dealIds) {
-      const dealData = dealMap.get(dealId);
-      if (!dealData) continue;
-
-      const maxPerAccount = dealData.max_per_account ?? -1;
-      // -1 或 0 表示无限制
-      if (maxPerAccount <= 0) continue;
-
-      // 查该用户针对此 deal 的已购（非退款成功）order_items 数量
-      let purchasedCount = 0;
-      if (userOrderIds.length > 0) {
-        const { count, error: countError } = await supabase
-          .from('order_items')
-          .select('id', { count: 'exact', head: true })
-          .eq('deal_id', dealId)
-          .in('order_id', userOrderIds)
-          .neq('customer_status', 'refund_success');
-
-        if (countError) {
-          console.error(`查询 deal ${dealId} 购买数量失败:`, countError);
-          return errorResponse('Failed to check purchase limits', 500);
-        }
-        purchasedCount = count ?? 0;
+    // ---------- 限购校验：批量查询替代 N+1 循环 ----------
+    const dealsWithLimit = dealIds.filter(id => (dealMap.get(id)?.max_per_account ?? -1) > 0);
+    const purchasedCountMap = new Map<string, number>();
+    if (dealsWithLimit.length > 0 && userOrderIds.length > 0) {
+      const { data: purchasedRows, error: purchasedError } = await supabase
+        .from('order_items')
+        .select('deal_id')
+        .in('deal_id', dealsWithLimit)
+        .in('order_id', userOrderIds)
+        .neq('customer_status', 'refund_success');
+      if (purchasedError) {
+        console.error('查询限购数量失败:', purchasedError);
+        return errorResponse('Failed to check purchase limits', 500);
       }
-
-      // 本次请求中该 deal 的购买数量
+      for (const r of (purchasedRows ?? [])) {
+        purchasedCountMap.set(r.deal_id, (purchasedCountMap.get(r.deal_id) ?? 0) + 1);
+      }
+    }
+    for (const dealId of dealsWithLimit) {
+      const maxPerAccount = dealMap.get(dealId)!.max_per_account!;
+      const purchasedCount = purchasedCountMap.get(dealId) ?? 0;
       const requestedCount = items.filter((i: { dealId: string }) => i.dealId === dealId).length;
-
       if (purchasedCount + requestedCount > maxPerAccount) {
         return errorResponse(
           `Purchase limit exceeded for this deal: maximum ${maxPerAccount} per account (already purchased ${purchasedCount})`,
@@ -293,32 +293,27 @@ Deno.serve(async (req) => {
       }
     }
 
-    // ---------- 总库存校验：COUNT order_items 统计已售份数 ----------
-    for (const dealId of dealIds) {
-      const dealData = dealMap.get(dealId);
-      if (!dealData) continue;
-
-      const stockLimit = dealData.stock_limit ?? -1;
-      // -1 或 0 表示不限库存
-      if (stockLimit <= 0) continue;
-
-      // 统计已售出且未退款的 order_items（每行 = 1 份 deal，与 RPC get_deal_remaining_stock 逻辑一致）
-      // 后端用 service role，无 RLS 限制，可直接 COUNT 全局数据
-      const { count: soldCount, error: soldError } = await supabase
+    // ---------- 库存校验：批量查询替代 N+1 循环 ----------
+    const dealsWithStock = dealIds.filter(id => (dealMap.get(id)?.stock_limit ?? -1) > 0);
+    const soldCountMap = new Map<string, number>();
+    if (dealsWithStock.length > 0) {
+      const { data: soldRows, error: soldError } = await supabase
         .from('order_items')
-        .select('id', { count: 'exact', head: true })
-        .eq('deal_id', dealId)
+        .select('deal_id')
+        .in('deal_id', dealsWithStock)
         .not('customer_status', 'eq', 'refund_success');
-
       if (soldError) {
-        console.error(`查询 deal ${dealId} 库存数量失败:`, soldError);
+        console.error('查询库存数量失败:', soldError);
         return errorResponse('Failed to check stock availability', 500);
       }
-
-      const sold = soldCount ?? 0;
-      // 本次请求中该 deal 的购买数量
+      for (const r of (soldRows ?? [])) {
+        soldCountMap.set(r.deal_id, (soldCountMap.get(r.deal_id) ?? 0) + 1);
+      }
+    }
+    for (const dealId of dealsWithStock) {
+      const stockLimit = dealMap.get(dealId)!.stock_limit!;
+      const sold = soldCountMap.get(dealId) ?? 0;
       const requestedCount = items.filter((i: { dealId: string }) => i.dealId === dealId).length;
-
       if (sold + requestedCount > stockLimit) {
         return errorResponse(
           `Not enough stock for this deal: only ${stockLimit - sold} remaining`,
@@ -413,7 +408,8 @@ Deno.serve(async (req) => {
     if (cities.length > 0) {
       const { data: cityMap } = await supabase
         .from('city_metro_map')
-        .select('city, metro_area');
+        .select('city, metro_area')
+        .in('city', cities);
       for (const row of (cityMap ?? [])) {
         if (row.city && row.metro_area) {
           cityToMetro.set((row.city as string).toLowerCase(), row.metro_area as string);
@@ -595,29 +591,29 @@ Deno.serve(async (req) => {
     }
     const paymentIntent = await stripe.paymentIntents.create(piParams as any);
 
-    // ---------- 原子递增所有已使用的优惠码计数 ----------
-    // 在 PaymentIntent 创建成功后才递增，避免支付失败导致计数错误
-    const usedPromoCodes = new Set<string>();
-    for (const item of items) {
-      if (item.promoCode && !usedPromoCodes.has(item.promoCode.toUpperCase())) {
-        usedPromoCodes.add(item.promoCode.toUpperCase());
-        // 调用 DB 原子递增函数（并发安全）
-        await supabase.rpc('increment_promo_code_uses', { p_code: item.promoCode.toUpperCase() });
+    // PaymentIntent 创建成功后：promo 递增 + EphemeralKey 并行执行（互不依赖）
+    const promoIncrementTask = (async () => {
+      // 在 PaymentIntent 创建成功后才递增，避免支付失败导致计数错误
+      const usedPromoCodes = new Set<string>();
+      for (const item of items) {
+        if (item.promoCode && !usedPromoCodes.has(item.promoCode.toUpperCase())) {
+          usedPromoCodes.add(item.promoCode.toUpperCase());
+          await supabase.rpc('increment_promo_code_uses', { p_code: item.promoCode.toUpperCase() });
+        }
       }
-    }
+    })();
 
-    // 为 PaymentSheet 生成 Ephemeral Key（用于显示已保存卡片 + "Save card" 选项）
+    const ephemeralKeyTask = stripeCustomerId
+      ? stripe.ephemeralKeys.create({ customer: stripeCustomerId }, { apiVersion: '2023-10-16' })
+      : Promise.resolve(null);
+
+    const [, ephemeralKeyResult] = await Promise.allSettled([promoIncrementTask, ephemeralKeyTask]);
+
     let ephemeralKeySecret: string | null = null;
-    if (stripeCustomerId) {
-      try {
-        const ephemeralKey = await stripe.ephemeralKeys.create(
-          { customer: stripeCustomerId },
-          { apiVersion: '2023-10-16' },
-        );
-        ephemeralKeySecret = ephemeralKey.secret ?? null;
-      } catch (ekErr) {
-        console.error('生成 Ephemeral Key 失败（不阻断支付）:', ekErr);
-      }
+    if (ephemeralKeyResult.status === 'fulfilled' && ephemeralKeyResult.value) {
+      ephemeralKeySecret = (ephemeralKeyResult.value as any).secret ?? null;
+    } else if (ephemeralKeyResult.status === 'rejected') {
+      console.error('生成 Ephemeral Key 失败（不阻断支付）:', ephemeralKeyResult.reason);
     }
 
     return new Response(

@@ -198,7 +198,12 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
                   )
                 : IconButton(
                     icon: const Icon(Icons.arrow_back, color: Color(0xFF212121)),
-                    onPressed: () => context.go('/auth/login'),
+                    onPressed: () async {
+                      // 已登录用户返回登录页时先登出，否则路由会重定向回注册页
+                      await Supabase.instance.client.auth.signOut();
+                      if (!context.mounted) return;
+                      context.go('/auth/login');
+                    },
                   ),
         title: Text(
           _stepTitle(_currentStep),
