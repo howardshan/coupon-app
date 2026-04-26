@@ -1257,197 +1257,203 @@ class _CouponDetailRow extends ConsumerWidget {
       child: Container(
         color: const Color(0xFFFAFAFA),
         padding: const EdgeInsets.fromLTRB(24, 12, 16, 12),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // 券码（可点击跳转 voucher detail）
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      if (formattedCode != null)
-                        Expanded(
-                          child: Text(
-                            formattedCode,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontFamily: 'monospace',
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 1.5,
-                              color: AppColors.primary,
-                            ),
-                          ),
-                        )
-                      else
-                        const Text(
-                          'No code',
-                          style: TextStyle(
-                              fontSize: 13, color: AppColors.textHint),
-                        ),
-                      const SizedBox(width: 4),
-                      Icon(
-                        item.customerStatus == CustomerItemStatus.unused
-                            ? Icons.qr_code_2_rounded
-                            : Icons.arrow_forward_ios,
-                        size: item.customerStatus == CustomerItemStatus.unused
-                            ? 18
-                            : 12,
-                        color: AppColors.primary,
-                      ),
-                    ],
-                  ),
-                  if (item.customerStatus == CustomerItemStatus.unused) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      'Tap to show QR',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: AppColors.textHint.withValues(alpha: 0.9),
-                      ),
-                    ),
-                  ],
-                  if (item.redeemedAt != null) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      'Used ${DateFormat('MMM d, yyyy').format(item.redeemedAt!.toLocal())}',
-                      style: const TextStyle(
-                          fontSize: 11, color: AppColors.textHint),
-                    ),
-                  ],
-                  if (item.tipAmountUsd != null) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      item.tipPaidAt != null
-                          ? 'Tip \$${item.tipAmountUsd!.toStringAsFixed(2)} · paid ${DateFormat('MMM d, yyyy').format(item.tipPaidAt!.toLocal())}'
-                          : 'Tip \$${item.tipAmountUsd!.toStringAsFixed(2)}',
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: AppColors.success,
-                      ),
-                    ),
-                  ],
-                  if (item.couponId != null && item.couponId!.isNotEmpty) ...[
-                    Builder(
-                      builder: (context) {
-                        final req = afterSalesByCoupon[item.couponId!];
-                        if (req == null) return const SizedBox.shrink();
-                        final bucket = AfterSalesOrderCardBucket.fromStatus(req.status);
-                        final accent = switch (bucket) {
-                          AfterSalesOrderCardBucket.pending => AppColors.warning,
-                          AfterSalesOrderCardBucket.rejected => AppColors.textSecondary,
-                          AfterSalesOrderCardBucket.approved => AppColors.success,
-                        };
-                        return Padding(
-                          padding: const EdgeInsets.only(top: 6),
-                          child: GestureDetector(
-                            onTap: () => context.push('/after-sales/$orderId'),
-                            behavior: HitTestBehavior.opaque,
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.support_agent_outlined, size: 15, color: accent),
-                                const SizedBox(width: 4),
-                                Text(
-                                  'After-sales · ${bucket.shortLabel}',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: accent,
-                                  ),
-                                ),
-                                const SizedBox(width: 2),
-                                const Icon(Icons.chevron_right, size: 14, color: AppColors.textHint),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ],
-                  // 赠送信息（gifted 状态时显示受赠方）
-                  if (item.customerStatus == CustomerItemStatus.gifted &&
-                      item.activeGift != null) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      'Gifted to ${item.activeGift!.recipientDisplay}',
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: AppColors.secondary,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            // 操作按钮
-            Row(
-              mainAxisSize: MainAxisSize.min,
+            // 第一行：券码 + 图标（全宽）
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (item.showCancel)
-                  _SmallButton(
-                    label: 'Cancel',
-                    color: AppColors.error,
-                    onTap: () => _showCancelSheet(context, ref, item),
+                Row(
+                  children: [
+                    if (formattedCode != null)
+                      Expanded(
+                        child: Text(
+                          formattedCode,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontFamily: 'monospace',
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1.5,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      )
+                    else
+                      const Text(
+                        'No code',
+                        style: TextStyle(
+                            fontSize: 13, color: AppColors.textHint),
+                      ),
+                    const SizedBox(width: 4),
+                    Icon(
+                      item.customerStatus == CustomerItemStatus.unused
+                          ? Icons.qr_code_2_rounded
+                          : Icons.arrow_forward_ios,
+                      size: item.customerStatus == CustomerItemStatus.unused
+                          ? 18
+                          : 12,
+                      color: AppColors.primary,
+                    ),
+                  ],
+                ),
+                if (item.customerStatus == CustomerItemStatus.unused) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    'Tap to show QR',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: AppColors.textHint.withValues(alpha: 0.9),
+                    ),
                   ),
-                if (showRefundButtonConsideringAfterSales(item, afterSalesByCoupon))
-                  _SmallButton(
-                    label: 'Refund',
-                    color: AppColors.warning,
-                    onTap: () => showUsedRefundEntry(context, ref, item),
+                ],
+                if (item.redeemedAt != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    'Used ${DateFormat('MMM d, yyyy').format(item.redeemedAt!.toLocal())}',
+                    style: const TextStyle(
+                        fontSize: 11, color: AppColors.textHint),
                   ),
-                if (item.showWriteReview)
-                  _SmallButton(
-                    label: 'Review',
-                    color: AppColors.accent,
-                    onTap: () {
-                      // 评价关联到实际核销门店（连锁店场景下可能与购买门店不同）
-                      final merchantId = item.redeemedMerchantId ?? item.purchasedMerchantId ?? '';
-                      context.push('/review/${item.dealId}?merchantId=$merchantId&orderItemId=${item.id}');
+                ],
+                if (item.tipAmountUsd != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    item.tipPaidAt != null
+                        ? 'Tip \$${item.tipAmountUsd!.toStringAsFixed(2)} · paid ${DateFormat('MMM d, yyyy').format(item.tipPaidAt!.toLocal())}'
+                        : 'Tip \$${item.tipAmountUsd!.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppColors.success,
+                    ),
+                  ),
+                ],
+                if (item.couponId != null && item.couponId!.isNotEmpty) ...[
+                  Builder(
+                    builder: (context) {
+                      final req = afterSalesByCoupon[item.couponId!];
+                      if (req == null) return const SizedBox.shrink();
+                      final bucket = AfterSalesOrderCardBucket.fromStatus(req.status);
+                      final accent = switch (bucket) {
+                        AfterSalesOrderCardBucket.pending => AppColors.warning,
+                        AfterSalesOrderCardBucket.rejected => AppColors.textSecondary,
+                        AfterSalesOrderCardBucket.approved => AppColors.success,
+                      };
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: GestureDetector(
+                          onTap: () => context.push('/after-sales/$orderId'),
+                          behavior: HitTestBehavior.opaque,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.support_agent_outlined, size: 15, color: accent),
+                              const SizedBox(width: 4),
+                              Text(
+                                'After-sales · ${bucket.shortLabel}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: accent,
+                                ),
+                              ),
+                              const SizedBox(width: 2),
+                              const Icon(Icons.chevron_right, size: 14, color: AppColors.textHint),
+                            ],
+                          ),
+                        ),
+                      );
                     },
                   ),
-                // 赠送按钮（未使用且未赠出）
-                if (item.showGift)
-                  _SmallButton(
-                    label: 'Gift',
-                    color: AppColors.secondary,
-                    onTap: () => GiftBottomSheet.show(
-                      context,
-                      dealTitle: item.dealTitle,
-                      merchantName: item.merchantName,
-                      expiresAt: item.couponExpiresAt,
-                      orderItemId: item.id,
-                      onGiftSent: onRefreshOrder,
+                ],
+                // 赠送信息（gifted 状态时显示受赠方）
+                if (item.customerStatus == CustomerItemStatus.gifted &&
+                    item.activeGift != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    'Gifted to ${item.activeGift!.recipientDisplay}',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppColors.secondary,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
-                // 撤回赠送按钮（已赠出 + pending）
-                if (item.showRecallGift)
-                  _SmallButton(
-                    label: 'Recall',
-                    color: AppColors.warning,
-                    onTap: () => _showRecallConfirm(context, ref, item),
-                  ),
-                // 修改受赠方按钮（已赠出 + pending）
-                if (item.showEditRecipient)
-                  _SmallButton(
-                    label: 'Edit',
-                    color: AppColors.info,
-                    onTap: () => GiftBottomSheet.show(
-                      context,
-                      dealTitle: item.dealTitle,
-                      merchantName: item.merchantName,
-                      expiresAt: item.couponExpiresAt,
-                      orderItemId: item.id,
-                      prefillEmail: item.activeGift?.recipientEmail,
-                      prefillPhone: item.activeGift?.recipientPhone,
-                      onGiftSent: onRefreshOrder,
-                    ),
-                  ),
+                ],
               ],
             ),
+            // 第二行：操作按钮（右对齐；多按钮时自动换行）
+            if (item.showCancel ||
+                showRefundButtonConsideringAfterSales(item, afterSalesByCoupon) ||
+                item.showWriteReview ||
+                item.showGift ||
+                item.showRecallGift ||
+                item.showEditRecipient) ...[
+              const SizedBox(height: 10),
+              Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  if (item.showCancel)
+                    _SmallButton(
+                      label: 'Cancel',
+                      color: AppColors.error,
+                      onTap: () => _showCancelSheet(context, ref, item),
+                    ),
+                  if (showRefundButtonConsideringAfterSales(item, afterSalesByCoupon))
+                    _SmallButton(
+                      label: 'Refund',
+                      color: AppColors.warning,
+                      onTap: () => showUsedRefundEntry(context, ref, item),
+                    ),
+                  if (item.showWriteReview)
+                    _SmallButton(
+                      label: 'Review',
+                      color: AppColors.accent,
+                      onTap: () {
+                        // 评价关联到实际核销门店（连锁店场景下可能与购买门店不同）
+                        final merchantId = item.redeemedMerchantId ?? item.purchasedMerchantId ?? '';
+                        context.push('/review/${item.dealId}?merchantId=$merchantId&orderItemId=${item.id}');
+                      },
+                    ),
+                  if (item.showGift)
+                    _SmallButton(
+                      label: 'Gift',
+                      color: AppColors.secondary,
+                      onTap: () => GiftBottomSheet.show(
+                        context,
+                        dealTitle: item.dealTitle,
+                        merchantName: item.merchantName,
+                        expiresAt: item.couponExpiresAt,
+                        orderItemId: item.id,
+                        onGiftSent: onRefreshOrder,
+                      ),
+                    ),
+                  if (item.showRecallGift)
+                    _SmallButton(
+                      label: 'Recall',
+                      color: AppColors.warning,
+                      onTap: () => _showRecallConfirm(context, ref, item),
+                    ),
+                  if (item.showEditRecipient)
+                    _SmallButton(
+                      label: 'Edit',
+                      color: AppColors.info,
+                      onTap: () => GiftBottomSheet.show(
+                        context,
+                        dealTitle: item.dealTitle,
+                        merchantName: item.merchantName,
+                        expiresAt: item.couponExpiresAt,
+                        orderItemId: item.id,
+                        prefillEmail: item.activeGift?.recipientEmail,
+                        prefillPhone: item.activeGift?.recipientPhone,
+                        onGiftSent: onRefreshOrder,
+                      ),
+                    ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
