@@ -1186,19 +1186,33 @@ class _CouponStatusRow extends ConsumerWidget {
           ),
         ),
 
-        // 展开后：每张券的详情
+        // 展开后：每张券的详情（独立小卡片，避免糊成一团）
         if (isExpanded && onToggle != null) ...[
           const Divider(height: 1, color: Color(0xFFF0F0F0)),
-          ...items.map((item) => _CouponDetailRow(
-                item: item,
-                allItems: items,
-                orderId: orderId,
-                paymentIntentId: paymentIntentId,
-                onRefreshOrder: onRefreshOrder,
-                storeCreditUsed: storeCreditUsed,
-                orderTotalAmount: orderTotalAmount,
-                afterSalesByCoupon: afterSalesByCoupon,
-              )),
+          ...items.asMap().entries.map((e) {
+            final isLast = e.key == items.length - 1;
+            return Padding(
+              padding: EdgeInsets.fromLTRB(10, 0, 10, isLast ? 4 : 8),
+              child: Material(
+                color: Colors.white,
+                elevation: 0.5,
+                shadowColor: Colors.black26,
+                surfaceTintColor: Colors.transparent,
+                borderRadius: BorderRadius.circular(10),
+                clipBehavior: Clip.antiAlias,
+                child: _CouponDetailRow(
+                  item: e.value,
+                  allItems: items,
+                  orderId: orderId,
+                  paymentIntentId: paymentIntentId,
+                  onRefreshOrder: onRefreshOrder,
+                  storeCreditUsed: storeCreditUsed,
+                  orderTotalAmount: orderTotalAmount,
+                  afterSalesByCoupon: afterSalesByCoupon,
+                ),
+              ),
+            );
+          }),
         ],
 
         const Divider(height: 1, color: Color(0xFFF0F0F0)),
@@ -1255,7 +1269,7 @@ class _CouponDetailRow extends ConsumerWidget {
         }
       },
       child: Container(
-        color: const Color(0xFFFAFAFA),
+        color: Colors.transparent,
         padding: const EdgeInsets.fromLTRB(24, 12, 16, 12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
