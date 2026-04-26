@@ -312,7 +312,7 @@ class _MessageBubble extends StatelessWidget {
             const Padding(
               padding: EdgeInsets.only(left: 4, bottom: 3),
               child: Text(
-                'DealJoy Support',
+                'Crunchy Plum Support',
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w600,

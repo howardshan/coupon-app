@@ -63,7 +63,7 @@ const List<FaqItem> kFaqItems = [
     label: 'Refund Policy',
     keywords: ['policy', 'rule', 'how long', 'when refund'],
     response:
-        'DealJoy Refund Policy:\n\n'
+        'Crunchy Plum Refund Policy:\n\n'
         '• Unused coupons can be refunded anytime — no questions asked!\n'
         '• Refunds are processed within 1-3 business days\n'
         '• The refund goes back to your original payment method or store credit\n'
@@ -88,7 +88,7 @@ const List<FaqItem> kFaqItems = [
     response:
         'I\'m sorry I couldn\'t find an answer to your question.\n\n'
         'For further assistance, you can:\n'
-        '• Email us at support@dealjoy.com\n'
+        '• Email us at support@crunchyplum.com\n'
         '• Request a call back from our support team\n\n'
         'Go back to the Support page to choose these options.',
     action: FaqAction.goBack,

@@ -202,7 +202,7 @@ class TimelineEvent {
       case 'refund_requested':
         return 'Customer requested a refund';
       case 'refunded':
-        return 'Automatically refunded by DealJoy';
+        return 'Automatically refunded by Crunchy Plum';
       default:
         return '';
     }
