@@ -8,9 +8,10 @@ export const dynamic = 'force-dynamic'
 export default async function NotificationsPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  const { data: profile } = await supabase
-    .from('users').select('role').eq('id', user!.id).single()
-  if (profile?.role !== 'admin') redirect('/dashboard')
+  if (!user) redirect('/auth/login')
+  const { data: profile, error: profileError } = await supabase
+    .from('users').select('role').eq('id', user.id).single()
+  if (profileError || profile?.role !== 'admin') redirect('/dashboard')
 
   const [{ deals, merchants }, campaigns] = await Promise.all([
     getDealsAndMerchants(),
