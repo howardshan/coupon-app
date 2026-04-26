@@ -58,6 +58,7 @@ Deno.serve(async (req: Request) => {
       "friend_request",
       "review_reply",
       "chat_message",
+      "promo",
     ];
     if (!validTypes.includes(type)) {
       return new Response(

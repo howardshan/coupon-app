@@ -262,7 +262,7 @@ class _MerchantReviewStatusPageState
           ),
           const SizedBox(height: 12),
           const Text(
-            'Welcome to DealJoy! Your merchant account is now active. Start creating deals and reaching customers.',
+            'Welcome to Crunchy Plum! Your merchant account is now active. Start creating deals and reaching customers.',
             style: TextStyle(
               fontSize: 15,
               color: Color(0xFF757575),

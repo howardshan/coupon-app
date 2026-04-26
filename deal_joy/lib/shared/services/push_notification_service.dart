@@ -205,6 +205,17 @@ class PushNotificationService {
         }
       case 'announcement':
         GoRouter.of(router).push('/chat/notifications');
+      case 'promo':
+        // 促销通知：优先跳 deal 详情，其次跳商家详情，兜底跳通知列表
+        final dealId = data['deal_id'] as String?;
+        final merchantId = data['merchant_id'] as String?;
+        if (dealId != null) {
+          GoRouter.of(router).push('/deals/$dealId');
+        } else if (merchantId != null) {
+          GoRouter.of(router).push('/merchant/$merchantId');
+        } else {
+          GoRouter.of(router).push('/chat/notifications');
+        }
       default:
         GoRouter.of(router).push('/chat/notifications');
     }

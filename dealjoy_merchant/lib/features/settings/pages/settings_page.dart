@@ -152,7 +152,7 @@ class SettingsPage extends ConsumerWidget {
               SettingsTile(
                 icon: Icons.chat_bubble_outline,
                 title: 'Contact Support',
-                subtitle: 'Chat with the DealJoy team',
+                subtitle: 'Chat with the Crunchy Plum team',
                 onTap: () => context.push('/me/support'),
               ),
               SettingsTile(
@@ -163,7 +163,7 @@ class SettingsPage extends ConsumerWidget {
               ),
               SettingsTile(
                 icon: Icons.info_outline,
-                title: 'About DealJoy',
+                title: 'About Crunchy Plum',
                 subtitle: 'Version 1.0.0',
                 showDivider: false,
                 onTap: () => _showAboutDialog(context),
@@ -546,9 +546,9 @@ class SettingsPage extends ConsumerWidget {
   void _showAboutDialog(BuildContext context) {
     showAboutDialog(
       context: context,
-      applicationName: 'DealJoy Merchant',
+      applicationName: 'Crunchy Plum Merchant',
       applicationVersion: '1.0.0',
-      applicationLegalese: '© 2026 DealJoy Inc. All rights reserved.',
+      applicationLegalese: '© 2026 Crunchy Plum Inc. All rights reserved.',
     );
   }
 }

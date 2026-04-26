@@ -78,7 +78,7 @@ export default async function LegalDocumentEditPage({
         <p className="text-sm text-gray-500 mt-1">
           Slug: <code className="bg-gray-100 px-1.5 py-0.5 rounded text-xs">{document.slug}</code>
           {' '}&middot;{' '}
-          Current version: <strong>v{document.current_version}</strong>
+          Current version: <strong>{document.current_version_label ?? `v${document.current_version}`}</strong>
         </p>
       </div>
 
@@ -91,6 +91,7 @@ export default async function LegalDocumentEditPage({
           document_type: document.document_type,
           requires_re_consent: document.requires_re_consent,
           current_version: document.current_version,
+          current_version_label: document.current_version_label ?? null,
           is_active: document.is_active,
           created_at: document.created_at,
           updated_at: document.updated_at,

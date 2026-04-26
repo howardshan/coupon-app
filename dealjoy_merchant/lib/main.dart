@@ -121,7 +121,7 @@ class _DealJoyMerchantAppState extends ConsumerState<DealJoyMerchantApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp.router(
-      title: 'DealJoy Merchant',
+      title: 'Crunchy Plum Merchant',
       debugShowCheckedModeBanner: false,
       // 全局禁用 overscroll 拉伸/glow 效果
       scrollBehavior: const _NoOverscrollBehavior(),
