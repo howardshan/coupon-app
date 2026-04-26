@@ -2,9 +2,10 @@
 // POST body: { coupon_id, amount_cents, preset_choice?, signature_png_base64? }
 // Auth: merchant JWT + X-Merchant-Id; requirePermission('scan'); trainee forbidden.
 
-import Stripe from 'https://esm.sh/stripe@14?target=deno';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2?target=deno';
-import { decode } from 'https://deno.land/std@0.224.0/encoding/base64.ts';
+import Stripe from "npm:stripe@14.25.0";
+// 勿用 ?target=deno：esm 会把 std/node polyfill 打进包，在 Edge Runtime 触发 Deno.core.runMicrotasks 不可用
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { decodeBase64 } from 'https://deno.land/std@0.224.0/encoding/base64.ts';
 import {
   type AuthResult,
   resolveAuth,
@@ -264,7 +265,7 @@ Deno.serve(async (req) => {
   if (body.signature_png_base64 && body.signature_png_base64.length > 0) {
     try {
       const raw = stripDataUrlBase64(body.signature_png_base64);
-      const bytes = decode(raw);
+      const bytes = decodeBase64(raw);
       const path = `${redeemMerchantId}/${tipId}.png`;
       const { error: upErr } = await supabaseAdmin.storage
         .from('tip-signatures')
