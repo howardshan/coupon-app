@@ -10,12 +10,10 @@ export interface M5NewOrderData {
   orderNumber:    string;
   items:          Array<{ dealTitle: string; quantity: number; unitPrice: number }>;
   totalAmount:    number;     // 此商家相关的金额合计
-  dashboardUrl?:  string;
 }
 
 export function buildM5Email(data: M5NewOrderData): { subject: string; html: string } {
   const subject = `New order received — ${data.orderNumber}`;
-  const dashboardUrl = data.dashboardUrl ?? "https://merchant.crunchyplum.com/orders";
 
   const itemRows = data.items.map(item => `
     <tr>
@@ -68,6 +66,6 @@ export function buildM5Email(data: M5NewOrderData): { subject: string; html: str
 
   return {
     subject,
-    html: wrapInLayout({ subject, body, cta: { label: "View in Dashboard", url: dashboardUrl } }),
+    html: wrapInLayout({ subject, body }),
   };
 }
