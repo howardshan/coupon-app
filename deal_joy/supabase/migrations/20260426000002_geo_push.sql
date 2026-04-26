@@ -43,15 +43,21 @@ CREATE TABLE IF NOT EXISTS public.push_campaigns (
 -- RLS：只有 admin 可读写 campaigns
 ALTER TABLE public.push_campaigns ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "admin can manage push_campaigns"
-  ON public.push_campaigns
-  FOR ALL
-  USING (
-    EXISTS (
-      SELECT 1 FROM public.users
-      WHERE id = auth.uid() AND role = 'admin'
-    )
-  );
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'push_campaigns' AND policyname = 'admin can manage push_campaigns'
+  ) THEN
+    CREATE POLICY "admin can manage push_campaigns"
+      ON public.push_campaigns
+      FOR ALL
+      USING (
+        EXISTS (
+          SELECT 1 FROM public.users
+          WHERE id = auth.uid() AND role = 'admin'
+        )
+      );
+  END IF;
+END $$;
 
 -- 3. RPC：找指定半径内有 FCM token 的用户
 CREATE OR REPLACE FUNCTION find_users_for_geo_push(
