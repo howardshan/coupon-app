@@ -9,6 +9,7 @@ import 'features/orders/domain/providers/pending_reviews_provider.dart';
 import 'features/profile/domain/providers/payment_methods_provider.dart';
 import 'features/reviews/domain/providers/my_reviews_provider.dart';
 import 'shared/providers/legal_provider.dart';
+import 'shared/services/location_sync_service.dart';
 import 'shared/services/push_notification_service.dart';
 import 'shared/services/realtime_service.dart';
 
@@ -37,6 +38,7 @@ class CrunchyPlumApp extends ConsumerWidget {
         // 用户登录 → 开始监听该用户的订单/券变化 + 注册推送
         realtime.startListening(user.id);
         push.init(user.id);
+        LocationSyncService().syncUserLocation(user.id);
       } else {
         // 用户登出 → 停止监听，释放 channel + 注销推送 token
         realtime.stopListening();
