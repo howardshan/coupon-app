@@ -556,7 +556,7 @@ class _StatusBanner extends StatelessWidget {
           const SizedBox(height: 6),
           Text(
             isPending
-                ? 'Your deal is being reviewed by the DealJoy team. This usually takes 24-48 hours. The previous version (if any) continues to show to customers.'
+                ? 'Your deal is being reviewed by the Crunchy Plum team. This usually takes 24-48 hours. The previous version (if any) continues to show to customers.'
                 : 'Your deal was not approved. Please edit and resubmit.',
             style: TextStyle(
               fontSize: 13,

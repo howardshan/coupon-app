@@ -45,6 +45,7 @@ const adminNav: NavEntry[] = [
     ],
   },
   { kind: 'link', href: '/closures', label: 'Closures', icon: '🔒' },
+  { kind: 'link', href: '/notifications', label: 'Notifications', icon: '🔔' },
   { kind: 'link', href: '/support', label: 'Support', icon: '💬' },
   { kind: 'link', href: '/tax-rates', label: 'Tax Rates', icon: '🧾' },
   { kind: 'link', href: '/regions', label: 'Regions', icon: '🗺️' },

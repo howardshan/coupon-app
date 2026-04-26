@@ -254,19 +254,19 @@ class _RefundRequestDetailPageState
         color = Colors.orange;
         icon = Icons.pending_outlined;
         title = 'Escalated to Admin';
-        subtitle = 'You rejected this request. DealJoy admin will make the final decision.';
+        subtitle = 'You rejected this request. Crunchy Plum admin will make the final decision.';
         break;
       case 'approved_admin':
         color = Colors.green;
         icon = Icons.verified_outlined;
         title = 'Admin Approved';
-        subtitle = 'DealJoy admin approved the refund after review.';
+        subtitle = 'Crunchy Plum admin approved the refund after review.';
         break;
       case 'rejected_admin':
         color = Colors.red;
         icon = Icons.cancel_outlined;
         title = 'Refund Rejected';
-        subtitle = 'DealJoy admin rejected this refund request.';
+        subtitle = 'Crunchy Plum admin rejected this refund request.';
         break;
       case 'cancelled':
         color = Colors.grey;
@@ -373,7 +373,7 @@ class _RefundRequestDetailPageState
 
         // 提示文字
         const Text(
-          'If you reject, DealJoy admin will review both sides and make the final decision.',
+          'If you reject, Crunchy Plum admin will review both sides and make the final decision.',
           style: TextStyle(
             fontSize: 12,
             color: Colors.grey,
@@ -459,7 +459,7 @@ class _RefundRequestDetailPageState
             children: [
               const Text(
                 'Please provide a reason for rejection. '
-                'Both your reason and the customer\'s reason will be reviewed by DealJoy admin.',
+                'Both your reason and the customer\'s reason will be reviewed by Crunchy Plum admin.',
                 style: TextStyle(fontSize: 13, color: Colors.grey),
               ),
               const SizedBox(height: 12),
@@ -519,7 +519,7 @@ class _RefundRequestDetailPageState
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-                'Request rejected and escalated to DealJoy admin for review.'),
+                'Request rejected and escalated to Crunchy Plum admin for review.'),
           ),
         );
         Navigator.of(context).pop(true); // 返回 true 表示需要刷新列表

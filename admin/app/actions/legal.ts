@@ -104,8 +104,8 @@ export async function getLegalDocuments() {
     .from('legal_documents')
     .select(`
       id, slug, title, document_type, requires_re_consent,
-      current_version, is_active, created_at, updated_at,
-      legal_document_versions(published_at, version)
+      current_version, current_version_label, is_active, created_at, updated_at,
+      legal_document_versions(published_at, version, version_label)
     `)
     .order('created_at', { ascending: true })
 
@@ -116,6 +116,7 @@ export async function getLegalDocuments() {
     const versions = (doc.legal_document_versions ?? []) as Array<{
       published_at: string | null
       version: number
+      version_label: string | null
     }>
     // 找到当前版本对应的 published_at
     const currentVersionRecord = versions.find(
@@ -128,6 +129,7 @@ export async function getLegalDocuments() {
       document_type: doc.document_type,
       requires_re_consent: doc.requires_re_consent,
       current_version: doc.current_version,
+      current_version_label: (doc as any).current_version_label as string | null,
       is_active: doc.is_active,
       created_at: doc.created_at,
       updated_at: doc.updated_at,
@@ -149,7 +151,7 @@ export async function getLegalDocument(slug: string) {
       id, slug, title, document_type, requires_re_consent,
       current_version, is_active, created_at, updated_at,
       legal_document_versions(
-        id, document_id, version, content_html,
+        id, document_id, version, version_label, content_html,
         summary_of_changes, published_at, published_by, created_at
       )
     `)
@@ -164,6 +166,7 @@ export async function getLegalDocument(slug: string) {
     id: string
     document_id: string
     version: number
+    version_label: string | null
     content_html: string
     summary_of_changes: string | null
     published_at: string | null
@@ -179,6 +182,7 @@ export async function getLegalDocument(slug: string) {
     document_type: doc.document_type,
     requires_re_consent: doc.requires_re_consent,
     current_version: doc.current_version,
+    current_version_label: (doc as any).current_version_label as string | null,
     is_active: doc.is_active,
     created_at: doc.created_at,
     updated_at: doc.updated_at,
@@ -246,6 +250,7 @@ export async function publishVersion(
   slug: string,
   contentHtml: string,
   summaryOfChanges: string,
+  versionLabel?: string,
 ) {
   const { adminUserId } = await requireAdmin()
   const supabase = getServiceRoleClient()
@@ -275,6 +280,8 @@ export async function publishVersion(
   let publishedVersionId: string
   let publishedVersion: number
 
+  const effectiveLabel = versionLabel?.trim() || `v${existingDraft ? existingDraft.version : newVersion}`
+
   if (existingDraft) {
     // 更新草稿为已发布
     publishedVersion = existingDraft.version
@@ -283,6 +290,7 @@ export async function publishVersion(
       .update({
         content_html: contentHtml,
         summary_of_changes: summaryOfChanges,
+        version_label: effectiveLabel,
         published_at: now,
         published_by: adminUserId,
       })
@@ -298,6 +306,7 @@ export async function publishVersion(
       .insert({
         document_id: doc.id,
         version: newVersion,
+        version_label: effectiveLabel,
         content_html: contentHtml,
         summary_of_changes: summaryOfChanges,
         published_at: now,
@@ -310,10 +319,10 @@ export async function publishVersion(
     publishedVersionId = newRow!.id
   }
 
-  // 更新 legal_documents.current_version
+  // 更新 legal_documents.current_version 和 current_version_label
   const { error: updateDocError } = await supabase
     .from('legal_documents')
-    .update({ current_version: publishedVersion, updated_at: now })
+    .update({ current_version: publishedVersion, current_version_label: effectiveLabel, updated_at: now })
     .eq('id', doc.id)
 
   if (updateDocError) throw new Error(updateDocError.message)
@@ -443,7 +452,7 @@ export async function updateDocumentSettings(
     userId: adminUserId,
     actorId: adminUserId,
     actorRole: 'admin',
-    eventType: 'document_settings_updated',
+    eventType: 'document_setting_changed',
     documentId: doc.id,
     documentSlug: slug,
     documentTitle: doc.title,

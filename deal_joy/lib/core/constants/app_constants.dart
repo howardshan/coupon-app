@@ -75,5 +75,5 @@ class AppConstants {
   static const String merchantPartnerEmail = 'merchant@crunchyplum.com';
 
   /// 客服联系邮箱
-  static const String supportEmail = 'support@dealjoy.com';
+  static const String supportEmail = 'support@crunchyplum.com';
 }

@@ -65,7 +65,7 @@ class _SupportChatScreenState extends ConsumerState<SupportChatScreen> {
     super.initState();
     // 欢迎消息 + 快捷按钮
     _messages.add(_ChatMessage(
-      text: 'Hi! 👋 Welcome to DealJoy Support.\nHow can I help you today?',
+      text: 'Hi! 👋 Welcome to Crunchy Plum Support.\nHow can I help you today?',
       type: _MsgType.system,
       buttons: kFaqItems,
     ));
@@ -239,7 +239,7 @@ class _SupportChatScreenState extends ConsumerState<SupportChatScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text('DealJoy Support'),
+        title: const Text('Crunchy Plum Support'),
         backgroundColor: Colors.white,
         foregroundColor: AppColors.textPrimary,
         elevation: 0,

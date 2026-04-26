@@ -125,7 +125,7 @@ class CustomerSupportScreen extends ConsumerWidget {
                     final uri = Uri(
                       scheme: 'mailto',
                       path: AppConstants.supportEmail,
-                      query: 'subject=DealJoy Support Request',
+                      query: 'subject=Crunchy Plum Support Request',
                     );
                     final canOpen = await canLaunchUrl(uri);
                     if (canOpen) {

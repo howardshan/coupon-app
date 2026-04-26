@@ -200,7 +200,7 @@ class _ConsentBarrierState extends ConsumerState<ConsentBarrier> {
                       children: [
                         // App 名称/Logo
                         const Text(
-                          'DealJoy Merchant',
+                          'Crunchy Plum Merchant',
                           style: TextStyle(
                             fontSize: 26,
                             fontWeight: FontWeight.w800,
