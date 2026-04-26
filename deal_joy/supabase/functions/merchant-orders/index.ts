@@ -606,7 +606,12 @@ async function handleDetail(
         id,
         title,
         original_price,
-        discount_price
+        discount_price,
+        tips_enabled,
+        tips_mode,
+        tips_preset_1,
+        tips_preset_2,
+        tips_preset_3
       ),
       coupons!order_items_coupon_id_fkey (
         id,
@@ -661,6 +666,18 @@ async function handleDetail(
     const stripeFee   = Math.round((unitPrice * vStripeRate + vStripeFlatFee) * 100) / 100;
     const netAmount   = Math.round((unitPrice - platformFee - brandFee - stripeFee) * 100) / 100;
 
+    const customerSt = String(row.customer_status ?? "");
+    const isRedeemed = row.redeemed_at != null || customerSt === "used" || customerSt === "redeemed";
+    const tipsEnabled = Boolean(deal?.tips_enabled);
+    const tipsMode = (deal?.tips_mode as string | null) ?? null;
+    const tipsPreset1 = deal?.tips_preset_1 ?? null;
+    const tipsPreset2 = deal?.tips_preset_2 ?? null;
+    const tipsPreset3 = deal?.tips_preset_3 ?? null;
+    let tipBaseCents = Math.round(unitPrice * 100);
+    if (tipBaseCents <= 0) {
+      tipBaseCents = Math.round(parseFloat(String(deal?.discount_price ?? 0)) * 100);
+    }
+
     return {
       id: row.id,
       deal_id: row.deal_id,
@@ -697,30 +714,91 @@ async function handleDetail(
       // 时间戳
       created_at: row.created_at,
       updated_at: row.updated_at,
+      // 小费：第二遍根据 coupon_tips 写入 tip / can_collect_tip（与 merchant-scan redeem 口径一致）
+      _tip_collect_meta: {
+        isRedeemed,
+        tipsEnabled,
+        tipsMode,
+        tipsPreset1,
+        tipsPreset2,
+        tipsPreset3,
+        tipBaseCents,
+        refunded: Boolean(row.refunded_at),
+      },
     };
   });
 
   const tipCouponIds = formattedItems
     .map((it) => it.coupon_id as string | null)
     .filter((id): id is string => typeof id === "string" && id.length > 0);
+
+  /** coupon_id → paid 展示用 payload；以及 pending/paid 用于屏蔽重复收小费 */
+  const tipPaidMap = new Map<string, Record<string, unknown>>();
+  const tipBlockingStatus = new Map<string, string>();
   if (tipCouponIds.length > 0) {
-    const { data: tipRows } = await client
+    const { data: allTipRows } = await client
       .from("coupon_tips")
       .select("coupon_id, amount_cents, currency, status, paid_at, stripe_payment_intent_id")
-      .in("coupon_id", tipCouponIds)
-      .eq("status", "paid");
-    const tipMap = new Map<string, Record<string, unknown>>();
-    for (const row of tipRows ?? []) {
-      tipMap.set(row.coupon_id as string, {
-        amount_cents: row.amount_cents,
-        currency: row.currency ?? "usd",
-        paid_at: row.paid_at,
-        stripe_payment_intent_id: row.stripe_payment_intent_id,
-      });
+      .in("coupon_id", tipCouponIds);
+    for (const tr of allTipRows ?? []) {
+      const cid = tr.coupon_id as string;
+      const st = String(tr.status ?? "");
+      if (st === "paid") {
+        tipPaidMap.set(cid, {
+          amount_cents: tr.amount_cents,
+          currency: tr.currency ?? "usd",
+          paid_at: tr.paid_at,
+          stripe_payment_intent_id: tr.stripe_payment_intent_id,
+        });
+        tipBlockingStatus.set(cid, "paid");
+      } else if (st === "pending" && tipBlockingStatus.get(cid) !== "paid") {
+        tipBlockingStatus.set(cid, "pending");
+      }
     }
-    for (const it of formattedItems) {
+    for (let i = 0; i < formattedItems.length; i++) {
+      const it = formattedItems[i] as Record<string, unknown>;
       const cid = it.coupon_id as string | null;
-      (it as Record<string, unknown>).tip = cid ? tipMap.get(cid) ?? null : null;
+      it.tip = cid ? tipPaidMap.get(cid) ?? null : null;
+
+      const meta = it._tip_collect_meta as {
+        isRedeemed: boolean;
+        tipsEnabled: boolean;
+        tipsMode: string | null;
+        tipsPreset1: unknown;
+        tipsPreset2: unknown;
+        tipsPreset3: unknown;
+        tipBaseCents: number;
+        refunded: boolean;
+      };
+      delete it._tip_collect_meta;
+
+      const blocked = cid ? tipBlockingStatus.has(cid) : false;
+      const canCollect = Boolean(
+        cid &&
+          meta.isRedeemed &&
+          meta.tipsEnabled &&
+          meta.tipBaseCents > 0 &&
+          !blocked &&
+          !meta.refunded,
+      );
+      it.can_collect_tip = canCollect;
+      if (canCollect) {
+        it.collect_tip_base_cents = meta.tipBaseCents;
+        it.collect_tip_deal = {
+          tips_enabled: true,
+          tips_mode: meta.tipsMode,
+          tips_preset_1: meta.tipsPreset1,
+          tips_preset_2: meta.tipsPreset2,
+          tips_preset_3: meta.tipsPreset3,
+        };
+      }
+    }
+  } else {
+    for (const it of formattedItems) {
+      const rec = it as Record<string, unknown>;
+      delete rec._tip_collect_meta;
+      rec.tip = null;
+      rec.can_collect_tip = false;
     }
   }
 
