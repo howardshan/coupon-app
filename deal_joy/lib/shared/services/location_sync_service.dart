@@ -18,11 +18,12 @@ class LocationSyncService {
         ),
       ).timeout(const Duration(seconds: 10));
 
-      await _supabase.from('users').update({
+      await _supabase.from('users').upsert({
+        'id': userId,
         'last_lat': pos.latitude,
         'last_lng': pos.longitude,
         'last_location_at': DateTime.now().toIso8601String(),
-      }).eq('id', userId);
+      });
     } catch (_) {
       // 位置同步失败不影响主流程
     }
