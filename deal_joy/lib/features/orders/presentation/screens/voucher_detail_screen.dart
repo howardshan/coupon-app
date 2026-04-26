@@ -639,6 +639,8 @@ class _UnusedVouchersByOrderSection extends StatelessWidget {
                           ),
                           title: Text(
                             item.formattedCouponCode ?? 'Voucher',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               fontSize: 14,
                               fontFamily: 'monospace',
@@ -1010,14 +1012,18 @@ class _CouponDetailRow extends ConsumerWidget {
                   Row(
                     children: [
                       if (formattedCode != null)
-                        Text(
-                          formattedCode,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontFamily: 'monospace',
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 1.5,
-                            color: AppColors.primary,
+                        Expanded(
+                          child: Text(
+                            formattedCode,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontFamily: 'monospace',
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 1.5,
+                              color: AppColors.primary,
+                            ),
                           ),
                         )
                       else
