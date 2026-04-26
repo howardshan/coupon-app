@@ -8,9 +8,13 @@ class LocationSyncService {
   /// 获取 GPS 并同步到 users 表，失败静默忽略
   Future<void> syncUserLocation(String userId) async {
     try {
-      final permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) return;
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.deniedForever) return;
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied ||
+            permission == LocationPermission.deniedForever) return;
+      }
 
       final pos = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
