@@ -327,8 +327,8 @@ class AdCampaign {
       'bid_price':      bidPrice,
       'daily_budget':   dailyBudget,
       if (scheduleHours != null) 'schedule_hours': scheduleHours,
-      'start_at':       startAt.toIso8601String(),
-      if (endAt != null) 'end_at': endAt!.toIso8601String(),
+      'start_at':       startAt.toUtc().toIso8601String(),
+      if (endAt != null) 'end_at': endAt!.toUtc().toIso8601String(),
     };
     // splash 广告位额外传入素材与投放配置
     if (placement == 'splash') {

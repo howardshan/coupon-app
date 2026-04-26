@@ -31,6 +31,7 @@ import '../../../profile/domain/providers/payment_methods_provider.dart';
 //   1. 购物车结账（cartItems 非空）：展示购物车所有 deal，调 checkoutCart
 //   2. 单 deal 快速购买（dealId 非空）：保持原有单 deal 模式，调 checkoutSingleDeal
 // ──────────────────────────────────────────────────────────────────────────────
+import 'dart:async' show unawaited;
 import 'dart:io' show Platform;
 
 // 支付方式选项（按平台过滤）
@@ -143,12 +144,29 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   @override
   void initState() {
     super.initState();
+    // 页面一打开就预热 Edge Function，用户浏览结账详情的几秒内函数已进入热态
+    // 这样点击支付时冷启动（3-8s）已被提前消化，实际等待降到 2-3s
+    unawaited(_prewarmPaymentFunction());
     if (widget.isCartMode) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _validateCartDealsOnEntry());
     } else {
       _cartEntryValidated = true;
     }
     _detectPlatformPaySupport();
+  }
+
+  /// 预热 create-payment-intent Edge Function（fire-and-forget）
+  /// 不影响正常支付流程，失败静默忽略
+  Future<void> _prewarmPaymentFunction() async {
+    try {
+      await Supabase.instance.client.functions.invoke(
+        'create-payment-intent',
+        headers: {'x-warmup': 'true'},
+        body: {},
+      );
+    } catch (_) {
+      // 预热失败不影响正常流程
+    }
   }
 
   /// 预检 Apple/Google Pay 是否可用（模拟器通常不支持）

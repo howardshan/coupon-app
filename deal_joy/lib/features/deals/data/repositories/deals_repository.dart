@@ -166,7 +166,7 @@ class DealsRepository {
     try {
       final data = await _client.rpc('get_active_ads', params: {
         'p_placement': 'home_deal_top',
-        'p_limit': 20,
+        'p_limit': 5,
       });
       final rows = data as List<dynamic>;
       final entries = rows
