@@ -77,7 +77,7 @@ export default function NotificationsPageClient({ deals, merchants, campaigns: i
       setTitle(''); setBody(''); setPreviewCount(null)
       // 乐观更新历史列表
       setCampaigns(prev => [{
-        id: crypto.randomUUID(),
+        id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
         title: title.trim(),
         body: body.trim(),
         radius_meters: radiusMeters,
