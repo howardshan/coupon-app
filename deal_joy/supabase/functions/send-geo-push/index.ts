@@ -62,8 +62,8 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // 3. 记录推送 campaign
-    await supabase.from("push_campaigns").insert({
+    // 3. 记录推送 campaign（写入失败不阻断成功响应，推送已完成）
+    const { error: campaignError } = await supabase.from("push_campaigns").insert({
       title,
       body,
       deal_id: deal_id ?? null,
@@ -74,6 +74,9 @@ Deno.serve(async (req: Request) => {
       sent_user_count: userIds.length,
       created_by: created_by ?? null,
     });
+    if (campaignError) {
+      console.error("[send-geo-push] campaign insert error:", campaignError.message);
+    }
 
     return new Response(
       JSON.stringify({ success: true, sent_count: userIds.length }),
