@@ -166,20 +166,16 @@ class OrderDetailPage extends ConsumerWidget {
             children: [
               OrderStatusBadge(status: detail.primaryStatus, fontSize: 13),
               const SizedBox(width: 8),
-              Text(
-                '${detail.items.length} voucher${detail.items.length > 1 ? 's' : ''}',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey.shade500,
-                ),
-              ),
-              const Spacer(),
-              Text(
-                DateFormat('MMM d, yyyy · h:mm a')
-                    .format(detail.createdAt.toLocal()),
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey.shade500,
+              Expanded(
+                child: Text(
+                  '${detail.items.length} voucher${detail.items.length > 1 ? 's' : ''} · '
+                  '${DateFormat('MMM d, yyyy · h:mm a').format(detail.createdAt.toLocal())}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade500,
+                  ),
                 ),
               ),
             ],
@@ -721,6 +717,8 @@ class _CouponCodeRow extends StatelessWidget {
           Expanded(
             child: Text(
               code,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 fontSize: 14,
                 fontFamily: 'monospace',

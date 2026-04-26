@@ -1267,14 +1267,18 @@ class _CouponDetailRow extends ConsumerWidget {
                   Row(
                     children: [
                       if (formattedCode != null)
-                        Text(
-                          formattedCode,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontFamily: 'monospace',
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 1.5,
-                            color: AppColors.primary,
+                        Expanded(
+                          child: Text(
+                            formattedCode,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontFamily: 'monospace',
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 1.5,
+                              color: AppColors.primary,
+                            ),
                           ),
                         )
                       else
@@ -2595,6 +2599,8 @@ class _CancelSheetState extends ConsumerState<_CancelSheet> {
                                 const SizedBox(height: 2),
                                 Text(
                                   coupon.formattedCouponCode ?? '',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
                                     fontSize: 11,
                                     fontFamily: 'monospace',

@@ -92,18 +92,18 @@ void main() {
       expect(find.text('Please enter a voucher code.'), findsOneWidget);
     });
 
-    testWidgets('少于12位输入显示格式校验错误', (tester) async {
+    testWidgets('少于16位输入显示格式校验错误', (tester) async {
       await tester.pumpWidget(_buildTestApp(mockService: mockService));
       await tester.pumpAndSettle();
       await switchToManualTab(tester);
 
-      // 输入不足12位
-      await tester.enterText(find.byType(TextFormField), 'DJ-SHORT');
+      // 输入不足 16 位字母数字
+      await tester.enterText(find.byType(TextFormField), 'AB12-CD34');
       await tester.tap(find.text('Verify'));
       await tester.pumpAndSettle();
 
       expect(
-        find.text('Please enter a valid 12-digit voucher code.'),
+        find.text('Please enter a valid 16-character voucher code.'),
         findsOneWidget,
       );
     });
@@ -121,14 +121,14 @@ void main() {
       await tester.pumpAndSettle();
       await switchToManualTab(tester);
 
-      // 输入12位券码
+      // 输入 16 位券码（格式化后 XXXX-XXXX-XXXX-XXXX）
       await tester.enterText(
-          find.byType(TextFormField), 'DJ-XXXXXXXXXXXX');
+          find.byType(TextFormField), 'AB12CD34EF56GH78');
       await tester.tap(find.text('Verify'));
       await tester.pumpAndSettle();
 
       // 验证 service 被调用
-      verify(() => mockService.verifyCoupon('DJ-XXXXXXXXXXXX')).called(1);
+      verify(() => mockService.verifyCoupon('AB12-CD34-EF56-GH78')).called(1);
     });
 
     testWidgets('verifyCoupon 失败显示 Snackbar 错误提示', (tester) async {
@@ -144,7 +144,7 @@ void main() {
       await switchToManualTab(tester);
 
       await tester.enterText(
-          find.byType(TextFormField), 'DJ-XXXXXXXXXXXX');
+          find.byType(TextFormField), 'AB12CD34EF56GH78');
       await tester.tap(find.text('Verify'));
       await tester.pumpAndSettle();
 
