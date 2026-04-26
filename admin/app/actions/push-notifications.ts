@@ -24,7 +24,7 @@ export async function getDealsAndMerchants() {
       .limit(200),
     db.from('merchants')
       .select('id, name, lat, lng')
-      .eq('status', 'active')
+      .eq('status', 'approved')
       .order('name')
       .limit(200),
   ])
