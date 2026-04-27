@@ -88,6 +88,7 @@ dev_dependencies:
   freezed: ^2.5.7
 
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.1
 
 flutter:
   uses-material-design: true
@@ -96,3 +97,13 @@ flutter:
     - .env
     - assets/images/
     - assets/icons/
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  web:
+    generate: true
+    image_path: "../logo_source.jpg"
+  image_path: "../logo_source.jpg"
+  background_color: "#FFC107"
+  remove_alpha_ios: true
