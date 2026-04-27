@@ -8,24 +8,25 @@
 
 **Tech Stack:** Supabase（PostgreSQL + RLS + Storage）、Deno Edge Functions、Stripe（PaymentIntent、Customer、已保存支付方式）、Flutter（`deal_joy` 用户端、`dealjoy_merchant` 商家端）、Admin（仓库内 `admin/` Next 订单详情；`dealjoy-cc` 为文档/工具子项目无订单 UI 代码）。
 
-**文档版本:** v1.4  
+**文档版本:** v1.5  
 **创建日期:** 2026-04-23  
 **受众:** 产品、研发（DealJoy：Flutter 双端、Supabase Edge、可选 Admin）  
-**状态:** v1 已交付 — 全链路代码已合入；税务口径仍以法务为准  
-**当前阶段:** P0–P7 已完成（见 §十、§五 Sprint 标记）  
+**状态:** v1 已交付；**§十一 路径 C（off-session → 用户端 SCA → 商家平板后备）** 已实现并合入代码（2026-04-27）；税务口径仍以法务为准  
+**当前阶段:** P0–P7 已完成；**P8（路径 C / 持券人扣款）** 已完成（见 §十、§十一）  
 
 ---
 
 ## 变更记录
 
 
-| 版本   | 日期         | 变更内容                                                                                                                                             |
-| ---- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| v1.0 | 2026-04-23 | 初版：产品流程、数据模型、分阶段任务、与现网代码对齐的注意点                                                                                                                   |
-| v1.1 | 2026-04-23 | 对齐现网商家端 **V2.3 角色/权限**：`_shared/auth.ts`、`merchant-store` 下发、`StoreInfo` / `app_shell` Tab；明确小费能力按权限拆分；Sprint 与代码锚点增补                            |
-| v1.2 | 2026-04-23 | 增加 **§十 开发进度跟踪**、§五 Sprint 状态约定；**P0 开放问题**工程默认决议写入 §3.2 / §4.2 / §九；启动 P1–P7 代码实现                                                               |
-| v1.3 | 2026-04-23 | P1–P7 落地：`coupon_tips` 迁移与 RLS、Edge/Webhook、双端 Flutter、`admin` 订单小费展示、`user-order-detail`/`merchant-orders` 附加 `tip`、Deal 创建/编辑小费配置、curl 样例与测试修复 |
-| v1.4 | 2026-04-27 | 新增 **§十一**：向核销方/持券人已保存卡扣款的产品与技术路径（off-session / 用户端确认 SCA / 商家端 UI 调整）；与 Gift、`payer_user_id` 口径对齐                                               |
+| 版本   | 日期         | 变更内容                                                                                                                                                                                                                                                                                              |
+| ---- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| v1.0 | 2026-04-23 | 初版：产品流程、数据模型、分阶段任务、与现网代码对齐的注意点                                                                                                                                                                                                                                                                    |
+| v1.1 | 2026-04-23 | 对齐现网商家端 **V2.3 角色/权限**：`_shared/auth.ts`、`merchant-store` 下发、`StoreInfo` / `app_shell` Tab；明确小费能力按权限拆分；Sprint 与代码锚点增补                                                                                                                                                                             |
+| v1.2 | 2026-04-23 | 增加 **§十 开发进度跟踪**、§五 Sprint 状态约定；**P0 开放问题**工程默认决议写入 §3.2 / §4.2 / §九；启动 P1–P7 代码实现                                                                                                                                                                                                                |
+| v1.3 | 2026-04-23 | P1–P7 落地：`coupon_tips` 迁移与 RLS、Edge/Webhook、双端 Flutter、`admin` 订单小费展示、`user-order-detail`/`merchant-orders` 附加 `tip`、Deal 创建/编辑小费配置、curl 样例与测试修复                                                                                                                                                  |
+| v1.4 | 2026-04-27 | 新增 **§十一**：向核销方/持券人已保存卡扣款的产品与技术路径（off-session / 用户端确认 SCA / 商家端 UI 调整）；与 Gift、`payer_user_id` 口径对齐                                                                                                                                                                                                |
+| v1.5 | 2026-04-27 | **§十一 路径 C 落地**：`create-tip-payment-intent` 多分支 `flow`、`payer_user_id` 写入、`confirm-tip-payment-session`、推送 `tip_confirm`、`deal_joy` `/tips/confirm/:tipId`、商家端按 `flow` 分支；`coupon_tips.status` 仍以 `pending` + Stripe PI 状态区分 SCA（未新增 DB 枚举）；测试计划见 `docs/tests/2026-04-27-tip-path-c-test-plan.md` |
 
 
 ---
@@ -85,8 +86,8 @@
 
 1. `merchant-scan/redeem` 成功返回后，若 Deal `tips_enabled`，商家端展示「Collect tip」类入口（英文文案）。
 2. 打开小费页：展示三档 + Custom；展示**计算后金额**。**v1 已决议（P0）：** 百分比小费以关联 `**order_items.unit_price`**（即购买时 Deal 的券面/成交价快照）为基数；无 `order_item` 时回退为 `**deals.discount_price`**。服务端按 Deal 配置重算可收区间并校验，不信任客户端裸金额。
-3. 顾客确认 → 画布签名 → 提交：创建待支付小费记录 + 上传签名 → 调 Edge 创建 Stripe PaymentIntent → 客户端确认（PaymentSheet 或已有支付组件模式）。
-4. 支付成功：Webhook 更新状态；商家端关闭弹窗并提示成功。
+3. 顾客确认 → 画布签名 → 提交：创建待支付小费记录 + 上传签名 → 调 Edge `create-tip-payment-intent`。**路径 C（已实现）：** 服务端优先对 **持券人**（`payer_user_id = COALESCE(current_holder_user_id, user_id)`）的 Stripe Customer **默认卡** 做 **off-session** 扣款；若需 **SCA**，向持券人发推送，持券人在 **deal_joy** 路由 `/tips/confirm/:tipId` 调 `confirm-tip-payment-session` 取 `client_secret` 并完成 PaymentSheet；**仅当**无 Customer/无默认卡或 off-session 明确失败时，Edge 返回 `flow: merchant_fallback` + `client_secret`，商家平板再走 PaymentSheet（后备）。
+4. 支付成功：Webhook 更新状态；商家端按 `flow` 提示成功 / 处理中 / 已通知顾客确认 / 打开平板支付。
 
 ### 3.3 多张券连续核销
 
@@ -142,10 +143,11 @@
 
 ### 4.2 Stripe
 
-- 新建 Edge Function（示例名）`create-tip-payment-intent`：入参 `tip_id` 或 `coupon_id` + 金额 + 鉴权用户；校验 Deal 配置、券已 `used`、金额在允许范围；创建 **独立** `PaymentIntent`，`metadata` 含 `coupon_id`, `order_item_id`, `tip_id`, `merchant_id`。
-- 使用已有 Stripe Customer；优先默认 PaymentMethod；必要时客户端确认（SCA）。
-- **Connect**：明确小费 `transfer_data[destination]` 为**核销门店** `merchants.stripe_account_id`（与现网跨店逻辑区分：小费不走路径错误的 `reverse_transfer` 团购逻辑）。**v1 已决议（P0）：** 平台**不**从小费抽成（`application_fee_amount = 0`）；后续若抽成再改 Edge 与报表。
-- `stripe-webhook`：处理 `payment_intent.succeeded` / `failed`，更新 `coupon_tips.status`（幂等：`tip_id` 或 `pi.id`）。
+- Edge Function `create-tip-payment-intent`：入参 `coupon_id` + `amount_cents` 等 + **商户 JWT**（`resolveAuth` + `scan`）；校验 Deal 配置、券已 `used`、金额在允许范围；写入 `coupon_tips`（含 `**payer_user_id`**）后创建或确认 **独立** `PaymentIntent`，`metadata` 含 `coupon_id`, `order_item_id`, `tip_id`, `merchant_id`, `type=tip`。
+- **路径 C（已实现）：** 对 `payer_user_id` 对应 `users.stripe_customer_id` 拉取 `**invoice_settings.default_payment_method`**（非卡则 `paymentMethods.retrieve` 校验类型）；有默认卡时 `paymentIntents.create` 使用 `customer` + `payment_method` + `off_session: true` + `confirm: true` + `payment_method_types: ['card']`（与 automatic_payment_methods 互斥）；否则或与 off-session 失败降级时创建 **无 Customer** 的 PI（`automatic_payment_methods`），供商家平板 PaymentSheet。
+- 响应契约：`flow` ∈ `completed` | `processing` | `requires_customer_action` | `merchant_fallback`；`**requires_customer_action` 时响应体不得包含 `client_secret`**（防泄漏到商户端）；`client_secret` 仅由 `**confirm-tip-payment-session**`（用户 JWT + `payer_user_id` 校验）下发给 deal_joy。
+- **Connect**：小费 `transfer_data[destination]` 为**核销门店** `merchants.stripe_account_id`。**v1 已决议（P0）：** 平台**不**从小费抽成（`application_fee_amount = 0`）。
+- `stripe-webhook`：处理 `payment_intent.succeeded` / `failed`，更新 `coupon_tips.status`（幂等：`tip_id` 或 `pi.id`）；路径 C 成功后仍为 `metadata.type === 'tip'` 分支。
 
 ### 4.3 与核销解耦
 
@@ -154,7 +156,7 @@
 
 ### 4.4 Gift
 
-- 登录用户必须等于 `coupons.current_holder_user_id`（或你们定义的「可核销身份」）才可发起该券的小费支付（服务端强校验）。
+- 核销身份仍以 `merchant-scan` 为准；**小费扣款对象**与 Gift 对齐：`**payer_user_id = COALESCE(coupons.current_holder_user_id, coupons.user_id)`**（持券核销方），由 `create-tip-payment-intent` 写入 `coupon_tips`，**禁止**用工单 `orders.user_id` 代替持券人。
 - `payer_user_id` 记录实际扣款用户；`orders.user_id` 仅作「原购买者」报表字段保留。
 
 ---
@@ -207,7 +209,9 @@
 
 **Step 0（权限）：** 与产品确认 v1 是否**复用 `scan`** 作为收小费权限；确认 `trainee` 是否允许收小费/核销。若不允许多 `redeem`，则在 `merchant-scan` 的 `redeem` 分支增加 `role === 'trainee'` 拒绝，或在 Flutter 侧禁用按钮与之一致。
 
-**Step 1:** `create-tip-payment-intent`：鉴权 → 读 coupon + deal → 校验 `used`、金额 → 写 `coupon_tips` `pending` → 创建 PI。
+**Step 1:** `create-tip-payment-intent`：鉴权 → 读 coupon + deal → 校验 `used`、金额 → 写 `coupon_tips` `pending`（含 `**payer_user_id`**）→ 按路径 C 分支创建/确认 PI 或返回 `flow`。
+
+**Step 1b（路径 C）：** `confirm-tip-payment-session`：用户 JWT → 校验 `payer_user_id` → 返回 `client_secret`（`flow: ready`）。
 
 **Step 2:** Webhook 更新 `paid` / `failed`，日志与幂等。
 
@@ -233,7 +237,7 @@
 
 **Step 2:** 小费选项 UI + 自定义金额 + 签名板（可选用成熟 package）；**所有「向顾客展示并确认」的页面**用 `hasPermission('scan')`（或 `tips`）包裹，避免 finance-only 账号通过深链打开。
 
-**Step 3:** 调 Edge 完成 PI + Stripe 确认（与现有 Stripe 初始化方式一致）。
+**Step 3:** 调 Edge 完成 PI；解析响应 `**flow`**：`merchant_fallback` 时在本机 PaymentSheet；`requires_customer_action` 时提示顾客在 Crunchy Plum App 确认；`completed` / `processing` 时提示成功或处理中（与现有 Stripe 初始化方式一致）。
 
 **Step 4:** 订单详情 / 核销历史处展示小费摘要（读 DB 或新 API）；展示条件与 `canViewOrders`（及产品设计是否要求 `orders_detail`）一致 — 现网 `merchant-orders` 仅校验 `orders`，cashier 可看详情接口，与之一致即可。
 
@@ -243,18 +247,22 @@
 
 ---
 
-### Sprint 4：用户端 Flutter（`deal_joy`）【状态：已完成】2026-04-23
+### Sprint 4：用户端 Flutter（`deal_joy`）【状态：已完成】2026-04-23；路径 C 补充【已完成】2026-04-27
 
 **Files:**
 
-- Modify: `deal_joy/lib/features/orders/...` 或订单详情相关 `presentation/screens`
-- Create: `deal_joy/lib/features/tips/...`（若顾客也可在自己 App 内查看/补付 — 以产品为准）
+- Modify: `deal_joy/lib/features/orders/...` 或订单详情相关 `presentation/screens`（订单小费展示）
+- Create: `deal_joy/lib/features/tipping/presentation/screens/tip_confirm_payment_screen.dart`（路径 C：SCA 确认页，**独立于** `features/orders/` 受保护目录）
+- Modify: `deal_joy/lib/core/router/app_router.dart`（路由 `/tips/confirm/:tipId`）
+- Modify: `deal_joy/lib/main.dart`、`deal_joy/lib/core/constants/stripe_app_config.dart`（`Stripe.urlScheme` + PaymentSheet `returnURL`）
+- Modify: `deal_joy/lib/shared/services/push_notification_service.dart`、`deal_joy/lib/features/chat/presentation/screens/notification_screen.dart`（`action=tip_confirm` 跳转）
+- Modify: `deal_joy/android/app/src/main/AndroidManifest.xml`（`crunchyplum` / `stripe-redirect` intent-filter）
 
 **Step 1:** 订单/券详情展示小费块（英文）。
 
-**Step 2:** 若产品要求用户端也可发起小费，复用与商家端同一套 API（注意鉴权差异：用户 JWT vs 商家 `resolveAuth`）。
+**Step 2（路径 C）：** 持券人通过推送或深链打开确认页 → 调用 `confirm-tip-payment-session` → PaymentSheet 完成 3DS；**不得**从商户端拿 `client_secret`。
 
-**验收:** 登录用户可见本人已付小费记录；不可见他人签名图像（除非产品另有规定）。
+**验收:** 登录用户可见本人已付小费记录；不可见他人签名图像（除非产品另有规定）；SCA 场景持券人可完成确认。
 
 ---
 
@@ -310,7 +318,7 @@
 | 风险                                          | 缓解                                                                                                                                 |
 | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | Store Credit 用户无保存卡                         | 小费流引导当场绑卡 / Apple Pay；无法支付则允许跳过并记 `skipped`（若产品允许）                                                                                 |
-| SCA 导致 off_session 失败                       | 当面 PaymentSheet 确认                                                                                                                 |
+| SCA 导致 off_session 失败                       | **路径 C 已实现：** 推送 + deal_joy `/tips/confirm/:tipId`；商户端仅 `merchant_fallback` 时平板 PaymentSheet                                       |
 | 跨店团购资金逻辑与小费混淆                               | 小费 PI 单独 metadata + 独立 transfer 目标账户                                                                                               |
 | 签名 GDPR / 存储成本                              | 保留期政策 + 压缩图像 + 仅关联 tip 行                                                                                                           |
 | 角色权限漂移（Flutter Tab 与 Edge `Permission` 不一致） | 以 `_shared/auth.ts` 为唯一真相；`StoreInfo` 便捷 getter 与 `requirePermission` 使用同一字符串；新增权限时同步 `merchant-brand` / `merchant-store` 若存在硬编码列表 |
@@ -324,7 +332,7 @@
 1. Deal 可配置小费；未启用时全链路无回归。
 2. 核销成功后可完成小费支付；Stripe 与 DB 状态一致。
 3. 每张券（或拆分行）可在三端订单信息中查到小费关键字段。
-4. Gift：持券人可付；购买者不可误扣（除非未来单独功能）。
+4. Gift：持券人可付；**路径 C** 下扣款对象以 `COALESCE(current_holder_user_id, user_id)` 写入 `payer_user_id`，购买者不可误扣（除非未来单独功能）。
 5. Webhook 与重复投递安全；无未授权读签名。
 6. **商家端权限：** `cashier`/`service` 可收小费但不可编辑 Deal 小费配置；`finance` 不可依赖 Scan 收小费；无 `deals` 不可改小费字段；无 `scan`（或未来 `tips`）不可调小费 Edge API。
 
@@ -339,6 +347,8 @@
 | 下单支付                  | `deal_joy/supabase/functions/create-payment-intent/index.ts`                                       |
 | 卡管理                   | `deal_joy/supabase/functions/manage-payment-methods/index.ts`                                      |
 | Webhook               | `deal_joy/supabase/functions/stripe-webhook/index.ts`                                              |
+| 小费 SCA 确认（用户 JWT）     | `deal_joy/supabase/functions/confirm-tip-payment-session/index.ts`（`config.toml` 已配置 `verify_jwt`） |
+| 用户端小费确认页              | `deal_joy/lib/features/tipping/presentation/screens/tip_confirm_payment_screen.dart`               |
 | 商家扫码服务                | `dealjoy_merchant/lib/features/scan/services/scan_service.dart`                                    |
 | 商家权限模型                | `deal_joy/supabase/functions/_shared/auth.ts`（`ROLE_PERMISSIONS` / `requirePermission`）            |
 | 门店上下文与 permissions 下发 | `deal_joy/supabase/functions/merchant-store/index.ts`                                              |
@@ -364,83 +374,85 @@
 ## 十、开发进度跟踪
 
 
-| 阶段  | 说明                                  | 状态  | 完成日期       | PR / 备注                                                                    |
-| --- | ----------------------------------- | --- | ---------- | -------------------------------------------------------------------------- |
-| P0  | Sprint 0 口径冻结                       | 已完成 | 2026-04-23 | 见 §九 已决议                                                                   |
-| P1  | Sprint 1 DB / RLS / Storage         | 已完成 | 2026-04-23 | 迁移 `20260423120000_post_redemption_tipping.sql`                            |
-| P2  | Sprint 2 Edge + Webhook + redeem 扩展 | 已完成 | 2026-04-23 | `create-tip-payment-intent`、`merchant-scan`、`stripe-webhook`               |
-| P3  | Sprint 3 商家端 Flutter                | 已完成 | 2026-04-23 | `dealjoy_merchant` tips + scan + `merchant-orders` 行级 `tip`                |
-| P4  | Sprint 4 用户端 Flutter                | 已完成 | 2026-04-23 | `user-order-detail` + `deal_joy` 订单详情英文展示                                  |
-| P5  | Sprint 5 管理端                        | 已完成 | 2026-04-23 | `admin/app/(dashboard)/orders/[id]/page.tsx`（service role 读 `coupon_tips`） |
-| P6  | Sprint 6 Deal 配置                    | 已完成 | 2026-04-23 | `merchant-deals` + Deal 创建/编辑表单                                            |
-| P7  | Sprint 7 测试与收尾                      | 已完成 | 2026-04-23 | Scan 相关单测、`docs/curl/tipping/`                                             |
+| 阶段  | 说明                                        | 状态  | 完成日期       | PR / 备注                                                                    |
+| --- | ----------------------------------------- | --- | ---------- | -------------------------------------------------------------------------- |
+| P0  | Sprint 0 口径冻结                             | 已完成 | 2026-04-23 | 见 §九 已决议                                                                   |
+| P1  | Sprint 1 DB / RLS / Storage               | 已完成 | 2026-04-23 | 迁移 `20260423120000_post_redemption_tipping.sql`                            |
+| P2  | Sprint 2 Edge + Webhook + redeem 扩展       | 已完成 | 2026-04-23 | `create-tip-payment-intent`、`merchant-scan`、`stripe-webhook`               |
+| P3  | Sprint 3 商家端 Flutter                      | 已完成 | 2026-04-23 | `dealjoy_merchant` tips + scan + `merchant-orders` 行级 `tip`                |
+| P4  | Sprint 4 用户端 Flutter                      | 已完成 | 2026-04-23 | `user-order-detail` + `deal_joy` 订单详情英文展示                                  |
+| P5  | Sprint 5 管理端                              | 已完成 | 2026-04-23 | `admin/app/(dashboard)/orders/[id]/page.tsx`（service role 读 `coupon_tips`） |
+| P6  | Sprint 6 Deal 配置                          | 已完成 | 2026-04-23 | `merchant-deals` + Deal 创建/编辑表单                                            |
+| P7  | Sprint 7 测试与收尾                            | 已完成 | 2026-04-23 | Scan 相关单测、`docs/curl/tipping/`                                             |
+| P8  | §十一 路径 C：持券人 off-session + 用户端 SCA + 商户后备 | 已完成 | 2026-04-27 | 见 §十一「实现对照」；专项测试计划 `docs/tests/2026-04-27-tip-path-c-test-plan.md`         |
 
 
 *每完成一个阶段：更新本表「状态/完成日期」、递增文档版本、在「变更记录」追加一行。*
 
 ---
 
-## 十一、v2 方向：向核销方 / 持券人「已保存支付方式」扣款（产品与实现要点）
+## 十一、路径 C（已实现）：向核销方 / 持券人「已保存支付方式」扣款
 
-> **产品目标：** 商家端仅选金额 + 采集签名；**实际扣款用户 = 实际持券到店并被服务的一方**（与购买人可不同，如 Gift）。**不向**商家平板上重新输卡作为唯一路径。
+> **产品目标：** 商家端选金额 + 采集签名；**实际扣款用户 = 持券核销方**（与购买人可不同，如 Gift）。**优先**服务端 off-session 扣默认卡；**SCA** 时由持券人在 **deal_joy** 确认；**仅后备**时在商家平板 PaymentSheet 收卡。
 
 ### 11.1 谁该被扣款（数据规则）
 
 
-| 场景        | 小费付款人（`payer_user_id` / Stripe Customer 来源）                                                                                  |
-| --------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| 普通购券自用后核销 | `coupons.user_id`（持券人 = 购买人）                                                                                                 |
-| 赠券后由受赠人核销 | 新券行的 `coupons.user_id` 已为受赠人；若有并行字段则用 `**COALESCE(coupons.current_holder_user_id, coupons.user_id)`** 与 Gift / in-app 赠送口径对齐 |
+| 场景        | 小费付款人（`payer_user_id` / Stripe Customer 来源）                                            |
+| --------- | -------------------------------------------------------------------------------------- |
+| 普通购券自用后核销 | `COALESCE(current_holder_user_id, user_id)` → 通常等于 `coupons.user_id`                   |
+| 赠券后由受赠人核销 | `**COALESCE(coupons.current_holder_user_id, coupons.user_id)`**，与 Gift / in-app 赠送口径一致 |
 
 
-**Edge 侧必须在发起扣款前解析并写入 `coupon_tips.payer_user_id`**（勿沿用「谁在商家 App 点按钮」）。
+**Edge 在 `create-tip-payment-intent` 内解析并写入 `coupon_tips.payer_user_id`**（与「谁在商家 App 点按钮」无关）。
 
 ### 11.2 前置条件（不满足则降级）
 
-1. `**users.stripe_customer_id**` 已存在（下单绑卡流程已有，见迁移 `20260321000002_stripe_customer_id.sql`）。
-2. Stripe Customer 上存在 **可调度的支付方式**：常用做法是 `**invoice_settings.default_payment_method`**（用户端「默认卡」已与 `manage-payment-methods` 对齐）。
-3. **合规 / 协议：** 用户是否在下单或账户条款中同意「到店核销后可按商户提示金额扣小费」类授权 — **须产品/法务裁定**；Stripe **MIT / off_session** 规则与此相关。
+1. `users.stripe_customer_id` 已存在（下单绑卡流程已有）。
+2. Stripe Customer 上存在 **默认卡**：`invoice_settings.default_payment_method`（与 `manage-payment-methods` 对齐；Edge 内对 PM 类型做 `card` 校验）。
+3. **合规 / 协议：** 用户是否在条款中同意「到店核销后可按商户提示金额扣小费」— **须产品/法务裁定**；Stripe **MIT / off_session** 规则与此相关。
 
-### 11.3 推荐技术路径（择一或组合）
+### 11.3 技术路径（实现口径 = 原「路径 C」混合）
 
-**路径 A — 服务端 Off-session 扣款（首选尝试）**
+1. **Off-session（首选）：** `create-tip-payment-intent` 在商户 JWT 鉴权下，用 **Stripe Secret** 创建/确认 PI：`customer` + `payment_method` + `off_session: true` + `confirm: true`，Connect `transfer_data.destination` 仍为核销门店。
+2. **需顾客操作（SCA）：** PI 处于 `requires_action` / `requires_confirmation` 时：更新行上 `stripe_payment_intent_id`，调用 `**send-push-notification`**（`type: transaction`，`data`: `action=tip_confirm`、`tip_id`、`coupon_id`；**不含** `client_secret`）；向商户返回 `flow: requires_customer_action`。
+3. **用户端确认：** `confirm-tip-payment-session`（**仅用户 JWT**）校验 `payer_user_id === auth.uid()`，返回 `client_secret`（`flow: ready`）；`deal_joy` `**/tips/confirm/:tipId`** 调 PaymentSheet（`Stripe.urlScheme` / `crunchyplum://stripe-redirect`）。
+4. **商户平板后备：** 无 Customer、无默认卡或 off-session 非 SCA 类失败后：创建 guest 式 PI，返回 `flow: merchant_fallback` + `client_secret`；**仅此时** `collect_tip_page.dart` 调 PaymentSheet。
 
-1. `create-tip-payment-intent`（或拆分为 `charge-tip-off-session`）用 **service role**：
-  - 解析 `payer_user_id`；
-  - 读 `users.stripe_customer_id`，拉取默认 `payment_method`；
-  - `paymentIntents.create({ customer, payment_method, off_session: true, confirm: true, transfer_data: … })`（Connect 与现 PI 一致）。
-2. 若返回 `**authentication_required`** / `card_declined` 等：
-  - **降级路径 B** 或标记 `coupon_tips.status = requires_action`，勿静默失败。
-
-**路径 B — 用户端（deal_joy）确认（应对 SCA）**
-
-1. 商家端提交金额 + 签名后，后端创建 `**pending` PI**（或 PaymentIntent `requires_confirmation`），并向 `**payer_user_id`** 发 **推送 / 短信链接 / App 内 Deep link**。
-2. 用户打开 **deal_joy**，用 **同一 Stripe Customer** 走 `**presentPaymentSheet`** 或 **authenticatePaymentIntent** 完成 3DS。
-3. Webhook 照旧把 `coupon_tips` 置 `paid`。
-
-**路径 C — 混合**
-
-- 先试路径 A；失败自动切换路径 B（商家 UI 展示「已向顾客手机发送确认」）。
-
-### 11.4 商家端（dealjoy_merchant）改动摘要
-
-- **移除**「在本机 PaymentSheet 上让顾客输入卡号」作为主路径（当前 `collect_tip_page.dart`）。
-- 改为：**提交金额 + 签名** → 调用新/改版 Edge → 展示状态：**Processing / Sent to customer / Paid / Failed**。
-- 权限与路由不变（仍为商户发起）。
-
-### 11.5 用户端（deal_joy）改动摘要（若走路径 B/C）
-
-- 新增「待确认小费」入口：Deep link + **Stripe confirm**（或 PaymentSheet with `client_secret`）。
-- **可选**：列表展示「某门店向你收取 $x 小费」待确认项。
-
-### 11.6 风险（计划文档 §六已部分提及）
+### 11.4 实现对照（代码锚点）
 
 
-| 风险             | 说明                                                     |
-| -------------- | ------------------------------------------------------ |
-| **SCA**        | 欧盟卡 / 部分美国卡 off-session 常失败，路径 B 几乎是标配兜底               |
-| **无默认卡**       | 须明确产品：**禁止扣款**并提示顾客在用户端绑卡，或临时允许路径「当面 PaymentSheet」作为后备 |
-| **Gift 误绑购买者** | 必须用 §11.1 解析 payer，严禁用工单的 `orders.user_id` 代替持券人       |
+| 组件                  | 路径                                                                                                                                       |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| 创建 PI / 分支与推送       | `deal_joy/supabase/functions/create-tip-payment-intent/index.ts`                                                                         |
+| 用户取 `client_secret` | `deal_joy/supabase/functions/confirm-tip-payment-session/index.ts`                                                                       |
+| 网关 JWT              | `deal_joy/supabase/config.toml` → `[functions.confirm-tip-payment-session] verify_jwt = true`                                            |
+| 商户端按 `flow` 分支      | `dealjoy_merchant/lib/features/tips/pages/collect_tip_page.dart`、`.../services/tip_payment_service.dart`                                 |
+| 用户端确认页与路由           | `deal_joy/lib/features/tipping/.../tip_confirm_payment_screen.dart`、`deal_joy/lib/core/router/app_router.dart`                           |
+| 推送 / 通知列表跳转         | `deal_joy/lib/shared/services/push_notification_service.dart`、`deal_joy/lib/features/chat/presentation/screens/notification_screen.dart` |
+
+
+**幂等：** 同券 10 分钟窗口内已有 `pending` + PI 时，按 Stripe PI 状态返回已有 `flow`（含 `requires_customer_action` / `merchant_fallback`）；PI 为 `canceled` / `failed` 时将旧行标 `canceled` 后允许新开。**状态枚举：** 未新增 `coupon_tips.status` 值；SCA 等待期仍为 `pending`，以 Stripe PI 状态为准。
+
+### 11.5 商家端（dealjoy_merchant）行为摘要（已实现）
+
+- **主路径**不再假设「顾客一定在平板上输卡」：`flow` 为 `completed` / `processing` / `requires_customer_action` 时分别 SnackBar 成功、处理中、已通知顾客在 App 内确认。
+- `**merchant_fallback`**：与 v1 初版一致，本机 PaymentSheet 完成支付。
+- 权限与路由不变（仍为商户发起 + `scan`）。
+
+### 11.6 用户端（deal_joy）行为摘要（已实现）
+
+- 路由 `**/tips/confirm/:tipId**`；推送 `action=tip_confirm` + `tip_id` 打开该页（须已登录）。
+- **可选后续：** 订单/券列表内「待确认小费」聚合入口（当前未做）。
+
+### 11.7 风险（残留）
+
+
+| 风险             | 说明                                     |
+| -------------- | -------------------------------------- |
+| **SCA**        | 依赖持券人打开 App / 推送送达；商户端需口头引导            |
+| **无默认卡**       | 自动走 `merchant_fallback`；产品需知悉「平板后备」仍存在 |
+| **Gift 误绑购买者** | 已实现 §11.1 解析；回归测试仍须覆盖 Gift 核销链         |
 
 
 ---
