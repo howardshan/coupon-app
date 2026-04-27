@@ -10,9 +10,11 @@ import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/stripe_merchant_config.dart';
+import '../../orders/providers/orders_provider.dart';
 import '../models/tip_models.dart';
 import '../providers/tip_payment_provider.dart';
 import '../services/tip_payment_service.dart';
+import '../widgets/tip_signature_pad.dart';
 
 /// 小费支付流程阶段：便于区分「等 Edge」与「等 Stripe」
 enum _CollectTipPayPhase { idle, creatingIntent, openingPaymentSheet }
@@ -23,17 +25,23 @@ class CollectTipPage extends ConsumerStatefulWidget {
     required this.couponId,
     required this.dealTitle,
     required this.tip,
+    this.orderIdForRefresh,
   });
 
   final String couponId;
   final String dealTitle;
   final TipDealConfig tip;
 
+  /// 关联 `orders.id`，收小费成功后 `invalidate` 订单列表/详情
+  final String? orderIdForRefresh;
+
   @override
   ConsumerState<CollectTipPage> createState() => _CollectTipPageState();
 }
 
 class _CollectTipPageState extends ConsumerState<CollectTipPage> {
+  final GlobalKey<TipSignaturePadState> _signatureKey =
+      GlobalKey<TipSignaturePadState>();
   int? _selectedPresetIndex;
   final _customController = TextEditingController();
   bool _useCustom = false;
@@ -109,6 +117,28 @@ class _CollectTipPageState extends ConsumerState<CollectTipPage> {
       return;
     }
 
+    final sig = _signatureKey.currentState;
+    if (sig == null || !sig.hasSignature) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please sign in the box above to confirm the tip.'),
+        ),
+      );
+      return;
+    }
+
+    String signaturePngBase64;
+    try {
+      signaturePngBase64 = await sig.toPngBase64();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not capture signature: $e')),
+        );
+      }
+      return;
+    }
+
     setState(() => _payPhase = _CollectTipPayPhase.creatingIntent);
     try {
       final svc = ref.read(tipPaymentServiceProvider);
@@ -124,6 +154,7 @@ class _CollectTipPageState extends ConsumerState<CollectTipPage> {
         couponId: widget.couponId,
         amountCents: amount,
         presetChoice: presetChoice,
+        signaturePngBase64: signaturePngBase64,
       );
       if (kDebugMode) {
         final pi = res['stripe_payment_intent_id'] as String?;
@@ -144,6 +175,7 @@ class _CollectTipPageState extends ConsumerState<CollectTipPage> {
 
       if (flow == 'completed') {
         if (mounted) {
+          _invalidateOrderData();
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Tip payment received. Thank you!')),
           );
@@ -153,6 +185,7 @@ class _CollectTipPageState extends ConsumerState<CollectTipPage> {
       }
       if (flow == 'processing') {
         if (mounted) {
+          _invalidateOrderData();
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Tip payment is processing. Thank you!'),
@@ -164,6 +197,7 @@ class _CollectTipPageState extends ConsumerState<CollectTipPage> {
       }
       if (flow == 'requires_customer_action') {
         if (mounted) {
+          _invalidateOrderData();
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text(
@@ -171,6 +205,7 @@ class _CollectTipPageState extends ConsumerState<CollectTipPage> {
               ),
             ),
           );
+          context.pop(true);
         }
         return;
       }
@@ -223,6 +258,7 @@ class _CollectTipPageState extends ConsumerState<CollectTipPage> {
       }
 
       if (mounted) {
+        _invalidateOrderData();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Tip payment successful. Thank you!')),
         );
@@ -248,6 +284,14 @@ class _CollectTipPageState extends ConsumerState<CollectTipPage> {
       }
     } finally {
       if (mounted) setState(() => _payPhase = _CollectTipPayPhase.idle);
+    }
+  }
+
+  void _invalidateOrderData() {
+    ref.invalidate(ordersNotifierProvider);
+    final oid = widget.orderIdForRefresh;
+    if (oid != null && oid.isNotEmpty) {
+      ref.invalidate(orderDetailProvider(oid));
     }
   }
 
@@ -309,7 +353,34 @@ class _CollectTipPageState extends ConsumerState<CollectTipPage> {
             }),
             onChanged: (_) => setState(() => _useCustom = true),
           ),
-          const SizedBox(height: 28),
+          const SizedBox(height: 20),
+          Text(
+            'Customer signature',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey.shade800,
+            ),
+          ),
+          const SizedBox(height: 8),
+          TipSignaturePad(
+            key: _signatureKey,
+            onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: 4),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: _busy
+                  ? null
+                  : () {
+                      _signatureKey.currentState?.clear();
+                      setState(() {});
+                    },
+              child: const Text('Clear'),
+            ),
+          ),
+          const SizedBox(height: 20),
           SizedBox(
             width: double.infinity,
             height: 52,

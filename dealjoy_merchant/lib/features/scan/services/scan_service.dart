@@ -91,6 +91,7 @@ class ScanService {
       return RedeemResult(
         redeemedAt: DateTime.parse(data['redeemed_at'] as String),
         tip: TipDealConfig.fromRedeemPayload(data),
+        orderId: data['order_id'] as String?,
       );
     } on ScanException {
       rethrow;
