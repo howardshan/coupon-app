@@ -237,7 +237,15 @@ final _authNotifier = _AuthChangeNotifier();
 // 否则 session 过期后用户会停在 StoreSelectorPage 看到 "Failed to load stores"
 const _publicRoutes = ['/auth/login', '/auth/register', '/auth/review', '/auth/disabled', '/staff/accept'];
 
+/// 根 Navigator：Stripe PaymentSheet 等需在 window 顶层 present 的全屏页，应使用
+/// [parentNavigatorKey] 指向此 key，避免 Shell 子栈 VC 报「not in the window hierarchy」（iOS）。
+final merchantAppRootNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'merchantRoot');
+
+/// Shell（底部 Tab）内嵌 Navigator，与根栈分离。
+final _merchantShellNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'merchantShell');
+
 final appRouter = GoRouter(
+  navigatorKey: merchantAppRootNavigatorKey,
   initialLocation: '/dashboard',
   debugLogDiagnostics: false,
   // auth 状态变化时自动重新执行 redirect
@@ -318,6 +326,7 @@ final appRouter = GoRouter(
     // Shell 路由（带底部导航的 4 个 Tab）
     // ──────────────────────────────────────────────────────────
     ShellRoute(
+      navigatorKey: _merchantShellNavigatorKey,
       builder: (context, state, child) => AppShell(child: child),
       routes: [
         // Tab 0: Dashboard
@@ -356,6 +365,7 @@ final appRouter = GoRouter(
             ),
             GoRoute(
               path: 'collect-tip',
+              parentNavigatorKey: merchantAppRootNavigatorKey,
               builder: (context, state) {
                 final x = state.extra as Map<String, dynamic>;
                 return CollectTipPage(

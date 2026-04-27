@@ -1,5 +1,7 @@
 // Collect optional post-redemption tip (merchant tablet → customer pays via Stripe PaymentSheet).
 
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/constants/stripe_merchant_config.dart';
 import '../models/tip_models.dart';
 import '../providers/tip_payment_provider.dart';
 import '../services/tip_payment_service.dart';
@@ -66,6 +69,16 @@ class _CollectTipPageState extends ConsumerState<CollectTipPage> {
     ];
     if (cents.isEmpty) return c.tipBaseCents;
     return cents.reduce((a, b) => a > b ? a : b);
+  }
+
+  /// 等待若干帧布局完成后再由 Stripe present sheet，避免 iOS 报错：
+  /// "Attempt to present ... whose view is not in the window hierarchy"
+  ///（常见于 go_router push 到本页后立即点 Continue）。
+  Future<void> _waitForNativePresentationReady() async {
+    for (var i = 0; i < 2; i++) {
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted) return;
+    }
   }
 
   int? _selectedAmountCents() {
@@ -134,10 +147,27 @@ class _CollectTipPageState extends ConsumerState<CollectTipPage> {
           paymentIntentClientSecret: secret,
           merchantDisplayName: 'Crunchy Plum',
           style: ThemeMode.light,
+          // 显式 returnURL，否则 iOS analytics 常为 return_url:false，且部分支付方式无法正确回跳
+          returnURL: StripeMerchantConfig.paymentSheetReturnUrl,
+          // 小费场景仅需要卡；收窄列表可减少无关 LPM 与 present 链路复杂度
+          paymentMethodOrder: const ['card'],
         ),
       );
       if (kDebugMode) {
-        debugPrint('[CollectTip] initPaymentSheet done → presentPaymentSheet');
+        debugPrint(
+          '[CollectTip] PaymentSheet returnURL=${StripeMerchantConfig.paymentSheetReturnUrl}',
+        );
+      }
+      if (kDebugMode) {
+        debugPrint('[CollectTip] initPaymentSheet done → wait frames + delay then presentPaymentSheet');
+      }
+      await _waitForNativePresentationReady();
+      if (!mounted) return;
+      // 根 Navigator push 后仍可能与转场动画重叠，短延迟降低 iOS present 失败概率
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      if (!mounted) return;
+      if (kDebugMode) {
+        debugPrint('[CollectTip] calling presentPaymentSheet');
       }
       await Stripe.instance.presentPaymentSheet();
       if (kDebugMode) {

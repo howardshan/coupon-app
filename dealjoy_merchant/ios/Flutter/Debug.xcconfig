@@ -1,2 +1,5 @@
 #include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"
 #include "Generated.xcconfig"
+
+// path_provider_foundation 等会嵌入 objective_c.framework；不加 --deep 时嵌套二进制常未用开发证书重签，真机安装报 0xe8008014
+OTHER_CODE_SIGN_FLAGS = $(inherited) --deep
