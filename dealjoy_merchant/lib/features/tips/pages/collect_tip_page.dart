@@ -127,10 +127,58 @@ class _CollectTipPageState extends ConsumerState<CollectTipPage> {
       );
       if (kDebugMode) {
         final pi = res['stripe_payment_intent_id'] as String?;
+        final fl = res['flow'] as String?;
         debugPrint(
-          '[CollectTip] createPaymentIntent returned (pi=${pi ?? "?"}) → openingPaymentSheet',
+          '[CollectTip] createPaymentIntent flow=$fl (pi=${pi ?? "?"})',
         );
       }
+
+      String? flow = res['flow'] as String?;
+      final clientSecretRaw = res['client_secret'];
+      if (flow == null &&
+          clientSecretRaw is String &&
+          clientSecretRaw.isNotEmpty) {
+        flow = 'merchant_fallback';
+      }
+      flow ??= 'merchant_fallback';
+
+      if (flow == 'completed') {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Tip payment received. Thank you!')),
+          );
+          context.pop(true);
+        }
+        return;
+      }
+      if (flow == 'processing') {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Tip payment is processing. Thank you!'),
+            ),
+          );
+          context.pop(true);
+        }
+        return;
+      }
+      if (flow == 'requires_customer_action') {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                "Payment request sent to the customer's phone. Ask them to approve in the Crunchy Plum app.",
+              ),
+            ),
+          );
+        }
+        return;
+      }
+
+      if (flow != 'merchant_fallback') {
+        throw TipPaymentException('Unexpected payment flow from server');
+      }
+
       final secret = res['client_secret'] as String?;
       if (secret == null || secret.isEmpty) {
         throw TipPaymentException('Missing payment client secret');

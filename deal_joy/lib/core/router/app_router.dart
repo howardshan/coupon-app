@@ -53,6 +53,7 @@ import '../../features/cart/data/models/cart_item_model.dart';
 import '../../features/cart/presentation/screens/cart_screen.dart';
 import '../../features/welcome/presentation/screens/welcome_splash_screen.dart';
 import '../../features/welcome/presentation/screens/onboarding_screen.dart';
+import '../../features/tipping/presentation/screens/tip_confirm_payment_screen.dart';
 import '../widgets/main_scaffold.dart';
 import '../widgets/splash_screen.dart';
 import 'app_route_observer.dart';
@@ -416,6 +417,14 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/gift/claim',
         builder: (_, state) => GiftClaimScreen(
           claimToken: state.uri.queryParameters['token'] ?? '',
+        ),
+      ),
+
+      // 小费 3DS：持券人完成同一 PaymentIntent（避开 orders 受保护目录）
+      GoRoute(
+        path: '/tips/confirm/:tipId',
+        builder: (_, state) => TipConfirmPaymentScreen(
+          tipId: state.pathParameters['tipId'] ?? '',
         ),
       ),
 
