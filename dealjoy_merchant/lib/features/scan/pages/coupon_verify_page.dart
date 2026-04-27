@@ -39,6 +39,7 @@ class _CouponVerifyPageState extends ConsumerState<CouponVerifyPage> {
           'redeemed_at': redeemResult.redeemedAt.toIso8601String(),
           'deal_title': widget.couponInfo.dealTitle,
           'coupon_id': widget.couponInfo.id,
+          if (redeemResult.orderId != null) 'order_id': redeemResult.orderId,
           'tip_base_cents': redeemResult.tip.tipBaseCents,
           'deal': {
             'tips_enabled': redeemResult.tip.tipsEnabled,

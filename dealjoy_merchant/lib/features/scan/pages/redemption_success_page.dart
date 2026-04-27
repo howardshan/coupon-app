@@ -17,6 +17,7 @@ class RedemptionSuccessPage extends ConsumerStatefulWidget {
     required this.redeemedAt,
     required this.dealTitle,
     required this.couponId,
+    this.orderId,
     this.redeemPayload,
   });
 
@@ -24,6 +25,8 @@ class RedemptionSuccessPage extends ConsumerStatefulWidget {
   final String dealTitle;
   /// 保留参数供路由/深链兼容
   final String couponId;
+  /// `orders.id`，核销接口返回；用于收小费成功后刷新订单详情
+  final String? orderId;
   /// 核销接口完整返回（含 deal / tip_base_cents），用于小费入口
   final Map<String, dynamic>? redeemPayload;
 
@@ -35,6 +38,9 @@ class RedemptionSuccessPage extends ConsumerStatefulWidget {
 class _RedemptionSuccessPageState
     extends ConsumerState<RedemptionSuccessPage>
     with SingleTickerProviderStateMixin {
+  /// 已成功发起收小费流程（含顾客确认中），隐藏 Collect tip 按钮避免误解可重复发起
+  bool _collectTipHandled = false;
+
   late final AnimationController _animController;
   late final Animation<double> _scaleAnim;
   late final Animation<double> _fadeAnim;
@@ -80,15 +86,26 @@ class _RedemptionSuccessPageState
     final cfg = _tipConfig;
     final payload = widget.redeemPayload;
     if (cfg == null || payload == null) return;
-    await context.push<bool>(
+    final tipped = await context.push<bool>(
       '/scan/collect-tip',
       extra: {
         'coupon_id': widget.couponId,
         'deal_title': widget.dealTitle,
         'deal': payload['deal'],
         'tip_base_cents': payload['tip_base_cents'],
+        if (widget.orderId != null && widget.orderId!.isNotEmpty)
+          'order_id': widget.orderId,
       },
     );
+    if (!mounted) return;
+    ref.invalidate(ordersNotifierProvider);
+    final oid = widget.orderId;
+    if (oid != null && oid.isNotEmpty) {
+      ref.invalidate(orderDetailProvider(oid));
+    }
+    if (tipped == true) {
+      setState(() => _collectTipHandled = true);
+    }
   }
 
   @override
@@ -99,7 +116,8 @@ class _RedemptionSuccessPageState
     final tipCfg = _tipConfig;
     final showTip = tipCfg != null &&
         tipCfg.tipsEnabled &&
-        (store?.canCollectTips ?? false);
+        (store?.canCollectTips ?? false) &&
+        !_collectTipHandled;
 
     return Scaffold(
       backgroundColor: Colors.white,

@@ -33,8 +33,11 @@ class RedeemResult {
   const RedeemResult({
     required this.redeemedAt,
     required this.tip,
+    this.orderId,
   });
 
   final DateTime redeemedAt;
   final TipDealConfig tip;
+  /// 对应 `orders.id`；用于收小费后刷新商家端订单详情
+  final String? orderId;
 }
