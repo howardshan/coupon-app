@@ -1,2 +1,5 @@
 #include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"
 #include "Generated.xcconfig"
+
+// 与 Debug.xcconfig 一致：递归签名 Runner.app 内嵌套的 Framework（见 objective_c.framework / 0xe8008014）
+OTHER_CODE_SIGN_FLAGS = $(inherited) --deep

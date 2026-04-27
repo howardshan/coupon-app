@@ -57,6 +57,20 @@
 	<string>The camera is used to scan voucher QR codes and to capture photos for verification documents.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Photo library access lets you choose images for deals, menus, store photos, and support evidence.</string>
+	<!-- Stripe PaymentSheet：3DS / 浏览器回跳等须注册 URL scheme，与 main.dart 中 Stripe.urlScheme 一致 -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>crunchyplum-merchant</string>
+			</array>
+			<key>CFBundleURLName</key>
+			<string>com.crunchyplum.merchant.stripe</string>
+		</dict>
+	</array>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>

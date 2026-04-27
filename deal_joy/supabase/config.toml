@@ -18,6 +18,10 @@ verify_jwt = true
 [functions.create-tip-payment-intent]
 verify_jwt = true
 
+# confirm-tip-payment-session：用户 JWT；网关校验 + 函数内 payer 校验
+[functions.confirm-tip-payment-session]
+verify_jwt = true
+
 # Cron：仅 x-cron-secret，无用户 JWT
 [functions.escalate-disputes-to-after-sales]
 verify_jwt = false

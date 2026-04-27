@@ -7,6 +7,7 @@ import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/config/env.dart';
+import 'core/constants/stripe_app_config.dart';
 import 'features/deals/domain/providers/deals_provider.dart';
 import 'app.dart';
 
@@ -63,6 +64,7 @@ void main() async {
     final stripeKey = Env.stripePublishableKey;
     if (stripeKey.startsWith('pk_')) {
       Stripe.publishableKey = stripeKey;
+      Stripe.urlScheme = StripeAppConfig.urlScheme;
       Stripe.merchantIdentifier = Env.stripeApplePayMerchantId;
       await Stripe.instance.applySettings();
     } else {
