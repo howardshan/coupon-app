@@ -89,16 +89,9 @@ export function wrapInLayout(options: {
           <!-- 顶部品牌 Logo 区 -->
           <tr>
             <td align="center" style="padding-bottom:24px;">
-              <table cellpadding="0" cellspacing="0" border="0">
-                <tr>
-                  <td style="background-color:${BRAND_DARK};padding:16px 28px;border-radius:8px;">
-                    <span style="font-size:22px;font-weight:800;color:#FFFFFF;
-                                 letter-spacing:0.5px;text-decoration:none;">
-                      🍒 CrunchyPlum
-                    </span>
-                  </td>
-                </tr>
-              </table>
+              <img src="https://kqyolvmgrdekybjrwizx.supabase.co/storage/v1/object/public/admin-uploads/brand/logo.jpg"
+                   alt="CrunchyPlum" width="80" height="80"
+                   style="display:block;border-radius:12px;" />
             </td>
           </tr>
 
