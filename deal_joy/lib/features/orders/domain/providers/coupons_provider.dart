@@ -4,6 +4,7 @@ export 'coupons_repository_provider.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../shared/providers/supabase_provider.dart';
 import '../../../auth/domain/providers/auth_provider.dart';
 import '../../../chat/domain/providers/chat_provider.dart';
@@ -38,13 +39,17 @@ final userCouponsProvider = FutureProvider<List<CouponModel>>((ref) async {
 final couponsByStatusProvider =
     Provider.family<AsyncValue<List<CouponModel>>, String>((ref, status) {
   return ref.watch(userCouponsProvider).whenData((coupons) {
+    final myUid = Supabase.instance.client.auth.currentUser?.id;
     switch (status) {
       case 'unused':
-        // 排除：已过期、已退款（refundedAt 有值或 customerStatus 为退款相关）、无 order_item 的孤儿券
+        // 排除：已过期、已退款、无 order_item 的孤儿券
+        // 包含：受赠人持有的赠送券（customerStatus == 'gifted' 但 isHeldByUser 为 true）
         return coupons.where((c) =>
             c.status == 'unused' && !c.isExpired &&
             c.refundedAt == null && c.orderItemId != null &&
-            (c.customerStatus == null || c.customerStatus == 'unused')).toList();
+            ((c.customerStatus == null || c.customerStatus == 'unused') ||
+             (c.customerStatus == 'gifted' &&
+              myUid != null && c.isHeldByUser(myUid)))).toList();
       case 'used':
         // 只显示真正已使用且未退款的券（排除状态异常：used 但 customerStatus 为 refund_*）
         return coupons.where((c) =>
@@ -65,14 +70,10 @@ final couponsByStatusProvider =
         return coupons.where((c) =>
             c.status == 'refunded' && !c.isExpired).toList();
       case 'gifted':
-        // 赠送出去的券：order_items.customer_status == 'gifted'
-        // DEBUG: 打印所有券的 customerStatus 以排查过滤问题
-        for (final c in coupons) {
-          if (c.customerStatus != null && c.customerStatus != 'unused') {
-            debugPrint('[GiftedFilter] coupon=${c.id} status=${c.status} customerStatus=${c.customerStatus}');
-          }
-        }
-        return coupons.where((c) => c.customerStatus == 'gifted').toList();
+        // 赠送出去的券（当前持有人已是对方）：排除受赠人持有的券（它们已在 unused tab 显示）
+        return coupons.where((c) =>
+            c.customerStatus == 'gifted' &&
+            !(myUid != null && c.isHeldByUser(myUid))).toList();
       default:
         return coupons.where((c) => c.status == status).toList();
     }
