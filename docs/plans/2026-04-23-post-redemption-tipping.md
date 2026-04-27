@@ -8,7 +8,7 @@
 
 **Tech Stack:** Supabase（PostgreSQL + RLS + Storage）、Deno Edge Functions、Stripe（PaymentIntent、Customer、已保存支付方式）、Flutter（`deal_joy` 用户端、`dealjoy_merchant` 商家端）、Admin（仓库内 `admin/` Next 订单详情；`dealjoy-cc` 为文档/工具子项目无订单 UI 代码）。
 
-**文档版本:** v1.3  
+**文档版本:** v1.4  
 **创建日期:** 2026-04-23  
 **受众:** 产品、研发（DealJoy：Flutter 双端、Supabase Edge、可选 Admin）  
 **状态:** v1 已交付 — 全链路代码已合入；税务口径仍以法务为准  
@@ -25,6 +25,7 @@
 | v1.1 | 2026-04-23 | 对齐现网商家端 **V2.3 角色/权限**：`_shared/auth.ts`、`merchant-store` 下发、`StoreInfo` / `app_shell` Tab；明确小费能力按权限拆分；Sprint 与代码锚点增补                            |
 | v1.2 | 2026-04-23 | 增加 **§十 开发进度跟踪**、§五 Sprint 状态约定；**P0 开放问题**工程默认决议写入 §3.2 / §4.2 / §九；启动 P1–P7 代码实现                                                               |
 | v1.3 | 2026-04-23 | P1–P7 落地：`coupon_tips` 迁移与 RLS、Edge/Webhook、双端 Flutter、`admin` 订单小费展示、`user-order-detail`/`merchant-orders` 附加 `tip`、Deal 创建/编辑小费配置、curl 样例与测试修复 |
+| v1.4 | 2026-04-27 | 新增 **§十一**：向核销方/持券人已保存卡扣款的产品与技术路径（off-session / 用户端确认 SCA / 商家端 UI 调整）；与 Gift、`payer_user_id` 口径对齐 |
 
 
 ---
@@ -376,6 +377,67 @@
 
 
 *每完成一个阶段：更新本表「状态/完成日期」、递增文档版本、在「变更记录」追加一行。*
+
+---
+
+## 十一、v2 方向：向核销方 / 持券人「已保存支付方式」扣款（产品与实现要点）
+
+> **产品目标：** 商家端仅选金额 + 采集签名；**实际扣款用户 = 实际持券到店并被服务的一方**（与购买人可不同，如 Gift）。**不向**商家平板上重新输卡作为唯一路径。
+
+### 11.1 谁该被扣款（数据规则）
+
+| 场景 | 小费付款人（`payer_user_id` / Stripe Customer 来源） |
+| ---- | -------------------------------------------------- |
+| 普通购券自用后核销 | `coupons.user_id`（持券人 = 购买人） |
+| 赠券后由受赠人核销 | 新券行的 `coupons.user_id` 已为受赠人；若有并行字段则用 **`COALESCE(coupons.current_holder_user_id, coupons.user_id)`** 与 Gift / in-app 赠送口径对齐 |
+
+**Edge 侧必须在发起扣款前解析并写入 `coupon_tips.payer_user_id`**（勿沿用「谁在商家 App 点按钮」）。
+
+### 11.2 前置条件（不满足则降级）
+
+1. **`users.stripe_customer_id`** 已存在（下单绑卡流程已有，见迁移 `20260321000002_stripe_customer_id.sql`）。
+2. Stripe Customer 上存在 **可调度的支付方式**：常用做法是 **`invoice_settings.default_payment_method`**（用户端「默认卡」已与 `manage-payment-methods` 对齐）。
+3. **合规 / 协议：** 用户是否在下单或账户条款中同意「到店核销后可按商户提示金额扣小费」类授权 — **须产品/法务裁定**；Stripe **MIT / off_session** 规则与此相关。
+
+### 11.3 推荐技术路径（择一或组合）
+
+**路径 A — 服务端 Off-session 扣款（首选尝试）**
+
+1. `create-tip-payment-intent`（或拆分为 `charge-tip-off-session`）用 **service role**：
+   - 解析 `payer_user_id`；
+   - 读 `users.stripe_customer_id`，拉取默认 `payment_method`；
+   - `paymentIntents.create({ customer, payment_method, off_session: true, confirm: true, transfer_data: … })`（Connect 与现 PI 一致）。
+2. 若返回 **`authentication_required`** / `card_declined` 等：
+   - **降级路径 B** 或标记 `coupon_tips.status = requires_action`，勿静默失败。
+
+**路径 B — 用户端（deal_joy）确认（应对 SCA）**
+
+1. 商家端提交金额 + 签名后，后端创建 **`pending` PI**（或 PaymentIntent `requires_confirmation`），并向 **`payer_user_id`** 发 **推送 / 短信链接 / App 内 Deep link**。
+2. 用户打开 **deal_joy**，用 **同一 Stripe Customer** 走 **`presentPaymentSheet`** 或 **authenticatePaymentIntent** 完成 3DS。
+3. Webhook 照旧把 `coupon_tips` 置 `paid`。
+
+**路径 C — 混合**
+
+- 先试路径 A；失败自动切换路径 B（商家 UI 展示「已向顾客手机发送确认」）。
+
+### 11.4 商家端（dealjoy_merchant）改动摘要
+
+- **移除**「在本机 PaymentSheet 上让顾客输入卡号」作为主路径（当前 `collect_tip_page.dart`）。
+- 改为：**提交金额 + 签名** → 调用新/改版 Edge → 展示状态：**Processing / Sent to customer / Paid / Failed**。
+- 权限与路由不变（仍为商户发起）。
+
+### 11.5 用户端（deal_joy）改动摘要（若走路径 B/C）
+
+- 新增「待确认小费」入口：Deep link + **Stripe confirm**（或 PaymentSheet with `client_secret`）。
+- **可选**：列表展示「某门店向你收取 $x 小费」待确认项。
+
+### 11.6 风险（计划文档 §六已部分提及）
+
+| 风险 | 说明 |
+| ---- | ---- |
+| **SCA** | 欧盟卡 / 部分美国卡 off-session 常失败，路径 B 几乎是标配兜底 |
+| **无默认卡** | 须明确产品：**禁止扣款**并提示顾客在用户端绑卡，或临时允许路径「当面 PaymentSheet」作为后备 |
+| **Gift 误绑购买者** | 必须用 §11.1 解析 payer，严禁用工单的 `orders.user_id` 代替持券人 |
 
 ---
 
