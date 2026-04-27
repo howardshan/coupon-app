@@ -359,6 +359,7 @@ final appRouter = GoRouter(
                   redeemedAt: redeemedAt,
                   dealTitle: extra['deal_title'] as String,
                   couponId: extra['coupon_id'] as String,
+                  orderId: extra['order_id'] as String?,
                   redeemPayload: extra,
                 );
               },
@@ -375,6 +376,7 @@ final appRouter = GoRouter(
                     'deal': Map<String, dynamic>.from(x['deal'] as Map),
                     'tip_base_cents': x['tip_base_cents'],
                   }),
+                  orderIdForRefresh: x['order_id'] as String?,
                 );
               },
             ),

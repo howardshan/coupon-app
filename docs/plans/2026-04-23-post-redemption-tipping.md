@@ -145,7 +145,7 @@
 
 - Edge Function `create-tip-payment-intent`：入参 `coupon_id` + `amount_cents` 等 + **商户 JWT**（`resolveAuth` + `scan`）；校验 Deal 配置、券已 `used`、金额在允许范围；写入 `coupon_tips`（含 `**payer_user_id`**）后创建或确认 **独立** `PaymentIntent`，`metadata` 含 `coupon_id`, `order_item_id`, `tip_id`, `merchant_id`, `type=tip`。
 - **路径 C（已实现）：** 对 `payer_user_id` 对应 `users.stripe_customer_id` 拉取 `**invoice_settings.default_payment_method`**（非卡则 `paymentMethods.retrieve` 校验类型）；有默认卡时 `paymentIntents.create` 使用 `customer` + `payment_method` + `off_session: true` + `confirm: true` + `payment_method_types: ['card']`（与 automatic_payment_methods 互斥）；否则或与 off-session 失败降级时创建 **无 Customer** 的 PI（`automatic_payment_methods`），供商家平板 PaymentSheet。
-- 响应契约：`flow` ∈ `completed` | `processing` | `requires_customer_action` | `merchant_fallback`；`**requires_customer_action` 时响应体不得包含 `client_secret`**（防泄漏到商户端）；`client_secret` 仅由 `**confirm-tip-payment-session**`（用户 JWT + `payer_user_id` 校验）下发给 deal_joy。
+- 响应契约：`flow` ∈ `completed` | `processing` | `requires_customer_action` | `merchant_fallback`；`**requires_customer_action` 时响应体不得包含 `client_secret`**（防泄漏到商户端）；`client_secret` 仅由 `**confirm-tip-payment-session`**（用户 JWT + `payer_user_id` 校验）下发给 deal_joy。
 - **Connect**：小费 `transfer_data[destination]` 为**核销门店** `merchants.stripe_account_id`。**v1 已决议（P0）：** 平台**不**从小费抽成（`application_fee_amount = 0`）。
 - `stripe-webhook`：处理 `payment_intent.succeeded` / `failed`，更新 `coupon_tips.status`（幂等：`tip_id` 或 `pi.id`）；路径 C 成功后仍为 `metadata.type === 'tip'` 分支。
 
@@ -442,7 +442,7 @@
 
 ### 11.6 用户端（deal_joy）行为摘要（已实现）
 
-- 路由 `**/tips/confirm/:tipId**`；推送 `action=tip_confirm` + `tip_id` 打开该页（须已登录）。
+- 路由 `**/tips/confirm/:tipId`**；推送 `action=tip_confirm` + `tip_id` 打开该页（须已登录）。
 - **可选后续：** 订单/券列表内「待确认小费」聚合入口（当前未做）。
 
 ### 11.7 风险（残留）

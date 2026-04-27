@@ -407,7 +407,11 @@ async function handleRedeem(
     if (coupon.redeemed_at) {
       const secondsAgo = (Date.now() - new Date(coupon.redeemed_at).getTime()) / 1000;
       if (secondsAgo <= 10) {
-        return jsonResponse({ redeemed_at: coupon.redeemed_at, coupon_id: couponId });
+        return jsonResponse({
+          redeemed_at: coupon.redeemed_at,
+          coupon_id: couponId,
+          order_id: (coupon as { order_id?: string | null }).order_id ?? null,
+        });
       }
     }
     return errorResponse('already_used', 'This voucher has already been redeemed');
@@ -771,6 +775,7 @@ async function handleRedeem(
   return jsonResponse({
     redeemed_at: now,
     coupon_id: couponId,
+    order_id: (coupon as { order_id?: string | null }).order_id ?? null,
     tip_base_cents: tipBaseCents,
     deal: {
       tips_enabled: (dealTips as { tips_enabled?: boolean } | null)?.tips_enabled ?? false,
