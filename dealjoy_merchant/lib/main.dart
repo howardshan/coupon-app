@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'core/constants/stripe_merchant_config.dart';
 import 'router/app_router.dart';
 import 'features/dashboard/providers/dashboard_provider.dart';
 import 'features/orders/providers/orders_provider.dart';
@@ -50,11 +51,13 @@ Future<void> main() async {
     anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
   );
 
-  // 初始化 Stripe（商家端广告充值 PaymentSheet）
+  // 初始化 Stripe（广告充值 + Collect Tip PaymentSheet）
+  // Stripe.urlScheme 须与 ios/Runner/Info.plist、AndroidManifest 一致
   try {
     final stripeKey = dotenv.env['STRIPE_PUBLISHABLE_KEY'] ?? '';
     if (stripeKey.startsWith('pk_')) {
       Stripe.publishableKey = stripeKey;
+      Stripe.urlScheme = StripeMerchantConfig.urlScheme;
       await Stripe.instance.applySettings();
     }
   } catch (e) {
