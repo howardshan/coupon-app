@@ -306,6 +306,11 @@ class MerchantDeal {
     this.detailImages = const [],
     this.usageRules = const [],
     this.maxPerAccount = -1,
+    this.tipsEnabled = false,
+    this.tipsMode,
+    this.tipsPreset1,
+    this.tipsPreset2,
+    this.tipsPreset3,
   });
 
   /// Deal ID
@@ -413,6 +418,17 @@ class MerchantDeal {
 
   /// 每账户限购数量（-1=无限制，正数=具体上限）
   final int maxPerAccount;
+
+  /// 核销后是否可收小费
+  final bool tipsEnabled;
+
+  /// percent | fixed（tips_enabled 时有效）
+  final String? tipsMode;
+
+  /// 三档小费预设（含义取决于 tips_mode）
+  final double? tipsPreset1;
+  final double? tipsPreset2;
+  final double? tipsPreset3;
 
   /// 图片列表（含主图）
   final List<DealImage> images;
@@ -549,6 +565,11 @@ class MerchantDeal {
           .toList() ?? [],
       // 每账户限购，-1 表示无限制
       maxPerAccount:   json['max_per_account'] as int? ?? -1,
+      tipsEnabled:     json['tips_enabled'] as bool? ?? false,
+      tipsMode:        json['tips_mode'] as String?,
+      tipsPreset1:     (json['tips_preset_1'] as num?)?.toDouble(),
+      tipsPreset2:     (json['tips_preset_2'] as num?)?.toDouble(),
+      tipsPreset3:     (json['tips_preset_3'] as num?)?.toDouble(),
       images:          imagesSorted,
       createdAt:       json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
@@ -591,6 +612,11 @@ class MerchantDeal {
         'detail_images': detailImages,
         'usage_rules':   usageRules,
         'max_per_account': maxPerAccount,
+        'tips_enabled': tipsEnabled,
+        'tips_mode': tipsEnabled ? tipsMode : null,
+        'tips_preset_1': tipsEnabled ? tipsPreset1 : null,
+        'tips_preset_2': tipsEnabled ? tipsPreset2 : null,
+        'tips_preset_3': tipsEnabled ? tipsPreset3 : null,
       };
 
   /// 复制并修改部分字段
@@ -630,6 +656,11 @@ class MerchantDeal {
     List<String>? detailImages,
     List<String>? usageRules,
     int? maxPerAccount,
+    bool? tipsEnabled,
+    String? tipsMode,
+    double? tipsPreset1,
+    double? tipsPreset2,
+    double? tipsPreset3,
     List<DealImage>? images,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -670,6 +701,11 @@ class MerchantDeal {
       detailImages:    detailImages ?? this.detailImages,
       usageRules:      usageRules ?? this.usageRules,
       maxPerAccount:   maxPerAccount ?? this.maxPerAccount,
+      tipsEnabled:     tipsEnabled ?? this.tipsEnabled,
+      tipsMode:        tipsMode ?? this.tipsMode,
+      tipsPreset1:     tipsPreset1 ?? this.tipsPreset1,
+      tipsPreset2:     tipsPreset2 ?? this.tipsPreset2,
+      tipsPreset3:     tipsPreset3 ?? this.tipsPreset3,
       images:          images ?? this.images,
       createdAt:       createdAt ?? this.createdAt,
       updatedAt:       updatedAt ?? this.updatedAt,

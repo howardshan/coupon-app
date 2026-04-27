@@ -18,6 +18,8 @@ import '../features/scan/pages/scan_page.dart';
 import '../features/scan/pages/coupon_verify_page.dart';
 import '../features/scan/pages/redemption_success_page.dart';
 import '../features/scan/pages/redemption_history_page.dart';
+import '../features/tips/pages/collect_tip_page.dart';
+import '../features/tips/models/tip_models.dart';
 import '../features/scan/models/coupon_info.dart';
 import '../features/orders/pages/orders_list_page.dart';
 import '../features/orders/pages/order_detail_page.dart';
@@ -348,6 +350,21 @@ final appRouter = GoRouter(
                   redeemedAt: redeemedAt,
                   dealTitle: extra['deal_title'] as String,
                   couponId: extra['coupon_id'] as String,
+                  redeemPayload: extra,
+                );
+              },
+            ),
+            GoRoute(
+              path: 'collect-tip',
+              builder: (context, state) {
+                final x = state.extra as Map<String, dynamic>;
+                return CollectTipPage(
+                  couponId: x['coupon_id'] as String,
+                  dealTitle: x['deal_title'] as String,
+                  tip: TipDealConfig.fromRedeemPayload({
+                    'deal': Map<String, dynamic>.from(x['deal'] as Map),
+                    'tip_base_cents': x['tip_base_cents'],
+                  }),
                 );
               },
             ),

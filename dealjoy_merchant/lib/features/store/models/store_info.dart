@@ -418,6 +418,9 @@ class StoreInfo {
   /// 是否可以扫码核销
   bool get canScan => hasPermission('scan');
 
+  /// 是否可在柜台发起收小费（v1 与 scan 权限一致）
+  bool get canCollectTips => hasPermission('scan');
+
   /// 是否可以查看订单
   bool get canViewOrders => hasPermission('orders');
 

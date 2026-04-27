@@ -44,6 +44,6 @@ export function buildC10Email(data: C10AfterSalesApprovedData): { subject: strin
 
   return {
     subject,
-    html: wrapInLayout({ subject, body, cta: { label: "View My Orders", url: "crunchyplum://orders" } }),
+    html: wrapInLayout({ subject, body }),
   };
 }

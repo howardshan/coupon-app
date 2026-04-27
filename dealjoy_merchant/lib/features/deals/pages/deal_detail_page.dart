@@ -310,6 +310,49 @@ class _DealDetailView extends StatelessWidget {
             ),
             const SizedBox(height: 12),
 
+            // 核销后可选小费（与编辑页配置一致，便于商家核对）
+            _InfoCard(
+              title: 'Post-Redemption Tips',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (!deal.tipsEnabled)
+                    const Text(
+                      'Optional tips after redemption are turned off for this deal.',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Color(0xFF555555),
+                        height: 1.5,
+                      ),
+                    )
+                  else ...[
+                    _DetailRow(
+                      icon: Icons.volunteer_activism_outlined,
+                      label: 'Status',
+                      value: 'Enabled',
+                    ),
+                    const SizedBox(height: 10),
+                    _DetailRow(
+                      icon: deal.tipsMode == 'fixed'
+                          ? Icons.attach_money
+                          : Icons.percent_outlined,
+                      label: 'Mode',
+                      value: deal.tipsMode == 'fixed'
+                          ? 'Fixed amount (USD)'
+                          : 'Percent of purchase',
+                    ),
+                    const SizedBox(height: 10),
+                    _DetailRow(
+                      icon: Icons.tune_outlined,
+                      label: 'Presets',
+                      value: _merchantDealTipsPresetsDisplay(deal),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+
             // 套餐内容卡片
             if (deal.packageContents.isNotEmpty) ...[
               _InfoCard(
@@ -599,72 +642,107 @@ class _StatusBanner extends StatelessWidget {
 
 // ============================================================
 // 图片画廊（横向滚动）
+// 单张图：不能用横向 ListView + width: infinity（子项在水平方向为无界约束，会画不出来）
+// 多张图：固定宽度 tile 横向滚动
 // ============================================================
 class _ImageGallery extends StatelessWidget {
   const _ImageGallery({required this.images});
 
   final List<DealImage> images;
+  static const double _rowHeight = 200;
+  static const double _tileWidth = 220;
 
   @override
   Widget build(BuildContext context) {
+    if (images.length == 1) {
+      // 在 Column 内有界宽度，可用全宽
+      return _galleryTile(
+        image: images.first,
+        useFullWidth: true,
+      );
+    }
     return SizedBox(
-      height: 200,
+      height: _rowHeight,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: images.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 8),
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
         itemBuilder: (context, index) {
-          final image = images[index];
-          return ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: Stack(
-              children: [
-                CachedNetworkImage(
-                  imageUrl: image.imageUrl,
-                  width: images.length == 1 ? double.infinity : 220,
-                  height: 200,
-                  fit: BoxFit.cover,
-                  placeholder: (_, _) => Container(
-                    color: const Color(0xFFEEEEEE),
-                    width: 220,
-                    height: 200,
-                  ),
-                  errorWidget: (_, _, _) => Container(
-                    color: const Color(0xFFEEEEEE),
-                    width: 220,
-                    height: 200,
-                    child: const Icon(Icons.broken_image_outlined,
-                        color: Color(0xFFCCCCCC)),
-                  ),
-                ),
-                // Cover 标签
-                if (image.isPrimary)
-                  Positioned(
-                    left: 8,
-                    bottom: 8,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFF6B35),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: const Text(
-                        'Cover',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
+          return _galleryTile(
+            image: images[index],
+            useFullWidth: false,
           );
         },
+      ),
+    );
+  }
+
+  Widget _galleryTile({
+    required DealImage image,
+    required bool useFullWidth,
+  }) {
+    final tileW = useFullWidth ? double.infinity : _tileWidth;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: Stack(
+        children: [
+          SizedBox(
+            width: useFullWidth ? double.infinity : _tileWidth,
+            height: _rowHeight,
+            child: CachedNetworkImage(
+              imageUrl: image.imageUrl,
+              width: tileW,
+              height: _rowHeight,
+              fit: BoxFit.cover,
+              placeholder: (_, __) => Container(
+                color: const Color(0xFFEEEEEE),
+                width: tileW,
+                height: _rowHeight,
+              ),
+              errorWidget: (_, __, ___) => Container(
+                color: const Color(0xFFEEEEEE),
+                width: tileW,
+                height: _rowHeight,
+                child: const Icon(
+                  Icons.broken_image_outlined,
+                  color: Color(0xFFCCCCCC),
+                ),
+              ),
+            ),
+          ),
+          if (image.isPrimary) _coverBadge(),
+        ],
+      ),
+    );
+  }
+
+  Widget _coverBadge() {
+    return const Positioned(
+      left: 8,
+      bottom: 8,
+      child: _CoverLabel(),
+    );
+  }
+}
+
+class _CoverLabel extends StatelessWidget {
+  const _CoverLabel();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFF6B35),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: const Text(
+        'Cover',
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }
@@ -1009,7 +1087,7 @@ class _ActionButtonsState extends State<_ActionButtons> {
           .deleteDeal(widget.deal.id);
 
       if (!mounted) return;
-      context.pop(); // 删除成功后返回列表
+      context.pop(true); // 列表页据此展示删除成功提示
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1436,4 +1514,23 @@ class _FullScreenImageViewer extends StatelessWidget {
       ),
     );
   }
+}
+
+// ── 小费预设展示（与 deal_edit_page 数字格式对齐）────────────────
+String _formatMerchantTipPresetForDisplay(double? v) {
+  if (v == null) return '';
+  if (v % 1 == 0) return v.toInt().toString();
+  return v.toString();
+}
+
+String _merchantDealTipsPresetsDisplay(MerchantDeal deal) {
+  final values = <double>[
+    for (final p in [deal.tipsPreset1, deal.tipsPreset2, deal.tipsPreset3])
+      if (p != null) p,
+  ];
+  if (values.isEmpty) return '—';
+  if (deal.tipsMode == 'fixed') {
+    return values.map((v) => '\$${v.toStringAsFixed(2)}').join(', ');
+  }
+  return values.map((v) => '${_formatMerchantTipPresetForDisplay(v)}%').join(', ');
 }

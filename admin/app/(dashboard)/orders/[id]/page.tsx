@@ -410,6 +410,45 @@ export default async function OrderDetailPage({
     .eq('order_id', id)
     .order('created_at', { ascending: true })
 
+  type PaidTipRow = {
+    amount_cents: number
+    currency: string
+    paid_at: string | null
+    signature_storage_path: string | null
+    stripe_payment_intent_id: string | null
+  }
+  const tipByCouponId: Record<string, PaidTipRow> = {}
+  const couponIdsForTips: string[] = []
+  if (hasV3Items && orderItems) {
+    for (const item of orderItems) {
+      const c = Array.isArray(item.coupons) ? item.coupons[0] : item.coupons
+      if (c?.id) couponIdsForTips.push(String(c.id))
+    }
+  } else if (!hasV3Items && v2Coupons.length > 0) {
+    for (const c of v2Coupons) {
+      if (c?.id) couponIdsForTips.push(String(c.id))
+    }
+  }
+  if (couponIdsForTips.length > 0) {
+    const { data: tipRows } = await serviceClient
+      .from('coupon_tips')
+      .select('coupon_id, amount_cents, currency, paid_at, signature_storage_path, stripe_payment_intent_id')
+      .in('coupon_id', couponIdsForTips)
+      .eq('status', 'paid')
+    for (const row of tipRows ?? []) {
+      const cid = String((row as { coupon_id: string }).coupon_id)
+      tipByCouponId[cid] = {
+        amount_cents: Number((row as { amount_cents?: number }).amount_cents ?? 0),
+        currency: String((row as { currency?: string }).currency ?? 'usd'),
+        paid_at: ((row as { paid_at?: string | null }).paid_at as string | null) ?? null,
+        signature_storage_path:
+          ((row as { signature_storage_path?: string | null }).signature_storage_path as string | null) ?? null,
+        stripe_payment_intent_id:
+          ((row as { stripe_payment_intent_id?: string | null }).stripe_payment_intent_id as string | null) ?? null,
+      }
+    }
+  }
+
   const refundTimelineInputs: RefundDisputeTimelineInput[] = (refundRequestRows ?? []).map((r: Record<string, unknown>) => {
     const rawMeta = r.metadata
     const metadata =
@@ -667,6 +706,27 @@ export default async function OrderDetailPage({
                             </div>
                           </div>
 
+                          {coupon?.id && tipByCouponId[String(coupon.id)] ? (
+                            <div className="mt-2 text-xs text-emerald-800">
+                              <span className="font-medium">Tip (paid):</span>{' '}
+                              ${(tipByCouponId[String(coupon.id)].amount_cents / 100).toFixed(2)}{' '}
+                              · {tipByCouponId[String(coupon.id)].currency.toUpperCase()}
+                              {tipByCouponId[String(coupon.id)].paid_at ? (
+                                <> · paid {new Date(tipByCouponId[String(coupon.id)].paid_at!).toLocaleString()}</>
+                              ) : null}
+                              {tipByCouponId[String(coupon.id)].stripe_payment_intent_id ? (
+                                <span className="block text-gray-500 mt-0.5 font-mono text-[11px]">
+                                  PI …{tipByCouponId[String(coupon.id)].stripe_payment_intent_id!.slice(-10)}
+                                </span>
+                              ) : null}
+                              {tipByCouponId[String(coupon.id)].signature_storage_path ? (
+                                <span className="block text-gray-500 mt-0.5">
+                                  Signature on file (private storage; no public URL).
+                                </span>
+                              ) : null}
+                            </div>
+                          ) : null}
+
                           {/* 已核销 (Redeemed) */}
                           {item.customer_status === 'used' && (
                             <div className="mt-2 pt-2 border-t border-gray-200 text-xs space-y-1">
@@ -918,6 +978,27 @@ export default async function OrderDetailPage({
                               )}
                             </div>
                           </div>
+
+                          {c?.id && tipByCouponId[String(c.id)] ? (
+                            <div className="mt-2 text-xs text-emerald-800">
+                              <span className="font-medium">Tip (paid):</span>{' '}
+                              ${(tipByCouponId[String(c.id)].amount_cents / 100).toFixed(2)}{' '}
+                              · {tipByCouponId[String(c.id)].currency.toUpperCase()}
+                              {tipByCouponId[String(c.id)].paid_at ? (
+                                <> · paid {new Date(tipByCouponId[String(c.id)].paid_at!).toLocaleString()}</>
+                              ) : null}
+                              {tipByCouponId[String(c.id)].stripe_payment_intent_id ? (
+                                <span className="block text-gray-500 mt-0.5 font-mono text-[11px]">
+                                  PI …{tipByCouponId[String(c.id)].stripe_payment_intent_id!.slice(-10)}
+                                </span>
+                              ) : null}
+                              {tipByCouponId[String(c.id)].signature_storage_path ? (
+                                <span className="block text-gray-500 mt-0.5">
+                                  Signature on file (private storage; no public URL).
+                                </span>
+                              ) : null}
+                            </div>
+                          ) : null}
 
                           {/* 已核销 */}
                           {couponStatus === 'used' && (

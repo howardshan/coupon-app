@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import '../../store/providers/store_provider.dart';
 import '../models/merchant_deal.dart';
 import '../models/deal_category.dart';
+import '../open_merchant_deal_detail.dart';
 import '../providers/deals_provider.dart';
 import '../widgets/deal_card.dart';
 
@@ -196,7 +197,9 @@ class _DealTabView extends ConsumerWidget {
                   key: ValueKey(deal.id),
                   index: index,
                   deal: deal,
-                  onTap: () => context.push('/deals/${deal.id}'),
+                  onTap: () {
+                    openMerchantDealDetail(context, deal.id);
+                  },
                 );
               },
             ),
@@ -215,7 +218,9 @@ class _DealTabView extends ConsumerWidget {
               final deal = filtered[index];
               return DealCard(
                 deal: deal,
-                onTap: () => context.push('/deals/${deal.id}'),
+                onTap: () {
+                  openMerchantDealDetail(context, deal.id);
+                },
               );
             },
           ),

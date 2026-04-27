@@ -303,6 +303,11 @@ async function handleGetDeals(
     deal_type,
     deal_category_id,
     badge_text,
+    tips_enabled,
+    tips_mode,
+    tips_preset_1,
+    tips_preset_2,
+    tips_preset_3,
     deal_images (
       id,
       image_url,
@@ -380,6 +385,35 @@ async function handleGetDeals(
   return jsonResponse({ deals: allDeals });
 }
 
+// tips_* 校验（启用时要求 mode + 合理 preset）
+function validateTipsPayload(row: Record<string, unknown>): string | null {
+  const enabled = Boolean(row["tips_enabled"]);
+  if (!enabled) return null;
+  const mode = String(row["tips_mode"] ?? "");
+  if (mode !== "percent" && mode !== "fixed") {
+    return "tips_mode must be percent or fixed when tips_enabled";
+  }
+  const presets = [1, 2, 3].map((i) =>
+    row[`tips_preset_${i}`] !== undefined && row[`tips_preset_${i}`] !== null
+      ? Number(row[`tips_preset_${i}`])
+      : null
+  );
+  if (mode === "percent") {
+    for (const p of presets) {
+      if (p != null && (Number.isNaN(p) || p < 0 || p > 100)) {
+        return "percent tips_preset must be between 0 and 100";
+      }
+    }
+  } else {
+    for (const p of presets) {
+      if (p != null && (Number.isNaN(p) || p < 0)) {
+        return "fixed tips_preset must be non-negative";
+      }
+    }
+  }
+  return null;
+}
+
 // =============================================================
 // POST /merchant-deals
 // 创建新 deal，状态默认 pending（需平台审核）
@@ -409,6 +443,16 @@ async function handleCreateDeal(
     return errorResponse("Prices must be greater than 0", 400);
   }
 
+  const tipsRow: Record<string, unknown> = {
+    tips_enabled: body.tips_enabled !== undefined ? Boolean(body.tips_enabled) : false,
+    tips_mode: body.tips_mode,
+    tips_preset_1: body.tips_preset_1,
+    tips_preset_2: body.tips_preset_2,
+    tips_preset_3: body.tips_preset_3,
+  };
+  const tipErr = validateTipsPayload(tipsRow);
+  if (tipErr) return errorResponse(tipErr, 400);
+
   // 校验库存
   const stockLimit = body.stock_limit !== undefined ? Number(body.stock_limit) : 100;
   if (stockLimit !== -1 && stockLimit < 1) {
@@ -424,7 +468,7 @@ async function handleCreateDeal(
   }
 
   // 查询商家时区（用于 fixed_date 过期时间转换）
-  const { data: tzData } = await supabaseAdmin
+  const { data: tzData } = await admin
     .from("merchants")
     .select("timezone")
     .eq("id", merchantId)
@@ -442,7 +486,7 @@ async function handleCreateDeal(
     const rawDate = String(body.expires_at).substring(0, 10); // 取纯日期 YYYY-MM-DD
     const endOfDayLocal = `${rawDate} 23:59:59`;
     // 用 PostgreSQL AT TIME ZONE 做精确转换（自动处理 DST）
-    const { data: tzResult } = await supabaseAdmin.rpc("convert_local_to_utc", {
+    const { data: tzResult } = await admin.rpc("convert_local_to_utc", {
       p_local_timestamp: endOfDayLocal,
       p_timezone: merchantTimezone,
     });
@@ -490,6 +534,19 @@ async function handleCreateDeal(
     // 使用规则列表（text[]）和每账户限购数量
     usage_rules:      (body.usage_rules as string[]) ?? [],
     max_per_account:  body.max_per_account !== undefined ? Number(body.max_per_account) : -1,
+    tips_enabled: tipsRow.tips_enabled as boolean,
+    tips_mode: tipsRow.tips_enabled
+      ? (String(body.tips_mode ?? "percent") as string)
+      : null,
+    tips_preset_1: tipsRow.tips_enabled && body.tips_preset_1 !== undefined
+      ? Number(body.tips_preset_1)
+      : null,
+    tips_preset_2: tipsRow.tips_enabled && body.tips_preset_2 !== undefined
+      ? Number(body.tips_preset_2)
+      : null,
+    tips_preset_3: tipsRow.tips_enabled && body.tips_preset_3 !== undefined
+      ? Number(body.tips_preset_3)
+      : null,
     deal_category_id: body.deal_category_id ?? null,
     deal_type:        body.deal_type ? String(body.deal_type) : "regular",
     badge_text:       body.badge_text ? String(body.badge_text) : null,
@@ -546,6 +603,17 @@ async function handleUpdateDeal(
     return errorResponse("Access denied: not your deal", 403);
   }
 
+  const mergedForTips: Record<string, unknown> = { ...existing };
+  for (
+    const k of ["tips_enabled", "tips_mode", "tips_preset_1", "tips_preset_2", "tips_preset_3"] as const
+  ) {
+    if (body[k] !== undefined) mergedForTips[k] = body[k];
+  }
+  const tipsValidateErr = validateTipsPayload(mergedForTips);
+  if (tipsValidateErr) {
+    return errorResponse(tipsValidateErr, 400);
+  }
+
   // pending / active 均可编辑；实质修改走克隆，旧版 Deal 留档
 
   // 价格校验
@@ -566,6 +634,7 @@ async function handleUpdateDeal(
     "applicable_merchant_ids", "detail_images",
     // 使用规则和每账户限购
     "usage_rules", "max_per_account",
+    "tips_enabled", "tips_mode", "tips_preset_1", "tips_preset_2", "tips_preset_3",
   ];
 
   // sort_order 或 short_name 变更：原地更新，不克隆不重审
@@ -613,6 +682,7 @@ async function handleUpdateDeal(
     "applicable_merchant_ids", "store_confirmations",
     "lat", "lng", "address", "expires_at", "sort_order", "short_name",
     "detail_images", "usage_rules", "max_per_account",
+    "tips_enabled", "tips_mode", "tips_preset_1", "tips_preset_2", "tips_preset_3",
   ];
 
   const newDealData: Record<string, unknown> = {
@@ -932,6 +1002,20 @@ async function handleDeleteDeal(
     return errorResponse(
       "Only inactive deals can be deleted. Please deactivate first.",
       400
+    );
+  }
+
+  // 删除前清理 user_events，避免外键 user_events_deal_id_fkey 阻止删除 deals
+  const { error: userEventsError } = await admin
+    .from("user_events")
+    .delete()
+    .eq("deal_id", dealId);
+
+  if (userEventsError) {
+    console.error("[handleDeleteDeal] user_events delete failed:", userEventsError);
+    return errorResponse(
+      `Failed to clear related analytics: ${userEventsError.message}`,
+      500,
     );
   }
 

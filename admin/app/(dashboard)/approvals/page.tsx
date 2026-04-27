@@ -56,6 +56,11 @@ export type DealItem = {
   validityDays: number | null
   maxPerPerson: number | null
   isStackable: boolean
+  tipsEnabled: boolean
+  tipsMode: string | null
+  tipsPreset1: number | null
+  tipsPreset2: number | null
+  tipsPreset3: number | null
   dealImages: { imageUrl: string; isPrimary: boolean }[]
 }
 
@@ -208,6 +213,7 @@ async function fetchDeals(
        deal_status, is_active,
        dishes, package_contents, usage_notes, usage_days,
        validity_type, validity_days, max_per_person, is_stackable,
+       tips_enabled, tips_mode, tips_preset_1, tips_preset_2, tips_preset_3,
        merchants(name, address),
        deal_images(image_url, is_primary)`,
       { count: 'exact' },
@@ -248,6 +254,11 @@ async function fetchDeals(
     validityDays: r.validity_days,
     maxPerPerson: r.max_per_person,
     isStackable: r.is_stackable ?? false,
+    tipsEnabled: Boolean(r.tips_enabled),
+    tipsMode: (r.tips_mode as string | null) ?? null,
+    tipsPreset1: r.tips_preset_1 != null ? Number(r.tips_preset_1) : null,
+    tipsPreset2: r.tips_preset_2 != null ? Number(r.tips_preset_2) : null,
+    tipsPreset3: r.tips_preset_3 != null ? Number(r.tips_preset_3) : null,
     dealImages: (r.deal_images ?? []).map((img: any) => ({
       imageUrl: img.image_url,
       isPrimary: img.is_primary,
@@ -488,6 +499,7 @@ async function fetchUnifiedAllTab(
              deal_status, is_active,
              dishes, package_contents, usage_notes, usage_days,
              validity_type, validity_days, max_per_person, is_stackable,
+             tips_enabled, tips_mode, tips_preset_1, tips_preset_2, tips_preset_3,
              merchants(name, address),
              deal_images(image_url, is_primary)`
           )
@@ -564,6 +576,11 @@ async function fetchUnifiedAllTab(
       validityDays: (r.validity_days as number | null) ?? null,
       maxPerPerson: (r.max_per_person as number | null) ?? null,
       isStackable: Boolean(r.is_stackable),
+      tipsEnabled: Boolean(r.tips_enabled),
+      tipsMode: (r.tips_mode as string | null) ?? null,
+      tipsPreset1: r.tips_preset_1 != null ? Number(r.tips_preset_1) : null,
+      tipsPreset2: r.tips_preset_2 != null ? Number(r.tips_preset_2) : null,
+      tipsPreset3: r.tips_preset_3 != null ? Number(r.tips_preset_3) : null,
       dealImages: ((r.deal_images as { image_url: string; is_primary: boolean }[]) ?? []).map((img) => ({
         imageUrl: img.image_url,
         isPrimary: img.is_primary,

@@ -1926,6 +1926,16 @@ class _PurchaseNotes extends StatelessWidget {
             label: 'Refund',
             value: deal.refundPolicy,
           ),
+          if (deal.tipsEnabled) ...[
+            const SizedBox(height: 12),
+            const _NoteRow(
+              icon: Icons.volunteer_activism_outlined,
+              label: 'Tipping',
+              value:
+                  'After you redeem, you may be asked to add an optional tip in the app. '
+                  'Tips are separate from the deal price and are not included in the amount you pay at checkout for this deal.',
+            ),
+          ],
           const SizedBox(height: 12),
           // 使用规则（从 DB 读取，按条目展示）
           ...deal.usageRules.asMap().entries.map((entry) {

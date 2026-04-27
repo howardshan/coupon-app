@@ -10,7 +10,7 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { resolveAuth, requirePermission } from "../_shared/auth.ts";
+import { type AuthResult, resolveAuth, requirePermission } from "../_shared/auth.ts";
 import { sendEmail } from '../_shared/email.ts';
 import { buildC3Email } from '../_shared/email-templates/customer/coupon-redeemed.ts';
 import { buildM7Email } from '../_shared/email-templates/merchant/coupon-redeemed.ts';
@@ -190,7 +190,7 @@ serve(async (req: Request) => {
   }
 
   if (req.method === 'POST' && pathname.endsWith('/redeem')) {
-    return handleRedeem(req, supabaseAdmin, merchantId, user.id);
+    return handleRedeem(req, supabaseAdmin, merchantId, user.id, auth);
   }
 
   if (req.method === 'POST' && pathname.endsWith('/revert')) {
@@ -356,6 +356,7 @@ async function handleRedeem(
   supabase: ReturnType<typeof createClient>,
   merchantId: string,
   actorUserId: string,
+  auth: AuthResult,
 ) {
   let body: { coupon_id?: string };
   try {
@@ -367,6 +368,15 @@ async function handleRedeem(
   const couponId = body.coupon_id?.trim();
   if (!couponId) {
     return errorResponse('invalid_request', 'coupon_id is required');
+  }
+
+  if (auth.role === 'trainee') {
+    return errorResponse(
+      'forbidden',
+      'Trainee accounts cannot redeem vouchers',
+      undefined,
+      403,
+    );
   }
 
   // 查询券的当前状态，JOIN order_items 获取门店快照
@@ -738,7 +748,38 @@ async function handleRedeem(
     console.error('merchant-scan redeem: email error:', emailErr);
   }
 
-  return jsonResponse({ redeemed_at: now, coupon_id: couponId });
+  const { data: dealTips } = await supabase
+    .from('deals')
+    .select('tips_enabled, tips_mode, tips_preset_1, tips_preset_2, tips_preset_3, discount_price')
+    .eq('id', coupon.deal_id)
+    .maybeSingle();
+
+  let tipBaseCents = 0;
+  if (coupon.order_item_id) {
+    const { data: oiRow } = await supabase
+      .from('order_items')
+      .select('unit_price')
+      .eq('id', coupon.order_item_id)
+      .maybeSingle();
+    tipBaseCents = Math.round(Number((oiRow as { unit_price?: number } | null)?.unit_price ?? 0) * 100);
+  }
+  if (tipBaseCents <= 0) {
+    const dp = Number((dealTips as { discount_price?: number } | null)?.discount_price ?? 0);
+    tipBaseCents = Math.round(dp * 100);
+  }
+
+  return jsonResponse({
+    redeemed_at: now,
+    coupon_id: couponId,
+    tip_base_cents: tipBaseCents,
+    deal: {
+      tips_enabled: (dealTips as { tips_enabled?: boolean } | null)?.tips_enabled ?? false,
+      tips_mode: (dealTips as { tips_mode?: string | null } | null)?.tips_mode ?? null,
+      tips_preset_1: (dealTips as { tips_preset_1?: number | null } | null)?.tips_preset_1 ?? null,
+      tips_preset_2: (dealTips as { tips_preset_2?: number | null } | null)?.tips_preset_2 ?? null,
+      tips_preset_3: (dealTips as { tips_preset_3?: number | null } | null)?.tips_preset_3 ?? null,
+    },
+  });
 }
 
 // =============================================================

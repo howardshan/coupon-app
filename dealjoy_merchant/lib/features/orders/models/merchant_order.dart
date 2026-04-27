@@ -365,6 +365,24 @@ class MerchantOrderItem {
   /// 赠礼 / 收回事件（与退款块类似的多段展示）
   final List<MerchantGiftEvent> giftEvents;
 
+  /// 已支付小费金额（USD，来自 merchant-orders `tip.amount_cents`）
+  final double? tipAmountUsd;
+
+  /// 小费支付时间
+  final DateTime? tipPaidAt;
+
+  /// 券 ID（用于补开收小费页）
+  final String? couponId;
+
+  /// 订单详情接口：是否仍可发起「核销后小费」收款
+  final bool canCollectTip;
+
+  /// 与 merchant-scan redeem 一致的百分比/固定金额计算基数（分）
+  final int collectTipBaseCents;
+
+  /// `TipDealConfig.fromRedeemPayload` 所需的 deal 子对象（仅 canCollectTip 时非空）
+  final Map<String, dynamic>? collectTipDealJson;
+
   const MerchantOrderItem({
     required this.orderItemId,
     required this.orderId,
@@ -390,6 +408,12 @@ class MerchantOrderItem {
     this.stripeFee = 0.0,
     this.netAmount = 0.0,
     this.giftEvents = const [],
+    this.tipAmountUsd,
+    this.tipPaidAt,
+    this.couponId,
+    this.canCollectTip = false,
+    this.collectTipBaseCents = 0,
+    this.collectTipDealJson,
   });
 
   /// 从 Edge Function 返回的 JSON 构造（null-safe）
@@ -400,6 +424,24 @@ class MerchantOrderItem {
         : ge
             .map((e) => MerchantGiftEvent.fromJson(e as Map<String, dynamic>))
             .toList();
+
+    final tipObj = json['tip'] as Map<String, dynamic>?;
+    double? tipUsd;
+    DateTime? tipPaid;
+    if (tipObj != null && tipObj['amount_cents'] != null) {
+      tipUsd = (tipObj['amount_cents'] as num).toDouble() / 100.0;
+    }
+    if (tipObj != null && tipObj['paid_at'] != null) {
+      tipPaid = DateTime.tryParse(tipObj['paid_at'] as String);
+    }
+
+    final collectDealRaw = json['collect_tip_deal'];
+    Map<String, dynamic>? collectDealJson;
+    if (collectDealRaw is Map<String, dynamic>) {
+      collectDealJson = Map<String, dynamic>.from(collectDealRaw);
+    } else if (collectDealRaw is Map) {
+      collectDealJson = Map<String, dynamic>.from(collectDealRaw);
+    }
 
     return MerchantOrderItem(
       orderItemId: json['order_item_id'] as String? ?? json['id'] as String? ?? '',
@@ -432,6 +474,12 @@ class MerchantOrderItem {
       stripeFee: (json['stripe_fee'] as num?)?.toDouble() ?? 0.0,
       netAmount: (json['net_amount'] as num?)?.toDouble() ?? 0.0,
       giftEvents: giftEvents,
+      tipAmountUsd: tipUsd,
+      tipPaidAt: tipPaid,
+      couponId: json['coupon_id'] as String?,
+      canCollectTip: json['can_collect_tip'] as bool? ?? false,
+      collectTipBaseCents: (json['collect_tip_base_cents'] as num?)?.toInt() ?? 0,
+      collectTipDealJson: collectDealJson,
     );
   }
 

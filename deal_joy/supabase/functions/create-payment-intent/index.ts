@@ -1,5 +1,6 @@
-import Stripe from 'https://esm.sh/stripe@14?target=deno';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2?target=deno';
+import Stripe from "npm:stripe@14.25.0";
+// 勿用 ?target=deno：见 create-tip-payment-intent / merchant-withdrawal 说明
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // ============================================================
 // V3: 多 deal 购物车直接 charge（automatic capture）

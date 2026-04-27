@@ -61,6 +61,13 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
   // 每账户限购输入框
   late final TextEditingController _maxPerAccountController;
 
+  // 核销后小费（可选）
+  bool _tipsEnabled = false;
+  String _tipsMode = 'percent';
+  late final TextEditingController _tipsP1Controller;
+  late final TextEditingController _tipsP2Controller;
+  late final TextEditingController _tipsP3Controller;
+
   // 多店适用（仅连锁店显示）
   bool _isMultiStore = false;
   final Set<String> _selectedStoreIds = {};
@@ -98,6 +105,21 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
           return '• ${s.quantity}× ${s.menuItem.name} @$price';
         })
         .join('\n');
+  }
+
+  /// 与 package 一致：未重选菜品时保留原 dishes，避免 toJson 发 [] 覆盖克隆行
+  List<String> get _dishesPayload {
+    if (_selectedMenuItems.isEmpty) {
+      return List<String>.from(widget.deal.dishes);
+    }
+    return _selectedMenuItems
+        .map((s) {
+          final name = s.menuItem.name;
+          final qty = s.quantity;
+          final subtotal = ((s.menuItem.price ?? 0) * qty).toStringAsFixed(0);
+          return '$name::$qty::$subtotal';
+        })
+        .toList();
   }
 
   @override
@@ -144,6 +166,17 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
     _optionGroups = List.of(deal.optionGroups);
     // 使用规则回填
     _usageRules = List.of(deal.usageRules);
+    _tipsEnabled = deal.tipsEnabled;
+    _tipsMode = deal.tipsMode ?? 'percent';
+    _tipsP1Controller = TextEditingController(
+      text: _fmtTipPreset(deal.tipsPreset1),
+    );
+    _tipsP2Controller = TextEditingController(
+      text: _fmtTipPreset(deal.tipsPreset2),
+    );
+    _tipsP3Controller = TextEditingController(
+      text: _fmtTipPreset(deal.tipsPreset3),
+    );
     // 使用须知附图回填
     _existingUsageNoteImageUrls = List.of(deal.usageNoteImages);
     // 竖版详情图回填
@@ -161,7 +194,16 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
     _validityDaysController.dispose();
     _maxPerPersonController.dispose();
     _maxPerAccountController.dispose();
+    _tipsP1Controller.dispose();
+    _tipsP2Controller.dispose();
+    _tipsP3Controller.dispose();
     super.dispose();
+  }
+
+  String _fmtTipPreset(double? v) {
+    if (v == null) return '';
+    if (v % 1 == 0) return v.toInt().toString();
+    return v.toString();
   }
 
   // --------------------------------------------------------
@@ -183,6 +225,19 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
     if (_packageContentsText != (old.packageContents ?? '')) return false;
     if (_validityType != old.validityType) return false;
     if (_isStackable != old.isStackable) return false;
+    if (_tipsEnabled != old.tipsEnabled) return false;
+    if (_tipsEnabled) {
+      if (_tipsMode != (old.tipsMode ?? 'percent')) return false;
+      if (_tipsP1Controller.text.trim() != _fmtTipPreset(old.tipsPreset1)) {
+        return false;
+      }
+      if (_tipsP2Controller.text.trim() != _fmtTipPreset(old.tipsPreset2)) {
+        return false;
+      }
+      if (_tipsP3Controller.text.trim() != _fmtTipPreset(old.tipsPreset3)) {
+        return false;
+      }
+    }
     if (_newImages.isNotEmpty) return false; // 有新图片
     return true;
   }
@@ -317,21 +372,33 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
         maxPerAccount: _maxPerAccountController.text.isNotEmpty
             ? (int.tryParse(_maxPerAccountController.text) ?? -1)
             : -1,
+        tipsEnabled: _tipsEnabled,
+        tipsMode: _tipsEnabled ? _tipsMode : null,
+        tipsPreset1: _tipsEnabled && _tipsP1Controller.text.trim().isNotEmpty
+            ? double.tryParse(_tipsP1Controller.text.trim())
+            : null,
+        tipsPreset2: _tipsEnabled && _tipsP2Controller.text.trim().isNotEmpty
+            ? double.tryParse(_tipsP2Controller.text.trim())
+            : null,
+        tipsPreset3: _tipsEnabled && _tipsP3Controller.text.trim().isNotEmpty
+            ? double.tryParse(_tipsP3Controller.text.trim())
+            : null,
+        dishes: _dishesPayload,
         images: widget.deal.images,
         createdAt: widget.deal.createdAt,
         updatedAt: DateTime.now(),
       );
 
-      await notifier.updateDeal(deal);
+      final newDeal = await notifier.updateDeal(deal);
 
-      // 上传新图片到新 deal（后端返回的是新 deal ID）
+      // 上传新图片到克隆后的新 deal（必须用服务端返回的 id）
       if (_newImages.isNotEmpty) {
         for (int i = 0; i < _newImages.length; i++) {
           await notifier.uploadImage(
-            dealId: widget.deal.id,
+            dealId: newDeal.id,
             file: _newImages[i],
-            sortOrder: widget.deal.images.length + i,
-            isPrimary: widget.deal.images.isEmpty && i == 0,
+            sortOrder: newDeal.images.length + i,
+            isPrimary: newDeal.images.isEmpty && i == 0,
           );
         }
       }
@@ -497,6 +564,17 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
               title: 'Usage Rules',
               summaryBuilder: _buildRulesSummary,
               editBuilder: _buildRulesEdit,
+            ),
+
+            const SizedBox(height: 12),
+
+            // 4b. 小费（核销后）
+            _buildSection(
+              sectionKey: 'tipping',
+              icon: Icons.volunteer_activism_outlined,
+              title: 'Tipping (after redemption)',
+              summaryBuilder: _buildTippingSummary,
+              editBuilder: _buildTippingEdit,
             ),
 
             const SizedBox(height: 12),
@@ -1277,6 +1355,87 @@ class _DealEditPageState extends ConsumerState<DealEditPage> {
         ),
         // 多店适用选择（仅连锁店显示）
         _buildMultiStoreSection(),
+      ],
+    );
+  }
+
+  // 4b. 小费 — 概览
+  Widget _buildTippingSummary() {
+    if (!_tipsEnabled) {
+      return const Text('Tips disabled', style: TextStyle(fontSize: 14, color: Color(0xFF666666)));
+    }
+    final mode = _tipsMode == 'fixed' ? 'Fixed (USD)' : 'Percent of purchase';
+    final p1 = _tipsP1Controller.text.trim();
+    final p2 = _tipsP2Controller.text.trim();
+    final p3 = _tipsP3Controller.text.trim();
+    final presets = [p1, p2, p3].where((s) => s.isNotEmpty).join(', ');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _summaryRow('Tips', 'Enabled'),
+        _summaryRow('Mode', mode),
+        if (presets.isNotEmpty) _summaryRow('Presets', presets),
+      ],
+    );
+  }
+
+  // 4b. 小费 — 编辑
+  Widget _buildTippingEdit() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Enable optional tips after redemption'),
+          value: _tipsEnabled,
+          activeThumbColor: _orange,
+          onChanged: (v) => setState(() => _tipsEnabled = v),
+        ),
+        if (_tipsEnabled) ...[
+          const SizedBox(height: 8),
+          const Text('Tip type', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+          const SizedBox(height: 6),
+          SegmentedButton<String>(
+            segments: const [
+              ButtonSegment(value: 'percent', label: Text('Percent')),
+              ButtonSegment(value: 'fixed', label: Text('Fixed USD')),
+            ],
+            selected: {_tipsMode},
+            onSelectionChanged: (s) => setState(() => _tipsMode = s.first),
+          ),
+          const SizedBox(height: 12),
+          _buildTextField(
+            fieldKey: const ValueKey('deal_edit_tips_p1'),
+            controller: _tipsP1Controller,
+            label: _tipsMode == 'percent' ? 'Preset 1 (%, e.g. 10)' : 'Preset 1 (USD)',
+            hint: _tipsMode == 'percent' ? '10' : '2.00',
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
+          ),
+          const SizedBox(height: 8),
+          _buildTextField(
+            fieldKey: const ValueKey('deal_edit_tips_p2'),
+            controller: _tipsP2Controller,
+            label: _tipsMode == 'percent' ? 'Preset 2 (%)' : 'Preset 2 (USD)',
+            hint: _tipsMode == 'percent' ? '15' : '3.00',
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
+          ),
+          const SizedBox(height: 8),
+          _buildTextField(
+            fieldKey: const ValueKey('deal_edit_tips_p3'),
+            controller: _tipsP3Controller,
+            label: _tipsMode == 'percent' ? 'Preset 3 (%)' : 'Preset 3 (USD)',
+            hint: _tipsMode == 'percent' ? '20' : '5.00',
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Customers will also see a custom amount option (including \$0).',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+          ),
+        ],
       ],
     );
   }

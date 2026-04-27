@@ -445,6 +445,37 @@ serve(async (req: Request) => {
     ];
   }
 
+  // Step 4b: 已支付小费（按 coupon_id 附加到 items）
+  const tipCouponIds = items
+    .map((i) => i.couponId)
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
+  if (tipCouponIds.length > 0) {
+    const { data: tipRows } = await client
+      .from("coupon_tips")
+      .select("coupon_id, amount_cents, currency, status, paid_at")
+      .in("coupon_id", tipCouponIds)
+      .eq("status", "paid");
+    const tipByCoupon = new Map<string, { amount_cents: number; currency: string; paid_at: string | null }>();
+    for (const row of tipRows ?? []) {
+      tipByCoupon.set(row.coupon_id as string, {
+        amount_cents: Number(row.amount_cents ?? 0),
+        currency: String(row.currency ?? "usd"),
+        paid_at: (row.paid_at as string | null) ?? null,
+      });
+    }
+    for (const it of items) {
+      const cid = it.couponId;
+      const t = cid ? tipByCoupon.get(cid) : undefined;
+      (it as Record<string, unknown>).tip = t
+        ? {
+          amount_cents: t.amount_cents,
+          currency: t.currency,
+          paid_at: t.paid_at,
+        }
+        : null;
+    }
+  }
+
   // -------------------------------------------------------
   // Step 5: 构建 timeline
   //   - 订单级：purchased 事件
