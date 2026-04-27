@@ -93,6 +93,20 @@ Deno.serve(async (req) => {
     return err('Missing authorization', 'unauthorized', 401);
   }
 
+  // 尽早消费请求体，避免在多次 await（鉴权/查库）后再读 body 流导致长时间挂起
+  let body: {
+    coupon_id?: string;
+    amount_cents?: number;
+    preset_choice?: string;
+    signature_png_base64?: string;
+  };
+  try {
+    body = await req.json();
+  } catch {
+    return err('Invalid JSON body', 'invalid_request', 400);
+  }
+  console.log('[create-tip-payment-intent] body parsed');
+
   const supabaseAdmin = createClient(
     Deno.env.get('SUPABASE_URL') ?? '',
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
@@ -120,18 +134,7 @@ Deno.serve(async (req) => {
   if (auth.role === 'trainee') {
     return err('Trainee accounts cannot collect tips', 'forbidden', 403);
   }
-
-  let body: {
-    coupon_id?: string;
-    amount_cents?: number;
-    preset_choice?: string;
-    signature_png_base64?: string;
-  };
-  try {
-    body = await req.json();
-  } catch {
-    return err('Invalid JSON body', 'invalid_request', 400);
-  }
+  console.log('[create-tip-payment-intent] auth ok', { userId: user.id, merchantId: auth.merchantId });
 
   const couponId = body.coupon_id?.trim();
   const amountCents = body.amount_cents;
@@ -142,6 +145,7 @@ Deno.serve(async (req) => {
     return err('amount_cents is required', 'invalid_request', 400);
   }
 
+  console.log('[create-tip-payment-intent] start db + stripe', { couponId, amountCents });
   const { data: paidExists } = await supabaseAdmin
     .from('coupon_tips')
     .select('id')
@@ -151,6 +155,28 @@ Deno.serve(async (req) => {
 
   if (paidExists) {
     return err('A tip has already been paid for this voucher', 'already_paid', 409);
+  }
+
+  // 防重：同一张券在短时间内已有 pending 时，不再重复创建 PI（避免多条 pending 卡住）
+  const pendingWindowMs = 10 * 60 * 1000;
+  const pendingSinceIso = new Date(Date.now() - pendingWindowMs).toISOString();
+  const { data: recentPending } = await supabaseAdmin
+    .from('coupon_tips')
+    .select('id, stripe_payment_intent_id, created_at')
+    .eq('coupon_id', couponId)
+    .eq('status', 'pending')
+    .gte('created_at', pendingSinceIso)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (recentPending) {
+    return json({
+      error: 'pending_exists',
+      message: 'A pending tip request already exists for this voucher. Please wait and retry.',
+      existing_tip_id: recentPending.id,
+      existing_stripe_payment_intent_id: recentPending.stripe_payment_intent_id ?? null,
+      retry_after_seconds: Math.ceil(pendingWindowMs / 1000),
+    }, 409);
   }
 
   const { data: coupon, error: cErr } = await supabaseAdmin
@@ -261,6 +287,7 @@ Deno.serve(async (req) => {
   }
 
   const tipId = tipRow.id as string;
+  console.log('[create-tip-payment-intent] coupon_tips pending row', { tipId, couponId });
 
   if (body.signature_png_base64 && body.signature_png_base64.length > 0) {
     try {
@@ -284,6 +311,10 @@ Deno.serve(async (req) => {
   }
 
   try {
+    console.log('[create-tip-payment-intent] calling Stripe paymentIntents.create', {
+      amountCents,
+      connectId: connectId ? `${connectId.slice(0, 8)}…` : null,
+    });
     const pi = await stripe.paymentIntents.create({
       amount: amountCents,
       currency: 'usd',
@@ -304,6 +335,7 @@ Deno.serve(async (req) => {
       .update({ stripe_payment_intent_id: pi.id })
       .eq('id', tipId);
 
+    console.log('[create-tip-payment-intent] Stripe PI ok', { paymentIntentId: pi.id });
     return json({
       tip_id: tipId,
       client_secret: pi.client_secret,

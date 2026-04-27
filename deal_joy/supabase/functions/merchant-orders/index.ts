@@ -732,13 +732,16 @@ async function handleDetail(
     .map((it) => it.coupon_id as string | null)
     .filter((id): id is string => typeof id === "string" && id.length > 0);
 
-  /** coupon_id → paid 展示用 payload；以及 pending/paid 用于屏蔽重复收小费 */
+  /** coupon_id → paid 展示用 payload；以及短时 pending/paid 用于屏蔽重复收小费 */
   const tipPaidMap = new Map<string, Record<string, unknown>>();
   const tipBlockingStatus = new Map<string, string>();
+  // pending 在短时间内（避免连点重复发起）才屏蔽；超时未完成应允许重新发起
+  const TIP_PENDING_BLOCK_MS = 10 * 60 * 1000;
+  const nowMs = Date.now();
   if (tipCouponIds.length > 0) {
     const { data: allTipRows } = await client
       .from("coupon_tips")
-      .select("coupon_id, amount_cents, currency, status, paid_at, stripe_payment_intent_id")
+      .select("coupon_id, amount_cents, currency, status, paid_at, stripe_payment_intent_id, created_at")
       .in("coupon_id", tipCouponIds);
     for (const tr of allTipRows ?? []) {
       const cid = tr.coupon_id as string;
@@ -752,7 +755,15 @@ async function handleDetail(
         });
         tipBlockingStatus.set(cid, "paid");
       } else if (st === "pending" && tipBlockingStatus.get(cid) !== "paid") {
-        tipBlockingStatus.set(cid, "pending");
+        const createdAtStr = tr.created_at as string | null;
+        const createdAtMs = createdAtStr ? Date.parse(createdAtStr) : NaN;
+        const recentPending =
+          Number.isFinite(createdAtMs) &&
+          nowMs - createdAtMs >= 0 &&
+          nowMs - createdAtMs <= TIP_PENDING_BLOCK_MS;
+        if (recentPending) {
+          tipBlockingStatus.set(cid, "pending");
+        }
       }
     }
     for (let i = 0; i < formattedItems.length; i++) {
