@@ -184,38 +184,52 @@ class PushNotificationService {
     final type = data['type'] as String? ?? '';
     switch (type) {
       case 'transaction':
+        if (data['action'] == 'tip_confirm') {
+          final tipId = data['tip_id'] as String?;
+          if (tipId != null && tipId.isNotEmpty) {
+            GoRouter.of(router).push('/tips/confirm/$tipId');
+            break;
+          }
+        }
         final orderId = data['order_id'] as String?;
         if (orderId != null) {
           GoRouter.of(router).push('/order/$orderId');
         } else {
           GoRouter.of(router).push('/orders');
         }
+        break;
       case 'friend_request':
         GoRouter.of(router).push('/chat/friend-requests');
+        break;
       case 'friend_activity':
         final dealId = data['deal_id'] as String?;
         if (dealId != null) GoRouter.of(router).push('/deals/$dealId');
+        break;
       case 'review_reply':
-        final dealId = data['deal_id'] as String?;
-        if (dealId != null) GoRouter.of(router).push('/deals/$dealId');
+        final replyDealId = data['deal_id'] as String?;
+        if (replyDealId != null) GoRouter.of(router).push('/deals/$replyDealId');
+        break;
       case 'chat_message':
         final conversationId = data['conversation_id'] as String?;
         if (conversationId != null) {
           GoRouter.of(router).push('/chat/$conversationId');
         }
+        break;
       case 'announcement':
         GoRouter.of(router).push('/chat/notifications');
+        break;
       case 'promo':
         // 促销通知：优先跳 deal 详情，其次跳商家详情，兜底跳通知列表
-        final dealId = data['deal_id'] as String?;
+        final promoDealId = data['deal_id'] as String?;
         final merchantId = data['merchant_id'] as String?;
-        if (dealId != null) {
-          GoRouter.of(router).push('/deals/$dealId');
+        if (promoDealId != null) {
+          GoRouter.of(router).push('/deals/$promoDealId');
         } else if (merchantId != null) {
           GoRouter.of(router).push('/merchant/$merchantId');
         } else {
           GoRouter.of(router).push('/chat/notifications');
         }
+        break;
       default:
         GoRouter.of(router).push('/chat/notifications');
     }

@@ -7,6 +7,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../store/services/store_service.dart';
 
 /// Calls Edge Function `create-tip-payment-intent` (merchant JWT + X-Merchant-Id).
+///
+/// Success JSON includes `flow`: `completed` \| `processing` \| `requires_customer_action`
+/// \| `merchant_fallback`; only `merchant_fallback` returns `client_secret` for PaymentSheet.
 class TipPaymentService {
   TipPaymentService(this._supabase);
 

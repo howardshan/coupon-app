@@ -141,19 +141,35 @@ class _NotificationScreenState extends ConsumerState<NotificationScreen> {
     final data = notification.data ?? {};
     switch (notification.type) {
       case 'transaction':
+        if (data['action'] == 'tip_confirm') {
+          final tipId = data['tip_id'] as String?;
+          if (tipId != null && tipId.isNotEmpty) {
+            context.push('/tips/confirm/$tipId');
+            break;
+          }
+        }
         final orderId = data['order_id'] as String?;
-        if (orderId != null) context.push('/order/$orderId');
+        if (orderId != null) {
+          context.push('/order/$orderId');
+        } else {
+          context.push('/orders');
+        }
+        break;
       case 'friend_request':
         context.push('/chat/friend-requests');
+        break;
       case 'friend_activity':
         final dealId = data['deal_id'] as String?;
         if (dealId != null) context.push('/deals/$dealId');
+        break;
       case 'review_reply':
-        final dealId = data['deal_id'] as String?;
-        if (dealId != null) context.push('/deals/$dealId');
+        final replyDealId = data['deal_id'] as String?;
+        if (replyDealId != null) context.push('/deals/$replyDealId');
+        break;
       case 'chat_message':
         final conversationId = data['conversation_id'] as String?;
         if (conversationId != null) context.push('/chat/$conversationId');
+        break;
       case 'announcement':
       default:
         // 公告类无需特殊跳转
