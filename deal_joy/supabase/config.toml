@@ -14,6 +14,10 @@ verify_jwt = false
 [functions.submit-refund-dispute]
 verify_jwt = true
 
+# create-tip-payment-intent：商家 JWT + 函数内 resolveAuth
+[functions.create-tip-payment-intent]
+verify_jwt = true
+
 # Cron：仅 x-cron-secret，无用户 JWT
 [functions.escalate-disputes-to-after-sales]
 verify_jwt = false

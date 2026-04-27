@@ -46,17 +46,21 @@ class OrderTile extends StatelessWidget {
               // 第一行：订单号 + 状态 Badge
               Row(
                 children: [
-                  Text(
-                    order.orderNumber,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF1A1A1A),
-                      fontFamily: 'monospace',
-                      letterSpacing: 0.5,
+                  Expanded(
+                    child: Text(
+                      order.orderNumber,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF1A1A1A),
+                        fontFamily: 'monospace',
+                        letterSpacing: 0.5,
+                      ),
                     ),
                   ),
-                  const Spacer(),
+                  const SizedBox(width: 8),
                   OrderStatusBadge(status: order.displayStatus),
                 ],
               ),
@@ -128,14 +132,18 @@ class OrderTile extends StatelessWidget {
                     color: Colors.grey.shade400,
                   ),
                   const SizedBox(width: 4),
-                  Text(
-                    dateFormatter.format(order.createdAt.toLocal()),
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey.shade500,
+                  Expanded(
+                    child: Text(
+                      dateFormatter.format(order.createdAt.toLocal()),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade500,
+                      ),
                     ),
                   ),
-                  const Spacer(),
+                  const SizedBox(width: 8),
                   // 金额（加粗橙色，商家专属）
                   Text(
                     amountFormatter.format(order.merchantTotal),

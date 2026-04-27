@@ -291,16 +291,20 @@ class _OrderCard extends StatelessWidget {
                   children: [
                     const Icon(Icons.receipt_outlined, size: 16, color: AppColors.textHint),
                     const SizedBox(width: 6),
-                    Text(
-                      '#${(order.orderNumber ?? order.id.substring(0, 8)).toUpperCase()}',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontFamily: 'monospace',
-                        color: AppColors.primary,
-                        fontWeight: FontWeight.w600,
+                    Expanded(
+                      child: Text(
+                        '#${(order.orderNumber ?? order.id.substring(0, 8)).toUpperCase()}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontFamily: 'monospace',
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
-                    const Spacer(),
+                    const SizedBox(width: 8),
                     Text(
                       'Order Detail',
                       style: TextStyle(fontSize: 11, color: AppColors.textHint),

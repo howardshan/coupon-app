@@ -31,6 +31,7 @@ class _ScanPageState extends ConsumerState<ScanPage>
   // 手动输入 Tab 相关
   final _formKey = GlobalKey<FormState>();
   final _codeController = TextEditingController();
+  final _manualCodeFocus = FocusNode();
   bool _isVerifying = false;
 
   @override
@@ -39,10 +40,13 @@ class _ScanPageState extends ConsumerState<ScanPage>
     _tabController = TabController(length: 2, vsync: this);
     _initCamera();
 
-    // 切换 Tab 时，重置扫码处理标志
+    // 切换 Tab 时，重置扫码处理标志；回到扫码 Tab 时收起键盘
     _tabController.addListener(() {
       if (_tabController.indexIsChanging) {
         _isProcessing = false;
+      }
+      if (!_tabController.indexIsChanging && _tabController.index == 0) {
+        FocusManager.instance.primaryFocus?.unfocus();
       }
       // 切到手动输入 Tab 时暂停相机节省电量
       if (_tabController.index == 1) {
@@ -64,6 +68,7 @@ class _ScanPageState extends ConsumerState<ScanPage>
   void dispose() {
     _tabController.dispose();
     _cameraController?.dispose();
+    _manualCodeFocus.dispose();
     _codeController.dispose();
     super.dispose();
   }
@@ -131,6 +136,8 @@ class _ScanPageState extends ConsumerState<ScanPage>
   // =============================================================
   Future<void> _verifyManual() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
+
+    FocusManager.instance.primaryFocus?.unfocus();
 
     setState(() => _isVerifying = true);
     final code = _codeController.text.trim();
@@ -263,6 +270,7 @@ class _ScanPageState extends ConsumerState<ScanPage>
     return Container(
       color: const Color(0xFFF8F9FA),
       child: SingleChildScrollView(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         padding: const EdgeInsets.all(24),
         child: Form(
           key: _formKey,
@@ -292,11 +300,17 @@ class _ScanPageState extends ConsumerState<ScanPage>
               TextFormField(
                 key: const ValueKey('scan_code_field'),
                 controller: _codeController,
+                focusNode: _manualCodeFocus,
                 keyboardType: TextInputType.text,
+                textInputAction: TextInputAction.done,
                 textCapitalization: TextCapitalization.characters,
                 autocorrect: false,
                 maxLength: 19, // 16 字符 + 3 个横杠
                 inputFormatters: const [_CouponCodeDashInputFormatter()],
+                onFieldSubmitted: (_) =>
+                    FocusManager.instance.primaryFocus?.unfocus(),
+                onTapOutside: (_) =>
+                    FocusManager.instance.primaryFocus?.unfocus(),
                 style: const TextStyle(
                   fontFamily: 'monospace',
                   fontSize: 15,

@@ -3,6 +3,7 @@
 
 import 'dart:convert';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../tips/models/tip_models.dart';
 import '../models/coupon_info.dart';
 import '../../store/services/store_service.dart';
 
@@ -66,9 +67,9 @@ class ScanService {
   // redeemCoupon — 执行核销
   // =============================================================
   /// 对指定 couponId 执行核销操作
-  /// 返回核销时间 [DateTime]
+  /// 返回核销结果（含可选小费配置）
   /// 抛出 [ScanException] 如果核销失败
-  Future<DateTime> redeemCoupon(String couponId) async {
+  Future<RedeemResult> redeemCoupon(String couponId) async {
     try {
       final response = await _supabase.functions.invoke(
         '$_functionName/redeem',
@@ -87,7 +88,10 @@ class ScanService {
         );
       }
 
-      return DateTime.parse(data['redeemed_at'] as String);
+      return RedeemResult(
+        redeemedAt: DateTime.parse(data['redeemed_at'] as String),
+        tip: TipDealConfig.fromRedeemPayload(data),
+      );
     } on ScanException {
       rethrow;
     } on FunctionException catch (e) {

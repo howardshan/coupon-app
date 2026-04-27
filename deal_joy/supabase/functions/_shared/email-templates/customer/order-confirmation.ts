@@ -104,6 +104,6 @@ export function buildC2Email(data: C2OrderConfirmationData): { subject: string; 
 
   return {
     subject,
-    html: wrapInLayout({ subject, body, cta: { label: "View My Orders", url: "crunchyplum://orders" } }),
+    html: wrapInLayout({ subject, body }),
   };
 }

@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../deals/open_merchant_deal_detail.dart';
 import '../data/merchant_after_sales_request.dart';
 import '../providers/after_sales_providers.dart';
 
@@ -659,8 +660,9 @@ class _MerchantOrderContextCard extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(left: 132, bottom: 8),
                 child: TextButton(
-                  onPressed: () =>
-                      context.push('/deals/${contextInfo.dealId}'),
+                  onPressed: () {
+                    openMerchantDealDetail(context, contextInfo.dealId!);
+                  },
                   style: TextButton.styleFrom(
                     padding: EdgeInsets.zero,
                     minimumSize: Size.zero,

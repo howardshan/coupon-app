@@ -4,6 +4,7 @@
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../tips/models/tip_models.dart';
 import '../models/coupon_info.dart';
 import '../services/scan_service.dart';
 import '../../dashboard/providers/dashboard_provider.dart';
@@ -38,10 +39,10 @@ class ScanNotifier extends AsyncNotifier<CouponInfo?> {
     state = await AsyncValue.guard(() => service.verifyCoupon(code));
   }
 
-  /// 执行核销，返回核销时间
+  /// 执行核销，返回核销结果（含可选小费配置）
   /// 调用方负责在成功后导航到成功页
   /// 核销成功后自动刷新 dashboard 统计（today_redemptions / revenue）
-  Future<DateTime> redeem(String couponId) async {
+  Future<RedeemResult> redeem(String couponId) async {
     final service = ref.read(scanServiceProvider);
     final result = await service.redeemCoupon(couponId);
     // 刷新 dashboard 统计数据（Redeemed 数量 + Revenue）

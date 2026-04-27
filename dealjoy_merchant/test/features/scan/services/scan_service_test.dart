@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:dealjoy_merchant/features/scan/models/coupon_info.dart';
+import 'package:dealjoy_merchant/features/tips/models/tip_models.dart';
 import 'package:dealjoy_merchant/features/scan/services/scan_service.dart';
 
 // Mock 类定义
@@ -182,7 +183,7 @@ void main() {
   // redeemCoupon 测试组
   // =============================================================
   group('redeemCoupon', () {
-    test('返回 DateTime 当核销成功', () async {
+    test('返回 RedeemResult 当核销成功', () async {
       final expectedTime = DateTime(2026, 3, 3, 14, 30, 0).toUtc();
 
       when(() => mockFunctions.invoke(
@@ -194,13 +195,17 @@ void main() {
           data: {
             'redeemed_at': expectedTime.toIso8601String(),
             'coupon_id': 'coupon-uuid-001',
+            'deal': {'tips_enabled': false},
+            'tip_base_cents': 0,
           },
           status: 200,
         ),
       );
 
       final result = await service.redeemCoupon('coupon-uuid-001');
-      expect(result, equals(expectedTime));
+      expect(result.redeemedAt, equals(expectedTime));
+      expect(result.tip, isA<TipDealConfig>());
+      expect(result.tip.tipsEnabled, isFalse);
     });
 
     test('抛出 ScanException(alreadyUsed) 当重复核销', () async {

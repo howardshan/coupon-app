@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:dealjoy_merchant/features/scan/models/coupon_info.dart';
+import 'package:dealjoy_merchant/features/tips/models/tip_models.dart';
 import 'package:dealjoy_merchant/features/scan/services/scan_service.dart';
 import 'package:dealjoy_merchant/features/scan/providers/scan_provider.dart';
 
@@ -80,16 +81,24 @@ void main() {
       expect(state.error, isA<ScanException>());
     });
 
-    test('redeem() 成功后返回 DateTime', () async {
+    test('redeem() 成功后返回 RedeemResult', () async {
       final expectedTime = DateTime(2026, 3, 3, 14, 30, 0);
+      final expected = RedeemResult(
+        redeemedAt: expectedTime,
+        tip: const TipDealConfig(
+          tipsEnabled: false,
+          tipBaseCents: 0,
+        ),
+      );
       when(() => mockService.redeemCoupon('coupon-uuid-001'))
-          .thenAnswer((_) async => expectedTime);
+          .thenAnswer((_) async => expected);
 
       final result = await container
           .read(scanNotifierProvider.notifier)
           .redeem('coupon-uuid-001');
 
-      expect(result, equals(expectedTime));
+      expect(result.redeemedAt, equals(expectedTime));
+      expect(result.tip.tipsEnabled, isFalse);
     });
 
     test('redeem() 失败时抛出 ScanException', () async {

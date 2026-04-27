@@ -122,6 +122,8 @@ class DealModel {
   // 广告相关（由推荐系统 get-recommendations 返回）
   final bool isSponsored;
   final String? campaignId;
+  /// 核销后是否在客户端引导可选小费（与团券/成交价分开）
+  final bool tipsEnabled;
 
   const DealModel({
     required this.id,
@@ -166,6 +168,7 @@ class DealModel {
     this.maxPerAccount = -1,
     this.isSponsored = false,
     this.campaignId,
+    this.tipsEnabled = false,
   });
 
   /// 仅更新 distanceMeters，其余字段不变（用于搜索模式客户端计算距离后写回）
@@ -184,7 +187,7 @@ class DealModel {
     usageNotes: usageNotes, optionGroups: optionGroups, detailImages: detailImages,
     validityType: validityType, validityDays: validityDays,
     usageRules: usageRules, usageDays: usageDays, maxPerAccount: maxPerAccount,
-    isSponsored: isSponsored, campaignId: campaignId,
+    isSponsored: isSponsored, campaignId: campaignId, tipsEnabled: tipsEnabled,
   );
 
   /// 标记为广告赞助 deal（用于广告竞价注入 Hot Deal 区时覆盖 isSponsored 和 campaignId）
@@ -205,6 +208,7 @@ class DealModel {
     usageRules: usageRules, usageDays: usageDays, maxPerAccount: maxPerAccount,
     isSponsored: isSponsored,
     campaignId: campaignId ?? this.campaignId,
+    tipsEnabled: tipsEnabled,
   );
 
   factory DealModel.fromJson(Map<String, dynamic> json) => DealModel(
@@ -264,6 +268,7 @@ class DealModel {
         maxPerAccount: json['max_per_account'] as int? ?? -1,
         isSponsored: json['isSponsored'] as bool? ?? false,
         campaignId: json['campaignId'] as String?,
+        tipsEnabled: json['tips_enabled'] as bool? ?? false,
       );
 
   // RPC 搜索结果（search_deals_nearby / search_deals_by_city）解析
@@ -307,6 +312,7 @@ class DealModel {
         usageRules: const [],
         usageDays: (json['usage_days'] as List?)?.cast<String>() ?? [],
         maxPerAccount: -1,
+        tipsEnabled: json['tips_enabled'] as bool? ?? false,
       );
 
   /// 解析产品列表：优先读 products 数组，为空时从 package_contents 文本按行解析
