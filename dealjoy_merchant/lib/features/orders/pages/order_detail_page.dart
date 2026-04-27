@@ -403,9 +403,11 @@ class OrderDetailPage extends ConsumerWidget {
                         'deal_title': item.dealTitle,
                         'deal': item.collectTipDealJson!,
                         'tip_base_cents': item.collectTipBaseCents,
+                        'order_id': detail.id,
                       },
                     );
                     if (tipped == true && context.mounted) {
+                      ref.invalidate(ordersNotifierProvider);
                       ref.invalidate(orderDetailProvider(detail.id));
                     }
                   },
