@@ -179,6 +179,15 @@ class _UnusedQrSheetState extends ConsumerState<_UnusedQrSheet> {
   /// 已将 [initialUnusedOrderItemId] 同步到 PageView 当前页
   bool _appliedInitialUnusedPage = false;
 
+  // Gift 场景：order_item.customer_status 仍可能是 gifted；
+  // 若当前登录用户就是 activeGift.recipientUserId，则应允许出示 QR。
+  bool _isRedeemableByViewer(OrderItemModel item, String? viewerUserId) {
+    if (item.customerStatus == CustomerItemStatus.unused) return true;
+    if (item.customerStatus != CustomerItemStatus.gifted) return false;
+    if (viewerUserId == null || viewerUserId.isEmpty) return false;
+    return item.activeGift?.recipientUserId == viewerUserId;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -428,8 +437,9 @@ class _UnusedQrSheetState extends ConsumerState<_UnusedQrSheet> {
       data: (detail) {
         final dealItems =
             detail.items.where((i) => i.dealId == widget.dealId).toList();
+        final myUid = Supabase.instance.client.auth.currentUser?.id;
         final unusedItems = dealItems
-            .where((i) => i.customerStatus == CustomerItemStatus.unused)
+            .where((i) => _isRedeemableByViewer(i, myUid))
             .toList();
 
         _onDealItemsUpdated(

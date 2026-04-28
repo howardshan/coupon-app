@@ -171,6 +171,15 @@ class _VoucherDetailBodyState extends ConsumerState<_VoucherDetailBody> {
 
   OrderDetailModel get detail => widget.detail;
 
+  // 受赠人视角：order_item.customer_status 仍可能是 gifted，但若 activeGift.recipientUserId
+  // 就是当前用户，也应视为可出示的券（与 coupon_screen 的持券人判定保持一致）
+  bool _isRedeemableByViewer(OrderItemModel item, String? viewerUserId) {
+    if (item.customerStatus == CustomerItemStatus.unused) return true;
+    if (item.customerStatus != CustomerItemStatus.gifted) return false;
+    if (viewerUserId == null || viewerUserId.isEmpty) return false;
+    return item.activeGift?.recipientUserId == viewerUserId;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -277,7 +286,7 @@ class _VoucherDetailBodyState extends ConsumerState<_VoucherDetailBody> {
     // 受赠人不显示 Cancel 和 Gift 按钮
     final viewerIsRecipient = !(_viewerIsPurchaser ?? true);
     final unusedDealItems = dealItems
-        .where((i) => i.customerStatus == CustomerItemStatus.unused)
+        .where((i) => _isRedeemableByViewer(i, myUid))
         .toList();
 
     return Stack(
@@ -304,6 +313,7 @@ class _VoucherDetailBodyState extends ConsumerState<_VoucherDetailBody> {
               child: _VoucherDealCard(
                 orderId: dealItems.first.orderId,
                 dealItems: dealItems,
+                viewerUserId: myUid,
                 isExpanded: _isExpanded,
                 paymentIntentId: detail.paymentIntentIdMasked,
                 storeCreditUsed: detail.storeCreditUsed,
@@ -336,7 +346,7 @@ class _VoucherDetailBodyState extends ConsumerState<_VoucherDetailBody> {
                 merchantName: dealItems.first.merchantName,
                 expiresAt: dealItems.first.couponExpiresAt,
                 unusedOrderItemIds: dealItems
-                    .where((i) => i.customerStatus == CustomerItemStatus.unused)
+                    .where((i) => _isRedeemableByViewer(i, myUid))
                     .map((i) => i.id)
                     .toList(),
                 viewerIsRecipient: viewerIsRecipient,
@@ -382,6 +392,7 @@ class _VoucherDetailBodyState extends ConsumerState<_VoucherDetailBody> {
 class _VoucherDealCard extends ConsumerWidget {
   final String orderId;
   final List<OrderItemModel> dealItems;
+  final String? viewerUserId;
   final bool isExpanded;
   final VoidCallback onToggleExpand;
   final VoidCallback onRefreshOrder;
@@ -392,6 +403,7 @@ class _VoucherDealCard extends ConsumerWidget {
   const _VoucherDealCard({
     required this.orderId,
     required this.dealItems,
+    this.viewerUserId,
     required this.isExpanded,
     required this.onToggleExpand,
     required this.onRefreshOrder,
@@ -422,7 +434,12 @@ class _VoucherDealCard extends ConsumerWidget {
 
     // 按状态分组
     final unusedItems = dealItems
-        .where((i) => i.customerStatus == CustomerItemStatus.unused)
+        .where((i) =>
+            i.customerStatus == CustomerItemStatus.unused ||
+            (i.customerStatus == CustomerItemStatus.gifted &&
+                viewerUserId != null &&
+                viewerUserId!.isNotEmpty &&
+                i.activeGift?.recipientUserId == viewerUserId))
         .toList();
     final usedItems = dealItems
         .where((i) => i.customerStatus == CustomerItemStatus.used)
@@ -437,6 +454,10 @@ class _VoucherDealCard extends ConsumerWidget {
     final otherItems = dealItems
         .where((i) =>
             i.customerStatus != CustomerItemStatus.unused &&
+            !(i.customerStatus == CustomerItemStatus.gifted &&
+                viewerUserId != null &&
+                viewerUserId!.isNotEmpty &&
+                i.activeGift?.recipientUserId == viewerUserId) &&
             i.customerStatus != CustomerItemStatus.used &&
             i.customerStatus != CustomerItemStatus.refundSuccess &&
             i.customerStatus != CustomerItemStatus.refundPending &&

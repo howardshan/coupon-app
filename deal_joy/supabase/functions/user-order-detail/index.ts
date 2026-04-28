@@ -32,6 +32,39 @@ function maskPaymentIntentId(raw: string | null | undefined): string {
   return raw.length > 8 ? '****' + raw.slice(-8) : raw;
 }
 
+/** 赠券受赠人：持券人 ≠ 订单 buyer，但 coupons.current_holder_user_id = 当前用户时应允许读详情（与 orders RLS gift_recipient 一致） */
+async function userIsGiftRecipientForOrder(
+  client: ReturnType<typeof createClient>,
+  orderId: string,
+  userId: string,
+): Promise<boolean> {
+  const { data: byOrderRow } = await client
+    .from('coupons')
+    .select('id')
+    .eq('order_id', orderId)
+    .eq('current_holder_user_id', userId)
+    .limit(1)
+    .maybeSingle();
+  if (byOrderRow) return true;
+
+  const { data: items } = await client
+    .from('order_items')
+    .select('coupon_id')
+    .eq('order_id', orderId);
+  const couponIds = (items ?? [])
+    .map((r: { coupon_id?: string | null }) => r.coupon_id)
+    .filter((id): id is string => typeof id === 'string' && id.length > 0);
+  if (couponIds.length === 0) return false;
+
+  const { data: holders } = await client
+    .from('coupons')
+    .select('id')
+    .in('id', couponIds)
+    .eq('current_holder_user_id', userId)
+    .limit(1);
+  return (holders ?? []).length > 0;
+}
+
 serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -117,9 +150,14 @@ serve(async (req: Request) => {
     return errorResponse('Order not found', 'not_found', 404);
   }
 
-  // 验证只能查自己的订单
-  if ((order as { user_id: string }).user_id !== userId) {
-    return errorResponse('Access denied', 'forbidden', 403);
+  // 验证：下单人本人，或该订单下任一张券的当前持券人（赠券受赠人）
+  const orderOwnerId = (order as { user_id: string }).user_id;
+  const isOrderOwner = orderOwnerId === userId;
+  if (!isOrderOwner) {
+    const asRecipient = await userIsGiftRecipientForOrder(client, orderId, userId);
+    if (!asRecipient) {
+      return errorResponse('Access denied', 'forbidden', 403);
+    }
   }
 
   // -------------------------------------------------------
@@ -162,7 +200,8 @@ serve(async (req: Request) => {
         coupon_code,
         status,
         expires_at,
-        purchased_merchant_id
+        purchased_merchant_id,
+        current_holder_user_id
       ),
       coupon_gifts (
         id,
@@ -183,6 +222,21 @@ serve(async (req: Request) => {
     .eq('order_id', orderId)
     .order('created_at', { ascending: true });
 
+  // 受赠人代入查看同一订单时，只返回“当前用户持有/被赠送给当前用户”的 item。
+  // 目的：避免把同单里赠给他人的券也展示到当前受赠人的 Voucher Detail。
+  let visibleRawItems = rawItems ?? [];
+  if (!isOrderOwner && rawItems && rawItems.length > 0) {
+    visibleRawItems = (rawItems as Array<{
+      coupons?: { current_holder_user_id?: string | null } | null;
+      coupon_gifts?: Array<{ recipient_user_id?: string | null }> | null;
+    }>).filter((item) => {
+      const holderId = item.coupons?.current_holder_user_id ?? null;
+      if (holderId === userId) return true;
+      const gifts = item.coupon_gifts ?? [];
+      return gifts.some((g) => (g.recipient_user_id ?? null) === userId);
+    });
+  }
+
   // -------------------------------------------------------
   // Step 3: 查询商家名称（purchased_merchant + redeemed_merchant）
   //   先收集所有需要查的 merchant_id，批量查询后建 Map
@@ -195,8 +249,8 @@ serve(async (req: Request) => {
   }
 
   // item 级的 purchased_merchant_id 和 redeemed_merchant_id
-  if (rawItems && rawItems.length > 0) {
-    for (const item of rawItems) {
+  if (visibleRawItems.length > 0) {
+    for (const item of visibleRawItems) {
       const typedItem = item as {
         purchased_merchant_id?: string | null;
         redeemed_merchant_id?: string | null;
@@ -263,9 +317,9 @@ serve(async (req: Request) => {
 
   let items: OrderItem[] = [];
 
-  if (rawItems && rawItems.length > 0) {
+  if (visibleRawItems.length > 0) {
     // V3 新订单：从 order_items 构建
-    items = (rawItems as Array<{
+    items = (visibleRawItems as Array<{
       id: string;
       deal_id: string | null;
       coupon_id: string | null;

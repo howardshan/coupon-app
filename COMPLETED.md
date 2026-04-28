@@ -70,6 +70,10 @@
 - 受保护文件：
   - `deal_joy/supabase/functions/merchant-deals/index.ts` — deal_category_id, deal_type, badge_text 相关逻辑
 
+#### user-order-detail Edge Function ✅
+- 状态：已实现 — **赠券当前持券人**可查订单详情（原为仅 `orders.user_id`）；持券校验：`coupons.order_id = 订单` 或 `order_items → coupons`，且 `current_holder_user_id = JWT.sub`
+- 受保护文件：`deal_joy/supabase/functions/user-order-detail/index.ts`
+
 #### DB 表 ✅
 - `deal_categories` 表结构**禁止修改**
 
@@ -266,6 +270,7 @@
 | 2026-03-30 | Admin Phase 5：审批抽屉 Activity preview + 订单跳转与说明 | Claude |
 | 2026-04-18 | Sales Tax 全链路 + Voucher Detail 改版 + Review 增强 + Gift 码重生成 + Dashboard Stats + Chat 自动创建 + Admin Tax Revenue | Claude |
 | 2026-04-08 | Stripe Connect 解绑 Sprint 5：预检补全 + Admin All Tab 合并 Stripe Unlink | Claude |
+| 2026-04-27 | user-order-detail：Gift 持券受赠人手动漫权（current_holder），My Coupons→Voucher Detail 403 | Claude |
 
 ---
 
