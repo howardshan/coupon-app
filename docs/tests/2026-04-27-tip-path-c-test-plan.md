@@ -3,7 +3,7 @@
 > **范围：** `create-tip-payment-intent` 多分支 `flow`、持券人 `payer_user_id`、`confirm-tip-payment-session`、推送 `tip_confirm`、`deal_joy` 确认页、`dealjoy_merchant` Collect Tip 按 `flow` 分支、Webhook `paid` 一致性。  
 > **关联文档：** [../plans/2026-04-23-post-redemption-tipping.md](../plans/2026-04-23-post-redemption-tipping.md) §十一；总清单可配合 [post-redemption-tipping-qa-checklist.md](./post-redemption-tipping-qa-checklist.md)。
 
-**文档版本：** v1.0  
+**文档版本：** v1.1  
 **编写日期：** 2026-04-27  
 **建议环境：** Stripe **Test mode**、Supabase **Staging / 测试项目**、两台实体设备或「商户平板模拟器 + 用户手机」各一。
 
@@ -71,6 +71,8 @@
 | TC-08 | 同券 10 分钟内商户**重复**提交（SCA 未完成）         | 返回与首次一致的 `flow` + 同一 `tip_id`（幂等），不重复创建多笔有效扣款                                                      |
 | TC-09 | 已成功 `paid` 的券再次收小费                   | Edge 返回 `already_paid`（或等价错误码），商户端有明确英文提示                                                          |
 | TC-10 | Webhook 重复投递                         | `coupon_tips` 仍为单条 `paid`，无重复记账                                                                    |
+| TC-11 | 受赠人进入 Voucher Detail 展开 gifted 券     | 受赠人可展开并展示 QR；可左右切换同 deal 的多张券                                                                       |
+| TC-12 | 赠予人进入同券 Voucher Detail 安全性校验         | 赠予人可见 gifted 文案，但**不可**展示/出示已赠出券的 QR                                                               |
 
 
 ---
@@ -173,6 +175,32 @@
 
 ---
 
+### 4.7 TC-11 / TC-12：Gift 券 QR 可见性与安全回归
+
+**步骤（TC-11，受赠人）：**
+
+1. 购买者将 2 张同 deal 券赠送给受赠人并完成领取（`current_holder_user_id = 受赠人`）。
+2. 受赠人进入 `My Coupons -> Unused -> Voucher Detail`。
+3. 点击 `Gifted (2)` 对应区域，尝试展开并进入 QR 弹层。
+
+**期望（TC-11）：**
+
+- 页面出现可点击的券列表（`Tap to show QR code`）。
+- 可打开并展示每张券 QR，且支持左右滑动切换 2 张券。
+- 不出现 403 / 空列表 / 仅有 Gifted 文案但无法出示的问题。
+
+**步骤（TC-12，赠予人）：**
+
+1. 赠予人进入同一券的 `Voucher Detail`。
+2. 验证状态展示与可点击入口。
+
+**期望（TC-12）：**
+
+- 赠予人可看到 `Gifted` 状态与 Gift 信息文案（符合产品语义）。
+- 赠予人**不能**进入可出示 QR 的路径（无可用 QR 弹层、无可核销码出示）。
+
+---
+
 ## 五、推送与深链（可选专项）
 
 
@@ -203,12 +231,13 @@
 - `trainee`：仍不可收小费（Edge 403）  
 - 订单详情 / Admin 小费展示：仍能看到已付金额（与 P3–P5 一致）  
 - 税务/订单其他模块：本次改动**不涉及**受保护税务链路（见仓库 `CLAUDE.md`）
+- Gift 券：受赠人可出示，赠予人不可出示（TC-11/TC-12）
 
 ---
 
 ## 八、通过标准
 
-- §三矩阵中 **TC-01～TC-07** 在 Staging 全部按「期望」通过；**TC-08～TC-10** 至少抽样通过且无阻塞缺陷。  
+- §三矩阵中 **TC-01～TC-07** 在 Staging 全部按「期望」通过；**TC-08～TC-12** 至少抽样通过且无阻塞缺陷。  
 - 无 `**client_secret` 泄露到商户端** 的安全回归问题。  
 - 与 [post-redemption-tipping-qa-checklist.md](./post-redemption-tipping-qa-checklist.md) 合并签字前，再跑一遍 **D 节 Webhook** 与 **H 节 Gift**。
 
