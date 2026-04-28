@@ -71,7 +71,7 @@
 | TC-08 | 同券 10 分钟内商户**重复**提交（SCA 未完成）         | 返回与首次一致的 `flow` + 同一 `tip_id`（幂等），不重复创建多笔有效扣款                                                      |
 | TC-09 | 已成功 `paid` 的券再次收小费                   | Edge 返回 `already_paid`（或等价错误码），商户端有明确英文提示                                                          |
 | TC-10 | Webhook 重复投递                         | `coupon_tips` 仍为单条 `paid`，无重复记账                                                                    |
-| TC-11 | 受赠人进入 Voucher Detail 展开 gifted 券     | 受赠人可展开并展示 QR；可左右切换同 deal 的多张券                                                                       |
+| TC-11 | 受赠人进入 Voucher Detail 展开 gifted 券     | 受赠人可展开并展示 QR；可左右切换同 deal 的多张券                                                                      |
 | TC-12 | 赠予人进入同券 Voucher Detail 安全性校验         | 赠予人可见 gifted 文案，但**不可**展示/出示已赠出券的 QR                                                               |
 
 
