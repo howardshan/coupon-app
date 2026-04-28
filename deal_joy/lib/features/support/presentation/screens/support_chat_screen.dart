@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../auth/domain/providers/auth_provider.dart';
+import '../../../chat/data/repositories/chat_repository.dart';
+import '../../../chat/domain/providers/chat_provider.dart';
 import '../../../orders/data/models/order_item_model.dart';
 import '../../../orders/data/models/order_model.dart';
 import '../../../orders/domain/providers/orders_provider.dart';
@@ -33,16 +36,20 @@ class _ChatMessage {
 class _RefundableItem {
   final String orderId;
   final String itemId;
+  final String? couponId;
   final String dealTitle;
   final String? imageUrl;
   final double unitPrice;
+  final bool isUsed;
 
   const _RefundableItem({
     required this.orderId,
     required this.itemId,
+    this.couponId,
     required this.dealTitle,
     this.imageUrl,
     required this.unitPrice,
+    required this.isUsed,
   });
 }
 
@@ -173,13 +180,17 @@ class _SupportChatScreenState extends ConsumerState<SupportChatScreen> {
       final refundable = <_RefundableItem>[];
       for (final order in orders) {
         for (final item in order.items) {
-          if (item.customerStatus == CustomerItemStatus.unused) {
+          final isUnused = item.customerStatus == CustomerItemStatus.unused;
+          final isUsed = item.customerStatus == CustomerItemStatus.used;
+          if (isUnused || isUsed) {
             refundable.add(_RefundableItem(
               orderId: order.id,
               itemId: item.id,
+              couponId: item.couponId,
               dealTitle: item.dealTitle,
               imageUrl: item.dealImageUrl,
               unitPrice: item.unitPrice,
+              isUsed: isUsed,
             ));
           }
         }
@@ -234,6 +245,27 @@ class _SupportChatScreenState extends ConsumerState<SupportChatScreen> {
     _handleInput(text);
   }
 
+  bool _connectingToAgent = false;
+
+  Future<void> _handleLiveAgent() async {
+    final user = await ref.read(currentUserProvider.future);
+    if (user == null) return;
+    setState(() => _connectingToAgent = true);
+    try {
+      final chatRepo = ref.read(chatRepositoryProvider);
+      final conv = await chatRepo.getOrCreateSupportChat(user.id);
+      if (!mounted) return;
+      context.push('/chat/${conv.id}');
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString())),
+      );
+    } finally {
+      if (mounted) setState(() => _connectingToAgent = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -261,7 +293,15 @@ class _SupportChatScreenState extends ConsumerState<SupportChatScreen> {
                   message: _messages[index],
                   onFaqTap: (faq) => _handleInput(faq.label, faqItem: faq),
                   onOrderTap: (orderId) => context.push('/order/$orderId'),
-                  onRefundTap: (item) => context.push('/after-sales/${item.orderId}'),
+                  onRefundTap: (item) {
+                    if (item.isUsed) {
+                      context.push('/after-sales/${item.orderId}');
+                    } else if (item.couponId != null) {
+                      context.push('/coupon/${item.couponId}');
+                    } else {
+                      context.push('/after-sales/${item.orderId}');
+                    }
+                  },
                 );
               },
             ),
@@ -272,11 +312,39 @@ class _SupportChatScreenState extends ConsumerState<SupportChatScreen> {
             color: Colors.white,
             padding: EdgeInsets.only(
               left: 16,
-              right: 8,
+              right: 16,
               top: 8,
               bottom: MediaQuery.of(context).padding.bottom + 8,
             ),
-            child: Row(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: _connectingToAgent ? null : _handleLiveAgent,
+                    icon: _connectingToAgent
+                        ? const SizedBox(
+                            width: 13,
+                            height: 13,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('🎧', style: TextStyle(fontSize: 14)),
+                    label: Text(
+                      _connectingToAgent ? 'Connecting...' : 'Live Agent',
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                    ),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.primary,
+                      backgroundColor: AppColors.primary.withValues(alpha: 0.08),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
               children: [
                 Expanded(
                   child: TextField(
@@ -308,6 +376,8 @@ class _SupportChatScreenState extends ConsumerState<SupportChatScreen> {
                   icon: const Icon(Icons.send_rounded),
                   color: AppColors.primary,
                 ),
+              ],
+            ),
               ],
             ),
           ),
@@ -595,14 +665,16 @@ class _RefundableCard extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: AppColors.error.withValues(alpha: 0.1),
+                    color: item.isUsed
+                        ? const Color(0xFFFF9800).withValues(alpha: 0.1)
+                        : const Color(0xFF4CAF50).withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: const Text(
-                    'Refund',
+                  child: Text(
+                    item.isUsed ? 'Used' : 'To Use',
                     style: TextStyle(
                       fontSize: 11,
-                      color: AppColors.error,
+                      color: item.isUsed ? const Color(0xFFE65100) : const Color(0xFF2E7D32),
                       fontWeight: FontWeight.w600,
                     ),
                   ),

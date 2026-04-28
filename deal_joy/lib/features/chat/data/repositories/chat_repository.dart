@@ -5,6 +5,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
 import '../../../../core/errors/app_exception.dart';
 import '../models/conversation_model.dart';
 import '../models/message_model.dart';
@@ -588,50 +589,61 @@ class ChatRepository {
   /// 若用户已有 support 类型会话则直接返回；否则新建并加入
   Future<ConversationModel> getOrCreateSupportChat(String userId) async {
     try {
-      // 查找用户已有的 support 会话（通过 conversation_members inner join conversations）
-      final existingMembers = await _client
+      // Step 1: 查用户所有 conversation_id
+      final memberships = await _client
           .from('conversation_members')
-          .select('conversation_id, conversations!inner(id, type)')
-          .eq('user_id', userId)
-          .eq('conversations.type', 'support');
+          .select('conversation_id')
+          .eq('user_id', userId);
 
-      if ((existingMembers as List).isNotEmpty) {
-        final cid = existingMembers.first['conversation_id'] as String;
-        final conv = await _client
+      final convIds = (memberships as List)
+          .map((m) => m['conversation_id'] as String)
+          .toList();
+
+      // Step 2: 从中找 support 类型
+      if (convIds.isNotEmpty) {
+        final supportConvs = await _client
             .from('conversations')
-            .select(
-              'id, type, name, avatar_url, support_status, updated_at, created_at',
-            )
-            .eq('id', cid)
-            .single();
-        return ConversationModel.fromJson(conv);
+            .select('id, type, name, avatar_url, support_status, updated_at, created_at')
+            .inFilter('id', convIds)
+            .eq('type', 'support')
+            .limit(1);
+
+        if ((supportConvs as List).isNotEmpty) {
+          return ConversationModel.fromJson(
+            supportConvs.first as Map<String, dynamic>,
+          );
+        }
       }
 
-      // 新建 support 会话
-      final newConv = await _client
-          .from('conversations')
-          .insert({
-            'type': 'support',
-            'support_status': 'ai',
-            'name': 'Support',
-          })
-          .select(
-            'id, type, name, avatar_url, support_status, updated_at, created_at',
-          )
-          .single();
+      // Step 3: 新建会话（客户端生成 UUID，避免 INSERT 后 SELECT 被 RLS 拦截）
+      final convId = const Uuid().v4();
+      final now = DateTime.now().toUtc();
 
-      final convId = newConv['id'] as String;
+      await _client.from('conversations').insert({
+        'id': convId,
+        'type': 'support',
+        'support_status': 'ai',
+        'name': 'Support',
+        'created_by': userId,
+      });
 
-      // 将用户加入该会话
       await _client.from('conversation_members').insert({
         'conversation_id': convId,
         'user_id': userId,
       });
 
-      return ConversationModel.fromJson(newConv);
+      // 直接用已知数据构建 model，无需 SELECT（避开 RLS 时序问题）
+      return ConversationModel(
+        id: convId,
+        type: 'support',
+        name: 'Support',
+        supportStatus: 'ai',
+        updatedAt: now,
+        createdAt: now,
+      );
     } on PostgrestException catch (e) {
       throw AppException(
-        'Failed to get or create support chat: ${e.message}',
+        'support chat error ${e.code}: ${e.message}',
         code: e.code,
       );
     }

@@ -360,6 +360,10 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
       appBar: _buildAppBar(title, conversation?.displayAvatarUrl, conversation),
       body: Column(
         children: [
+          // 客服状态 banner（仅 support 会话显示）
+          if (conversation?.type == 'support')
+            _SupportStatusBanner(status: conversation?.supportStatus ?? 'ai'),
+
           // 消息列表区域
           Expanded(
             child: messagesAsync.when(
@@ -377,6 +381,10 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
               ),
             ),
           ),
+
+          // 客服快捷回复（仅 AI 模式下显示）
+          if (conversation?.type == 'support' && conversation?.supportStatus == 'ai')
+            _SupportQuickReplies(onTap: _sendTextMessage),
 
           // 底部输入栏
           ChatInputBar(
@@ -646,6 +654,117 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
           showDateSeparator: showDateSeparator,
         );
       },
+    );
+  }
+}
+
+// 客服快捷回复 chip 列表（仅 AI 模式显示）
+class _SupportQuickReplies extends StatelessWidget {
+  final void Function(String) onTap;
+  const _SupportQuickReplies({required this.onTap});
+
+  static const _chips = [
+    // (显示文案, 发送文本, isLiveAgent)
+    ('🎧  Live Agent', 'live agent', true),
+    ('Check order status', 'I want to check my order status', false),
+    ('Refund policy', 'What is your refund policy?', false),
+    ('How to use coupon', 'How do I use my coupon?', false),
+    ('Cancel order', 'I want to cancel my order', false),
+    ('Coupon expired', 'My coupon has expired, what can I do?', false),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: _chips.map<Widget>((chip) {
+            final label = chip.$1;
+            final sendText = chip.$2;
+            final isLiveAgent = chip.$3;
+            if (isLiveAgent) {
+              return Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: ElevatedButton(
+                  onPressed: () => onTap(sendText),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                    elevation: 0,
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                ),
+              );
+            }
+            return Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: ActionChip(
+                label: Text(label, style: const TextStyle(fontSize: 13)),
+                onPressed: () => onTap(sendText),
+                backgroundColor: Colors.white,
+                side: const BorderSide(color: Color(0xFFE5E7EB)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                labelStyle: const TextStyle(color: AppColors.textPrimary),
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+              ),
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+}
+
+// 客服状态 banner — AI 模式 / 已转人工 / 已解决
+class _SupportStatusBanner extends StatelessWidget {
+  final String status;
+  const _SupportStatusBanner({required this.status});
+
+  @override
+  Widget build(BuildContext context) {
+    final (icon, label, bg, fg) = switch (status) {
+      'human' => (
+          Icons.support_agent,
+          'Connected to a support agent',
+          const Color(0xFFE8F5E9),
+          const Color(0xFF2E7D32),
+        ),
+      'resolved' => (
+          Icons.check_circle_outline,
+          'This conversation has been resolved',
+          const Color(0xFFF5F5F5),
+          const Color(0xFF757575),
+        ),
+      _ => (
+          Icons.smart_toy_outlined,
+          'Chatting with AI assistant',
+          const Color(0xFFE3F2FD),
+          const Color(0xFF1565C0),
+        ),
+    };
+
+    return Container(
+      width: double.infinity,
+      color: bg,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: fg),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: TextStyle(fontSize: 13, color: fg, fontWeight: FontWeight.w500),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -15,12 +15,12 @@ const _couponSelect =
     'void_reason, voided_at, '
     'gifted_from_user_id, current_holder_user_id, '
     'order_item_id, coupon_code, '
-    'deals(id, title, description, image_urls, refund_policy, usage_rules, usage_notes, '
+    'deals(id, title, description, image_urls, refund_policy, usage_rules, usage_notes, package_contents, '
     'merchants(name, logo_url, address, phone)), '
     'gifter_user:users!coupons_gifted_from_user_id_fkey(full_name), '
     'orders!coupons_order_id_fkey(order_number), '
     'order_items!order_items_coupon_id_fkey('
-    'applicable_store_ids, unit_price, refunded_at, refund_amount, refund_method, customer_status)';
+    'applicable_store_ids, unit_price, refunded_at, refund_amount, refund_method, customer_status, selected_options)';
 
 class CouponsRepository {
   final SupabaseClient _client;
