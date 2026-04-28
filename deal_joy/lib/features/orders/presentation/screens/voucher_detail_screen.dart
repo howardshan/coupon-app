@@ -417,6 +417,10 @@ class _VoucherDealCard extends ConsumerWidget {
     final otherItems = dealItems
         .where((i) =>
             i.customerStatus != CustomerItemStatus.unused &&
+            !(i.customerStatus == CustomerItemStatus.gifted &&
+                viewerUserId != null &&
+                viewerUserId!.isNotEmpty &&
+                i.activeGift?.recipientUserId == viewerUserId) &&
             i.customerStatus != CustomerItemStatus.used &&
             i.customerStatus != CustomerItemStatus.refundSuccess &&
             i.customerStatus != CustomerItemStatus.refundPending &&
