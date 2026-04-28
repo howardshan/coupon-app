@@ -165,10 +165,40 @@ class _VoucherDetailBody extends ConsumerStatefulWidget {
 }
 
 class _VoucherDetailBodyState extends ConsumerState<_VoucherDetailBody> {
-  // 券状态行展开状态
   bool _isExpanded = false;
+  // null = 检查中；true = 原始购买人；false = 受赠人
+  bool? _viewerIsPurchaser;
 
   OrderDetailModel get detail => widget.detail;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkViewerRole();
+  }
+
+  // 查询当前用户是否是受赠人（持券但不是原始买家）
+  Future<void> _checkViewerRole() async {
+    final myUid = Supabase.instance.client.auth.currentUser?.id;
+    if (myUid == null) {
+      if (mounted) setState(() => _viewerIsPurchaser = true);
+      return;
+    }
+    try {
+      final result = await Supabase.instance.client
+          .from('coupons')
+          .select('id, user_id')
+          .eq('order_id', detail.id)
+          .eq('current_holder_user_id', myUid)
+          .maybeSingle();
+      if (mounted) {
+        final isRecipient = result != null && result['user_id'] != myUid;
+        setState(() => _viewerIsPurchaser = !isRecipient);
+      }
+    } catch (_) {
+      if (mounted) setState(() => _viewerIsPurchaser = true);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -244,6 +274,8 @@ class _VoucherDetailBodyState extends ConsumerState<_VoucherDetailBody> {
   // ── 现有 unused 布局（保持不变） ──────────────────
   Widget _buildUnusedBody(BuildContext context, List<OrderItemModel> dealItems) {
     final usageRules = dealItems.first.usageRules;
+    // 受赠人不显示 Cancel 和 Gift 按钮
+    final viewerIsRecipient = !(_viewerIsPurchaser ?? true);
     final unusedDealItems = dealItems
         .where((i) => i.customerStatus == CustomerItemStatus.unused)
         .toList();
@@ -303,12 +335,17 @@ class _VoucherDetailBodyState extends ConsumerState<_VoucherDetailBody> {
                 orderItemId: dealItems.first.id,
                 merchantName: dealItems.first.merchantName,
                 expiresAt: dealItems.first.couponExpiresAt,
-                // 所有 unused item IDs，供 Gift 选择数量
                 unusedOrderItemIds: dealItems
                     .where((i) => i.customerStatus == CustomerItemStatus.unused)
                     .map((i) => i.id)
                     .toList(),
+                viewerIsRecipient: viewerIsRecipient,
               ),
+            ),
+
+            // ── 套餐包含内容 ──────────────────────────────
+            SliverToBoxAdapter(
+              child: _PackageContentsSection(dealId: widget.dealId),
             ),
 
             // ── 公共 deal 信息区块（有效期、可用日、使用规则、退款政策） ──
@@ -332,6 +369,7 @@ class _VoucherDetailBodyState extends ConsumerState<_VoucherDetailBody> {
             detail: detail,
             dealId: widget.dealId,
             onRefreshOrderDetail: widget.onRefreshDetail,
+            viewerIsRecipient: viewerIsRecipient,
           ),
         ),
       ],
@@ -1298,13 +1336,12 @@ class _UsageNotesSection extends StatelessWidget {
 class _VoucherQuickActions extends StatefulWidget {
   final String? merchantId;
   final String? couponId;
-  // Gift Bottom Sheet 所需参数
   final String? dealTitle;
   final String? orderItemId;
   final String? merchantName;
   final DateTime? expiresAt;
-  // 所有 unused item IDs，供 Gift 选择赠送数量
   final List<String> unusedOrderItemIds;
+  final bool viewerIsRecipient;
 
   const _VoucherQuickActions({
     this.merchantId,
@@ -1314,6 +1351,7 @@ class _VoucherQuickActions extends StatefulWidget {
     this.merchantName,
     this.expiresAt,
     this.unusedOrderItemIds = const [],
+    this.viewerIsRecipient = false,
   });
 
   @override
@@ -1411,8 +1449,8 @@ class _VoucherQuickActionsState extends State<_VoucherQuickActions> {
               color: AppColors.info,
               onTap: _callStore,
             ),
-          // Gift 只有在存在未使用券时才显示（used/expired/refunded/gifted 的券不可赠送）
-          if (widget.unusedOrderItemIds.isNotEmpty)
+          // Gift：有未使用券且不是受赠人才显示
+          if (widget.unusedOrderItemIds.isNotEmpty && !widget.viewerIsRecipient)
             _QuickActionItem(
               icon: Icons.card_giftcard_outlined,
               label: 'Gift',
@@ -1468,11 +1506,13 @@ class _VoucherBottomActionBar extends ConsumerWidget {
   final OrderDetailModel detail;
   final String dealId;
   final VoidCallback onRefreshOrderDetail;
+  final bool viewerIsRecipient;
 
   const _VoucherBottomActionBar({
     required this.detail,
     required this.dealId,
     required this.onRefreshOrderDetail,
+    this.viewerIsRecipient = false,
   });
 
   @override
@@ -1496,8 +1536,8 @@ class _VoucherBottomActionBar extends ConsumerWidget {
       ),
       child: Row(
         children: [
-          // Cancel 按钮（有 unused 才显示）
-          if (hasUnused) ...[
+          // Cancel 按钮（有 unused 且不是受赠人才显示）
+          if (hasUnused && !viewerIsRecipient) ...[
             Expanded(
               child: OutlinedButton(
                 onPressed: () => _showBatchCancelSheet(
@@ -2384,6 +2424,11 @@ class _UsedVoucherBody extends ConsumerWidget {
               ),
             ),
 
+            // 套餐包含内容
+            SliverToBoxAdapter(
+              child: _PackageContentsSection(dealId: dealId),
+            ),
+
             // Usage Notes
             if (usageRules.isNotEmpty)
               SliverToBoxAdapter(
@@ -2710,6 +2755,88 @@ class _UsedBottomBar extends StatelessWidget {
               child: const Text(
                 'Buy Again',
                 style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── 套餐包含内容（从 deals.package_contents 动态拉取）──
+class _PackageContentsSection extends StatefulWidget {
+  final String dealId;
+
+  const _PackageContentsSection({required this.dealId});
+
+  @override
+  State<_PackageContentsSection> createState() =>
+      _PackageContentsSectionState();
+}
+
+class _PackageContentsSectionState extends State<_PackageContentsSection> {
+  List<String>? _lines;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final data = await Supabase.instance.client
+          .from('deals')
+          .select('package_contents')
+          .eq('id', widget.dealId)
+          .maybeSingle();
+      final pc = (data?['package_contents'] as String?)?.trim() ?? '';
+      if (pc.isNotEmpty && mounted) {
+        final lines = pc
+            .split('\n')
+            .map((l) => l.replaceFirst(RegExp(r'^[•\-\*]\s*'), '').trim())
+            .where((s) => s.isNotEmpty)
+            .toList();
+        if (lines.isNotEmpty) setState(() => _lines = lines);
+      }
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final lines = _lines;
+    if (lines == null || lines.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            "What's Included",
+            style: Theme.of(context)
+                .textTheme
+                .titleSmall
+                ?.copyWith(color: AppColors.textSecondary),
+          ),
+          const SizedBox(height: 8),
+          ...lines.map(
+            (item) => Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(
+                '• $item',
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: AppColors.textPrimary,
+                  height: 1.4,
+                ),
               ),
             ),
           ),

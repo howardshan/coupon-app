@@ -2,6 +2,7 @@
 // 注：屏幕亮度控制需要 screen_brightness 插件，当前使用注释标注 TODO
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -134,6 +135,13 @@ class _CouponDetailBodyState extends State<_CouponDetailBody> {
             // ── Deal 信息 ─────────────────────────────────
             _DealInfoSection(coupon: coupon),
 
+            if (coupon.packageLines.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              const Divider(indent: 16, endIndent: 16),
+              const SizedBox(height: 8),
+              _WhatsIncludedSection(packageLines: coupon.packageLines),
+            ],
+
             const SizedBox(height: 8),
             const Divider(indent: 16, endIndent: 16),
             const SizedBox(height: 8),
@@ -190,6 +198,13 @@ class _CouponDetailBodyState extends State<_CouponDetailBody> {
 
           // ── Deal 信息 ─────────────────────────────────
           _DealInfoSection(coupon: coupon),
+
+          if (coupon.packageLines.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            const Divider(indent: 16, endIndent: 16),
+            const SizedBox(height: 8),
+            _WhatsIncludedSection(packageLines: coupon.packageLines),
+          ],
 
           const SizedBox(height: 8),
           const Divider(indent: 16, endIndent: 16),
@@ -371,21 +386,38 @@ class _QrSection extends StatelessWidget {
             ),
             const SizedBox(height: 16),
 
-            // 券码文字
+            // 券码文字 + 复制按钮
             Text(
               'Coupon Code',
               style: TextStyle(
                   fontSize: 12, color: AppColors.textSecondary),
             ),
             const SizedBox(height: 4),
-            SelectableText(
-              _formatQrCodeForDisplay(coupon.qrCode),
-              style: const TextStyle(
-                fontWeight: FontWeight.w600,
-                letterSpacing: 1.2,
-                fontSize: 13,
+            GestureDetector(
+              onTap: () {
+                Clipboard.setData(ClipboardData(text: coupon.qrCode));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Coupon code copied'),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              },
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _formatQrCodeForDisplay(coupon.qrCode),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 1.2,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  const Icon(Icons.copy_outlined, size: 15, color: AppColors.textHint),
+                ],
               ),
-              textAlign: TextAlign.center,
             ),
             const SizedBox(height: 12),
 
@@ -1976,6 +2008,52 @@ class _CancelQuantitySheetState extends State<_CancelQuantitySheet> {
             child: TextButton(
               onPressed: () => Navigator.pop(context),
               child: const Text('Go Back'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ──────────────────────────────────────────────
+// 套餐包含内容区域
+// ──────────────────────────────────────────────
+class _WhatsIncludedSection extends StatelessWidget {
+  final List<String> packageLines;
+
+  const _WhatsIncludedSection({required this.packageLines});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            "What's Included",
+            style: Theme.of(context)
+                .textTheme
+                .titleSmall
+                ?.copyWith(color: AppColors.textSecondary),
+          ),
+          const SizedBox(height: 8),
+          ...packageLines.map(
+            (item) => Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('• ', style: TextStyle(fontSize: 14, color: AppColors.textPrimary)),
+                  Expanded(
+                    child: Text(
+                      item,
+                      style: const TextStyle(fontSize: 14, color: AppColors.textPrimary),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ],
