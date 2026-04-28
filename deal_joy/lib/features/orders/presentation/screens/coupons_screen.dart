@@ -509,19 +509,8 @@ class _MerchantCouponGroup extends StatelessWidget {
               quantity: dealCoupons.length,
               expiresAt: earliestExpiry,
               productLines: first.packageLines.isNotEmpty ? first.packageLines : null,
-              onTap: () {
-                // 受赠人持有的单张赠送券 → 直接打开券详情（无权访问赠送方的 order）
-                // 判断条件：当前用户是持券人 但不是原始买家
-                final myUid = Supabase.instance.client.auth.currentUser?.id;
-                final isGiftRecipient = myUid != null &&
-                    first.userId != myUid &&
-                    first.isHeldByUser(myUid);
-                if (dealCoupons.length == 1 && isGiftRecipient) {
-                  context.push('/coupon/${first.id}');
-                } else {
-                  _pushVoucherForMergedDealRow(context, dealCoupons);
-                }
-              },
+              // 统一入口：无论单张/多张、受赠/自用，均进入 Voucher Detail
+              onTap: () => _pushVoucherForMergedDealRow(context, dealCoupons),
             );
           }),
           const SizedBox(height: 8),
@@ -771,17 +760,8 @@ class _ExpiringSoonSection extends StatelessWidget {
               expiresAt: earliestExpiry,
               showUrgent: true,
               productLines: first.packageLines.isNotEmpty ? first.packageLines : null,
-              onTap: () {
-                final myUid = Supabase.instance.client.auth.currentUser?.id;
-                final isGiftRecipient = myUid != null &&
-                    first.userId != myUid &&
-                    first.isHeldByUser(myUid);
-                if (dealCoupons.length == 1 && isGiftRecipient) {
-                  context.push('/coupon/${first.id}');
-                } else {
-                  _pushVoucherForMergedDealRow(context, dealCoupons);
-                }
-              },
+              // 统一入口：无论单张/多张、受赠/自用，均进入 Voucher Detail
+              onTap: () => _pushVoucherForMergedDealRow(context, dealCoupons),
             );
           }),
           const SizedBox(height: 4),
