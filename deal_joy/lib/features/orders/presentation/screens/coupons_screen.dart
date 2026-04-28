@@ -508,18 +508,8 @@ class _MerchantCouponGroup extends StatelessWidget {
               imageUrl: first.dealImageUrl,
               quantity: dealCoupons.length,
               expiresAt: earliestExpiry,
-              onTap: () {
-                // 受赠人持有的单张赠送券 → 直接打开券详情（无权访问赠送方的 order）
-                final myUid = Supabase.instance.client.auth.currentUser?.id;
-                if (dealCoupons.length == 1 &&
-                    first.customerStatus == 'gifted' &&
-                    myUid != null &&
-                    myUid != first.userId) {
-                  context.push('/coupon/${first.id}');
-                } else {
-                  _pushVoucherForMergedDealRow(context, dealCoupons);
-                }
-              },
+              // 统一入口：无论单张/多张、受赠/自用，均进入 Voucher Detail
+              onTap: () => _pushVoucherForMergedDealRow(context, dealCoupons),
             );
           }),
           const SizedBox(height: 8),
