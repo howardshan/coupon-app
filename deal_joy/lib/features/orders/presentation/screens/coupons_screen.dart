@@ -508,8 +508,20 @@ class _MerchantCouponGroup extends StatelessWidget {
               imageUrl: first.dealImageUrl,
               quantity: dealCoupons.length,
               expiresAt: earliestExpiry,
-              // 统一入口：无论单张/多张、受赠/自用，均进入 Voucher Detail
-              onTap: () => _pushVoucherForMergedDealRow(context, dealCoupons),
+              productLines: first.packageLines.isNotEmpty ? first.packageLines : null,
+              onTap: () {
+                // 受赠人持有的单张赠送券 → 直接打开券详情（无权访问赠送方的 order）
+                // 判断条件：当前用户是持券人 但不是原始买家
+                final myUid = Supabase.instance.client.auth.currentUser?.id;
+                final isGiftRecipient = myUid != null &&
+                    first.userId != myUid &&
+                    first.isHeldByUser(myUid);
+                if (dealCoupons.length == 1 && isGiftRecipient) {
+                  context.push('/coupon/${first.id}');
+                } else {
+                  _pushVoucherForMergedDealRow(context, dealCoupons);
+                }
+              },
             );
           }),
           const SizedBox(height: 8),
@@ -526,6 +538,7 @@ class _CouponRow extends StatelessWidget {
   final int quantity;
   final DateTime? expiresAt;
   final bool showUrgent;
+  final List<String>? productLines;
   final VoidCallback onTap;
 
   const _CouponRow({
@@ -534,6 +547,7 @@ class _CouponRow extends StatelessWidget {
     required this.quantity,
     this.expiresAt,
     this.showUrgent = false,
+    this.productLines,
     required this.onTap,
   });
 
@@ -575,6 +589,15 @@ class _CouponRow extends StatelessWidget {
                     'Qty: $quantity',
                     style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
                   ),
+                  if (productLines != null && productLines!.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      productLines!.take(3).join(' · '),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                    ),
+                  ],
                   if (expiresAt != null) ...[
                     const SizedBox(height: 2),
                     Text(
@@ -747,7 +770,18 @@ class _ExpiringSoonSection extends StatelessWidget {
               quantity: dealCoupons.length,
               expiresAt: earliestExpiry,
               showUrgent: true,
-              onTap: () => _pushVoucherForMergedDealRow(context, dealCoupons),
+              productLines: first.packageLines.isNotEmpty ? first.packageLines : null,
+              onTap: () {
+                final myUid = Supabase.instance.client.auth.currentUser?.id;
+                final isGiftRecipient = myUid != null &&
+                    first.userId != myUid &&
+                    first.isHeldByUser(myUid);
+                if (dealCoupons.length == 1 && isGiftRecipient) {
+                  context.push('/coupon/${first.id}');
+                } else {
+                  _pushVoucherForMergedDealRow(context, dealCoupons);
+                }
+              },
             );
           }),
           const SizedBox(height: 4),

@@ -71,6 +71,11 @@ class CouponModel {
   // order_items 级别的客户状态（V3 新增，用于精确过滤）
   final String? customerStatus;
 
+  /// 套餐包含内容原始文本（来自 deals.package_contents）
+  final String? packageContents;
+  /// 用户下单时选择的选项快照（来自 order_items.selected_options JSONB；目前多为 NULL）
+  final Map<String, dynamic>? selectedOptions;
+
   const CouponModel({
     required this.id,
     required this.orderId,
@@ -111,6 +116,8 @@ class CouponModel {
     this.refundAmount,
     this.refundMethod,
     this.customerStatus,
+    this.packageContents,
+    this.selectedOptions,
   });
 
   /// 解析 deals.usage_rules（text[] / JSON 数组 / 异常字符串）
@@ -228,6 +235,8 @@ class CouponModel {
       refundAmount: (orderItems?['refund_amount'] as num?)?.toDouble(),
       refundMethod: orderItems?['refund_method'] as String?,
       customerStatus: orderItems?['customer_status'] as String?,
+      packageContents: deals?['package_contents'] as String?,
+      selectedOptions: orderItems?['selected_options'] as Map<String, dynamic>?,
     );
   }
 
@@ -271,6 +280,17 @@ class CouponModel {
     if (userId != viewerUserId) return false;
     return currentHolderUserId == null ||
         currentHolderUserId == viewerUserId;
+  }
+
+  /// 套餐内容行列表（去除前缀符号、过滤空行），用于详情页和卡片展示
+  List<String> get packageLines {
+    final pc = packageContents?.trim() ?? '';
+    if (pc.isEmpty) return [];
+    return pc
+        .split('\n')
+        .map((line) => line.replaceFirst(RegExp(r'^[•\-\*]\s*'), '').trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
   }
 
   /// 合并 deals 兜底查询（如 usage_rules / refund_policy）
@@ -319,6 +339,8 @@ class CouponModel {
       refundAmount: refundAmount,
       refundMethod: refundMethod,
       customerStatus: customerStatus,
+      packageContents: packageContents,
+      selectedOptions: selectedOptions,
     );
   }
 }

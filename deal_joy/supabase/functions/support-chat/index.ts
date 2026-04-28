@@ -128,6 +128,17 @@ serve(async (req: Request) => {
       return jsonResponse({ ai_reply: null, handoff: false, status: conv.support_status });
     }
 
+    // 检测用户消息是否主动请求转人工
+    const humanKeywords = [
+      'live agent', 'human agent', 'real agent', 'real person',
+      'talk to someone', 'speak to someone', 'speak with someone',
+      'talk to a human', 'talk to human', 'connect me to agent',
+      'customer service rep', 'escalate', 'i want a human',
+      'need a human', 'want to talk to', 'want to speak to',
+    ];
+    const msgLower = message.toLowerCase();
+    const userWantsHuman = humanKeywords.some((kw) => msgLower.includes(kw));
+
     // 保存用户消息
     await supabase.from('messages').insert({
       conversation_id,
@@ -135,6 +146,22 @@ serve(async (req: Request) => {
       type: 'text',
       content: message,
     });
+
+    if (userWantsHuman) {
+      // 用户主动请求转人工，立即 handoff，不调用 AI
+      const handoffReply = "I'll connect you with a human agent right away. Please hold on — someone from our support team will be with you shortly.";
+      await supabase.from('messages').insert({
+        conversation_id,
+        sender_id: null,
+        type: 'text',
+        content: handoffReply,
+        is_ai_message: true,
+      });
+      await supabase.from('conversations').update({
+        support_status: 'human',
+      }).eq('id', conversation_id);
+      return jsonResponse({ ai_reply: handoffReply, handoff: true });
+    }
 
     // 如果没有 Anthropic API Key，直接转人工
     if (!anthropicApiKey) {

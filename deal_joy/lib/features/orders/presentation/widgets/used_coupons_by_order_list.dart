@@ -399,6 +399,16 @@ class _UsedCouponTile extends StatelessWidget {
                           color: AppColors.textHint,
                         ),
                       ),
+                      if (coupon.packageLines.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          coupon.packageLines.take(3).join(' · '),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 11, color: AppColors.textSecondary),
+                        ),
+                      ],
                       if (priceLine != null) ...[
                         const SizedBox(height: 2),
                         Text(

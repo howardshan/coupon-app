@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -445,10 +446,19 @@ _IconGridItem(
           ),
 
           const SizedBox(height: 16),
-          const Center(
-            child: Text(
-              'Crunchy Plum Version 2.4.1',
-              style: TextStyle(fontSize: 10, color: AppColors.textHint),
+          Center(
+            child: FutureBuilder<PackageInfo>(
+              future: PackageInfo.fromPlatform(),
+              builder: (context, snapshot) {
+                final version = snapshot.data?.version ?? '';
+                final label = version.isNotEmpty
+                    ? 'Crunchy Plum v$version'
+                    : 'Crunchy Plum';
+                return Text(
+                  label,
+                  style: const TextStyle(fontSize: 10, color: AppColors.textHint),
+                );
+              },
             ),
           ),
           const SizedBox(height: 32),

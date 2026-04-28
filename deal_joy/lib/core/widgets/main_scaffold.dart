@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../features/auth/domain/providers/auth_provider.dart';
 import '../../features/cart/domain/providers/cart_provider.dart';
+import '../../features/chat/domain/providers/chat_provider.dart';
 import '../../shared/providers/legal_provider.dart';
 import '../../shared/widgets/consent_barrier.dart';
 import '../theme/app_colors.dart';
@@ -81,6 +82,7 @@ class _MainScaffoldState extends ConsumerState<MainScaffold>
     final location = GoRouterState.of(context).matchedLocation;
     final currentIndex = _locationToIndex(location);
     final cartCount = ref.watch(cartTotalCountProvider);
+    final chatUnread = ref.watch(totalUnreadCountProvider).valueOrNull ?? 0;
 
     return Scaffold(
       body: widget.child,
@@ -101,9 +103,9 @@ class _MainScaffoldState extends ConsumerState<MainScaffold>
             selectedIcon: Icon(Icons.home),
             label: 'Deals',
           ),
-          const NavigationDestination(
-            icon: Icon(Icons.chat_bubble_outline),
-            selectedIcon: Icon(Icons.chat_bubble),
+          NavigationDestination(
+            icon: _chatTabIcon(chatUnread, selected: false),
+            selectedIcon: _chatTabIcon(chatUnread, selected: true),
             label: 'Chat',
           ),
           NavigationDestination(
@@ -120,6 +122,20 @@ class _MainScaffoldState extends ConsumerState<MainScaffold>
       ),
     );
   }
+}
+
+/// 底部导航 Chat：有未读消息时显示红点角标
+Widget _chatTabIcon(int count, {required bool selected}) {
+  final iconData =
+      selected ? Icons.chat_bubble : Icons.chat_bubble_outline;
+  if (count <= 0) return Icon(iconData);
+  final label = count > 99 ? '99+' : '$count';
+  return Badge(
+    isLabelVisible: true,
+    label: Text(label, style: const TextStyle(fontSize: 10, color: Colors.white)),
+    backgroundColor: AppColors.error,
+    child: Icon(iconData),
+  );
 }
 
 /// 底部导航 Cart：与 Deal 详情底栏购物车角标风格一致（券总张数）
