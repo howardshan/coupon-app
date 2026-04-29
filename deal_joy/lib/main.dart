@@ -1,3 +1,4 @@
+import 'package:app_links/app_links.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
@@ -78,6 +79,18 @@ void main() async {
 
   // 初始化 deep link 监听（referral link 处理）
   await ReferralLinkService.instance.init();
+
+  // supabase_flutter 在移动端只订阅 uriLinkStream，不主动调用 getInitialLink()。
+  // 但 app_links v6 冷启动时初始链接仅通过 getInitialLink() 获取，不会推送到 uriLinkStream。
+  // 这里显式补偿：若冷启动链接含 PKCE code，手动触发 Supabase 的 code exchange。
+  try {
+    final initialUri = await AppLinks().getInitialLink();
+    if (initialUri != null && initialUri.queryParameters.containsKey('code')) {
+      await Supabase.instance.client.auth.getSessionFromUrl(initialUri);
+    }
+  } catch (_) {
+    // 静默处理：code 已使用过或不合法，不影响正常启动
+  }
 
   // 读取上次地区选择，首次启动默认 Near Me = true
   final prefs = await SharedPreferences.getInstance();
