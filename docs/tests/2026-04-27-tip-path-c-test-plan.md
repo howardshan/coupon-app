@@ -1,4 +1,4 @@
-# 路径 C 小费扣款 — 功能测试计划
+# 1 1路径 C 小费扣款 — 功能测试计划
 
 > **范围：** `create-tip-payment-intent` 多分支 `flow`、持券人 `payer_user_id`、`confirm-tip-payment-session`、推送 `tip_confirm`、`deal_joy` 确认页、`dealjoy_merchant` Collect Tip 按 `flow` 分支、Webhook `paid` 一致性。  
 > **关联文档：** [../plans/2026-04-23-post-redemption-tipping.md](../plans/2026-04-23-post-redemption-tipping.md) §十一；总清单可配合 [post-redemption-tipping-qa-checklist.md](./post-redemption-tipping-qa-checklist.md)。
