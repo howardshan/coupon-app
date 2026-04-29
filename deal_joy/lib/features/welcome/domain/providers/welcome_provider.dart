@@ -23,3 +23,7 @@ final onboardingConfigProvider =
 final bannerConfigProvider = FutureProvider.autoDispose<BannerConfig?>((ref) {
   return ref.read(welcomeRepositoryProvider).fetchActiveBannerConfig();
 });
+
+/// 是否首次启动（在 main.dart 中用 SharedPreferences 初始化）
+/// router redirect 据此决定未登录用户是否先跳 Onboarding
+final isFirstLaunchProvider = StateProvider<bool>((ref) => false);

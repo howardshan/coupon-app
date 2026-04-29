@@ -9,7 +9,7 @@ import { resolveAuth, requirePermission } from "../_shared/auth.ts";
 import { sendEmail } from "../_shared/email.ts";
 import { buildM22Email } from "../_shared/email-templates/merchant/staff-invitation.ts";
 
-const MERCHANT_APP_URL = "https://merchant.crunchyplum.com";
+const MERCHANT_APP_URL = "https://www.crunchyplum.com";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -410,7 +410,7 @@ Deno.serve(async (req: Request) => {
 
           const storeName  = merchant?.name ?? "the store";
           const inviterName = inviter?.full_name || inviter?.email || "The store owner";
-          const acceptUrl  = `${MERCHANT_APP_URL}/staff/accept?invitation_id=${invitation.id}`;
+          const acceptUrl  = `${MERCHANT_APP_URL}/staff-invite?invitation_id=${invitation.id}`;
 
           const { subject, html } = buildM22Email({
             invitedEmail: email,

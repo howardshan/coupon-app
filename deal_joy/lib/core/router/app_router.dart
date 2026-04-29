@@ -55,6 +55,7 @@ import '../../features/cart/data/models/cart_item_model.dart';
 import '../../features/cart/presentation/screens/cart_screen.dart';
 import '../../features/welcome/presentation/screens/welcome_splash_screen.dart';
 import '../../features/welcome/presentation/screens/onboarding_screen.dart';
+import '../../features/welcome/domain/providers/welcome_provider.dart';
 import '../../features/tipping/presentation/screens/tip_confirm_payment_screen.dart';
 import '../widgets/main_scaffold.dart';
 import '../widgets/splash_screen.dart';
@@ -118,10 +119,15 @@ final routerProvider = Provider<GoRouter>((ref) {
         return currentPath == '/auth/reset-password' ? null : '/auth/reset-password';
       }
 
-      // 未登录 — 强制登录，只允许 /auth/* 路由
+      // 未登录 — 只允许 /auth/* 和 /onboarding
       if (!isLoggedIn) {
-        if (isAuthRoute) return null;
-        // 保留原路径作为 redirect 参数，登录后跳回
+        if (isAuthRoute || isOnboarding) return null;
+        // 首次安装 → 先走 Onboarding，完成后再跳登录
+        final isFirst = ref.read(isFirstLaunchProvider);
+        if (isFirst && (isSplash || currentPath == '/')) {
+          return '/onboarding';
+        }
+        // 非首次 → 保留原路径作为 redirect 参数，登录后跳回
         if (currentPath != '/' && currentPath != '/splash') {
           return '/auth/login?redirect=${Uri.encodeComponent(currentPath)}';
         }

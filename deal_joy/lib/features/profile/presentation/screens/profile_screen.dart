@@ -203,11 +203,13 @@ _IconGridItem(
                   label: 'Gift',
                   onTap: () => context.push('/coupons?tab=gifted'),
                 ),
-                _IconGridItem(
-                  icon: Icons.person_add_outlined,
-                  label: 'Invite',
-                  onTap: () => context.push('/profile/referral'),
-                ),
+                // Invite 入口：仅当 referral 功能开启时显示
+                if (referralConfigAsync.valueOrNull?.enabled == true)
+                  _IconGridItem(
+                    icon: Icons.person_add_outlined,
+                    label: 'Invite',
+                    onTap: () => context.push('/profile/referral'),
+                  ),
               ],
             ),
           ),
@@ -216,9 +218,12 @@ _IconGridItem(
 
           // ── Referral 推广横幅（仅在功能开启时显示）────────────────
           if (referralConfigAsync.valueOrNull?.enabled == true) ...[
-            ReferralBanner(
-              bonusAmount: referralConfigAsync.value!.bonusAmount,
-              onTap: () => context.push('/profile/referral'),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: ReferralBanner(
+                bonusAmount: referralConfigAsync.value!.bonusAmount,
+                onTap: () => context.push('/profile/referral'),
+              ),
             ),
             const SizedBox(height: 12),
           ],

@@ -89,9 +89,21 @@ export function wrapInLayout(options: {
           <!-- 顶部品牌 Logo 区 -->
           <tr>
             <td align="center" style="padding-bottom:24px;">
-              <img src="https://kqyolvmgrdekybjrwizx.supabase.co/storage/v1/object/public/admin-uploads/brand/logo.jpg"
-                   alt="CrunchyPlum" width="80" height="80"
-                   style="display:block;border-radius:12px;" />
+              <table cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td align="center" valign="middle"
+                      style="background-color:#1A1A2E;padding:14px 24px;border-radius:10px;">
+                    <img src="https://www.crunchyplum.com/logo-email.png"
+                         alt="Crunchy Plum"
+                         width="36" height="36"
+                         style="display:inline-block;vertical-align:middle;border-radius:6px;margin-right:10px;" />
+                    <span style="display:inline-block;vertical-align:middle;
+                                 font-size:20px;font-weight:800;color:#FFFFFF;letter-spacing:0.4px;">
+                      Crunchy Plum
+                    </span>
+                  </td>
+                </tr>
+              </table>
             </td>
           </tr>
 
@@ -130,9 +142,9 @@ export function wrapInLayout(options: {
                 CrunchyPlum · Dallas, TX · <a href="https://crunchyplum.com" style="color:${TEXT_MUTED};">crunchyplum.com</a>
               </p>
               <p style="margin:8px 0 0;font-size:11px;color:${TEXT_MUTED};">
-                <a href="https://crunchyplum.com/terms" style="color:${TEXT_MUTED};">Terms of Service</a> ·
-                <a href="https://crunchyplum.com/privacy" style="color:${TEXT_MUTED};">Privacy Policy</a> ·
-                <a href="https://crunchyplum.com/refund-policy" style="color:${TEXT_MUTED};">Refund Policy</a>
+                <a href="https://www.crunchyplum.com/legal/terms" style="color:${TEXT_MUTED};">Terms of Service</a> ·
+                <a href="https://www.crunchyplum.com/legal/privacy" style="color:${TEXT_MUTED};">Privacy Policy</a> ·
+                <a href="https://www.crunchyplum.com/legal/refund" style="color:${TEXT_MUTED};">Refund Policy</a>
               </p>
               <p style="margin:8px 0 0;font-size:11px;color:${TEXT_MUTED};">
                 © ${new Date().getFullYear()} CrunchyPlum. All rights reserved.

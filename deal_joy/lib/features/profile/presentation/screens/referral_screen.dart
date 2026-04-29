@@ -113,10 +113,13 @@ class _HeroCard extends StatelessWidget {
           color: const Color(0xFFF1F3F5),
           borderRadius: BorderRadius.circular(20),
         ),
-        child: const Column(
+        child: Column(
           children: [
-            Text('🍑', style: TextStyle(fontSize: 40)),
-            SizedBox(height: 12),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Image.asset('assets/images/logo.jpg', width: 48, height: 48),
+            ),
+            const SizedBox(height: 12),
             Text(
               'Referral Program',
               style: TextStyle(
@@ -199,7 +202,10 @@ class _HeroCard extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 16),
-          const Text('🍑', style: TextStyle(fontSize: 64)),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(18),
+            child: Image.asset('assets/images/logo.jpg', width: 80, height: 80),
+          ),
         ],
       ),
     );
@@ -662,8 +668,8 @@ class _ReferralsCard extends StatelessWidget {
                       color: _yellowLight,
                       shape: BoxShape.circle,
                     ),
-                    child: const Center(
-                      child: Text('🍑', style: TextStyle(fontSize: 28)),
+                    child: ClipOval(
+                      child: Image.asset('assets/images/logo.jpg', width: 60, height: 60, fit: BoxFit.cover),
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -809,7 +815,10 @@ class ReferralBanner extends StatelessWidget {
         ),
         child: Row(
           children: [
-            const Text('🍑', style: TextStyle(fontSize: 22)),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.asset('assets/images/logo.jpg', width: 28, height: 28),
+            ),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
