@@ -125,7 +125,20 @@ Deno.serve(async (req) => {
 
       // 获取默认支付方式 ID
       const customerData = await stripe.customers.retrieve(customerId) as Stripe.Customer;
-      const defaultPmId = customerData.invoice_settings?.default_payment_method as string | null;
+      let defaultPmId = customerData.invoice_settings?.default_payment_method as string | null;
+
+      // B：若 Customer 未设置默认卡但已有卡，自动将第一张卡设为默认（与客户端 A 互补）
+      if (!defaultPmId && pmList.data.length > 0) {
+        const firstId = pmList.data[0].id;
+        try {
+          await stripe.customers.update(customerId, {
+            invoice_settings: { default_payment_method: firstId },
+          });
+          defaultPmId = firstId;
+        } catch (e) {
+          console.error('自动设置默认支付方式失败:', e);
+        }
+      }
 
       // 格式化返回数据，只暴露必要字段（含账单地址）
       const paymentMethods = pmList.data.map((pm) => ({

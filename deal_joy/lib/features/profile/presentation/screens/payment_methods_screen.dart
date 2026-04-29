@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
 import '../../../../core/constants/stripe_app_config.dart';
+import '../../../../core/constants/us_states.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../data/models/saved_card_model.dart';
 import '../../domain/providers/payment_methods_provider.dart';
@@ -611,9 +612,11 @@ class _AddCardFlowScreenState extends ConsumerState<_AddCardFlowScreen> {
   late final TextEditingController _line1Ctrl;
   late final TextEditingController _line2Ctrl;
   late final TextEditingController _cityCtrl;
-  late final TextEditingController _stateCtrl;
   late final TextEditingController _postalCtrl;
   late final TextEditingController _countryCtrl;
+
+  /// 账单州（美国两字母缩写，与 Billing Address 页一致）
+  String? _selectedState;
 
   bool _cardComplete = false;
   bool _submitting = false;
@@ -624,7 +627,6 @@ class _AddCardFlowScreenState extends ConsumerState<_AddCardFlowScreen> {
     _line1Ctrl = TextEditingController();
     _line2Ctrl = TextEditingController();
     _cityCtrl = TextEditingController();
-    _stateCtrl = TextEditingController();
     _postalCtrl = TextEditingController();
     _countryCtrl = TextEditingController(text: 'US');
   }
@@ -634,7 +636,6 @@ class _AddCardFlowScreenState extends ConsumerState<_AddCardFlowScreen> {
     _line1Ctrl.dispose();
     _line2Ctrl.dispose();
     _cityCtrl.dispose();
-    _stateCtrl.dispose();
     _postalCtrl.dispose();
     _countryCtrl.dispose();
     super.dispose();
@@ -657,7 +658,7 @@ class _AddCardFlowScreenState extends ConsumerState<_AddCardFlowScreen> {
     }
     final line1 = _line1Ctrl.text.trim();
     final city = _cityCtrl.text.trim();
-    final state = _stateCtrl.text.trim();
+    final state = _selectedState?.trim() ?? '';
     final postal = _postalCtrl.text.trim();
     if (line1.isEmpty || city.isEmpty || state.isEmpty || postal.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -710,6 +711,21 @@ class _AddCardFlowScreenState extends ConsumerState<_AddCardFlowScreen> {
         throw Exception('Card setup incomplete (${si.status})');
       }
 
+      final newPmId = si.paymentMethodId;
+      // A：客户端 — 若列表中仍无任何默认卡，则将刚添加的卡设为默认
+      await ref.read(paymentMethodsProvider.notifier).refresh();
+      if (!mounted) return;
+      final cards = ref.read(paymentMethodsProvider).valueOrNull ?? [];
+      final hasDefault = cards.any((c) => c.isDefault);
+      if (!hasDefault && newPmId.isNotEmpty) {
+        try {
+          await ref.read(paymentMethodsProvider.notifier).setDefault(newPmId);
+        } catch (_) {
+          // B：GET 列表时 Edge 也可能已写入默认；忽略重复设默认失败
+        }
+      }
+
+      if (!mounted) return;
       Navigator.of(context, rootNavigator: true).pop(true);
     } on StripeException catch (e) {
       if (!mounted) return;
@@ -812,13 +828,25 @@ class _AddCardFlowScreenState extends ConsumerState<_AddCardFlowScreen> {
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: TextField(
-                    controller: _stateCtrl,
-                    textInputAction: TextInputAction.next,
+                  child: DropdownButtonFormField<String>(
+                    value: _selectedState,
                     decoration: const InputDecoration(
                       labelText: 'State',
                       border: OutlineInputBorder(),
+                      contentPadding:
+                          EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     ),
+                    hint: const Text('Select'),
+                    isExpanded: true,
+                    items: kUsStateCodes
+                        .map(
+                          (s) => DropdownMenuItem<String>(
+                            value: s,
+                            child: Text(s),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (v) => setState(() => _selectedState = v),
                   ),
                 ),
               ],
