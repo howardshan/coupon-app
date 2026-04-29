@@ -1,39 +1,66 @@
 /**
  * auth-redirect — 密码重置邮件中间跳转页
  *
- * 多层策略，覆盖所有 Android 场景：
- * 1. HTTP 302 → 自定义协议（iOS Safari / Chrome Custom Tabs）
- * 2. HTML 按钮 → Android Intent URI（Samsung Email / 受限 WebView）
- * 3. JS window.location + meta refresh 三重兜底
+ * 成功路径：带 PKCE code → 302 / HTML 按钮唤起 App。
+ * 失败路径：302 到自有域名静态页（避免部分 iOS WebKit 对 *.supabase.co 返回的 HTML 当纯文本展示）。
  */
 
-const APP_SCHEME = 'io.supabase.crunchyplum';
-const CALLBACK_HOST = 'login-callback';
-const ANDROID_PACKAGE = 'com.crunchyplum.crunchy_plum';
-const FALLBACK_URL = 'https://crunchyplum.com';
+const APP_SCHEME = "io.supabase.crunchyplum";
+const CALLBACK_HOST = "login-callback";
+const ANDROID_PACKAGE = "com.crunchyplum.crunchy_plum";
+const FALLBACK_URL = "https://crunchyplum.com";
+
+/** 与 web/auth/reset-link-expired/index.html 对应，需部署到 crunchyplum.com */
+const RESET_LINK_EXPIRED_URL = "https://crunchyplum.com/auth/reset-link-expired/";
+
+/** 302 附带 fallback HTML 时的响应头 */
+function htmlBridgeHeaders(location: string): Headers {
+  return new Headers({
+    Location: location,
+    "Content-Type": "text/html; charset=UTF-8",
+    "X-Content-Type-Options": "nosniff",
+    "Cache-Control": "no-store, no-cache",
+  });
+}
 
 Deno.serve(async (req: Request) => {
   const reqUrl = new URL(req.url);
+  const err = reqUrl.searchParams.get("error");
+  const errCode = reqUrl.searchParams.get("error_code");
+
+  const isAuthFailure =
+    err === "access_denied" ||
+    errCode === "otp_expired" ||
+    errCode === "otp_disabled" ||
+    reqUrl.searchParams.has("error_description");
+
+  // 自有域名托管 HTML，Safari / Gmail WebView 均按正常网页渲染
+  if (isAuthFailure) {
+    return new Response(null, {
+      status: 302,
+      headers: new Headers({
+        Location: RESET_LINK_EXPIRED_URL,
+        "Cache-Control": "no-store, no-cache",
+      }),
+    });
+  }
+
   const params = reqUrl.searchParams.toString();
-  const paramStr = params ? `?${params}` : '';
+  const paramStr = params ? `?${params}` : "";
 
-  // 自定义协议 URL（iOS / Chrome Custom Tabs）
   const deepLinkUrl = `${APP_SCHEME}://${CALLBACK_HOST}/${paramStr}`;
+  const intentUri =
+    `intent://${CALLBACK_HOST}/${paramStr}#Intent;scheme=${APP_SCHEME};package=${ANDROID_PACKAGE};S.browser_fallback_url=${encodeURIComponent(FALLBACK_URL)};end`;
 
-  // Android Intent URI（Samsung Email 等受限 WebView 使用）
-  // 格式: intent://<host>/<path>#Intent;scheme=<scheme>;package=<pkg>;S.browser_fallback_url=<url>;end
-  const intentUri = `intent://${CALLBACK_HOST}/${paramStr}#Intent;scheme=${APP_SCHEME};package=${ANDROID_PACKAGE};S.browser_fallback_url=${encodeURIComponent(FALLBACK_URL)};end`;
-
-  const ua = req.headers.get('user-agent') ?? '';
+  const ua = req.headers.get("user-agent") ?? "";
   const isIOS = /iPhone|iPad|iPod/i.test(ua);
-
-  // iOS：直接 302，不需要 Intent URI
   const buttonHref = isIOS ? deepLinkUrl : intentUri;
 
   const body = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Opening Crunchy Plum...</title>
   <style>
@@ -59,10 +86,6 @@ Deno.serve(async (req: Request) => {
 
   return new Response(body, {
     status: 302,
-    headers: {
-      'Location': deepLinkUrl,
-      'Content-Type': 'text/html; charset=utf-8',
-      'Cache-Control': 'no-store, no-cache',
-    },
+    headers: htmlBridgeHeaders(deepLinkUrl),
   });
 });

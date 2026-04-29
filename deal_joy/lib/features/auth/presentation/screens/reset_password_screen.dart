@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../shared/providers/supabase_provider.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../../shared/widgets/app_text_field.dart';
 import '../../../auth/domain/providers/auth_provider.dart';
@@ -69,6 +70,13 @@ class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
         setState(() => _countdown--);
       }
     });
+  }
+
+  /// 放弃重置：清除 recovery session 并回登录（deep link 冷启动时无路由栈可 pop）
+  Future<void> _cancelToLogin() async {
+    await ref.read(supabaseClientProvider).auth.signOut();
+    if (!mounted) return;
+    context.go('/auth/login');
   }
 
   // 提交新密码
@@ -144,8 +152,15 @@ class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Set New Password'),
-        // 成功后隐藏返回按钮，避免用户回到表单
-        automaticallyImplyLeading: !_success,
+        // 显式返回：仅依赖 automaticallyImplyLeading 时 deep link 冷启动无上一页，不显示返回
+        leading: _success
+            ? null
+            : IconButton(
+                icon: const Icon(Icons.arrow_back),
+                tooltip: 'Back to Sign In',
+                onPressed: _cancelToLogin,
+              ),
+        automaticallyImplyLeading: false,
       ),
       body: SafeArea(
         child: SingleChildScrollView(

@@ -1,0 +1,15 @@
+# 将 Netlify 站点「发布目录」设为本文件夹（coupon-app/web）后部署，无需构建。
+[build]
+  publish = "."
+  command = "true"
+
+# 与 Edge Function RESET_LINK_EXPIRED_URL、邮件内链等保持一致（带尾斜杠）
+[[redirects]]
+  from = "/auth/reset-link-expired"
+  to = "/auth/reset-link-expired/"
+  status = 301
+
+[[redirects]]
+  from = "/auth-confirm"
+  to = "/auth-confirm/"
+  status = 301
