@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
+import '../../../../core/constants/stripe_app_config.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../data/models/saved_card_model.dart';
 import '../../domain/providers/payment_methods_provider.dart';
@@ -540,7 +541,7 @@ class _AddCardButtonState extends ConsumerState<_AddCardButton> {
   @override
   Widget build(BuildContext context) {
     return ElevatedButton.icon(
-      // 加载中时传 null 禁用按钮，避免重复触发 Stripe 弹窗
+      // 加载中时传 null 禁用按钮，避免重复进入添加页
       onPressed: _isLoading ? null : _addNewCard,
       icon: _isLoading
           ? const SizedBox(
@@ -564,67 +565,30 @@ class _AddCardButtonState extends ConsumerState<_AddCardButton> {
     );
   }
 
-  /// 通过 Stripe SetupSheet 添加新卡
+  /// 打开 CardField + confirmSetupIntent 页面添加新卡
   Future<void> _addNewCard() async {
     if (_isLoading) return; // 双重保险，防止并发
     setState(() => _isLoading = true);
     try {
-      // 调用后端创建 SetupIntent，获取 clientSecret / customerId / ephemeralKey
-      final setupData = await ref
-          .read(paymentMethodsRepositoryProvider)
-          .createSetupIntent();
-
-      final clientSecret = setupData['clientSecret'] ?? '';
-      final customerId = setupData['customerId'];
-      final ephemeralKey = setupData['ephemeralKey'];
-
-      if (clientSecret.isEmpty) {
-        throw Exception('Invalid setup intent');
-      }
-
-      // 初始化 Stripe SetupPaymentSheet
-      await Stripe.instance.initPaymentSheet(
-        paymentSheetParameters: SetupPaymentSheetParameters(
-          setupIntentClientSecret: clientSecret,
-          merchantDisplayName: 'Crunchy Plum',
-          customerId: customerId,
-          customerEphemeralKeySecret: ephemeralKey,
-          style: ThemeMode.light,
-          // 强制收集 billing address，确保卡片和地址绑定
-          billingDetailsCollectionConfiguration:
-              const BillingDetailsCollectionConfiguration(
-            address: AddressCollectionMode.full,
-          ),
+      final added = await Navigator.of(context, rootNavigator: true).push<bool>(
+        MaterialPageRoute(
+          fullscreenDialog: true,
+          builder: (_) => const _AddCardFlowScreen(),
         ),
       );
-
-      // Stripe 弹窗出现前恢复按钮，避免弹窗期间按钮一直灰显
-      if (mounted) setState(() => _isLoading = false);
-
-      // 弹出卡片录入表单
-      await Stripe.instance.presentPaymentSheet();
+      if (!mounted || added != true) return;
 
       // 成功后刷新卡片列表
       await ref.read(paymentMethodsProvider.notifier).refresh();
-
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Card added successfully'),
-            backgroundColor: AppColors.success,
-          ),
-        );
-      }
-    } on StripeException catch (e) {
-      // 用户主动取消，不提示错误
-      if (e.error.code == FailureCode.Canceled) return;
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to add card: ${e.error.message}')),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Card added successfully'),
+          backgroundColor: AppColors.success,
+        ),
+      );
     } catch (e) {
-      if (context.mounted) {
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to add card: $e')),
         );
@@ -632,6 +596,290 @@ class _AddCardButtonState extends ConsumerState<_AddCardButton> {
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+}
+
+/// 使用 CardField + confirmSetupIntent 添加卡片（与 Checkout 新卡路径一致，避免 PaymentSheet 在 iOS 上 present 失败）
+class _AddCardFlowScreen extends ConsumerStatefulWidget {
+  const _AddCardFlowScreen();
+
+  @override
+  ConsumerState<_AddCardFlowScreen> createState() => _AddCardFlowScreenState();
+}
+
+class _AddCardFlowScreenState extends ConsumerState<_AddCardFlowScreen> {
+  late final TextEditingController _line1Ctrl;
+  late final TextEditingController _line2Ctrl;
+  late final TextEditingController _cityCtrl;
+  late final TextEditingController _stateCtrl;
+  late final TextEditingController _postalCtrl;
+  late final TextEditingController _countryCtrl;
+
+  bool _cardComplete = false;
+  bool _submitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _line1Ctrl = TextEditingController();
+    _line2Ctrl = TextEditingController();
+    _cityCtrl = TextEditingController();
+    _stateCtrl = TextEditingController();
+    _postalCtrl = TextEditingController();
+    _countryCtrl = TextEditingController(text: 'US');
+  }
+
+  @override
+  void dispose() {
+    _line1Ctrl.dispose();
+    _line2Ctrl.dispose();
+    _cityCtrl.dispose();
+    _stateCtrl.dispose();
+    _postalCtrl.dispose();
+    _countryCtrl.dispose();
+    super.dispose();
+  }
+
+  bool _statusRequiresAction(String status) {
+    final s = status.toLowerCase();
+    return s == 'requires_action' || s == 'requires_source_action';
+  }
+
+  bool _statusSucceeded(String status) => status.toLowerCase() == 'succeeded';
+
+  Future<void> _submit() async {
+    if (_submitting) return;
+    if (!_cardComplete) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please complete your card details')),
+      );
+      return;
+    }
+    final line1 = _line1Ctrl.text.trim();
+    final city = _cityCtrl.text.trim();
+    final state = _stateCtrl.text.trim();
+    final postal = _postalCtrl.text.trim();
+    if (line1.isEmpty || city.isEmpty || state.isEmpty || postal.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please fill in billing address')),
+      );
+      return;
+    }
+
+    setState(() => _submitting = true);
+    try {
+      final setupData =
+          await ref.read(paymentMethodsRepositoryProvider).createSetupIntent();
+      final clientSecret = setupData['clientSecret'] ?? '';
+      if (clientSecret.isEmpty) {
+        throw Exception('Could not start card setup');
+      }
+
+      final country =
+          _countryCtrl.text.trim().isEmpty ? 'US' : _countryCtrl.text.trim();
+      final billingDetails = BillingDetails(
+        address: Address(
+          line1: line1,
+          line2: _line2Ctrl.text.trim(),
+          city: city,
+          state: state,
+          postalCode: postal,
+          country: country,
+        ),
+      );
+
+      var si = await Stripe.instance.confirmSetupIntent(
+        paymentIntentClientSecret: clientSecret,
+        params: PaymentMethodParams.card(
+          paymentMethodData: PaymentMethodData(
+            billingDetails: billingDetails,
+          ),
+        ),
+      );
+
+      // 3DS 等：requires_action 时走原生 next action（非 PaymentSheet）
+      for (var i = 0; i < 5 && mounted && _statusRequiresAction(si.status); i++) {
+        si = await Stripe.instance.handleNextActionForSetupIntent(
+          clientSecret,
+          returnURL: StripeAppConfig.paymentSheetReturnUrl,
+        );
+      }
+
+      if (!mounted) return;
+      if (!_statusSucceeded(si.status)) {
+        throw Exception('Card setup incomplete (${si.status})');
+      }
+
+      Navigator.of(context, rootNavigator: true).pop(true);
+    } on StripeException catch (e) {
+      if (!mounted) return;
+      if (e.error.code == FailureCode.Canceled) {
+        Navigator.of(context, rootNavigator: true).pop(false);
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.error.message ?? 'Card setup failed')),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        title: const Text('Add New Card'),
+        backgroundColor: Colors.white,
+        foregroundColor: AppColors.textPrimary,
+        elevation: 0,
+        surfaceTintColor: Colors.transparent,
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: AppColors.surfaceVariant),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Card Information',
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                  ),
+                  const SizedBox(height: 12),
+                  CardField(
+                    onCardChanged: (card) {
+                      setState(() => _cardComplete = card?.complete ?? false);
+                    },
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Billing Address',
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _line1Ctrl,
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(
+                labelText: 'Address Line 1',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _line2Ctrl,
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(
+                labelText: 'Address Line 2 (optional)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _cityCtrl,
+                    textInputAction: TextInputAction.next,
+                    decoration: const InputDecoration(
+                      labelText: 'City',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextField(
+                    controller: _stateCtrl,
+                    textInputAction: TextInputAction.next,
+                    decoration: const InputDecoration(
+                      labelText: 'State',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _postalCtrl,
+                    keyboardType: TextInputType.number,
+                    textInputAction: TextInputAction.next,
+                    decoration: const InputDecoration(
+                      labelText: 'Postal Code',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextField(
+                    controller: _countryCtrl,
+                    textInputAction: TextInputAction.done,
+                    decoration: const InputDecoration(
+                      labelText: 'Country',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 28),
+            ElevatedButton(
+              onPressed: _submitting ? null : _submit,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: _submitting
+                  ? const SizedBox(
+                      height: 22,
+                      width: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Text(
+                      'Save Card',
+                      style:
+                          TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
