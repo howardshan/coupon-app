@@ -8,7 +8,8 @@ final referralRepositoryProvider = Provider<ReferralRepository>((ref) {
 });
 
 /// 读取 referral_config（程序是否开启 + 奖励金额）
-final referralConfigProvider = FutureProvider<ReferralConfig>((ref) async {
+/// autoDispose：每次页面重新挂载时都重新拉取，确保 admin 改配置后客户端能实时感知
+final referralConfigProvider = FutureProvider.autoDispose<ReferralConfig>((ref) async {
   return ref.read(referralRepositoryProvider).fetchConfig();
 });
 
