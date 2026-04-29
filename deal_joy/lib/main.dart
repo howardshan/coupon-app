@@ -85,7 +85,9 @@ void main() async {
   // 这里显式补偿：若冷启动链接含 PKCE code，手动触发 Supabase 的 code exchange。
   try {
     final initialUri = await AppLinks().getInitialLink();
-    if (initialUri != null && initialUri.queryParameters.containsKey('code')) {
+    if (initialUri != null &&
+        initialUri.queryParameters.containsKey('code') &&
+        !initialUri.queryParameters.containsKey('error')) {
       await Supabase.instance.client.auth.getSessionFromUrl(initialUri);
     }
   } catch (_) {
