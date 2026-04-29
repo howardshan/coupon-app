@@ -57,8 +57,3 @@ final paymentMethodsProvider =
     AsyncNotifierProvider<PaymentMethodsNotifier, List<SavedCard>>(
   PaymentMethodsNotifier.new,
 );
-
-// ── SetupIntent Provider（用于添加新卡片）────────────────────────────────────
-final setupIntentProvider = FutureProvider<Map<String, String>>((ref) async {
-  return ref.read(paymentMethodsRepositoryProvider).createSetupIntent();
-});
