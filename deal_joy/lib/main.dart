@@ -9,6 +9,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/config/env.dart';
 import 'core/constants/stripe_app_config.dart';
 import 'features/deals/domain/providers/deals_provider.dart';
+import 'shared/services/referral_link_service.dart';
 import 'app.dart';
 
 // FCM 后台消息处理器（必须是顶层函数）
@@ -74,6 +75,9 @@ void main() async {
   } catch (e) {
     debugPrint('[CrunchyPlum] Stripe init failed: $e — payments disabled');
   }
+
+  // 初始化 deep link 监听（referral link 处理）
+  await ReferralLinkService.instance.init();
 
   // 读取上次地区选择，首次启动默认 Near Me = true
   final prefs = await SharedPreferences.getInstance();

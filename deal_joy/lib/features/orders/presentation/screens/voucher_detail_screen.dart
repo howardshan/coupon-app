@@ -283,6 +283,8 @@ class _VoucherDetailBodyState extends ConsumerState<_VoucherDetailBody> {
   // ── 现有 unused 布局（保持不变） ──────────────────
   Widget _buildUnusedBody(BuildContext context, List<OrderItemModel> dealItems) {
     final usageRules = dealItems.first.usageRules;
+    // 当前用户 ID（用于判断受赠人视角）
+    final myUid = Supabase.instance.client.auth.currentUser?.id;
     // 受赠人不显示 Cancel 和 Gift 按钮
     final viewerIsRecipient = !(_viewerIsPurchaser ?? true);
     final unusedDealItems = dealItems
