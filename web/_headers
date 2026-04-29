@@ -1,0 +1,6 @@
+# Netlify / Cloudflare Pages：发布目录为 coupon-app/web 时放在站点根目录
+/auth/*
+  Cache-Control: no-store, no-cache, must-revalidate
+
+/auth-confirm/*
+  Cache-Control: no-store, no-cache, must-revalidate
