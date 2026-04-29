@@ -704,6 +704,26 @@ async function handleRedeem(
 
   // V3: 不再需要 capture（已改为直接 charge）
 
+  // ── Referral Bonus：首次核销触发推荐人奖励（fire-and-forget）─────────────────
+  try {
+    const refereeId = (coupon as { user_id?: string | null }).user_id ?? null;
+    if (refereeId) {
+      const { data: referralResult, error: referralErr } = await supabase
+        .rpc('process_referral_bonus', {
+          p_referee_id: refereeId,
+          p_coupon_id: couponId,
+        });
+      if (referralErr) {
+        console.error('[Referral] process_referral_bonus error:', referralErr.message);
+      } else {
+        console.log(`[Referral] result=${referralResult} referee=${refereeId}`);
+      }
+    }
+  } catch (referralException) {
+    // 奖励失败不阻断核销主流程
+    console.error('[Referral] unexpected error:', referralException);
+  }
+
   // 发送邮件（即发即忘，不阻断核销流程）
   try {
     const { data: dealInfo } = await supabase

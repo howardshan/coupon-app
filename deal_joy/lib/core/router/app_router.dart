@@ -35,6 +35,8 @@ import '../../features/profile/presentation/screens/payment_methods_screen.dart'
 import '../../features/profile/presentation/screens/change_password_screen.dart';
 import '../../features/profile/presentation/screens/change_phone_screen.dart';
 import '../../features/profile/presentation/screens/billing_address_screen.dart';
+import '../../features/profile/presentation/screens/referral_screen.dart';
+import '../../shared/services/referral_link_service.dart';
 import '../../features/reviews/presentation/screens/write_review_screen.dart';
 import '../../features/reviews/presentation/screens/my_reviews_screen.dart';
 import '../../features/merchant/presentation/screens/merchant_detail_screen.dart';
@@ -251,6 +253,25 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/profile/billing-address',
         builder: (_, _) => const BillingAddressScreen(),
+      ),
+
+      // Referral 邀请好友页
+      GoRoute(
+        path: '/profile/referral',
+        builder: (_, _) => const ReferralScreen(),
+      ),
+
+      // Deep link landing：/invite?ref=CODE
+      // app_links 负责接收并存储 code，此路由作为 go_router 的备用处理
+      GoRoute(
+        path: '/invite',
+        redirect: (context, state) {
+          final ref = state.uri.queryParameters['ref'];
+          if (ref != null && ref.isNotEmpty) {
+            ReferralLinkService.instance.storePendingCode(ref.trim().toUpperCase());
+          }
+          return '/home';
+        },
       ),
 
       // Merchant static routes must come before parameterized /merchant/:id

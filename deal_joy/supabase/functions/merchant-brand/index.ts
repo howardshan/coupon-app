@@ -564,13 +564,12 @@ Deno.serve(async (req: Request) => {
         return errorResponse("Brand already has a connected Stripe account");
       }
 
-      // 生成 redirect URL（从环境变量获取 base URL）
-      const redirectBase = (Deno.env.get("STRIPE_CONNECT_REDIRECT_BASE_URL") ?? "").trim();
-      if (!redirectBase) {
-        return errorResponse("STRIPE_CONNECT_REDIRECT_BASE_URL is not configured", 500);
+      // 复用 merchant-withdrawal 已配置的 Stripe Connect 重定向 URL
+      const returnUrl  = (Deno.env.get("STRIPE_CONNECT_RETURN_URL") ?? "").trim();
+      const refreshUrl = (Deno.env.get("STRIPE_CONNECT_REFRESH_URL") ?? "").trim();
+      if (!returnUrl || !refreshUrl) {
+        return errorResponse("STRIPE_CONNECT_RETURN_URL / STRIPE_CONNECT_REFRESH_URL is not configured", 500);
       }
-      const returnUrl  = `${redirectBase}/brand-stripe-connect?status=success`;
-      const refreshUrl = `${redirectBase}/brand-stripe-connect?status=refresh`;
 
       // 复用现有 Stripe 账户（若已创建但未完成 onboarding）
       let stripeAccountId = existingBrand?.stripe_account_id ?? null;
@@ -686,11 +685,13 @@ Deno.serve(async (req: Request) => {
           .update({ stripe_account_id: null, stripe_account_status: "not_connected" })
           .eq("id", auth.brandId);
         return jsonResponse({
-          stripe_account_id:     null,
-          stripe_account_status: "not_connected",
-          charges_enabled:       false,
-          payouts_enabled:       false,
-          needs_reconnect:       true,
+          is_connected:    false,
+          account_id:      null,
+          account_status:  "not_connected",
+          account_email:   null,
+          charges_enabled: false,
+          payouts_enabled: false,
+          needs_reconnect: true,
         });
       }
 
@@ -713,17 +714,20 @@ Deno.serve(async (req: Request) => {
       const newStatus = isConnected ? "connected"
         : account.requirements?.disabled_reason ? "restricted"
         : "pending";
+      const accountEmail = (account as any).email ?? null;
 
       await supabaseAdmin
         .from("brands")
-        .update({ stripe_account_status: newStatus })
+        .update({ stripe_account_status: newStatus, stripe_account_email: accountEmail })
         .eq("id", auth.brandId);
 
       return jsonResponse({
-        stripe_account_id:     brandData.stripe_account_id,
-        stripe_account_status: newStatus,
-        charges_enabled:       account.charges_enabled,
-        payouts_enabled:       account.payouts_enabled,
+        is_connected:    isConnected,
+        account_id:      brandData.stripe_account_id,
+        account_status:  newStatus,
+        account_email:   accountEmail,
+        charges_enabled: account.charges_enabled,
+        payouts_enabled: account.payouts_enabled,
       });
     }
 
@@ -754,15 +758,16 @@ Deno.serve(async (req: Request) => {
     if (req.method === "GET" && pathSegments[0] === "account") {
       const { data: brandData } = await supabaseAdmin
         .from("brands")
-        .select("stripe_account_id, stripe_account_status")
+        .select("stripe_account_id, stripe_account_status, stripe_account_email")
         .eq("id", auth.brandId)
         .single();
 
       const isConnected = brandData?.stripe_account_status === "connected";
       return jsonResponse({
-        is_connected:          isConnected,
-        stripe_account_id:     brandData?.stripe_account_id ?? null,
-        stripe_account_status: brandData?.stripe_account_status ?? "not_connected",
+        is_connected:   isConnected,
+        account_id:     brandData?.stripe_account_id ?? null,
+        account_status: brandData?.stripe_account_status ?? "not_connected",
+        account_email:  brandData?.stripe_account_email ?? null,
       });
     }
 

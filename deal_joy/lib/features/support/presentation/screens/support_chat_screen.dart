@@ -259,7 +259,7 @@ class _SupportChatScreenState extends ConsumerState<SupportChatScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
+        const SnackBar(content: Text('Unable to connect to support. Please try again.')),
       );
     } finally {
       if (mounted) setState(() => _connectingToAgent = false);
