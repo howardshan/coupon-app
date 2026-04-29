@@ -226,9 +226,12 @@ Deno.serve(async (req) => {
       }
 
       // 创建 SetupIntent，允许 off_session 场景（如自动续费）
+      // 仅 card：避免 Dashboard 开启 Klarna 等 LPM 时返回 payment_method_types 含 klarna，
+      // flutter_stripe 解析 SetupIntent 的 PaymentMethodType 枚举不含 Klarna 会抛 Invalid argument
       const setupIntent = await stripe.setupIntents.create({
         customer: customerId,
         usage: 'off_session',
+        payment_method_types: ['card'],
       });
 
       // 创建 Ephemeral Key，供 Stripe SDK 在前端安全操作 Customer 对象
