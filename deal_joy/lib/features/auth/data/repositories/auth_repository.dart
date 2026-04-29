@@ -258,9 +258,13 @@ class AuthRepository {
   // ---- 发送密码重置邮件 ----
   Future<void> resetPassword(String email) async {
     try {
+      // 使用 Edge Function 中间页作为 redirectTo：
+      // Chrome 会阻止服务端 302 直接跳转自定义协议（io.supabase.crunchyplum://），
+      // 但 Edge Function 返回的 HTML 页面可以通过 Android intent:// URL 可靠唤起 App。
       await _client.auth.resetPasswordForEmail(
         email,
-        redirectTo: 'io.supabase.crunchyplum://login-callback/',
+        redirectTo:
+            'https://kqyolvmgrdekybjrwizx.supabase.co/functions/v1/auth-redirect',
       );
     } catch (_) {
       // 静默处理，不泄露邮箱存在性

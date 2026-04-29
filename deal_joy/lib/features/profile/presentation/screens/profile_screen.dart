@@ -7,6 +7,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../auth/domain/providers/auth_provider.dart';
+import '../../domain/providers/referral_provider.dart';
+import 'referral_screen.dart';
 import '../../../../shared/widgets/legal_document_screen.dart';
 
 class ProfileScreen extends ConsumerWidget {
@@ -43,7 +45,7 @@ class ProfileScreen extends ConsumerWidget {
   }
 }
 
-class _ProfileBody extends StatelessWidget {
+class _ProfileBody extends ConsumerWidget {
   final String name;
   final String? username;
   final String email;
@@ -64,7 +66,8 @@ class _ProfileBody extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final referralConfigAsync = ref.watch(referralConfigProvider);
     return SafeArea(
       child: ListView(
         padding: EdgeInsets.zero,
@@ -200,11 +203,25 @@ _IconGridItem(
                   label: 'Gift',
                   onTap: () => context.push('/coupons?tab=gifted'),
                 ),
+                _IconGridItem(
+                  icon: Icons.person_add_outlined,
+                  label: 'Invite',
+                  onTap: () => context.push('/profile/referral'),
+                ),
               ],
             ),
           ),
 
           const SizedBox(height: 12),
+
+          // ── Referral 推广横幅（仅在功能开启时显示）────────────────
+          if (referralConfigAsync.valueOrNull?.enabled == true) ...[
+            ReferralBanner(
+              bonusAmount: referralConfigAsync.value!.bonusAmount,
+              onTap: () => context.push('/profile/referral'),
+            ),
+            const SizedBox(height: 12),
+          ],
 
           // ── Orders section ───────────────────────────────────
           _SectionCard(
