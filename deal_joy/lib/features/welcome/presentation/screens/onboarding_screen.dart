@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../domain/providers/welcome_provider.dart';
 import '../../data/models/welcome_models.dart';
 import '../../domain/providers/welcome_provider.dart';
 import '../widgets/adaptive_image.dart';
@@ -47,13 +49,16 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     });
   }
 
-  /// 完成 Onboarding，标记为非首次安装，回到 /welcome 继续开屏广告流程
-  /// （此时 is_first_launch 已为 false，welcome_splash_screen 会跳过 onboarding 分支，
-  ///  进入"每日竞价广告 → /home"的正常流程）
+  /// 完成 Onboarding，标记为非首次安装
+  /// 已登录 → /welcome（开屏广告流程）；未登录 → /auth/login
   Future<void> _completeOnboarding() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('is_first_launch', false);
-    if (mounted) context.go('/welcome');
+    // 更新 provider，避免 router redirect 再次重定向到 onboarding
+    ref.read(isFirstLaunchProvider.notifier).state = false;
+    if (!mounted) return;
+    final session = Supabase.instance.client.auth.currentSession;
+    context.go(session != null ? '/welcome' : '/auth/login');
   }
 
   @override

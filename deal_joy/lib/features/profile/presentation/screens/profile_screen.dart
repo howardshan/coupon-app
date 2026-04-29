@@ -216,9 +216,12 @@ _IconGridItem(
 
           // ── Referral 推广横幅（仅在功能开启时显示）────────────────
           if (referralConfigAsync.valueOrNull?.enabled == true) ...[
-            ReferralBanner(
-              bonusAmount: referralConfigAsync.value!.bonusAmount,
-              onTap: () => context.push('/profile/referral'),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: ReferralBanner(
+                bonusAmount: referralConfigAsync.value!.bonusAmount,
+                onTap: () => context.push('/profile/referral'),
+              ),
             ),
             const SizedBox(height: 12),
           ],

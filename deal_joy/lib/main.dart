@@ -11,6 +11,7 @@ import 'core/config/env.dart';
 import 'core/constants/stripe_app_config.dart';
 import 'features/deals/domain/providers/deals_provider.dart';
 import 'shared/services/referral_link_service.dart';
+import 'features/welcome/domain/providers/welcome_provider.dart';
 import 'app.dart';
 
 // FCM 后台消息处理器（必须是顶层函数）
@@ -93,7 +94,9 @@ void main() async {
   }
 
   // 读取上次地区选择，首次启动默认 Near Me = true
+  // 同时读取 is_first_launch 供 router 决策 Onboarding
   final prefs = await SharedPreferences.getInstance();
+  final isFirstLaunch = prefs.getBool('is_first_launch') ?? true;
   // 用 location_setup_done 标记真正的「首次」——无论旧版遗留什么值，只要该 key 不存在就强制 Near Me
   final setupDone = prefs.getBool('location_setup_done') ?? false;
   final bool savedIsNearMe;
@@ -116,6 +119,7 @@ void main() async {
     metro: savedMetro,
     city: savedCity,
   );
+  container.read(isFirstLaunchProvider.notifier).state = isFirstLaunch;
 
   runApp(
     UncontrolledProviderScope(
