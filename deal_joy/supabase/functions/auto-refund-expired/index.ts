@@ -347,7 +347,7 @@ Deno.serve(async (req) => {
               p_user_id: item.user_id,
               p_amount: creditRefundAmount,
               p_order_item_id: itemId,
-              p_description: `Auto refund (store credit portion) for expired coupon (order_item: ${itemId})`,
+              p_description: "Auto refund (expired voucher, store credit)",
             });
             if (creditErr) {
               throw new Error(`add_store_credit 失败: ${creditErr.message}`);
@@ -449,7 +449,7 @@ Deno.serve(async (req) => {
                   p_user_id: item.user_id,
                   p_amount: cardRefundAmount,
                   p_order_item_id: itemId,
-                  p_description: `Auto refund (card fallback to store credit) for expired coupon (order_item: ${itemId})`,
+                  p_description: "Auto refund (expired voucher, card to credit)",
                 });
                 if (creditErr2) {
                   throw new Error(`add_store_credit 失败: ${creditErr2.message}`);
@@ -593,7 +593,7 @@ async function fallbackToStoreCredit(
     p_user_id: item.user_id,
     p_amount: refundAmount,
     p_order_item_id: itemId,
-    p_description: `Auto refund for expired coupon (order_item: ${itemId})`,
+    p_description: "Auto refund (expired voucher)",
   });
 
   if (creditErr) {

@@ -351,7 +351,7 @@ Deno.serve(async (req) => {
         p_user_id: order.user_id,
         p_amount: refundAmount,
         p_order_item_id: orderItemId,
-        p_description: reason ?? 'Refund for order item',
+        p_description: reason?.trim() || "Refund to Store Credit",
       });
 
       if (rpcErr) {
@@ -612,7 +612,7 @@ Deno.serve(async (req) => {
           p_user_id: order.user_id,
           p_amount: creditRefundAmount,
           p_order_item_id: orderItemId,
-          p_description: reason ?? 'Partial refund (store credit portion)',
+          p_description: reason?.trim() || "Partial refund to Store Credit",
         });
         if (rpcErr) {
           console.error('add_store_credit rpc error (partial refund):', rpcErr);
