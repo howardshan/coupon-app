@@ -40,8 +40,6 @@ class CollectTipPage extends ConsumerStatefulWidget {
 }
 
 class _CollectTipPageState extends ConsumerState<CollectTipPage> {
-  final GlobalKey<TipSignaturePadState> _signatureKey =
-      GlobalKey<TipSignaturePadState>();
   int? _selectedPresetIndex;
   final _customController = TextEditingController();
   bool _useCustom = false;
@@ -101,7 +99,9 @@ class _CollectTipPageState extends ConsumerState<CollectTipPage> {
     return _presetCents(_selectedPresetIndex!);
   }
 
-  Future<void> _pay() async {
+  /// 第一步：校验金额后弹出签名板，确认后再走支付
+  Future<void> _onNextPressed() async {
+    if (_busy) return;
     final amount = _selectedAmountCents();
     if (amount == null || amount <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -117,25 +117,33 @@ class _CollectTipPageState extends ConsumerState<CollectTipPage> {
       return;
     }
 
-    final sig = _signatureKey.currentState;
-    if (sig == null || !sig.hasSignature) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please sign in the box above to confirm the tip.'),
-        ),
-      );
+    final signaturePngBase64 = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (ctx) => const _TipSignatureSheet(),
+    );
+    if (!mounted || signaturePngBase64 == null || signaturePngBase64.isEmpty) {
       return;
     }
 
-    String signaturePngBase64;
-    try {
-      signaturePngBase64 = await sig.toPngBase64();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not capture signature: $e')),
-        );
-      }
+    await _submitPayment(signaturePngBase64: signaturePngBase64);
+  }
+
+  Future<void> _submitPayment({required String signaturePngBase64}) async {
+    // 签名确认后再次读取金额（防止极端情况下输入被改动）
+    final amount = _selectedAmountCents();
+    if (amount == null || amount <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select a tip amount or enter a valid custom amount.')),
+      );
+      return;
+    }
+    final maxC = _maxTipCents();
+    if (amount > maxC) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Amount exceeds maximum (\$${(maxC / 100).toStringAsFixed(2)}).')),
+      );
       return;
     }
 
@@ -148,7 +156,7 @@ class _CollectTipPageState extends ConsumerState<CollectTipPage> {
               ? 'preset_${_selectedPresetIndex! + 1}'
               : null;
       if (kDebugMode) {
-        debugPrint('[CollectTip] _pay: invoking createPaymentIntent amountCents=$amount');
+        debugPrint('[CollectTip] _submitPayment: invoking createPaymentIntent amountCents=$amount');
       }
       final res = await svc.createPaymentIntent(
         couponId: widget.couponId,
@@ -353,39 +361,12 @@ class _CollectTipPageState extends ConsumerState<CollectTipPage> {
             }),
             onChanged: (_) => setState(() => _useCustom = true),
           ),
-          const SizedBox(height: 20),
-          Text(
-            'Customer signature',
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: Colors.grey.shade800,
-            ),
-          ),
-          const SizedBox(height: 8),
-          TipSignaturePad(
-            key: _signatureKey,
-            onChanged: (_) => setState(() {}),
-          ),
-          const SizedBox(height: 4),
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton(
-              onPressed: _busy
-                  ? null
-                  : () {
-                      _signatureKey.currentState?.clear();
-                      setState(() {});
-                    },
-              child: const Text('Clear'),
-            ),
-          ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 24),
           SizedBox(
             width: double.infinity,
             height: 52,
             child: ElevatedButton(
-              onPressed: _busy ? null : _pay,
+              onPressed: _busy ? null : _onNextPressed,
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFFFF6B35),
                 foregroundColor: Colors.white,
@@ -396,7 +377,7 @@ class _CollectTipPageState extends ConsumerState<CollectTipPage> {
                       height: 22,
                       child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                     )
-                  : const Text('Continue to payment', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                  : const Text('Next', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
             ),
           ),
           if (_payPhase == _CollectTipPayPhase.openingPaymentSheet) ...[
@@ -422,5 +403,97 @@ class _CollectTipPageState extends ConsumerState<CollectTipPage> {
       return '$ps% (\$${(cents / 100).toStringAsFixed(2)})';
     }
     return '\$${p.toStringAsFixed(2)}';
+  }
+}
+
+/// 第二步：底部弹层内完成顾客签名，确认后返回 PNG base64
+class _TipSignatureSheet extends StatefulWidget {
+  const _TipSignatureSheet();
+
+  @override
+  State<_TipSignatureSheet> createState() => _TipSignatureSheetState();
+}
+
+class _TipSignatureSheetState extends State<_TipSignatureSheet> {
+  final GlobalKey<TipSignaturePadState> _padKey = GlobalKey<TipSignaturePadState>();
+
+  @override
+  Widget build(BuildContext context) {
+    final viewInsets = MediaQuery.viewInsetsOf(context);
+    return Padding(
+      padding: EdgeInsets.only(bottom: viewInsets.bottom),
+      child: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Customer signature',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 12),
+              TipSignaturePad(
+                key: _padKey,
+                onChanged: (_) => setState(() {}),
+              ),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: () {
+                    _padKey.currentState?.clear();
+                    setState(() {});
+                  },
+                  child: const Text('Clear'),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Cancel'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFFF6B35),
+                        foregroundColor: Colors.white,
+                      ),
+                      onPressed: () async {
+                        final s = _padKey.currentState;
+                        if (s == null || !s.hasSignature) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Please sign in the box above to confirm the tip.'),
+                            ),
+                          );
+                          return;
+                        }
+                        try {
+                          final b64 = await s.toPngBase64();
+                          if (context.mounted) Navigator.pop(context, b64);
+                        } catch (e) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Could not capture signature: $e')),
+                            );
+                          }
+                        }
+                      },
+                      child: const Text('Continue to payment'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

@@ -8,10 +8,10 @@
 
 ## 前置条件（开始前一次性确认）
 
-- 生产 Supabase 迁移已应用：`coupon_tips` 表、`deals` 上 `tips_*` 字段、RLS、`tip-signatures` Storage bucket 存在且可访问策略符合预期
+- 生产 Supabase 迁移已应用：`coupon_tips` 表、`deals` 上 `tips_`* 字段、RLS、`tip-signatures` Storage bucket 存在且可访问策略符合预期
 - 以下 Edge Functions 已部署且为预期版本：  
 `create-tip-payment-intent`、`confirm-tip-payment-session`、`send-push-notification`、`merchant-scan`、`stripe-webhook`、`user-order-detail`、`merchant-orders`、`merchant-deals`
-- Stripe **测试模式**：Edge 环境变量为 `sk_test_*`；Dashboard → Webhooks（**Test mode**）中 endpoint 指向 `stripe-webhook`，且 **Signing secret** 与 Supabase 中配置一致
+- Stripe **测试模式**：Edge 环境变量为 `sk_test_`*；Dashboard → Webhooks（**Test mode**）中 endpoint 指向 `stripe-webhook`，且 **Signing secret** 与 Supabase 中配置一致
 - 商家端 `dealjoy_merchant`、用户端 `deal_joy`、管理端 `admin/`（若使用）均为连接该 Supabase 的**当前构建**
 
 ---
@@ -39,7 +39,7 @@
 
 - 选择**一档预设金额**，按 `create-tip-payment-intent` 返回的 `**flow`** 完成端到端（见路径 C 测试计划：**off-session 成功 / SCA / 后备** 三类）
 - `**flow === merchant_fallback`**：商家平板 PaymentSheet 可完成支付（与初版行为一致）
-- `**flow === requires_customer_action**`：商户端**不**弹出 PaymentSheet；持券人在用户端 `/tips/confirm/:tipId` 完成支付或 3DS
+- `**flow === requires_customer_action`**：商户端**不**弹出 PaymentSheet；持券人在用户端 `/tips/confirm/:tipId` 完成支付或 3DS
 - `**flow === completed` / `processing`**：商户端提示成功或处理中，**不**要求当场 PaymentSheet（最终以 Webhook `paid` 为准）
 - **自定义金额**：在允许范围内成功；**明显超过服务端规则**时被拒绝
 - **Percent 模式**：小费不超过与基数相关的上限（与计划书 §3.2 一致）
