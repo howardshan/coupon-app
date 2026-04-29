@@ -22,6 +22,10 @@ verify_jwt = true
 [functions.confirm-tip-payment-session]
 verify_jwt = true
 
+# auth-redirect：密码重置邮件中间页，由浏览器直接调用，无用户 JWT
+[functions.auth-redirect]
+verify_jwt = false
+
 # Cron：仅 x-cron-secret，无用户 JWT
 [functions.escalate-disputes-to-after-sales]
 verify_jwt = false
