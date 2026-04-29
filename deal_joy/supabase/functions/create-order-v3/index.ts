@@ -824,7 +824,7 @@ Deno.serve(async (req) => {
         p_user_id: userId,
         p_amount: -creditUsed,  // 负数 = 扣减
         p_order_item_id: null,
-        p_description: `Purchase deduction for order ${orderNumber}`,
+        p_description: "Order checkout (store credit)",
       });
       if (creditErr) {
         console.error('扣减 Store Credit 失败（不阻断订单）:', creditErr.message);

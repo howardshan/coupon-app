@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../../core/constants/us_states.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../../shared/widgets/app_text_field.dart';
@@ -8,15 +9,6 @@ import '../../../checkout/data/models/billing_address_model.dart';
 import '../../../checkout/data/repositories/billing_address_repository.dart';
 import '../../../checkout/domain/providers/billing_address_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
-/// 美国 50 州 + DC 缩写列表
-const _kUsStates = [
-  'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA',
-  'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD',
-  'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ',
-  'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC',
-  'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY', 'DC',
-];
 
 /// 账单地址管理页面（读写 billing_addresses 表）
 class BillingAddressScreen extends ConsumerStatefulWidget {
@@ -325,7 +317,7 @@ class _AddressFormSheetState extends ConsumerState<_AddressFormSheet> {
     _cityCtrl = TextEditingController(text: e?.city ?? '');
     _zipCtrl = TextEditingController(text: e?.postalCode ?? '');
     _selectedState =
-        (e?.state.isNotEmpty == true && _kUsStates.contains(e?.state))
+        (e?.state.isNotEmpty == true && kUsStateCodes.contains(e?.state))
             ? e?.state
             : null;
     _isDefault = e?.isDefault ?? false;
@@ -528,7 +520,7 @@ class _AddressFormSheetState extends ConsumerState<_AddressFormSheet> {
           hint: const Text('Select state'),
           isExpanded: true,
           decoration: const InputDecoration(),
-          items: _kUsStates
+          items: kUsStateCodes
               .map((s) => DropdownMenuItem(value: s, child: Text(s)))
               .toList(),
           onChanged: (v) => setState(() => _selectedState = v),

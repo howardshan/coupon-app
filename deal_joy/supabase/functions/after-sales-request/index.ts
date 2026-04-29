@@ -91,13 +91,15 @@ function normalizeCouponCodeInput(raw: string): string | null {
 
 /** 仅标量列，避免 PostgREST 嵌套 embed 在部分环境下报错导致整查询失败 */
 const COUPON_SELECT_FOR_CREATE =
-  "id, order_id, order_item_id, user_id, status, used_at, merchant_id, redeemed_at_merchant_id, deal_id";
+  "id, order_id, order_item_id, user_id, current_holder_user_id, status, used_at, merchant_id, redeemed_at_merchant_id, deal_id, coupon_code";
 
 type CouponForCreate = {
   id: string;
   order_id: string | null;
   order_item_id: string | null;
   user_id: string;
+  /** 站内赠友后持券人可与 user_id（买家）不同；售后提交须由持券人发起 */
+  current_holder_user_id: string | null;
   status: string;
   used_at: string | null;
   merchant_id: string | null;
@@ -106,10 +108,26 @@ type CouponForCreate = {
 };
 
 /**
+ * 当前登录用户是否可为该券发起售后（与 My Coupons / RLS 语义一致）
+ * - 已赠出且 holder ≠ buyer：仅 current_holder 可提交
+ * - 否则：仅 buyer（user_id）可提交
+ */
+function isEligibleAfterSalesCouponRow(
+  row: CouponForCreate,
+  authUserId: string,
+): boolean {
+  const holder = row.current_holder_user_id;
+  if (holder != null && holder !== row.user_id) {
+    return authUserId === holder;
+  }
+  return authUserId === row.user_id;
+}
+
+/**
  * 解析可用于提交售后的已使用券：
  * - couponId 为 UUID：按 id 查，若无行且带了 orderId 则回退按订单查（避免误传 order_item id）
  * - couponId 为展示用券码：按 coupon_code 查
- * - 仅 orderId：取该订单下最近核销的一张 used 券
+ * - 仅 orderId：取该订单下最近核销且当前用户有权操作的一张 used 券
  */
 async function findCouponForAfterSalesCreate(
   supabase: ReturnType<typeof createClient>,
@@ -117,42 +135,45 @@ async function findCouponForAfterSalesCreate(
   couponIdRaw: string,
   orderIdRaw: string,
 ): Promise<CouponForCreate | null> {
-  const base = () =>
-    supabase
-      .from("coupons")
-      .select(COUPON_SELECT_FOR_CREATE)
-      .eq("user_id", userId)
-      .eq("status", "used");
+  const usedSelect = () =>
+    supabase.from("coupons").select(COUPON_SELECT_FOR_CREATE).eq("status", "used");
 
   const byId = async (id: string): Promise<CouponForCreate | null> => {
-    const { data, error } = await base().eq("id", id).maybeSingle();
+    const { data, error } = await usedSelect().eq("id", id).maybeSingle();
     if (error) {
       console.error("[after-sales] coupon byId", error.message);
       return null;
     }
-    return (data as CouponForCreate) ?? null;
+    const row = (data as CouponForCreate) ?? null;
+    if (!row || !isEligibleAfterSalesCouponRow(row, userId)) return null;
+    return row;
   };
 
   const byOrder = async (orderId: string): Promise<CouponForCreate | null> => {
-    const { data, error } = await base()
+    const { data, error } = await usedSelect()
       .eq("order_id", orderId)
       .order("used_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .limit(40);
     if (error) {
       console.error("[after-sales] coupon byOrder", error.message);
       return null;
     }
-    return (data as CouponForCreate) ?? null;
+    const rows = (data ?? []) as CouponForCreate[];
+    for (const row of rows) {
+      if (isEligibleAfterSalesCouponRow(row, userId)) return row;
+    }
+    return null;
   };
 
   const byCode = async (code: string): Promise<CouponForCreate | null> => {
-    const { data, error } = await base().eq("coupon_code", code).maybeSingle();
+    const { data, error } = await usedSelect().eq("coupon_code", code).maybeSingle();
     if (error) {
       console.error("[after-sales] coupon byCode", error.message);
       return null;
     }
-    return (data as CouponForCreate) ?? null;
+    const row = (data as CouponForCreate) ?? null;
+    if (!row || !isEligibleAfterSalesCouponRow(row, userId)) return null;
+    return row;
   };
 
   if (couponIdRaw && !LOOSE_UUID_RE.test(couponIdRaw)) {

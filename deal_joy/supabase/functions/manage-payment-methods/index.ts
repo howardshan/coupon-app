@@ -125,7 +125,20 @@ Deno.serve(async (req) => {
 
       // 获取默认支付方式 ID
       const customerData = await stripe.customers.retrieve(customerId) as Stripe.Customer;
-      const defaultPmId = customerData.invoice_settings?.default_payment_method as string | null;
+      let defaultPmId = customerData.invoice_settings?.default_payment_method as string | null;
+
+      // B：若 Customer 未设置默认卡但已有卡，自动将第一张卡设为默认（与客户端 A 互补）
+      if (!defaultPmId && pmList.data.length > 0) {
+        const firstId = pmList.data[0].id;
+        try {
+          await stripe.customers.update(customerId, {
+            invoice_settings: { default_payment_method: firstId },
+          });
+          defaultPmId = firstId;
+        } catch (e) {
+          console.error('自动设置默认支付方式失败:', e);
+        }
+      }
 
       // 格式化返回数据，只暴露必要字段（含账单地址）
       const paymentMethods = pmList.data.map((pm) => ({
@@ -213,9 +226,12 @@ Deno.serve(async (req) => {
       }
 
       // 创建 SetupIntent，允许 off_session 场景（如自动续费）
+      // 仅 card：避免 Dashboard 开启 Klarna 等 LPM 时返回 payment_method_types 含 klarna，
+      // flutter_stripe 解析 SetupIntent 的 PaymentMethodType 枚举不含 Klarna 会抛 Invalid argument
       const setupIntent = await stripe.setupIntents.create({
         customer: customerId,
         usage: 'off_session',
+        payment_method_types: ['card'],
       });
 
       // 创建 Ephemeral Key，供 Stripe SDK 在前端安全操作 Customer 对象

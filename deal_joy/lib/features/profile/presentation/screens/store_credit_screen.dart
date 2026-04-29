@@ -257,15 +257,13 @@ class _TransactionTile extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  transaction.description?.isNotEmpty == true
-                      ? transaction.description!
-                      : transaction.displayType,
+                  transaction.displayLabel,
                   style: const TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
                     color: AppColors.textPrimary,
                   ),
-                  maxLines: 1,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 2),

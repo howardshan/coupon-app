@@ -30,7 +30,7 @@ export async function issueAfterSalesRefund(params: {
   completedAt: string;
   isPreAuth: boolean;
 }> {
-  const { supabase, request, reason = "after_sale_post_redeem" } = params;
+  const { supabase, request, reason = "After-sale refund" } = params;
 
   const { data: order, error: orderError } = await supabase
     .from("orders")

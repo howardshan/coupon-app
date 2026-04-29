@@ -168,6 +168,7 @@ class _VoucherDetailBodyState extends ConsumerState<_VoucherDetailBody> {
   bool _isExpanded = false;
   // null = 检查中；true = 原始购买人；false = 受赠人
   bool? _viewerIsPurchaser;
+  String? get myUid => Supabase.instance.client.auth.currentUser?.id;
 
   OrderDetailModel get detail => widget.detail;
 
@@ -188,8 +189,8 @@ class _VoucherDetailBodyState extends ConsumerState<_VoucherDetailBody> {
 
   // 查询当前用户是否是受赠人（持券但不是原始买家）
   Future<void> _checkViewerRole() async {
-    final myUid = Supabase.instance.client.auth.currentUser?.id;
-    if (myUid == null) {
+    final uid = myUid;
+    if (uid == null) {
       if (mounted) setState(() => _viewerIsPurchaser = true);
       return;
     }
@@ -198,10 +199,10 @@ class _VoucherDetailBodyState extends ConsumerState<_VoucherDetailBody> {
           .from('coupons')
           .select('id, user_id')
           .eq('order_id', detail.id)
-          .eq('current_holder_user_id', myUid)
+          .eq('current_holder_user_id', uid)
           .maybeSingle();
       if (mounted) {
-        final isRecipient = result != null && result['user_id'] != myUid;
+        final isRecipient = result != null && result['user_id'] != uid;
         setState(() => _viewerIsPurchaser = !isRecipient);
       }
     } catch (_) {

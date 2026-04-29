@@ -102,7 +102,8 @@ Deno.serve(async (req) => {
         p_user_id: order.user_id,
         p_amount: refundAmount,
         p_order_item_id: orderItemId,
-        p_description: desc,
+        // 流水展示用固定短文案；完整理由保留在 order_items.refund_reason
+        p_description: "Refund to Store Credit",
       });
 
       if (rpcErr) {
