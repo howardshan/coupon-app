@@ -99,6 +99,15 @@ class _CollectTipPageState extends ConsumerState<CollectTipPage> {
     return _presetCents(_selectedPresetIndex!);
   }
 
+  List<int> _availablePresetIndexes() {
+    final c = widget.tip;
+    final values = [c.preset1, c.preset2, c.preset3];
+    return [
+      for (var i = 0; i < values.length; i++)
+        if (values[i] != null) i,
+    ];
+  }
+
   /// 第一步：校验金额后弹出签名板，确认后再走支付
   Future<void> _onNextPressed() async {
     if (_busy) return;
@@ -121,6 +130,7 @@ class _CollectTipPageState extends ConsumerState<CollectTipPage> {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
+      enableDrag: false,
       builder: (ctx) => const _TipSignatureSheet(),
     );
     if (!mounted || signaturePngBase64 == null || signaturePngBase64.isEmpty) {
@@ -307,8 +317,11 @@ class _CollectTipPageState extends ConsumerState<CollectTipPage> {
   Widget build(BuildContext context) {
     final c = widget.tip;
     final modeLabel = c.tipsMode == 'fixed' ? 'Fixed amount presets' : 'Percentage of purchase';
+    final presetIndexes = _availablePresetIndexes();
+    final cardBorder = Border.all(color: Colors.grey.shade200);
 
     return Scaffold(
+      backgroundColor: const Color(0xFFFFFAF8),
       appBar: AppBar(
         title: const Text('Collect Tip'),
         leading: IconButton(
@@ -319,47 +332,131 @@ class _CollectTipPageState extends ConsumerState<CollectTipPage> {
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          Text(widget.dealTitle, style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          Text(modeLabel, style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
-          const SizedBox(height: 20),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              for (var i = 0; i < 3; i++)
-                if ([c.preset1, c.preset2, c.preset3][i] != null)
-                  ChoiceChip(
-                    label: Text(_chipLabel(i)),
-                    selected: !_useCustom && _selectedPresetIndex == i,
-                    onSelected: _busy
-                        ? null
-                        : (sel) {
-                            setState(() {
-                              _useCustom = false;
-                              _selectedPresetIndex = sel ? i : null;
-                            });
-                          },
+          Container(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: cardBorder,
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFF6B35).withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(10),
                   ),
-            ],
+                  child: const Icon(Icons.receipt_long_rounded, color: Color(0xFFFF6B35), size: 20),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.dealTitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(modeLabel, style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: cardBorder,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Tip options',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey.shade800,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                if (presetIndexes.isNotEmpty)
+                  Row(
+                    children: [
+                      for (var i = 0; i < presetIndexes.length; i++) ...[
+                        Expanded(
+                          child: _TipOptionButton(
+                            title: _tipOptionLabel(presetIndexes[i]).$1,
+                            subtitle: _tipOptionLabel(presetIndexes[i]).$2,
+                            selected: !_useCustom && _selectedPresetIndex == presetIndexes[i],
+                            onTap: _busy
+                                ? null
+                                : () {
+                                    setState(() {
+                                      _useCustom = false;
+                                      _selectedPresetIndex = presetIndexes[i];
+                                    });
+                                  },
+                          ),
+                        ),
+                        if (i != presetIndexes.length - 1) const SizedBox(width: 10),
+                      ],
+                    ],
+                  ),
+              ],
+            ),
           ),
           const SizedBox(height: 16),
-          TextField(
-            controller: _customController,
-            decoration: const InputDecoration(
-              labelText: 'Custom amount (USD)',
-              border: OutlineInputBorder(),
-              hintText: 'e.g. 2.50',
+          Container(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: cardBorder,
             ),
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            inputFormatters: [
-              FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
-            ],
-            onTap: () => setState(() {
-              _useCustom = true;
-              _selectedPresetIndex = null;
-            }),
-            onChanged: (_) => setState(() => _useCustom = true),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Custom amount',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey.shade800,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _customController,
+                  decoration: InputDecoration(
+                    prefixText: '\$ ',
+                    labelText: 'Custom amount (USD)',
+                    border: const OutlineInputBorder(),
+                    hintText: 'e.g. 2.50',
+                    filled: true,
+                    fillColor: const Color(0xFFFFFBFA),
+                  ),
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+                  ],
+                  onTap: () => setState(() {
+                    _useCustom = true;
+                    _selectedPresetIndex = null;
+                  }),
+                  onChanged: (_) => setState(() => _useCustom = true),
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 24),
           SizedBox(
@@ -368,6 +465,8 @@ class _CollectTipPageState extends ConsumerState<CollectTipPage> {
             child: ElevatedButton(
               onPressed: _busy ? null : _onNextPressed,
               style: ElevatedButton.styleFrom(
+                elevation: 0,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                 backgroundColor: const Color(0xFFFF6B35),
                 foregroundColor: Colors.white,
               ),
@@ -404,6 +503,17 @@ class _CollectTipPageState extends ConsumerState<CollectTipPage> {
     }
     return '\$${p.toStringAsFixed(2)}';
   }
+
+  (String, String) _tipOptionLabel(int index) {
+    final c = widget.tip;
+    final p = [c.preset1, c.preset2, c.preset3][index];
+    if (p == null) return ('', '');
+    if (c.tipsMode == 'percent') {
+      final ps = p == p.floorToDouble() ? p.toInt().toString() : p.toString();
+      return ('$ps%', '(\$${(_presetCents(index) / 100).toStringAsFixed(2)})');
+    }
+    return (_chipLabel(index), '');
+  }
 }
 
 /// 第二步：底部弹层内完成顾客签名，确认后返回 PNG base64
@@ -420,6 +530,7 @@ class _TipSignatureSheetState extends State<_TipSignatureSheet> {
   @override
   Widget build(BuildContext context) {
     final viewInsets = MediaQuery.viewInsetsOf(context);
+    final shape = RoundedRectangleBorder(borderRadius: BorderRadius.circular(14));
     return Padding(
       padding: EdgeInsets.only(bottom: viewInsets.bottom),
       child: SingleChildScrollView(
@@ -452,17 +563,31 @@ class _TipSignatureSheetState extends State<_TipSignatureSheet> {
               Row(
                 children: [
                   Expanded(
+                    flex: 5,
                     child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(50),
+                        shape: shape,
+                        side: BorderSide(color: Colors.grey.shade300, width: 1.2),
+                        foregroundColor: Colors.black87,
+                        textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                      ),
                       onPressed: () => Navigator.pop(context),
                       child: const Text('Cancel'),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
+                    flex: 7,
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(50),
+                        shape: shape,
                         backgroundColor: const Color(0xFFFF6B35),
                         foregroundColor: Colors.white,
+                        textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+                        padding: const EdgeInsets.symmetric(horizontal: 18),
                       ),
                       onPressed: () async {
                         final s = _padKey.currentState;
@@ -485,11 +610,108 @@ class _TipSignatureSheetState extends State<_TipSignatureSheet> {
                           }
                         }
                       },
-                      child: const Text('Continue to payment'),
+                      child: const FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text('Continue to payment'),
+                      ),
                     ),
                   ),
                 ],
               ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TipOptionButton extends StatelessWidget {
+  const _TipOptionButton({
+    required this.title,
+    required this.subtitle,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String title;
+  final String subtitle;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final activeColor = const Color(0xFFFF6B35);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          height: 56,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            gradient: selected
+                ? const LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Color(0xFFFF8A5E), Color(0xFFFF6B35)],
+                  )
+                : null,
+            color: selected ? null : Colors.white,
+            border: Border.all(
+              color: selected ? activeColor : Colors.grey.shade300,
+              width: selected ? 1.5 : 1.1,
+            ),
+            boxShadow: selected
+                ? [
+                    BoxShadow(
+                      color: activeColor.withValues(alpha: 0.22),
+                      blurRadius: 9,
+                      offset: const Offset(0, 4),
+                    ),
+                  ]
+                : null,
+          ),
+          // 勾选图标用 Stack 叠在角上，避免塞进 Column 导致固定高度内溢出（如 BOTTOM OVERFLOWED BY 2.0）
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: selected ? Colors.white : Colors.black87,
+                      ),
+                    ),
+                    if (subtitle.isNotEmpty)
+                      Text(
+                        subtitle,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: selected ? Colors.white.withValues(alpha: 0.94) : Colors.black54,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              if (selected)
+                const Positioned(
+                  top: 6,
+                  right: 6,
+                  child: Icon(Icons.check_circle_rounded, size: 16, color: Colors.white),
+                ),
             ],
           ),
         ),
