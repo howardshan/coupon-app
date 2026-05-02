@@ -159,6 +159,7 @@ Deno.serve(async (req) => {
         unit_price,
         service_fee,
         tax_amount,
+        tax_rate,
         commission_amount,
         stripe_fee_amount,
         promo_discount,
@@ -232,8 +233,12 @@ Deno.serve(async (req) => {
 
     const unitPrice = Number(item.unit_price ?? 0);
     const serviceFee = Number(item.service_fee ?? 0);
-    // tax_amount：购买时收取的税款，退款时需要一并退还
     const taxAmount = Number(item.tax_amount ?? 0);
+    const taxRate = Number((item as any).tax_rate ?? 0);
+    // 原路径退款只退 unit_price 部分的税，service fee 的税不退
+    const unitPriceTax = taxRate > 0
+      ? Math.round(unitPrice * taxRate * 100) / 100
+      : taxAmount;
     // commission_amount：下单时快照的佣金，退款时退还给商家（via reverse_transfer）
     const commissionAmount = Number((item as any).commission_amount ?? 0);
     const promoDiscount = Number((item as any).promo_discount ?? 0);
@@ -460,13 +465,13 @@ Deno.serve(async (req) => {
     } else {
       // ── original_payment 退款流程 ─────────────────────────────────────────
       // 退款分配原则：
-      //   - 退给用户：unitPrice + tax（不退 service fee）
+      //   - 退给用户：unitPrice + unitPriceTax（不退 service fee 及其税）
       //   - 从商家 Connect reverse：stripe_transfer_amount（商家实收部分）
-      //   - 从平台出：commission + stripe_fee + tax（这些钱在平台手里）
-      //   - service fee 不退
+      //   - 从平台出：commission + stripe_fee + unitPriceTax（这些钱在平台手里）
+      //   - service fee 及其税不退
 
       const stripeFeeAmount = Number((item as any).stripe_fee_amount ?? 0);
-      const itemRefundable = unitPrice + taxAmount; // 退给用户的总额
+      const itemRefundable = unitPrice + unitPriceTax; // 退给用户的总额（只含 unit_price 的税）
 
       // 混合支付时优先退 store credit
       let cardRefundAmount = itemRefundable;
