@@ -10,7 +10,7 @@ const CALLBACK_HOST = "login-callback";
 const ANDROID_PACKAGE = "com.crunchyplum.crunchy_plum";
 const FALLBACK_URL = "https://crunchyplum.com";
 
-/** 与 web/auth/reset-link-expired/index.html 对应，需部署到 crunchyplum.com */
+/** 与官网静态页对应：crunchyplum_website/public/auth/reset-link-expired/index.html → https://crunchyplum.com/auth/reset-link-expired/ */
 const RESET_LINK_EXPIRED_URL = "https://crunchyplum.com/auth/reset-link-expired/";
 
 /** 302 附带 fallback HTML 时的响应头 */
