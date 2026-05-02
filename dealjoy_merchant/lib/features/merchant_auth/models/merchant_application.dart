@@ -96,6 +96,7 @@ enum MerchantCategory {
       DocumentType.businessLicense,
       DocumentType.ownerID,
       DocumentType.storefrontPhoto,
+      DocumentType.liabilityInsurance,
     ];
 
     // 根据类别追加额外证件
@@ -144,7 +145,8 @@ enum DocumentType {
   facilityLicense,
   generalBusinessPermit,
   storefrontPhoto,
-  ownerID;
+  ownerID,
+  liabilityInsurance;
 
   /// UI 显示标签
   String get label {
@@ -167,6 +169,8 @@ enum DocumentType {
         return 'Storefront Photo';
       case DocumentType.ownerID:
         return 'Owner ID';
+      case DocumentType.liabilityInsurance:
+        return 'General Liability Insurance';
     }
   }
 
@@ -191,6 +195,8 @@ enum DocumentType {
         return 'storefront_photo';
       case DocumentType.ownerID:
         return 'owner_id';
+      case DocumentType.liabilityInsurance:
+        return 'liability_insurance';
     }
   }
 

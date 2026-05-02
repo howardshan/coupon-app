@@ -83,11 +83,16 @@ class _DealsTabState extends ConsumerState<DealsTab>
         // 分类标签 — 二级吸顶
         categoriesAsync.when(
           data: (categories) {
-            if (categories.isEmpty) return const SliverToBoxAdapter(child: SizedBox.shrink());
+            final allDeals = dealsAsync.valueOrNull ?? [];
+            // 只保留有 deal 的分类，空分类不显示 chip
+            final nonEmpty = categories
+                .where((c) => allDeals.any((d) => d.dealCategoryId == c.id))
+                .toList();
+            if (nonEmpty.isEmpty) return const SliverToBoxAdapter(child: SizedBox.shrink());
             return SliverPersistentHeader(
               pinned: true,
               delegate: DealCategoryFilterDelegate(
-                categories: categories,
+                categories: nonEmpty,
                 selectedCategoryId: selectedCategory,
                 onSelected: (id) => ref
                     .read(selectedDealCategoryProvider(widget.merchantId)
