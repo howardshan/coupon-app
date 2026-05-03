@@ -13,7 +13,7 @@
 
 // 使用 npm: 而非 esm.sh：后者在 Edge Runtime 下会拉入 std/node，触发
 // Deno.core.runMicrotasks() is not supported（见 Supabase 文档中 Stripe + esm.sh 排错说明）
-import Stripe from "npm:stripe@14.25.0";
+import Stripe from "npm:stripe@17.0.0";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { resolveAuth, requirePermission, type AuthResult } from "../_shared/auth.ts";
 import { sendEmail, getAdminRecipients } from "../_shared/email.ts";
@@ -28,6 +28,43 @@ const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") ?? "", {
   apiVersion: "2024-04-10",
   httpClient: Stripe.createFetchHttpClient(),
 });
+
+// v2 Accounts API helper — 直接用 fetch，不依赖 SDK 版本
+async function stripeV2Post(path: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const key = Deno.env.get("STRIPE_SECRET_KEY") ?? "";
+  const res = await fetch(`https://api.stripe.com${path}`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${key}`,
+      "Content-Type": "application/json",
+      "Stripe-Version": "2026-04-22.dahlia",
+    },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error((data as any)?.error?.message ?? `Stripe v2 error ${res.status}`);
+  }
+  return data as Record<string, unknown>;
+}
+
+async function stripeV2Patch(path: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const key = Deno.env.get("STRIPE_SECRET_KEY") ?? "";
+  const res = await fetch(`https://api.stripe.com${path}`, {
+    method: "PATCH",
+    headers: {
+      "Authorization": `Bearer ${key}`,
+      "Content-Type": "application/json",
+      "Stripe-Version": "2026-04-22.dahlia",
+    },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error((data as any)?.error?.message ?? `Stripe v2 error ${res.status}`);
+  }
+  return data as Record<string, unknown>;
+}
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -823,20 +860,34 @@ async function handleCreateConnectLink(
   // controller.losses.payments=application 让平台拥有 loss liability，
   // 才能调用 Reserves Preview 写接口（POST /v1/reserve/holds）
   if (!stripeAccountId) {
-    const account = await stripe.accounts.create({
-      controller: {
-        losses:                 { payments: "application" },
-        fees:                   { payer: "application" },
-        stripe_dashboard:       { type: "express" },
-        requirement_collection: "stripe",
+    // v2 Accounts API via fetch（新平台强制使用 v2，v1 已被限制）
+    const account = await stripeV2Post("/v2/core/accounts", {
+      display_name: merchant.name || "Merchant",
+      configuration: {
+        merchant: {},
+        recipient: {
+          capabilities: {
+            stripe_balance: {
+              stripe_transfers: { requested: true },
+            },
+          },
+        },
       },
-      capabilities: {
-        card_payments: { requested: true },
-        transfers:     { requested: true },
+      include: ["configuration.merchant", "configuration.recipient", "identity", "defaults"],
+      identity: {
+        country: Deno.env.get("STRIPE_CONNECTED_ACCOUNT_COUNTRY") || "US",
+        business_details: { phone: "0000000000" },
       },
-      metadata: { merchant_id: merchantId, merchant_name: merchant.name },
+      dashboard: "full",
+      defaults: {
+        responsibilities: {
+          losses_collector: "stripe",
+          fees_collector:   "stripe",
+        },
+      },
     });
     stripeAccountId = account.id;
+    console.log(`[Connect] 账户已创建并请求 stripe_transfers capability: ${stripeAccountId}`);
 
     // 写入 merchants 表
     await admin
@@ -855,11 +906,17 @@ async function handleCreateConnectLink(
 
   // 生成 Account Link（onboarding URL）
   // return_url / refresh_url 由环境变量提供（须为 https，见 resolveStripeConnectRedirectUrls）
-  const accountLink = await stripe.accountLinks.create({
+  // v2 账号使用 v2 account links
+  const accountLink = await stripeV2Post("/v2/core/account_links", {
     account: stripeAccountId,
-    refresh_url: redirect.refreshUrl,
-    return_url: redirect.returnUrl,
-    type: "account_onboarding",
+    use_case: {
+      type: "account_onboarding",
+      account_onboarding: {
+        configurations: ["merchant"],
+        refresh_url: redirect.refreshUrl,
+        return_url:  redirect.returnUrl,
+      },
+    },
   });
 
   return jsonResponse({ url: accountLink.url });
@@ -911,19 +968,22 @@ async function handleRefreshConnectStatus(
     });
   }
 
-  // 补请求缺失的 capabilities（修复历史账户未传 capabilities 导致受限）
-  const caps = (account as any).capabilities ?? {};
-  if (caps.card_payments === undefined || caps.transfers === undefined) {
-    try {
-      await stripe.accounts.update(stripeAccountId, {
-        capabilities: {
-          card_payments: { requested: true },
-          transfers:     { requested: true },
+  // 补请求缺失的 stripe_transfers capability（历史账户可能未请求，v2 账户必须用 v2 PATCH）
+  try {
+    await stripeV2Patch(`/v2/core/accounts/${stripeAccountId}`, {
+      configuration: {
+        recipient: {
+          capabilities: {
+            stripe_balance: {
+              stripe_transfers: { requested: true },
+            },
+          },
         },
-      } as any);
-    } catch (capErr) {
-      console.error("[Connect] 补请求 capabilities 失败:", capErr);
-    }
+      },
+    });
+    console.log(`[Connect] /refresh 补请求 stripe_transfers capability for ${stripeAccountId}`);
+  } catch (capErr) {
+    console.error("[Connect] /refresh 补请求 stripe_transfers capability 失败:", capErr);
   }
 
   // 判断账户状态

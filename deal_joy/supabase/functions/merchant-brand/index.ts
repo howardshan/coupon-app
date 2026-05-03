@@ -3,7 +3,7 @@
 // 品牌管理：品牌信息 CRUD、门店管理、管理员管理
 // =============================================================
 
-import Stripe from "https://esm.sh/stripe@14.1.0?target=deno";
+import Stripe from "npm:stripe@17.0.0";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { resolveAuth, requirePermission } from "../_shared/auth.ts";
 
@@ -11,6 +11,25 @@ import { resolveAuth, requirePermission } from "../_shared/auth.ts";
 const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") ?? "", {
   apiVersion: "2024-04-10",
 });
+
+// v2 Accounts API helper — 直接用 fetch，不依赖 SDK 版本
+async function stripeV2Post(path: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const key = Deno.env.get("STRIPE_SECRET_KEY") ?? "";
+  const res = await fetch(`https://api.stripe.com${path}`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${key}`,
+      "Content-Type": "application/json",
+      "Stripe-Version": "2026-04-22.dahlia",
+    },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error((data as any)?.error?.message ?? `Stripe v2 error ${res.status}`);
+  }
+  return data as Record<string, unknown>;
+}
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -613,20 +632,21 @@ Deno.serve(async (req: Request) => {
         // controller.losses.payments=application 让平台拥有 loss liability，
         // 才能调用 Reserves Preview 写接口（POST /v1/reserve/holds）
         // controller.stripe_dashboard.type=express 保留 Express 商家面板 UX
-        const account = await stripe.accounts.create({
-          controller: {
-            losses:                 { payments: "application" },
-            fees:                   { payer: "application" },
-            stripe_dashboard:       { type: "express" },
-            requirement_collection: "stripe",
+        // v2 Accounts API via fetch（新平台强制使用 v2，v1 已被限制）
+        const account = await stripeV2Post("/v2/core/accounts", {
+          display_name: brandInfo?.name || "Brand Merchant",
+          configuration: { merchant: {}, recipient: {} },
+          include: ["configuration.merchant", "configuration.recipient", "identity", "defaults"],
+          identity: {
+            country: Deno.env.get("STRIPE_CONNECTED_ACCOUNT_COUNTRY") || "US",
+            business_details: { phone: "0000000000" },
           },
-          capabilities: {
-            card_payments: { requested: true },
-            transfers:     { requested: true },
-          },
-          metadata: {
-            brand_id:   auth.brandId,
-            brand_name: brandInfo?.name ?? "",
+          dashboard: "full",
+          defaults: {
+            responsibilities: {
+              losses_collector: "stripe",
+              fees_collector:   "stripe",
+            },
           },
         });
         stripeAccountId = account.id;
@@ -642,11 +662,17 @@ Deno.serve(async (req: Request) => {
       }
 
       // 生成 onboarding 链接
-      const accountLink = await stripe.accountLinks.create({
-        account:     stripeAccountId,
-        refresh_url: refreshUrl,
-        return_url:  returnUrl,
-        type:        "account_onboarding",
+      // v2 账号使用 v2 account links
+      const accountLink = await stripeV2Post("/v2/core/account_links", {
+        account: stripeAccountId,
+        use_case: {
+          type: "account_onboarding",
+          account_onboarding: {
+            configurations: ["merchant"],
+            refresh_url: refreshUrl,
+            return_url:  returnUrl,
+          },
+        },
       });
 
       return jsonResponse({ url: accountLink.url, stripe_account_id: stripeAccountId });

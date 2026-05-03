@@ -493,7 +493,7 @@ class CheckoutRepository {
         clientSecret: clientSecret,
         confirmParams: PlatformPayConfirmParams.googlePay(
           googlePay: GooglePayParams(
-            testEnv: true, // 上线改为 false
+            testEnv: false,
             merchantName: 'Crunchy Plum',
             merchantCountryCode: 'US',
             currencyCode: 'usd',
