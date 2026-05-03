@@ -302,8 +302,8 @@ Deno.serve(async (req) => {
           : Promise.resolve(null),
       ]);
 
-      if (isStoreCreditOrder && storedTransferId && storedTransferAmount > 0) {
-        // ── Store Credit 订单：直接用 stripe_transfer_id reverse ──
+      if (storedTransferId && storedTransferAmount > 0) {
+        // ── 优先用 DB 存储的 transfer_id reverse（适用于所有订单类型）──
         try {
           const reversalCents = Math.round(storedTransferAmount * 100);
           await stripe.transfers.createReversal(storedTransferId, {
@@ -312,7 +312,7 @@ Deno.serve(async (req) => {
           });
           console.log(`[SC Refund] Reversed $${storedTransferAmount} from transfer ${storedTransferId}`);
         } catch (transferErr) {
-          console.error('[SC Refund] Store Credit transfer reversal 失败:', transferErr);
+          console.error('[SC Refund] Transfer reversal 失败（不阻断，需人工核查）:', transferErr);
         }
       } else if (needsRetrieve) {
         // ── 刷卡订单：使用已并行获取的 PI 数据 ──
@@ -528,17 +528,17 @@ Deno.serve(async (req) => {
               : Promise.resolve(null),
           ]);
 
-          if (isStoreCreditOrderOP && storedTransferIdOP && storedTransferAmountOP > 0) {
-            // Store Credit 订单：直接用 stripe_transfer_id reverse
+          if (storedTransferIdOP && storedTransferAmountOP > 0) {
+            // 优先用 DB 存储的 transfer_id reverse（适用于所有订单类型，包括刷卡和 Store Credit）
             try {
               const reversalCents = Math.round(storedTransferAmountOP * 100);
               await stripe.transfers.createReversal(storedTransferIdOP, {
                 amount: reversalCents,
-                metadata: { order_item_id: orderItemId, reason: 'original_payment_refund_sc' },
+                metadata: { order_item_id: orderItemId, reason: 'original_payment_refund' },
               });
-              console.log(`[OP Refund] SC order reversed $${storedTransferAmountOP} from transfer ${storedTransferIdOP}`);
+              console.log(`[OP Refund] Reversed $${storedTransferAmountOP} from transfer ${storedTransferIdOP}`);
             } catch (reversalErr) {
-              console.error('[OP Refund] SC transfer reversal failed:', reversalErr);
+              console.error('[OP Refund] Transfer reversal failed（不阻断，需人工核查）:', reversalErr);
             }
           } else if (needsRetrieveOP) {
             // 刷卡订单：使用已并行获取的 PI 数据

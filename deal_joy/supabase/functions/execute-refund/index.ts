@@ -84,7 +84,7 @@ Deno.serve(async (req) => {
 
       const { data: line, error: lineErr } = await serviceClient
         .from('order_items')
-        .select('id, order_id')
+        .select('id, order_id, stripe_transfer_id, stripe_transfer_amount')
         .eq('id', orderItemId)
         .single();
 
@@ -95,9 +95,25 @@ Deno.serve(async (req) => {
         );
       }
 
+      // Step 1: 把商家的 transfer 划回平台账户（store credit 资金由此来源）
+      const scTransferId = line.stripe_transfer_id as string | null;
+      const scTransferAmt = Number(line.stripe_transfer_amount ?? 0);
+      if (scTransferId && scTransferAmt > 0) {
+        try {
+          await stripe.transfers.createReversal(scTransferId, {
+            amount: Math.round(scTransferAmt * 100),
+            metadata: { order_item_id: orderItemId, reason: 'store_credit_refund_dispute' },
+          });
+          console.log(`[execute-refund SC] Reversed $${scTransferAmt} from transfer ${scTransferId}`);
+        } catch (reversalErr) {
+          console.error('[execute-refund SC] Transfer reversal failed（不阻断）:', reversalErr);
+        }
+      }
+
       const refundAmount = Number(refundReq.refund_amount);
       const desc = String(refundReq.user_reason ?? '').trim() || 'Refund dispute approved';
 
+      // Step 2: 发放 store credit
       const { error: rpcErr } = await serviceClient.rpc('add_store_credit', {
         p_user_id: order.user_id,
         p_amount: refundAmount,
@@ -151,7 +167,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    // ── Legacy：整单 Stripe 退款 ───────────────────────────────────────────────
+    // ── Legacy：整单 Stripe 退款（original_payment 或旧格式争议单）────────────
     const order = refundReq.orders as {
       payment_intent_id: string;
       is_captured: boolean;
@@ -164,6 +180,52 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Step 1: 先 reverse 商家的 transfer，再从平台账户出退款给用户
+    if (order.is_captured) {
+      if (orderItemId) {
+        // 有 order_item_id：reverse 该 item 的 transfer
+        const { data: itemForRev } = await serviceClient
+          .from('order_items')
+          .select('stripe_transfer_id, stripe_transfer_amount')
+          .eq('id', orderItemId)
+          .single();
+        const revTransferId = itemForRev?.stripe_transfer_id as string | null;
+        const revTransferAmt = Number(itemForRev?.stripe_transfer_amount ?? 0);
+        if (revTransferId && revTransferAmt > 0) {
+          try {
+            await stripe.transfers.createReversal(revTransferId, {
+              amount: Math.round(revTransferAmt * 100),
+              metadata: { order_item_id: String(orderItemId), reason: 'original_payment_refund_dispute' },
+            });
+            console.log(`[execute-refund] Reversed $${revTransferAmt} from transfer ${revTransferId}`);
+          } catch (revErr) {
+            console.error('[execute-refund] Transfer reversal failed（不阻断，需人工核查）:', revErr);
+          }
+        }
+      } else {
+        // 旧格式争议单：遍历订单下所有 item，reverse 各自的 transfer
+        const { data: allItems } = await serviceClient
+          .from('order_items')
+          .select('id, stripe_transfer_id, stripe_transfer_amount')
+          .eq('order_id', refundReq.order_id);
+        for (const it of (allItems ?? [])) {
+          const tid = it.stripe_transfer_id as string | null;
+          const tamt = Number(it.stripe_transfer_amount ?? 0);
+          if (tid && tamt > 0) {
+            try {
+              await stripe.transfers.createReversal(tid, {
+                amount: Math.round(tamt * 100),
+                metadata: { order_item_id: String(it.id), reason: 'execute_refund_legacy' },
+              });
+              console.log(`[execute-refund] Legacy reversed $${tamt} from transfer ${tid}`);
+            } catch (revErr) {
+              console.error('[execute-refund] Legacy transfer reversal failed:', revErr);
+            }
+          }
+        }
+      }
+    }
+
     let refundId: string;
     let refundStatus: string;
 
@@ -174,6 +236,7 @@ Deno.serve(async (req) => {
         refundStatus = cancelled.status;
         console.log(`[execute-refund] cancelled pre-auth pi=${order.payment_intent_id}`);
       } else {
+        // Step 2: 从平台账户退款给用户（transfer 已在上方 reverse，平台净出 = commission + stripe_fee + tax）
         const refundAmountCents = Math.round(Number(refundReq.refund_amount) * 100);
         const refund = await stripe.refunds.create({
           payment_intent: order.payment_intent_id,
