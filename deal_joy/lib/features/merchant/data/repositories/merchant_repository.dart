@@ -127,10 +127,14 @@ class MerchantRepository {
       }
       return results;
     } on PostgrestException catch (e) {
+      debugPrint('[ERROR] fetchMerchantsNearby → PostgrestException: ${e.message} (code=${e.code})');
       throw AppException(
         'Failed to fetch nearby merchants: ${e.message}',
         code: e.code,
       );
+    } catch (e, st) {
+      debugPrint('[ERROR] fetchMerchantsNearby → 未知异常: $e\n$st');
+      rethrow;
     }
   }
 
