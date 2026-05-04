@@ -26,13 +26,18 @@ final merchantListProvider = FutureProvider<List<MerchantModel>>((ref) async {
   if (isNearMe) {
     final loc = await ref.watch(userLocationProvider.future);
     debugPrint('[DEBUG] merchantListProvider → Near Me 模式, GPS=(${loc.lat}, ${loc.lng}), category=$category');
-    final results = await repo.fetchMerchantsNearby(
-      lat: loc.lat,
-      lng: loc.lng,
-      category: category,
-    );
-    debugPrint('[DEBUG] merchantListProvider → Near Me 返回 ${results.length} 家店');
-    merchants = results;
+    try {
+      final results = await repo.fetchMerchantsNearby(
+        lat: loc.lat,
+        lng: loc.lng,
+        category: category,
+      );
+      debugPrint('[DEBUG] merchantListProvider → Near Me 返回 ${results.length} 家店');
+      merchants = results;
+    } catch (e, st) {
+      debugPrint('[ERROR] merchantListProvider → fetchMerchantsNearby 异常: $e\n$st');
+      rethrow;
+    }
   } else {
     final city = ref.watch(selectedLocationProvider).city;
     debugPrint('[DEBUG] merchantListProvider → 城市模式, city=$city, category=$category');

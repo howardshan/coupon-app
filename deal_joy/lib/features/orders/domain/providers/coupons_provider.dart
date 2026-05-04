@@ -148,6 +148,7 @@ class RefundNotifier extends AsyncNotifier<void> {
     String refundMethod = 'original_payment',
     String? reason,
   }) async {
+    debugPrint('[REFUND] requestItemRefund → itemId=$orderItemId, method=$refundMethod');
     state = const AsyncValue.loading();
     state = await AsyncValue.guard(
       () => ref
@@ -158,7 +159,10 @@ class RefundNotifier extends AsyncNotifier<void> {
             reason: reason,
           ),
     );
-    if (!state.hasError) {
+    if (state.hasError) {
+      debugPrint('[REFUND] requestItemRefund → 失败: ${state.error}');
+    } else {
+      debugPrint('[REFUND] requestItemRefund → 成功');
       // 刷新券列表、订单列表和 store credit 余额
       invalidateUserCouponsEverywhere(ref.invalidate);
       ref.invalidate(userOrdersProvider);

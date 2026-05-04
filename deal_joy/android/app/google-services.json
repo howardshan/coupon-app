@@ -12,7 +12,28 @@
           "package_name": "com.crunchyplum.crunchy_plum"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "447514243069-8v0q5f40qf30b65ksf8afui1jfpre0tk.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.crunchyplum.crunchy_plum",
+            "certificate_hash": "2dd04419e6a8dc8e38977096acf4b7d49b6d40ab"
+          }
+        },
+        {
+          "client_id": "447514243069-u1bhe1r4bnst8evvs2j5tvrlfkmkkbna.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.crunchyplum.crunchy_plum",
+            "certificate_hash": "846e906fa06b503fd890216e0636fdae2968ce43"
+          }
+        },
+        {
+          "client_id": "447514243069-eme010hhc48nn3vkegfivslldldmd8t9.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyAa_dkWn2rnX8HrB_OWf-ZViXz84tTrPJk"
@@ -20,7 +41,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "447514243069-eme010hhc48nn3vkegfivslldldmd8t9.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "447514243069-niasb0d7d0v1kg0ftri3pmv048h0uvd4.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.crunchyplum.crunchyPlum"
+              }
+            }
+          ]
         }
       }
     }
