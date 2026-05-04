@@ -291,38 +291,47 @@ Deno.serve(async (req: Request) => {
 });
 
 // =============================================================
-// GET /balance — 可提现余额
-// 计算规则：已核销 T+7 天的净收入 - 已提现 - 退款扣除
+// 费率 + 余额计算公共类型
 // =============================================================
-async function handleGetBalance(
+interface FeeRates {
+  commissionRate: number; // 平台抽成率（免费期内为 0）
+  stripeRate:     number; // Stripe 处理费率
+  stripeFlatFee:  number; // Stripe 每笔固定费
+  brandCommRate:  number; // 品牌佣金率（不受商家免费期影响）
+}
+
+interface BalanceResult {
+  availableBalance: number; // 可提现余额（floor at 0）
+  totalSettled:     number; // 已结算总额
+  totalWithdrawn:   number; // 已提现总额
+}
+
+// =============================================================
+// computeFeeRates — 读取并组合平台 / 商家 / 品牌三档费率
+// 出错时 throw Error，由调用方统一 catch 返回 HTTP 错误响应
+// =============================================================
+async function computeFeeRates(
   admin: ReturnType<typeof createClient>,
   merchantId: string
-): Promise<Response> {
-  const settledCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-
-  // Step 1: 读取全局费率
+): Promise<FeeRates> {
+  // Step 1: 全局费率
   const { data: config, error: configErr } = await admin
     .from("platform_commission_config")
     .select("commission_rate, stripe_processing_rate, stripe_flat_fee")
     .single();
-  if (configErr) {
-    console.error("[merchant-withdrawal] /balance config fetch failed", configErr.message);
-    return errorResponse("Failed to fetch commission config", 500);
-  }
-  let vCommissionRate  = parseFloat(String(config?.commission_rate  ?? 0.15));
-  let vStripeRate      = parseFloat(String(config?.stripe_processing_rate ?? 0.03));
-  let vStripeFlatFee   = parseFloat(String(config?.stripe_flat_fee  ?? 0.30));
+  if (configErr) throw new Error("Failed to fetch commission config");
 
-  // Step 2: 读取商家专属费率及免费期（含 brand_id 用于查询品牌佣金率）
+  let commissionRate = parseFloat(String(config?.commission_rate         ?? 0.15));
+  let stripeRate     = parseFloat(String(config?.stripe_processing_rate  ?? 0.03));
+  let stripeFlatFee  = parseFloat(String(config?.stripe_flat_fee         ?? 0.30));
+
+  // Step 2: 商家专属费率及免费期（含 brand_id 用于查询品牌佣金率）
   const { data: merchant, error: merchantErr } = await admin
     .from("merchants")
     .select("commission_free_until, commission_rate, commission_stripe_rate, commission_stripe_flat_fee, commission_effective_from, commission_effective_to, brand_id")
     .eq("id", merchantId)
     .single();
-  if (merchantErr) {
-    console.error("[merchant-withdrawal] /balance merchant fetch failed", merchantErr.message);
-    return errorResponse("Failed to fetch merchant config", 500);
-  }
+  if (merchantErr) throw new Error("Failed to fetch merchant config");
 
   // 判断商家专属费率是否在生效期内
   if (merchant?.commission_rate != null || merchant?.commission_stripe_rate != null) {
@@ -334,21 +343,20 @@ async function handleGetBalance(
       || (!effFrom && effTo && today <= effTo)
       || (effFrom && effTo && today >= effFrom && today <= effTo);
     if (active) {
-      if (merchant.commission_rate        != null) vCommissionRate = parseFloat(String(merchant.commission_rate));
-      if (merchant.commission_stripe_rate != null) vStripeRate     = parseFloat(String(merchant.commission_stripe_rate));
-      if (merchant.commission_stripe_flat_fee != null) vStripeFlatFee = parseFloat(String(merchant.commission_stripe_flat_fee));
+      if (merchant.commission_rate            != null) commissionRate = parseFloat(String(merchant.commission_rate));
+      if (merchant.commission_stripe_rate     != null) stripeRate     = parseFloat(String(merchant.commission_stripe_rate));
+      if (merchant.commission_stripe_flat_fee != null) stripeFlatFee  = parseFloat(String(merchant.commission_stripe_flat_fee));
     }
   }
 
   // 免费期：平台抽成为 0，Stripe 手续费仍正常收取
   const freeUntil = merchant?.commission_free_until ? new Date(merchant.commission_free_until) : null;
   if (freeUntil && new Date() <= freeUntil) {
-    vCommissionRate = 0;
+    commissionRate = 0;
   }
 
-  // Step 2.5: 查询品牌佣金率（通过 merchants.brand_id → brands.commission_rate）
-  // 品牌佣金在免费期内也要照扣，不受商家免费期影响
-  let vBrandCommRate = 0;
+  // Step 3: 品牌佣金率（品牌佣金在免费期内也照扣，不受商家免费期影响）
+  let brandCommRate = 0;
   const brandId = (merchant as any)?.brand_id ?? null;
   if (brandId) {
     const { data: brandData } = await admin
@@ -357,12 +365,25 @@ async function handleGetBalance(
       .eq("id", brandId)
       .maybeSingle();
     if (brandData?.commission_rate != null) {
-      vBrandCommRate = parseFloat(String(brandData.commission_rate));
+      brandCommRate = parseFloat(String(brandData.commission_rate));
     }
   }
 
-  // Step 3: 查询已结算 order_items（T+7 已过、非退款）
-  // 与 get_merchant_earnings_summary 使用相同的数据源和字段
+  return { commissionRate, stripeRate, stripeFlatFee, brandCommRate };
+}
+
+// =============================================================
+// computeAvailableBalance — 计算可提现余额
+// = Σ已结算净收入（T+7，非退款）- Σ已提现（completed/processing/pending）
+// =============================================================
+async function computeAvailableBalance(
+  admin: ReturnType<typeof createClient>,
+  merchantId: string,
+  rates: FeeRates
+): Promise<BalanceResult> {
+  const settledCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+  // 查询已结算 order_items（T+7 已过、非退款）
   const { data: settledItems, error: itemsErr } = await admin
     .from("order_items")
     .select("id, unit_price, redeemed_merchant_id, purchased_merchant_id")
@@ -370,50 +391,70 @@ async function handleGetBalance(
     .lt("redeemed_at", settledCutoff)
     .not("customer_status", "in", '("refund_success","refund_pending","refund_processing")')
     .or(`redeemed_merchant_id.eq.${merchantId},and(redeemed_merchant_id.is.null,purchased_merchant_id.eq.${merchantId})`);
+  if (itemsErr) throw new Error(`Failed to query settled items: ${itemsErr.message}`);
 
-  if (itemsErr) {
-    console.error("[merchant-withdrawal] /balance order_items fetch failed", itemsErr.message);
-    return errorResponse(`Failed to query settled items: ${itemsErr.message}`, 500);
-  }
-
-  // Step 4: 逐行计算 net_amount，汇总已结算总额
-  // 公式：net = unit_price - platform_fee - brand_fee - stripe_fee
-  // 品牌佣金不受免费期影响，始终按品牌费率扣除
+  // 逐行计算净值：unit_price - 平台抽成 - 品牌佣金 - Stripe 费
   let totalSettled = 0;
   for (const item of settledItems ?? []) {
     // deno-lint-ignore no-explicit-any
-    const unitPrice = parseFloat(String((item as any).unit_price ?? 0));
-    const platformFee = unitPrice * vCommissionRate;
-    const brandFee    = unitPrice * vBrandCommRate;
-    const stripeFee   = unitPrice * vStripeRate + vStripeFlatFee;
+    const unitPrice   = parseFloat(String((item as any).unit_price ?? 0));
+    const platformFee = unitPrice * rates.commissionRate;
+    const brandFee    = unitPrice * rates.brandCommRate;
+    const stripeFee   = unitPrice * rates.stripeRate + rates.stripeFlatFee;
     totalSettled += unitPrice - platformFee - brandFee - stripeFee;
   }
 
-  // Step 5: 查询已提现总额
+  // 查询已提现总额（completed + processing + pending 均计入，防止并发重复提现）
   const { data: withdrawals, error: wErr } = await admin
     .from("withdrawals")
     .select("amount")
     .eq("merchant_id", merchantId)
     .in("status", ["completed", "processing", "pending"]);
-  if (wErr) {
-    console.error("[merchant-withdrawal] /balance withdrawals fetch failed", wErr.message);
-    return errorResponse(`Failed to query withdrawals: ${wErr.message}`, 500);
-  }
+  if (wErr) throw new Error(`Failed to query withdrawals: ${wErr.message}`);
 
   let totalWithdrawn = 0;
   for (const w of withdrawals ?? []) {
     totalWithdrawn += parseFloat(String(w.amount));
   }
 
-  const availableBalance = Math.max(0, totalSettled - totalWithdrawn);
+  return {
+    availableBalance: Math.max(0, totalSettled - totalWithdrawn),
+    totalSettled,
+    totalWithdrawn,
+  };
+}
+
+// =============================================================
+// GET /balance — 可提现余额
+// 计算规则：已核销 T+7 天的净收入 - 已提现 - 退款扣除
+// =============================================================
+async function handleGetBalance(
+  admin: ReturnType<typeof createClient>,
+  merchantId: string
+): Promise<Response> {
+  let rates: FeeRates;
+  try {
+    rates = await computeFeeRates(admin, merchantId);
+  } catch (e) {
+    console.error("[merchant-withdrawal] /balance computeFeeRates failed", (e as Error).message);
+    return errorResponse((e as Error).message, 500);
+  }
+
+  let balance: BalanceResult;
+  try {
+    balance = await computeAvailableBalance(admin, merchantId, rates);
+  } catch (e) {
+    console.error("[merchant-withdrawal] /balance computeAvailableBalance failed", (e as Error).message);
+    return errorResponse((e as Error).message, 500);
+  }
 
   return jsonResponse({
-    available_balance:       Math.round(availableBalance * 100) / 100,
-    total_settled:           Math.round(totalSettled   * 100) / 100,
-    total_withdrawn:         Math.round(totalWithdrawn * 100) / 100,
-    effective_commission_rate: vCommissionRate,
-    effective_stripe_rate:     vStripeRate,
-    effective_stripe_flat_fee: vStripeFlatFee,
+    available_balance:         Math.round(balance.availableBalance * 100) / 100,
+    total_settled:             Math.round(balance.totalSettled     * 100) / 100,
+    total_withdrawn:           Math.round(balance.totalWithdrawn   * 100) / 100,
+    effective_commission_rate: rates.commissionRate,
+    effective_stripe_rate:     rates.stripeRate,
+    effective_stripe_flat_fee: rates.stripeFlatFee,
     currency: "usd",
   });
 }
@@ -462,51 +503,31 @@ async function handleWithdraw(
     return errorResponse("You already have a pending withdrawal. Please wait for it to complete.");
   }
 
-  // 读取费率配置（与 handleGetBalance 保持一致，用于 FIFO 净值计算）
-  const { data: feeConfig } = await admin
-    .from("platform_commission_config")
-    .select("commission_rate, stripe_processing_rate, stripe_flat_fee")
-    .single();
-  const { data: feeM } = await admin
-    .from("merchants")
-    .select("commission_free_until, commission_rate, commission_stripe_rate, commission_stripe_flat_fee, commission_effective_from, commission_effective_to, brand_id")
-    .eq("id", merchantId)
-    .single();
-
-  let fifoCommRate  = parseFloat(String(feeConfig?.commission_rate  ?? 0.15));
-  let fifoStrRate   = parseFloat(String(feeConfig?.stripe_processing_rate ?? 0.03));
-  let fifoStrFlat   = parseFloat(String(feeConfig?.stripe_flat_fee  ?? 0.30));
-
-  if (feeM?.commission_rate != null || feeM?.commission_stripe_rate != null) {
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    const ef = feeM.commission_effective_from ? new Date(feeM.commission_effective_from) : null;
-    const et = feeM.commission_effective_to   ? new Date(feeM.commission_effective_to)   : null;
-    const active = (!ef && !et) || (ef && !et && today >= ef) || (!ef && et && today <= et) || (ef && et && today >= ef && today <= et);
-    if (active) {
-      if (feeM.commission_rate        != null) fifoCommRate = parseFloat(String(feeM.commission_rate));
-      if (feeM.commission_stripe_rate != null) fifoStrRate  = parseFloat(String(feeM.commission_stripe_rate));
-      if (feeM.commission_stripe_flat_fee != null) fifoStrFlat = parseFloat(String(feeM.commission_stripe_flat_fee));
-    }
-  }
-  if (feeM?.commission_free_until && new Date() <= new Date(feeM.commission_free_until)) {
-    fifoCommRate = 0;
+  // 计算费率（复用公共 helper，与 /balance 端点逻辑完全一致）
+  let rates: FeeRates;
+  try {
+    rates = await computeFeeRates(admin, merchantId);
+  } catch (e) {
+    return errorResponse((e as Error).message, 500);
   }
 
-  // 查询品牌佣金率（品牌佣金不受免费期影响，始终扣除）
-  let fifoBrandRate = 0;
-  const fifoBrandId = (feeM as any)?.brand_id ?? null;
-  if (fifoBrandId) {
-    const { data: fifoBrand } = await admin
-      .from("brands")
-      .select("commission_rate")
-      .eq("id", fifoBrandId)
-      .maybeSingle();
-    if (fifoBrand?.commission_rate != null) {
-      fifoBrandRate = parseFloat(String(fifoBrand.commission_rate));
-    }
+  // 【安全校验】服务端余额校验：防止绕过客户端直接超额提现
+  // Flutter 前端有三层校验，但服务端必须独立校验，不能依赖客户端保障资金安全
+  let balanceResult: BalanceResult;
+  try {
+    balanceResult = await computeAvailableBalance(admin, merchantId, rates);
+  } catch (e) {
+    return errorResponse((e as Error).message, 500);
   }
 
-  // 创建提现记录（初始状态 pending，Transfer 成功后改为 processing）
+  if (amount > balanceResult.availableBalance + 0.01) {
+    // +0.01 容忍浮点误差（不足一分），不影响安全性
+    return errorResponse(
+      `Withdrawal amount $${amount.toFixed(2)} exceeds available balance $${balanceResult.availableBalance.toFixed(2)}`
+    );
+  }
+
+  // 创建提现记录（初始状态 pending，Transfer 成功后改为 completed）
   const { data: withdrawal, error } = await admin
     .from("withdrawals")
     .insert({
@@ -558,6 +579,7 @@ async function handleWithdraw(
           .from("order_items")
           .select("id, unit_price, redeemed_at")
           .eq("merchant_status", "unpaid")
+          .not("customer_status", "in", '("refund_success","refund_pending","refund_processing")') // 排除已退款项，与余额计算保持一致
           .lt("redeemed_at", settledCutoff)
           .or(`redeemed_merchant_id.eq.${merchantId},and(redeemed_merchant_id.is.null,purchased_merchant_id.eq.${merchantId})`)
           .order("redeemed_at", { ascending: true });
@@ -567,9 +589,9 @@ async function handleWithdraw(
           let accumulated = 0;
           for (const item of eligibleItems) {
             if (accumulated >= amount - 0.01) break;
-            // 与 handleGetBalance 使用完全相同的净值公式：扣平台抽成 + 品牌佣金 + Stripe 费
+            // 与 computeAvailableBalance 使用完全相同的净值公式：扣平台抽成 + 品牌佣金 + Stripe 费
             const unitPrice = parseFloat(String(item.unit_price ?? 0));
-            const net = unitPrice - unitPrice * fifoCommRate - unitPrice * fifoBrandRate - (unitPrice * fifoStrRate + fifoStrFlat);
+            const net = unitPrice - unitPrice * rates.commissionRate - unitPrice * rates.brandCommRate - (unitPrice * rates.stripeRate + rates.stripeFlatFee);
             accumulated += net;
             itemsToMark.push(item.id);
           }
@@ -1060,7 +1082,19 @@ async function handleConnectDashboardLink(
     return errorResponse("Stripe account is not fully connected.", 400);
   }
 
-  const loginLink = await stripe.accounts.createLoginLink(stripeAccountId);
+  // V2 recipient 账户可能不支持 V1 createLoginLink（Express Dashboard 专用）；
+  // 用 try-catch 防止崩溃，返回可读错误而非 500
+  let loginLink: { url: string };
+  try {
+    loginLink = await stripe.accounts.createLoginLink(stripeAccountId);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    console.error("[Connect] createLoginLink failed for account", stripeAccountId, ":", msg);
+    return errorResponse(
+      "Unable to generate dashboard link for this account type. Please contact support.",
+      502
+    );
+  }
 
   return jsonResponse({ url: loginLink.url });
 }

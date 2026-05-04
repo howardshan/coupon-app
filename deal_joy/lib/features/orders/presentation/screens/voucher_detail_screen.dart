@@ -1851,7 +1851,8 @@ class _CancelSheet extends ConsumerStatefulWidget {
 }
 
 class _CancelSheetState extends ConsumerState<_CancelSheet> {
-  String _selectedMethod = 'store_credit';
+  // 默认原路退回，对信用卡用户更符合预期；纯储值付款时在 initState 强制改为 store_credit
+  String _selectedMethod = 'original_payment';
   bool _isSubmitting = false;
   late int _cancelCount;
 
