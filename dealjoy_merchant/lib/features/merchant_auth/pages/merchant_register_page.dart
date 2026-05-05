@@ -78,9 +78,6 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
   final _stateCtrl = TextEditingController();
   final _zipcodeCtrl = TextEditingController();
 
-  // 记录每个证件上传是否在加载中
-  final Map<DocumentType, bool> _uploadingMap = {};
-
   // 最后一步：用户是否勾选了法律协议复选框
   bool _agreementAccepted = false;
 
@@ -804,11 +801,9 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
             const SizedBox(height: 12),
             ...requiredDocs.map((docType) {
               final uploadedDoc = app?.getDocument(docType);
-              final isLoading = _uploadingMap[docType] ?? false;
               return DocumentUploadTile(
                 documentType: docType,
                 uploadedDocument: uploadedDoc,
-                isLoading: isLoading,
                 onFilePicked: (path) => _handleFileUpload(docType, path),
               );
             }),
