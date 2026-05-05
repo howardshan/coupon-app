@@ -1,4 +1,4 @@
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:deal_joy/core/widgets/safe_network_image.dart';
 import 'package:flutter/material.dart';
 
 /// 自适应网络图片：LayoutBuilder + BoxFit.cover
@@ -22,7 +22,7 @@ class AdaptiveImage extends StatelessWidget {
       builder: (context, constraints) {
         final optimizedUrl =
             _getOptimizedUrl(imageUrl, constraints.maxWidth);
-        return CachedNetworkImage(
+        return SafeNetworkImage(
           imageUrl: optimizedUrl,
           width: constraints.maxWidth,
           height: constraints.maxHeight,

@@ -31,9 +31,9 @@ class MerchantRegisterPage extends ConsumerStatefulWidget {
 
 class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
   // 当前步骤索引（0-based）
-  // 0=账号, 1=注册类型, 2=公司信息, 3=类别, 4=证件, 5=地址
+  // 0=账号, 1=验证码, 2=注册类型, 3=公司信息, 4=类别, 5=证件, 6=地址
   late int _currentStep;
-  static const int _totalSteps = 6;
+  static const int _totalSteps = 7;
 
   // 注册类型: single（独立门店）/ multiple（连锁品牌）
   String _registrationType = 'single';
@@ -50,6 +50,11 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
   final _passwordCtrl = TextEditingController();
   final _confirmPasswordCtrl = TextEditingController();
   bool _passwordVisible = false;
+  final _otpCtrl = TextEditingController();
+  bool _sendingCode = false;
+  bool _verifyingOtp = false;
+  bool _resendingOtp = false;
+  String? _otpEmail;
 
   // Step 2: 公司信息表单（连锁模式含品牌信息）
   final _step2FormKey = GlobalKey<FormState>();
@@ -73,9 +78,6 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
   final _stateCtrl = TextEditingController();
   final _zipcodeCtrl = TextEditingController();
 
-  // 记录每个证件上传是否在加载中
-  final Map<DocumentType, bool> _uploadingMap = {};
-
   // 最后一步：用户是否勾选了法律协议复选框
   bool _agreementAccepted = false;
 
@@ -88,8 +90,8 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
   @override
   void initState() {
     super.initState();
-    // 重提模式从 Step 2（Business Info）开始，普通注册从 Step 0
-    _currentStep = _isResubmit ? 2 : 0;
+    // 重提模式从 Step 3（Business Info）开始，普通注册从 Step 0
+    _currentStep = _isResubmit ? 3 : 0;
 
     Future.microtask(() {
       if (_isResubmit) {
@@ -156,6 +158,7 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
     _emailCtrl.dispose();
     _passwordCtrl.dispose();
     _confirmPasswordCtrl.dispose();
+    _otpCtrl.dispose();
     _companyNameCtrl.dispose();
     _contactNameCtrl.dispose();
     _contactEmailCtrl.dispose();
@@ -180,12 +183,12 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
-        leading: (_currentStep > 0 && !(_isResubmit && _currentStep == 2))
+        leading: (_currentStep > 0 && !(_isResubmit && _currentStep == 3))
             ? IconButton(
                 icon: const Icon(Icons.arrow_back, color: Color(0xFF212121)),
                 onPressed: _goBack,
               )
-            : _isResubmit && _currentStep == 2
+            : _isResubmit && _currentStep == 3
                 ? IconButton(
                     icon: const Icon(Icons.close, color: Color(0xFF212121)),
                     onPressed: () {
@@ -219,8 +222,8 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
         children: [
           // 顶部进度指示器
           _StepProgressBar(
-            currentStep: _isResubmit ? _currentStep - 2 : _currentStep,
-            totalSteps: _isResubmit ? _totalSteps - 2 : _totalSteps,
+            currentStep: _isResubmit ? _currentStep - 3 : _currentStep,
+            totalSteps: _isResubmit ? _totalSteps - 3 : _totalSteps,
           ),
           // 表单内容区域
           Expanded(
@@ -266,14 +269,16 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
       case 0:
         return 'Create Account';
       case 1:
-        return 'Store Type';
+        return 'Verify Email';
       case 2:
-        return 'Business Info';
+        return 'Store Type';
       case 3:
-        return 'Select Category';
+        return 'Business Info';
       case 4:
-        return 'Upload Documents';
+        return 'Select Category';
       case 5:
+        return 'Upload Documents';
+      case 6:
         return 'Store Address';
       default:
         return 'Register';
@@ -288,18 +293,111 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
       case 0:
         return _buildStep1AccountForm();
       case 1:
-        return _buildStepRegistrationType();
+        return _buildStepVerifyOtp();
       case 2:
-        return _buildStep2BusinessInfo(application);
+        return _buildStepRegistrationType();
       case 3:
-        return _buildStep3CategorySelect(application);
+        return _buildStep2BusinessInfo(application);
       case 4:
-        return _buildStep4Documents(application);
+        return _buildStep3CategorySelect(application);
       case 5:
+        return _buildStep4Documents(application);
+      case 6:
         return _buildStep5Address(application);
       default:
         return const SizedBox.shrink();
     }
+  }
+
+  // ----------------------------------------------------------
+  // Step 1: 邮箱验证码验证
+  // ----------------------------------------------------------
+  Widget _buildStepVerifyOtp() {
+    final email = _otpEmail ?? _emailCtrl.text.trim();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _SectionHeader(
+          title: 'Verify your email',
+          subtitle: 'Enter the verification code sent to your email.',
+        ),
+        const SizedBox(height: 24),
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFF3E0),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFFFFE0B2)),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.mark_email_read_outlined, color: Color(0xFFFF9800)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Verification code sent to: $email',
+                  style: const TextStyle(fontSize: 13, color: Color(0xFF5D4037)),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        _AppTextField(
+          controller: _otpCtrl,
+          label: 'Verification Code',
+          hint: 'Enter 6-digit code',
+          valueKey: 'register_otp_code',
+          keyboardType: TextInputType.number,
+          validator: (v) {
+            if (v == null || v.trim().isEmpty) return 'Code is required';
+            if (!RegExp(r'^\d{6,8}$').hasMatch(v.trim())) {
+              return 'Enter a valid code';
+            }
+            return null;
+          },
+        ),
+        const SizedBox(height: 14),
+        TextButton.icon(
+          onPressed: _resendingOtp
+              ? null
+              : () async {
+                  final targetEmail = _otpEmail ?? _emailCtrl.text.trim();
+                  if (targetEmail.isEmpty) {
+                    _showError('Missing email. Please go back and retry.');
+                    return;
+                  }
+                  setState(() => _resendingOtp = true);
+                  try {
+                    await ref.read(merchantAuthServiceProvider).resendSignupOtp(
+                          email: targetEmail,
+                        );
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Verification code resent.'),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  } on AuthException catch (e) {
+                    _showError(e.message);
+                  } catch (_) {
+                    _showError('Failed to resend verification code.');
+                  } finally {
+                    if (mounted) setState(() => _resendingOtp = false);
+                  }
+                },
+          icon: _resendingOtp
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.refresh, size: 18),
+          label: const Text('Resend Code'),
+        ),
+      ],
+    );
   }
 
   // ----------------------------------------------------------
@@ -703,11 +801,9 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
             const SizedBox(height: 12),
             ...requiredDocs.map((docType) {
               final uploadedDoc = app?.getDocument(docType);
-              final isLoading = _uploadingMap[docType] ?? false;
               return DocumentUploadTile(
                 documentType: docType,
                 uploadedDocument: uploadedDoc,
-                isLoading: isLoading,
                 onFilePicked: (path) => _handleFileUpload(docType, path),
               );
             }),
@@ -854,6 +950,7 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
   Widget _buildBottomBar(AsyncValue<MerchantApplication?> authState) {
     final isLoading = authState is AsyncLoading;
     final isLastStep = _currentStep == _totalSteps - 1;
+    final isStepBusy = _sendingCode || _verifyingOtp;
 
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
@@ -926,7 +1023,7 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
             child: ElevatedButton(
               key: ValueKey(isLastStep ? 'register_submit_btn' : 'register_next_btn'),
               // 最后一步需额外满足协议勾选
-              onPressed: isLoading || (isLastStep && !_agreementAccepted)
+              onPressed: isLoading || isStepBusy || (isLastStep && !_agreementAccepted)
                   ? null
                   : _handleNext,
               style: ElevatedButton.styleFrom(
@@ -947,7 +1044,7 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
                       ),
                     )
                   : Text(
-                      isLastStep ? 'Submit for Review' : 'Next',
+                      _nextButtonLabel(isLastStep),
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
@@ -968,7 +1065,7 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
 
     switch (_currentStep) {
       case 0:
-        // Step 0: 已登录（含 Apple）→ 无密码；否则邮箱+密码
+        // Step 0: 创建账号并发送验证码（已登录则跳过验证码）
         if (!(_step1FormKey.currentState?.validate() ?? false)) return;
         final sessionUser = Supabase.instance.client.auth.currentUser;
         if (sessionUser != null) {
@@ -980,20 +1077,81 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
             email: emailForState,
             password: null,
           );
+          _otpEmail = emailForState;
+          _goNext();
+          _goNext();
+          return;
         } else {
           notifier.updateAccountInfo(
             email: _emailCtrl.text.trim(),
             password: _passwordCtrl.text,
           );
+          setState(() => _sendingCode = true);
+          try {
+            await ref.read(merchantAuthServiceProvider).registerWithEmail(
+                  email: _emailCtrl.text.trim(),
+                  password: _passwordCtrl.text,
+                );
+            _otpEmail = _emailCtrl.text.trim();
+            _goNext();
+          } on AuthException catch (e) {
+            final lower = e.message.toLowerCase();
+            if (lower.contains('already registered') ||
+                lower.contains('user_already_exists')) {
+              _showError(
+                'This email is already registered. Please sign in instead.',
+              );
+            } else {
+              _showError(e.message);
+            }
+          } catch (_) {
+            _showError('Failed to create account. Please try again.');
+          } finally {
+            if (mounted) setState(() => _sendingCode = false);
+          }
+          return;
         }
-        _goNext();
 
       case 1:
-        // Step 1: 注册类型选择（已通过 setState 更新 _registrationType）
-        _goNext();
+        // Step 1: 验证邮箱 OTP
+        final email = _otpEmail ?? _emailCtrl.text.trim();
+        final code = _otpCtrl.text.trim();
+        if (email.isEmpty) {
+          _showError('Missing email. Please go back and retry.');
+          return;
+        }
+        if (code.isEmpty) {
+          _showError('Please enter verification code.');
+          return;
+        }
+        setState(() => _verifyingOtp = true);
+        try {
+          await ref.read(merchantAuthServiceProvider).verifySignupOtp(
+                email: email,
+                token: code,
+              );
+          _goNext();
+        } on AuthException catch (e) {
+          final lower = e.message.toLowerCase();
+          if (lower.contains('expired') || lower.contains('invalid')) {
+            _showError('Invalid or expired code. Please try again.');
+          } else {
+            _showError(e.message);
+          }
+        } catch (_) {
+          _showError('Verification failed. Please try again.');
+        } finally {
+          if (mounted) setState(() => _verifyingOtp = false);
+        }
+        return;
 
       case 2:
-        // Step 2: 公司信息（含连锁品牌信息）
+        // Step 2: 注册类型选择（已通过 setState 更新 _registrationType）
+        _goNext();
+        return;
+
+      case 3:
+        // Step 3: 公司信息（含连锁品牌信息）
         if (!(_step2FormKey.currentState?.validate() ?? false)) return;
         notifier.updateBusinessInfo(
           companyName: _companyNameCtrl.text.trim(),
@@ -1002,18 +1160,20 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
           phone: _phoneCtrl.text.trim(),
         );
         _goNext();
+        return;
 
-      case 3:
-        // Step 3: 类别选择（必须选了才能继续）
+      case 4:
+        // Step 4: 类别选择（必须选了才能继续）
         final app = ref.read(merchantAuthProvider).value;
         if (app?.category == null) {
           _showError('Please select a business category');
           return;
         }
         _goNext();
+        return;
 
-      case 4:
-        // Step 4: EIN + 证件校验
+      case 5:
+        // Step 5: EIN + 证件校验
         if (!(_step4FormKey.currentState?.validate() ?? false)) return;
         notifier.updateEin(_einCtrl.text.trim());
 
@@ -1033,9 +1193,10 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
           }
         }
         _goNext();
+        return;
 
-      case 5:
-        // Step 5: 地址 + 提交申请
+      case 6:
+        // Step 6: 地址 + 提交申请
         if (!(_step5FormKey.currentState?.validate() ?? false)) return;
 
         // 自动 geocode 地址获取经纬度
@@ -1070,8 +1231,8 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
         if (_isResubmit) {
           await notifier.resubmitApplication();
         } else {
-          // 新注册：传递 registrationType 和品牌信息
-          await notifier.registerAndSubmit(
+          // 新注册：邮箱验证完成后，仅提交审核数据
+          await notifier.submitApplication(
             registrationType: _registrationType,
             brandName: _registrationType == 'multiple'
                 ? _brandNameCtrl.text.trim()
@@ -1088,6 +1249,7 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
         }
         // 提交成功，跳转审核状态页
         if (mounted) context.go('/auth/review');
+        return;
     }
   }
 
@@ -1100,10 +1262,21 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
 
   // 后退一步
   void _goBack() {
-    final minStep = _isResubmit ? 2 : 0;
+    final minStep = _isResubmit ? 3 : 0;
     if (_currentStep > minStep) {
       setState(() => _currentStep--);
     }
+  }
+
+  String _nextButtonLabel(bool isLastStep) {
+    if (isLastStep) return 'Submit for Review';
+    if (_currentStep == 0) {
+      return _sendingCode ? 'Sending Code...' : 'Send Verification Code';
+    }
+    if (_currentStep == 1) {
+      return _verifyingOtp ? 'Verifying...' : 'Verify Code';
+    }
+    return 'Next';
   }
 
   // 处理证件文件选择（仅暂存本地路径，延迟到提交时上传）

@@ -1,5 +1,5 @@
 // 订单列表页 — 以 Order 为外框，内部按商家分组，每个 deal 显示数量
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:deal_joy/core/widgets/safe_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -503,7 +503,7 @@ class _DealRow extends StatelessWidget {
             ClipRRect(
             borderRadius: BorderRadius.circular(8),
             child: group.dealImageUrl != null
-                ? CachedNetworkImage(
+                ? SafeNetworkImage(
                     imageUrl: group.dealImageUrl!,
                     width: 60,
                     height: 60,

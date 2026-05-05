@@ -1,7 +1,7 @@
 // Gift Bottom Sheet — 发送礼品券给好友
 // 支持 email / phone 输入 或 直接选择好友
 
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:deal_joy/core/widgets/safe_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -737,7 +737,7 @@ class _SelectedFriendChip extends StatelessWidget {
             radius: 14,
             backgroundColor: AppColors.surfaceVariant,
             backgroundImage: friend.avatarUrl != null
-                ? CachedNetworkImageProvider(friend.avatarUrl!)
+                ? safeNetworkImageProvider(friend.avatarUrl!)
                 : null,
             child: friend.avatarUrl == null
                 ? Text(
@@ -832,7 +832,7 @@ class _FriendPickerList extends ConsumerWidget {
                   radius: 18,
                   backgroundColor: AppColors.surfaceVariant,
                   backgroundImage: friend.avatarUrl != null
-                      ? CachedNetworkImageProvider(friend.avatarUrl!)
+                      ? safeNetworkImageProvider(friend.avatarUrl!)
                       : null,
                   child: friend.avatarUrl == null
                       ? Text(

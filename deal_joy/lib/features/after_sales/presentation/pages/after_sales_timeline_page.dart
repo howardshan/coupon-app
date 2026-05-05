@@ -1,4 +1,4 @@
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:deal_joy/core/widgets/safe_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -544,7 +544,7 @@ Future<void> _showAfterSalesAttachmentPreview(
             child: InteractiveViewer(
               minScale: 0.5,
               maxScale: 5,
-              child: CachedNetworkImage(
+              child: SafeNetworkImage(
                 imageUrl: url,
                 fit: BoxFit.contain,
                 memCacheWidth: memW,

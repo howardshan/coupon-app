@@ -1,7 +1,7 @@
 // Chat 搜索页 — 搜索用户 + 历史聊天消息关键词
 // 输入即搜索（debounce 300ms），结果分两组：Users / Messages
 
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:deal_joy/core/widgets/safe_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -435,7 +435,7 @@ class _Avatar extends StatelessWidget {
       radius: 22,
       backgroundColor: const Color(0xFFF0F0F0),
       backgroundImage:
-          url != null && url!.isNotEmpty ? CachedNetworkImageProvider(url!) : null,
+          url != null && url!.isNotEmpty ? safeNetworkImageProvider(url!) : null,
       child: url == null || url!.isEmpty
           ? Icon(icon, color: AppColors.textHint, size: 22)
           : null,

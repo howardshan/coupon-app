@@ -1,4 +1,4 @@
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:deal_joy/core/widgets/safe_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:shimmer/shimmer.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -70,7 +70,7 @@ class FacilityCard extends StatelessWidget {
         topLeft: Radius.circular(12),
         topRight: Radius.circular(12),
       ),
-      child: CachedNetworkImage(
+      child: SafeNetworkImage(
         imageUrl: facility.imageUrl!,
         height: 120,
         width: 200,

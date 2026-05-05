@@ -1,8 +1,9 @@
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:deal_joy/core/widgets/safe_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shimmer/shimmer.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -40,7 +41,7 @@ Widget _buildCategoryIcon(String? icon, bool isSelected) {
     return Icon(Icons.category_outlined, color: color, size: 26);
   }
   if (icon.startsWith('http')) {
-    return CachedNetworkImage(
+    return SafeNetworkImage(
       imageUrl: icon,
       width: 28,
       height: 28,
@@ -1104,13 +1105,29 @@ class _LargeDealCard extends ConsumerWidget {
                     top: Radius.circular(16),
                   ),
                   child: (deal.imageUrls.isNotEmpty || deal.merchant?.homepageCoverUrl != null)
-                      ? CachedNetworkImage(
+                      ? SafeNetworkImage(
                           imageUrl: deal.imageUrls.isNotEmpty
                               ? deal.imageUrls.first
                               : deal.merchant!.homepageCoverUrl!,
                           height: 200,
                           width: double.infinity,
                           fit: BoxFit.cover,
+                          placeholder: (_, __) => Shimmer.fromColors(
+                            baseColor: Colors.grey[300]!,
+                            highlightColor: Colors.grey[100]!,
+                            child: Container(
+                              height: 200,
+                              width: double.infinity,
+                              color: Colors.white,
+                            ),
+                          ),
+                          errorWidget: (_, __, ___) => Container(
+                            height: 200,
+                            width: double.infinity,
+                            color: AppColors.surfaceVariant,
+                            child: const Icon(Icons.restaurant,
+                                size: 48, color: AppColors.textHint),
+                          ),
                         )
                       : Container(
                           height: 200,
@@ -1366,13 +1383,29 @@ class _SmallDealCard extends StatelessWidget {
                         top: Radius.circular(16),
                       ),
                       child: (deal.imageUrls.isNotEmpty || deal.merchant?.homepageCoverUrl != null)
-                          ? CachedNetworkImage(
+                          ? SafeNetworkImage(
                               imageUrl: deal.imageUrls.isNotEmpty
                                   ? deal.imageUrls.first
                                   : deal.merchant!.homepageCoverUrl!,
                               width: double.infinity,
                               height: double.infinity,
                               fit: BoxFit.cover,
+                              placeholder: (_, __) => Shimmer.fromColors(
+                                baseColor: Colors.grey[300]!,
+                                highlightColor: Colors.grey[100]!,
+                                child: Container(
+                                  width: double.infinity,
+                                  height: double.infinity,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              errorWidget: (_, __, ___) => Container(
+                                width: double.infinity,
+                                height: double.infinity,
+                                color: AppColors.surfaceVariant,
+                                child: const Icon(Icons.restaurant,
+                                    size: 48, color: AppColors.textHint),
+                              ),
                             )
                           : Container(color: AppColors.surfaceVariant),
                     ),
@@ -1549,11 +1582,29 @@ class _MerchantGridCard extends StatelessWidget {
                   () {
                     final coverUrl = merchant.homepageCoverUrl ?? merchant.logoUrl;
                     return coverUrl != null && coverUrl.isNotEmpty
-                        ? CachedNetworkImage(
+                        ? SafeNetworkImage(
                             imageUrl: coverUrl,
                             width: double.infinity,
                             height: 130,
                             fit: BoxFit.cover,
+                            placeholder: (_, __) => Shimmer.fromColors(
+                              baseColor: Colors.grey[300]!,
+                              highlightColor: Colors.grey[100]!,
+                              child: Container(
+                                width: double.infinity,
+                                height: 130,
+                                color: Colors.white,
+                              ),
+                            ),
+                            errorWidget: (_, __, ___) => Container(
+                              width: double.infinity,
+                              height: 130,
+                              color: AppColors.surfaceVariant,
+                              child: const Center(
+                                child: Icon(Icons.restaurant,
+                                    size: 40, color: AppColors.textHint),
+                              ),
+                            ),
                           )
                         : Container(
                             width: double.infinity,
@@ -1717,11 +1768,27 @@ class _MerchantCard extends StatelessWidget {
               child: () {
                 final coverUrl = merchant.homepageCoverUrl ?? merchant.logoUrl;
                 return coverUrl != null && coverUrl.isNotEmpty
-                  ? CachedNetworkImage(
+                  ? SafeNetworkImage(
                       imageUrl: coverUrl,
                       width: 64,
                       height: 64,
                       fit: BoxFit.cover,
+                      placeholder: (_, __) => Shimmer.fromColors(
+                        baseColor: Colors.grey[300]!,
+                        highlightColor: Colors.grey[100]!,
+                        child: Container(
+                          width: 64,
+                          height: 64,
+                          color: Colors.white,
+                        ),
+                      ),
+                      errorWidget: (_, __, ___) => Container(
+                        width: 64,
+                        height: 64,
+                        color: AppColors.surfaceVariant,
+                        child: const Icon(Icons.restaurant,
+                            color: AppColors.textHint),
+                      ),
                     )
                   : Container(
                       width: 64,

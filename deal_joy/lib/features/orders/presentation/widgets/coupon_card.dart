@@ -1,6 +1,6 @@
 // 团购券列表卡片组件 — 在 CouponsScreen 中复用
 
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:deal_joy/core/widgets/safe_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -331,7 +331,7 @@ class _MerchantAvatar extends StatelessWidget {
         radius: 24,
         backgroundColor: AppColors.surfaceVariant,
         child: ClipOval(
-          child: CachedNetworkImage(
+          child: SafeNetworkImage(
             imageUrl: logoUrl!,
             width: 48,
             height: 48,

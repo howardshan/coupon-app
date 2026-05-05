@@ -1,4 +1,4 @@
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:deal_joy/core/widgets/safe_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -91,7 +91,7 @@ class _ProfileBody extends ConsumerWidget {
                               alpha: 0.1,
                             ),
                             backgroundImage: avatarUrl != null
-                                ? CachedNetworkImageProvider(avatarUrl!)
+                                ? safeNetworkImageProvider(avatarUrl!)
                                 : null,
                             child: avatarUrl == null
                                 ? Text(

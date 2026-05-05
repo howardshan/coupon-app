@@ -35,6 +35,34 @@ class MerchantAuthService {
   }
 
   // ----------------------------------------------------------
+  // 1b. 验证邮箱注册 OTP（验证码模式）
+  // ----------------------------------------------------------
+  Future<void> verifySignupOtp({
+    required String email,
+    required String token,
+  }) async {
+    await _supabase.auth.verifyOTP(
+      email: email,
+      token: token,
+      type: OtpType.signup,
+    );
+    // 刷新 session，确保后续提交申请时能拿到最新用户状态
+    await _supabase.auth.refreshSession();
+  }
+
+  // ----------------------------------------------------------
+  // 1c. 重发邮箱注册 OTP
+  // ----------------------------------------------------------
+  Future<void> resendSignupOtp({
+    required String email,
+  }) async {
+    await _supabase.auth.resend(
+      type: OtpType.signup,
+      email: email,
+    );
+  }
+
+  // ----------------------------------------------------------
   // 2. 邮箱+密码登录（已有账号重新登录）
   // ----------------------------------------------------------
   Future<AuthResponse> signInWithEmail({
