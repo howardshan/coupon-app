@@ -1,4 +1,4 @@
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:deal_joy/core/widgets/safe_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shimmer/shimmer.dart';
@@ -105,7 +105,7 @@ class DealCardV2 extends StatelessWidget {
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
             child: imageUrl != null
-                ? CachedNetworkImage(
+                ? SafeNetworkImage(
                     imageUrl: imageUrl,
                     width: 120,
                     height: 90,

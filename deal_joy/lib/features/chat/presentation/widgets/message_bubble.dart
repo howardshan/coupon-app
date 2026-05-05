@@ -2,7 +2,7 @@
 // 根据消息类型（text / image / coupon / emoji / system）渲染不同样式气泡
 // 支持我的消息（右侧橙色）和对方消息（左侧灰色）
 
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:deal_joy/core/widgets/safe_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -233,7 +233,7 @@ class _ImageBubble extends StatelessWidget {
       onTap: () => _showFullScreenImage(context),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(12),
-        child: CachedNetworkImage(
+        child: SafeNetworkImage(
           imageUrl: imageUrl,
           width: 200,
           height: 200,
@@ -282,7 +282,7 @@ class _FullScreenImageViewer extends StatelessWidget {
       ),
       body: Center(
         child: InteractiveViewer(
-          child: CachedNetworkImage(
+          child: SafeNetworkImage(
             imageUrl: imageUrl,
             fit: BoxFit.contain,
             placeholder: (context, url) =>
@@ -366,7 +366,7 @@ class _CouponBubble extends StatelessWidget {
             ClipRRect(
               borderRadius:
                   const BorderRadius.vertical(top: Radius.circular(12)),
-              child: CachedNetworkImage(
+              child: SafeNetworkImage(
                 imageUrl: dealImageUrl,
                 height: 100,
                 width: double.infinity,
@@ -522,7 +522,7 @@ class _Avatar extends StatelessWidget {
     if (avatarUrl != null && avatarUrl!.isNotEmpty) {
       return CircleAvatar(
         radius: 16,
-        backgroundImage: CachedNetworkImageProvider(avatarUrl!),
+        backgroundImage: safeNetworkImageProvider(avatarUrl!),
         backgroundColor: AppColors.surfaceVariant,
       );
     }
@@ -648,7 +648,7 @@ class _DealShareBubble extends StatelessWidget {
             if (imageUrl != null && imageUrl.isNotEmpty)
               ClipRRect(
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-                child: CachedNetworkImage(
+                child: SafeNetworkImage(
                   imageUrl: imageUrl,
                   height: 120,
                   width: double.infinity,
@@ -772,7 +772,7 @@ class _GiftSentBubble extends StatelessWidget {
           if (dealImageUrl != null && dealImageUrl.isNotEmpty)
             ClipRRect(
               borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-              child: CachedNetworkImage(
+              child: SafeNetworkImage(
                 imageUrl: dealImageUrl,
                 height: 100,
                 width: double.infinity,
@@ -980,7 +980,7 @@ class _MerchantShareBubble extends StatelessWidget {
             if (coverUrl != null && coverUrl.isNotEmpty)
               ClipRRect(
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-                child: CachedNetworkImage(
+                child: SafeNetworkImage(
                   imageUrl: coverUrl,
                   height: 100,
                   width: double.infinity,
@@ -1000,7 +1000,7 @@ class _MerchantShareBubble extends StatelessWidget {
                   if (logoUrl != null && logoUrl.isNotEmpty)
                     ClipRRect(
                       borderRadius: BorderRadius.circular(6),
-                      child: CachedNetworkImage(imageUrl: logoUrl, width: 28, height: 28, fit: BoxFit.cover),
+                      child: SafeNetworkImage(imageUrl: logoUrl, width: 28, height: 28, fit: BoxFit.cover),
                     )
                   else
                     Container(

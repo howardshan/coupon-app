@@ -4,7 +4,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:deal_joy/core/widgets/safe_network_image.dart';
 import '../../data/models/brand_detail_model.dart';
 import '../../domain/providers/merchant_provider.dart';
 
@@ -100,7 +100,7 @@ class _BrandAppBar extends StatelessWidget {
                   CircleAvatar(
                     radius: 36,
                     backgroundImage:
-                        CachedNetworkImageProvider(brand.logoUrl!),
+                        safeNetworkImageProvider(brand.logoUrl!),
                   )
                 else
                   CircleAvatar(
@@ -257,7 +257,7 @@ class _StoreCard extends StatelessWidget {
               ClipRRect(
                 borderRadius: BorderRadius.circular(8),
                 child: store.homepageCoverUrl != null
-                    ? CachedNetworkImage(
+                    ? SafeNetworkImage(
                         imageUrl: store.homepageCoverUrl!,
                         width: 72,
                         height: 72,

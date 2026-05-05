@@ -1,4 +1,4 @@
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:deal_joy/core/widgets/safe_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shimmer/shimmer.dart';
@@ -66,7 +66,7 @@ class _DealImage extends StatelessWidget {
           ClipRRect(
             borderRadius: BorderRadius.circular(10),
             child: (deal.imageUrls.isNotEmpty || deal.merchant?.homepageCoverUrl != null)
-                ? CachedNetworkImage(
+                ? SafeNetworkImage(
                     imageUrl: deal.imageUrls.isNotEmpty
                         ? deal.imageUrls.first
                         : deal.merchant!.homepageCoverUrl!,

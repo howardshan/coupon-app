@@ -1,4 +1,4 @@
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:deal_joy/core/widgets/safe_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -92,7 +92,7 @@ class MyAfterSalesListPage extends ConsumerWidget {
                               ClipRRect(
                                 borderRadius: BorderRadius.circular(8),
                                 child: r.dealImageUrl != null && r.dealImageUrl!.trim().isNotEmpty
-                                    ? CachedNetworkImage(
+                                    ? SafeNetworkImage(
                                         imageUrl: r.dealImageUrl!.trim(),
                                         width: 56,
                                         height: 56,

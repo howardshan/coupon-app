@@ -1,7 +1,7 @@
 // 分享给好友的底部弹窗
 // 展示好友列表，支持多选，发送 deal/merchant 分享消息
 
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:deal_joy/core/widgets/safe_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -229,7 +229,7 @@ class _FriendItem extends StatelessWidget {
         radius: 20,
         backgroundColor: AppColors.surfaceVariant,
         backgroundImage: friend.avatarUrl != null
-            ? CachedNetworkImageProvider(friend.avatarUrl!)
+            ? safeNetworkImageProvider(friend.avatarUrl!)
             : null,
         child: friend.avatarUrl == null
             ? Text(

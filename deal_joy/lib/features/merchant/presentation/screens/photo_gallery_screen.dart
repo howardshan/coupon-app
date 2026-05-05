@@ -1,4 +1,4 @@
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:deal_joy/core/widgets/safe_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shimmer/shimmer.dart';
@@ -279,7 +279,7 @@ class _PhotoGridItem extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          CachedNetworkImage(
+          SafeNetworkImage(
             imageUrl: photo.url,
             fit: BoxFit.cover,
             placeholder: (_, _) => Shimmer.fromColors(
@@ -418,7 +418,7 @@ class _FullScreenViewerState extends State<_FullScreenViewer> {
             onPageChanged: (i) => setState(() => _currentIndex = i),
             itemBuilder: (_, i) => InteractiveViewer(
               child: Center(
-                child: CachedNetworkImage(
+                child: SafeNetworkImage(
                   imageUrl: widget.photos[i].url,
                   fit: BoxFit.contain,
                   placeholder: (_, _) =>

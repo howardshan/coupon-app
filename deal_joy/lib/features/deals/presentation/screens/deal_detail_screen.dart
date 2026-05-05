@@ -1,4 +1,4 @@
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:deal_joy/core/widgets/safe_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -576,7 +576,7 @@ class _MenuDealCard extends StatelessWidget {
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
               child: deal.imageUrls.isNotEmpty
-                  ? CachedNetworkImage(
+                  ? SafeNetworkImage(
                       imageUrl: deal.imageUrls.first,
                       width: 110,
                       height: 88,
@@ -837,7 +837,7 @@ class _ImageGalleryState extends State<_ImageGallery> {
           PageView.builder(
             itemCount: urls.length,
             onPageChanged: (i) => setState(() => _currentPage = i),
-            itemBuilder: (_, i) => CachedNetworkImage(
+            itemBuilder: (_, i) => SafeNetworkImage(
               imageUrl: urls[i],
               width: double.infinity,
               height: 280,
@@ -974,7 +974,7 @@ class _FullscreenGalleryDialogState extends State<_FullscreenGalleryDialog> {
               controller: _controller,
               itemCount: widget.imageUrls.length,
               onPageChanged: (i) => setState(() => _currentPage = i),
-              itemBuilder: (_, i) => CachedNetworkImage(
+              itemBuilder: (_, i) => SafeNetworkImage(
                 imageUrl: widget.imageUrls[i],
                 fit: BoxFit.contain,
                 errorWidget: (_, _, _) => const Center(
@@ -1460,7 +1460,7 @@ class _VariantListContent extends StatelessWidget {
                     ClipRRect(
                       borderRadius: BorderRadius.circular(6),
                       child: d.imageUrls.isNotEmpty
-                          ? CachedNetworkImage(
+                          ? SafeNetworkImage(
                               imageUrl: d.imageUrls.first,
                               width: imageSize,
                               height: imageSize,
@@ -2058,7 +2058,7 @@ class _RestaurantInfo extends StatelessWidget {
                 );
                 return ClipOval(
                   child: avatarUrl != null
-                      ? CachedNetworkImage(
+                      ? SafeNetworkImage(
                           imageUrl: avatarUrl,
                           width: 56,
                           height: 56,
@@ -2195,7 +2195,7 @@ class _DetailPhotosSection extends StatelessWidget {
               borderRadius: BorderRadius.circular(10),
               child: AspectRatio(
                 aspectRatio: 3 / 4,
-                child: CachedNetworkImage(
+                child: SafeNetworkImage(
                   imageUrl: url,
                   width: double.infinity,
                   fit: BoxFit.cover,
@@ -2337,7 +2337,7 @@ class _ApplicableStores extends StatelessWidget {
             if (coverUrl != null && coverUrl.isNotEmpty)
               ClipRRect(
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-                child: CachedNetworkImage(
+                child: SafeNetworkImage(
                   imageUrl: coverUrl,
                   width: double.infinity,
                   height: 100,
@@ -2354,7 +2354,7 @@ class _ApplicableStores extends StatelessWidget {
                     borderRadius: BorderRadius.circular(8),
                     child:
                         merchant.logoUrl != null && merchant.logoUrl!.isNotEmpty
-                            ? CachedNetworkImage(
+                            ? SafeNetworkImage(
                                 imageUrl: merchant.logoUrl!,
                                 width: 52,
                                 height: 52,
@@ -2505,7 +2505,7 @@ class _MultiStoreList extends StatelessWidget {
                       if (coverUrl.isNotEmpty)
                         ClipRRect(
                           borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-                          child: CachedNetworkImage(
+                          child: SafeNetworkImage(
                             imageUrl: coverUrl,
                             width: double.infinity,
                             height: 100,
@@ -2521,7 +2521,7 @@ class _MultiStoreList extends StatelessWidget {
                       ClipRRect(
                         borderRadius: BorderRadius.circular(8),
                         child: logoUrl.isNotEmpty
-                            ? CachedNetworkImage(
+                            ? SafeNetworkImage(
                                 imageUrl: logoUrl,
                                 width: 44,
                                 height: 44,
@@ -2723,7 +2723,7 @@ class _MerchantDealCard extends StatelessWidget {
               borderRadius:
                   const BorderRadius.vertical(top: Radius.circular(12)),
               child: deal.imageUrls.isNotEmpty
-                  ? CachedNetworkImage(
+                  ? SafeNetworkImage(
                       imageUrl: deal.imageUrls.first,
                       width: 150,
                       height: 100,
@@ -3047,7 +3047,7 @@ class _ReviewCard extends StatelessWidget {
               ClipOval(
                 child: review.userAvatarUrl != null &&
                         review.userAvatarUrl!.isNotEmpty
-                    ? CachedNetworkImage(
+                    ? SafeNetworkImage(
                         imageUrl: review.userAvatarUrl!,
                         width: 32,
                         height: 32,

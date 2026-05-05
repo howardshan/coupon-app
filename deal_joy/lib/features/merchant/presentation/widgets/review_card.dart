@@ -1,4 +1,4 @@
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:deal_joy/core/widgets/safe_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:shimmer/shimmer.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -357,7 +357,7 @@ class _ReviewCardState extends State<ReviewCard> {
         itemBuilder: (context, index) {
           return ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: CachedNetworkImage(
+            child: SafeNetworkImage(
               imageUrl: photos[index],
               width: 80,
               height: 80,

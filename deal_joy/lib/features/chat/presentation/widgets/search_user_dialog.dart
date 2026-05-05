@@ -1,7 +1,7 @@
 // 搜索用户弹窗组件
 // 通过用户名 / 邮箱 / 手机号搜索用户，展示结果并支持发送好友申请
 
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:deal_joy/core/widgets/safe_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -304,7 +304,7 @@ class _UserAvatar extends StatelessWidget {
   Widget build(BuildContext context) {
     if (avatarUrl != null && avatarUrl!.isNotEmpty) {
       return ClipOval(
-        child: CachedNetworkImage(
+        child: SafeNetworkImage(
           imageUrl: avatarUrl!,
           width: 40,
           height: 40,

@@ -1,4 +1,4 @@
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:deal_joy/core/widgets/safe_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shimmer/shimmer.dart';
@@ -69,7 +69,7 @@ class NearbyMerchantCard extends StatelessWidget {
     if (logoUrl != null && logoUrl.isNotEmpty) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(10),
-        child: CachedNetworkImage(
+        child: SafeNetworkImage(
           imageUrl: logoUrl,
           width: 60,
           height: 60,

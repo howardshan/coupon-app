@@ -1,4 +1,4 @@
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:deal_joy/core/widgets/safe_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -1312,7 +1312,7 @@ class _EnvironmentGalleryState extends State<_EnvironmentGallery> {
                       child: SizedBox(
                         width: _cardSize,
                         height: _cardSize,
-                        child: CachedNetworkImage(
+                        child: SafeNetworkImage(
                           imageUrl: photo.photoUrl,
                           fit: BoxFit.cover,
                           placeholder: (_, _) => Shimmer.fromColors(
@@ -1430,7 +1430,7 @@ class _EnvironmentPhotoSheet extends StatelessWidget {
                         child: Stack(
                           fit: StackFit.expand,
                           children: [
-                            CachedNetworkImage(
+                            SafeNetworkImage(
                               imageUrl: photo.photoUrl,
                               fit: BoxFit.cover,
                               placeholder: (_, _) => Shimmer.fromColors(
@@ -1548,7 +1548,7 @@ class _FullScreenGalleryState extends State<_FullScreenGallery> {
         itemBuilder: (_, i) {
           return InteractiveViewer(
             child: Center(
-              child: CachedNetworkImage(
+              child: SafeNetworkImage(
                 imageUrl: widget.photos[i].photoUrl,
                 fit: BoxFit.contain,
                 placeholder: (_, _) => const Center(

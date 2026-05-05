@@ -1,4 +1,4 @@
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:deal_joy/core/widgets/safe_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shimmer/shimmer.dart';
@@ -180,7 +180,7 @@ class _EnvironmentCard extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            CachedNetworkImage(
+            SafeNetworkImage(
               imageUrl: photo.photoUrl,
               fit: BoxFit.cover,
               placeholder: (_, _) => Shimmer.fromColors(

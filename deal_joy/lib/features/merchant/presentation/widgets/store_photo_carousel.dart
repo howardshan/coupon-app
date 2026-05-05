@@ -1,4 +1,4 @@
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:deal_joy/core/widgets/safe_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:shimmer/shimmer.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -54,7 +54,7 @@ class _StorePhotoCarouselState extends State<StorePhotoCarousel> {
               setState(() => _currentIndex = index);
             },
             itemBuilder: (context, index) {
-              return CachedNetworkImage(
+              return SafeNetworkImage(
                 imageUrl: widget.photoUrls[index],
                 fit: BoxFit.cover,
                 width: double.infinity,
