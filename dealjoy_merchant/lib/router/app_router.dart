@@ -283,6 +283,18 @@ final appRouter = GoRouter(
           if (roleType == 'staff_regional_manager') return '/store-selector';
           if (roleType == 'staff_cashier' || roleType == 'staff_trainee') return '/scan';
           if (roleType == 'staff_finance') return '/earnings';
+          // 普通 owner：检查是否拥有多家门店，若是则先选店
+          final user = Supabase.instance.client.auth.currentUser;
+          if (user != null) {
+            try {
+              final rows = await Supabase.instance.client
+                  .from('merchants')
+                  .select('id')
+                  .eq('user_id', user.id)
+                  .eq('status', 'approved');
+              if ((rows as List).length > 1) return '/store-selector';
+            } catch (_) {}
+          }
           return '/dashboard';
         case 'pending':
         case 'rejected':
@@ -307,15 +319,32 @@ final appRouter = GoRouter(
       }
     }
 
-    // 品牌管理员重启时：恢复上次选中的门店 ID，若无则跳 store-selector
+    // 多店角色重启时：恢复上次选中的门店 ID，若无则跳 store-selector
     final roleType = MerchantStatusCache.roleType;
-    if ((roleType == 'brand_admin' || roleType == 'staff_regional_manager') &&
-        StoreService.globalActiveMerchantId == null &&
-        !loc.startsWith('/store-selector')) {
-      final restored = await StoreService.restoreActiveMerchantId();
-      if (!restored) {
-        // 没有保存过门店 ID → 跳转选店页
-        return '/store-selector';
+    final isMultiStoreRole = roleType == 'brand_admin' || roleType == 'staff_regional_manager';
+    final isRegularOwner = roleType == null || (!roleType.startsWith('brand_') && !roleType.startsWith('staff_'));
+
+    if (StoreService.globalActiveMerchantId == null && !loc.startsWith('/store-selector')) {
+      if (isMultiStoreRole) {
+        // 品牌管理员 / 区域经理：尝试恢复上次选中的门店
+        final restored = await StoreService.restoreActiveMerchantId();
+        if (!restored) return '/store-selector';
+      } else if (isRegularOwner) {
+        // 普通 owner：先尝试恢复，再检查是否多店
+        final restored = await StoreService.restoreActiveMerchantId();
+        if (!restored) {
+          final user = Supabase.instance.client.auth.currentUser;
+          if (user != null) {
+            try {
+              final rows = await Supabase.instance.client
+                  .from('merchants')
+                  .select('id')
+                  .eq('user_id', user.id)
+                  .eq('status', 'approved');
+              if ((rows as List).length > 1) return '/store-selector';
+            } catch (_) {}
+          }
+        }
       }
     }
 

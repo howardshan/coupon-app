@@ -1,4 +1,5 @@
-// 品牌管理员门店选择页
+// 门店选择页
+// 适用于：品牌管理员、区域经理、普通多店 owner
 // 登录后显示旗下所有门店，选择后进入该门店的 Dashboard
 
 import 'package:flutter/material.dart';
@@ -6,7 +7,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../models/store_summary.dart';
 import '../providers/store_provider.dart';
+import '../services/store_service.dart';
 import '../widgets/store_selector.dart' show invalidateAllStoreProviders;
+import '../../../router/app_router.dart' show MerchantStatusCache;
 
 class StoreSelectorPage extends ConsumerWidget {
   const StoreSelectorPage({super.key});
@@ -15,7 +18,12 @@ class StoreSelectorPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final storesAsync = ref.watch(brandStoresProvider);
+    // 品牌管理员/区域经理用 Edge Function 获取门店；普通 owner 直接查数据库
+    final roleType = MerchantStatusCache.roleType;
+    final isBrandRole = roleType == 'brand_admin' || roleType == 'staff_regional_manager';
+    final storesAsync = isBrandRole
+        ? ref.watch(brandStoresProvider)
+        : ref.watch(ownedStoresProvider);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
