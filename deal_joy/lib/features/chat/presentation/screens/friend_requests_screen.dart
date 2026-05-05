@@ -1,7 +1,7 @@
 // 好友申请页
 // 分组展示收到的申请（Received）和发出的申请（Sent）
 
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:deal_joy/core/widgets/safe_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -411,7 +411,7 @@ class _Avatar extends StatelessWidget {
     const double size = 44;
     if (avatarUrl != null && avatarUrl!.isNotEmpty) {
       return ClipOval(
-        child: CachedNetworkImage(
+        child: SafeNetworkImage(
           imageUrl: avatarUrl!,
           width: size,
           height: size,

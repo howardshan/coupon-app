@@ -1,4 +1,4 @@
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:deal_joy/core/widgets/safe_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:shimmer/shimmer.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -202,7 +202,7 @@ class _EnvironmentPhotoCard extends StatelessWidget {
           fit: StackFit.expand,
           children: [
             // 照片
-            CachedNetworkImage(
+            SafeNetworkImage(
               imageUrl: photo.photoUrl,
               fit: BoxFit.cover,
               // Shimmer 加载占位

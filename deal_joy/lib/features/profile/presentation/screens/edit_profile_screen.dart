@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:deal_joy/core/widgets/safe_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -197,7 +197,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
             backgroundImage: hasNewImage
                 ? FileImage(_pickedImage!)
                 : (hasExistingAvatar
-                    ? CachedNetworkImageProvider(_currentAvatarUrl!)
+                    ? safeNetworkImageProvider(_currentAvatarUrl!)
                     : null) as ImageProvider?,
             child: (!hasNewImage && !hasExistingAvatar)
                 ? Text(

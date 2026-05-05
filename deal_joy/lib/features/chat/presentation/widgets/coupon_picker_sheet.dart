@@ -1,7 +1,7 @@
 // Coupon 选择底部弹窗
 // 展示当前用户所有 unused 状态的券，点击后回调 couponPayload 供发送消息
 
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:deal_joy/core/widgets/safe_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -187,7 +187,7 @@ class _CouponTile extends StatelessWidget {
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
               child: item.dealImageUrl != null && item.dealImageUrl!.isNotEmpty
-                  ? CachedNetworkImage(
+                  ? SafeNetworkImage(
                       imageUrl: item.dealImageUrl!,
                       width: 56,
                       height: 56,

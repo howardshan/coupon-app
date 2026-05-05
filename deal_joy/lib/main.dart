@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/config/env.dart';
 import 'core/constants/stripe_app_config.dart';
+import 'core/utils/ios_simulator.dart';
 import 'features/deals/domain/providers/deals_provider.dart';
 import 'shared/services/referral_link_service.dart';
 import 'features/welcome/domain/providers/welcome_provider.dart';
@@ -23,6 +24,9 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // iOS 模拟器：在首帧网络图之前缓存 isPhysicalDevice，避免误判走 CachedNetworkImage → path_provider FFI 崩溃
+  await ensureIosSimulatorDetected();
 
   // Load environment variables
   await dotenv.load(fileName: '.env');

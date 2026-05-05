@@ -83,7 +83,8 @@ class DocumentUploadTile extends StatelessWidget {
                     isUploaded
                         ? 'Uploaded'
                         : hasLocalFile
-                            ? 'Uploading...'
+                            // 本地已选文件，真正上传发生在最终提交时，避免误显示「正在上传」
+                            ? 'Saved locally — uploads when you submit'
                             : documentType.imageOnly
                                 ? 'Tap to upload image'
                                 : 'Tap to upload image or PDF',

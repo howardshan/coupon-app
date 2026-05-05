@@ -1,4 +1,4 @@
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:deal_joy/core/widgets/safe_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:shimmer/shimmer.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -126,7 +126,7 @@ class _StorePhotoHeaderState extends State<StorePhotoHeader> {
 
   /// 加载网络图片（带 shimmer 占位）
   Widget _buildImage(String url, double height) {
-    return CachedNetworkImage(
+    return SafeNetworkImage(
       imageUrl: url,
       fit: BoxFit.cover,
       width: double.infinity,

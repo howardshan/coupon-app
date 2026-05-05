@@ -1,7 +1,7 @@
 // 好友管理页
 // 展示当前用户的好友列表，支持删除好友和搜索用户
 
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:deal_joy/core/widgets/safe_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -382,7 +382,7 @@ class _Avatar extends StatelessWidget {
   Widget build(BuildContext context) {
     if (avatarUrl != null && avatarUrl!.isNotEmpty) {
       return ClipOval(
-        child: CachedNetworkImage(
+        child: SafeNetworkImage(
           imageUrl: avatarUrl!,
           width: size,
           height: size,

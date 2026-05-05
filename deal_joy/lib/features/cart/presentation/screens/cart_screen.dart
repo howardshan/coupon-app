@@ -1,7 +1,7 @@
 // 购物车页面 — V3 DB 持久化版本
 // 每张券独立一行，同一 deal 的多张券视觉分组展示，支持勾选结账
 
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:deal_joy/core/widgets/safe_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -341,7 +341,7 @@ class _DealGroup extends ConsumerWidget {
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
               child: first.dealImageUrl.isNotEmpty
-                  ? CachedNetworkImage(
+                  ? SafeNetworkImage(
                       imageUrl: first.dealImageUrl,
                       width: 64,
                       height: 64,

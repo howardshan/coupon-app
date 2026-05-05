@@ -1,7 +1,7 @@
 // 会话列表项组件
 // 展示单个会话的头像、名称、最后消息预览、未读数 badge 和时间
 
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:deal_joy/core/widgets/safe_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -181,7 +181,7 @@ class _ConversationAvatar extends StatelessWidget {
 
     if (avatarUrl != null && avatarUrl.isNotEmpty) {
       return ClipOval(
-        child: CachedNetworkImage(
+        child: SafeNetworkImage(
           imageUrl: avatarUrl,
           width: 46,
           height: 46,

@@ -9,7 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:qr_flutter/qr_flutter.dart';
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:deal_joy/core/widgets/safe_network_image.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/router/app_route_observer.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -2582,7 +2582,7 @@ class _CancelSheetState extends ConsumerState<_CancelSheet> {
                           ClipRRect(
                             borderRadius: BorderRadius.circular(6),
                             child: coupon.dealImageUrl != null && coupon.dealImageUrl!.isNotEmpty
-                                ? CachedNetworkImage(
+                                ? SafeNetworkImage(
                                     imageUrl: coupon.dealImageUrl!,
                                     width: 40,
                                     height: 40,

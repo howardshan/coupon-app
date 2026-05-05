@@ -1,4 +1,4 @@
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:deal_joy/core/widgets/safe_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -222,7 +222,7 @@ class _HorizontalCard extends StatelessWidget {
               left: Radius.circular(16),
             ),
             child: imageUrl != null
-                ? CachedNetworkImage(
+                ? SafeNetworkImage(
                     imageUrl: imageUrl!,
                     width: 100,
                     height: 100,
