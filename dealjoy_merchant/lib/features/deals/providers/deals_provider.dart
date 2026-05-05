@@ -10,6 +10,7 @@ import '../models/deal_category.dart';
 import '../models/deal_template.dart';
 import '../services/deals_service.dart';
 import '../../store/services/store_service.dart';
+import '../../store/providers/store_provider.dart';
 
 // ============================================================
 // DealsService Provider — 注入 Supabase 客户端
@@ -35,17 +36,9 @@ class DealsNotifier extends AsyncNotifier<List<MerchantDeal>> {
   Future<List<MerchantDeal>> build() async {
     _service = ref.read(dealsServiceProvider);
 
-    // 获取当前商家 ID
-    final user = Supabase.instance.client.auth.currentUser;
-    if (user == null) throw Exception('Not authenticated');
-
-    final merchantData = await Supabase.instance.client
-        .from('merchants')
-        .select('id')
-        .eq('user_id', user.id)
-        .single();
-
-    _merchantId = merchantData['id'] as String;
+    // 通过 activeMerchantIdProvider 获取当前激活门店 ID
+    // 自动处理：单店 owner 直接返回；多店 owner 需先通过门店选择器
+    _merchantId = await ref.watch(activeMerchantIdProvider.future);
 
     // 加载 Deal 列表（不带筛选，加载全部）
     return await _service.fetchDeals(_merchantId);
@@ -58,13 +51,12 @@ class DealsNotifier extends AsyncNotifier<List<MerchantDeal>> {
   }
 
   // ----------------------------------------------------------
-  // 刷新列表（重新从服务器加载）
+  // 刷新列表（重新触发 build，确保 _merchantId 已初始化）
   // ----------------------------------------------------------
   Future<void> refresh() async {
-    state = const AsyncValue.loading();
-    state = await AsyncValue.guard(
-      () => _service.fetchDeals(_merchantId),
-    );
+    // 用 invalidateSelf 重新走 build()，防止 build() 曾失败导致 _merchantId 未初始化
+    ref.invalidateSelf();
+    await future;
   }
 
   // ----------------------------------------------------------

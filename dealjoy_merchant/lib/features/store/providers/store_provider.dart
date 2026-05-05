@@ -374,11 +374,64 @@ final storeProvider =
     AsyncNotifierProvider<StoreNotifier, StoreInfo>(StoreNotifier.new);
 
 // ============================================================
-// brandStoresProvider — 品牌管理员旗下门店列表
+// brandStoresProvider — 品牌管理员旗下门店列表（通过 Edge Function）
 // ============================================================
 final brandStoresProvider = FutureProvider<List<StoreSummary>>((ref) async {
   final service = ref.read(storeServiceProvider);
   return service.fetchBrandStores();
+});
+
+// ============================================================
+// ownedStoresProvider — 当前 owner 直接拥有的门店列表（直接查数据库）
+// 用于普通多店 owner 的门店选择器
+// ============================================================
+final ownedStoresProvider = FutureProvider<List<StoreSummary>>((ref) async {
+  final user = Supabase.instance.client.auth.currentUser;
+  if (user == null) return [];
+  try {
+    final data = await Supabase.instance.client
+        .from('merchants')
+        .select('id, name, address, city, status, logo_url, phone')
+        .eq('user_id', user.id)
+        .eq('status', 'approved');
+    return (data as List)
+        .map((e) => StoreSummary.fromJson(e as Map<String, dynamic>))
+        .toList();
+  } catch (_) {
+    return [];
+  }
+});
+
+// ============================================================
+// activeMerchantIdProvider — 当前激活的 merchant_id
+// 优先级：globalActiveMerchantId → 单店自动选中 → 抛 needs_store_selection
+// ============================================================
+final activeMerchantIdProvider = FutureProvider<String>((ref) async {
+  // 1. 已通过门店选择器选中的
+  final active = StoreService.globalActiveMerchantId;
+  if (active != null && active.isNotEmpty) return active;
+
+  // 2. 查该 owner 拥有的门店
+  final user = Supabase.instance.client.auth.currentUser;
+  if (user == null) throw Exception('Not authenticated');
+
+  final data = await Supabase.instance.client
+      .from('merchants')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('status', 'approved');
+  final rows = data as List;
+  if (rows.isEmpty) throw Exception('No merchant account found');
+
+  // 3. 只有一家门店 → 自动选中，无需弹选择器
+  if (rows.length == 1) {
+    final id = rows.first['id'] as String;
+    StoreService.globalActiveMerchantId = id;
+    return id;
+  }
+
+  // 4. 多家门店但未选 → 需要跳转门店选择器
+  throw Exception('needs_store_selection');
 });
 
 // ============================================================
