@@ -62,6 +62,30 @@ class MerchantAuthNotifier extends AsyncNotifier<MerchantApplication?> {
   }
 
   // ----------------------------------------------------------
+  // 将本地暂存的证件上传到 Storage，替换为可公开访问的 URL（与 registerAndSubmit 一致）
+  // ----------------------------------------------------------
+  Future<MerchantApplication> _uploadPendingDocuments(
+    MerchantApplication application,
+    String userId,
+  ) async {
+    final uploadedDocs = <MerchantDocument>[];
+    for (final doc in application.documents) {
+      if (doc.localPath != null && doc.localPath!.isNotEmpty) {
+        final fileUrl = await _service.uploadDocument(
+          localFilePath: doc.localPath!,
+          documentType: doc.documentType,
+          userId: userId,
+          customFileName: doc.fileName,
+        );
+        uploadedDocs.add(doc.copyWith(fileUrl: fileUrl));
+      } else {
+        uploadedDocs.add(doc);
+      }
+    }
+    return application.copyWith(documents: uploadedDocs);
+  }
+
+  // ----------------------------------------------------------
   // Step 1: 暂存邮箱密码（不调 signUp，延迟到最终提交时）
   // password 为空时表示 Apple / 已有 Session，仅暂存邮箱（可为空，联系邮箱在 Step 2 填写）
   // ----------------------------------------------------------
@@ -157,22 +181,7 @@ class MerchantAuthNotifier extends AsyncNotifier<MerchantApplication?> {
       }
 
       // 2. 上传所有本地暂存的证件文件
-      final uploadedDocs = <MerchantDocument>[];
-      for (final doc in current.documents) {
-        if (doc.localPath != null && doc.localPath!.isNotEmpty) {
-          final fileUrl = await _service.uploadDocument(
-            localFilePath: doc.localPath!,
-            documentType: doc.documentType,
-            userId: userId,
-            customFileName: doc.fileName,
-          );
-          uploadedDocs.add(doc.copyWith(fileUrl: fileUrl));
-        } else {
-          uploadedDocs.add(doc);
-        }
-      }
-
-      final updatedApp = current.copyWith(documents: uploadedDocs);
+      final updatedApp = await _uploadPendingDocuments(current, userId);
 
       // 3. 提交商家申请（含注册类型和品牌信息）
       final result = await _service.submitApplication(
@@ -301,14 +310,19 @@ class MerchantAuthNotifier extends AsyncNotifier<MerchantApplication?> {
 
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
+      final user = _service.currentUser;
+      if (user == null) {
+        throw Exception('Not signed in. Please sign in and try again.');
+      }
+      final updatedApp = await _uploadPendingDocuments(current, user.id);
       final result = await _service.submitApplication(
-        current,
+        updatedApp,
         registrationType: registrationType,
         brandName: brandName,
         brandDescription: brandDescription,
       );
       final merchantId = result['merchant_id'] as String?;
-      return current.copyWith(
+      return updatedApp.copyWith(
         merchantId: merchantId,
         status: ApplicationStatus.pending,
         submittedAt: DateTime.now(),
@@ -325,9 +339,14 @@ class MerchantAuthNotifier extends AsyncNotifier<MerchantApplication?> {
 
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
-      final result = await _service.resubmitApplication(current);
-      final merchantId = result['merchant_id'] as String? ?? current.merchantId;
-      return current.copyWith(
+      final user = _service.currentUser;
+      if (user == null) {
+        throw Exception('Not signed in. Please sign in and try again.');
+      }
+      final updatedApp = await _uploadPendingDocuments(current, user.id);
+      final result = await _service.resubmitApplication(updatedApp);
+      final merchantId = result['merchant_id'] as String? ?? updatedApp.merchantId;
+      return updatedApp.copyWith(
         merchantId: merchantId,
         status: ApplicationStatus.pending,
         submittedAt: DateTime.now(),
