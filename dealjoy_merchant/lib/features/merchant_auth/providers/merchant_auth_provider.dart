@@ -288,7 +288,11 @@ class MerchantAuthNotifier extends AsyncNotifier<MerchantApplication?> {
   // ----------------------------------------------------------
   // 提交申请（调用 Edge Function）
   // ----------------------------------------------------------
-  Future<void> submitApplication() async {
+  Future<void> submitApplication({
+    String registrationType = 'single',
+    String? brandName,
+    String? brandDescription,
+  }) async {
     final current = state.value;
     if (current == null) throw Exception('No application data');
     if (!current.isReadyToSubmit) {
@@ -297,7 +301,12 @@ class MerchantAuthNotifier extends AsyncNotifier<MerchantApplication?> {
 
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
-      final result = await _service.submitApplication(current);
+      final result = await _service.submitApplication(
+        current,
+        registrationType: registrationType,
+        brandName: brandName,
+        brandDescription: brandDescription,
+      );
       final merchantId = result['merchant_id'] as String?;
       return current.copyWith(
         merchantId: merchantId,
