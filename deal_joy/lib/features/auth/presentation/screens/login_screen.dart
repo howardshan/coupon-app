@@ -66,8 +66,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     // 监听 auth 状态：成功时跳转首页，出错时显示错误信息
     ref.listen(authNotifierProvider, (_, next) {
       if (next is AsyncData && next.value != null) {
-        // 登录成功，跳转首页
-        context.go('/home');
+        // 登录成功：优先回到 redirect（如 Profile 回流），否则首页
+        final redirect =
+            GoRouterState.of(context).uri.queryParameters['redirect'];
+        if (redirect != null &&
+            redirect.isNotEmpty &&
+            redirect.startsWith('/') &&
+            !redirect.startsWith('/auth') &&
+            redirect != '/splash') {
+          context.go(redirect);
+        } else {
+          context.go('/home');
+        }
       } else if (next is AsyncError) {
         final err = next.error!;
         // 直接取 AppException.message，避免显示 "AppException:" 前缀
