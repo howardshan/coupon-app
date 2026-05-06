@@ -6,7 +6,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../domain/providers/welcome_provider.dart';
 import '../../data/models/welcome_models.dart';
-import '../../domain/providers/welcome_provider.dart';
 import '../widgets/adaptive_image.dart';
 import '../widgets/page_indicator.dart';
 
@@ -50,7 +49,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   }
 
   /// 完成 Onboarding，标记为非首次安装
-  /// 已登录 → /welcome（开屏广告流程）；未登录 → /auth/login
+  /// 已登录 → /welcome（开屏广告流程）；未登录 → /home（游客可浏览）
   Future<void> _completeOnboarding() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('is_first_launch', false);
@@ -58,7 +57,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     ref.read(isFirstLaunchProvider.notifier).state = false;
     if (!mounted) return;
     final session = Supabase.instance.client.auth.currentSession;
-    context.go(session != null ? '/welcome' : '/auth/login');
+    context.go(session != null ? '/welcome' : '/home');
   }
 
   @override

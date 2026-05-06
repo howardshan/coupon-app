@@ -62,6 +62,25 @@ import '../widgets/splash_screen.dart';
 import 'app_route_observer.dart';
 import '../../shared/widgets/legal_document_screen.dart';
 
+/// 未登录游客可访问的路径（与 App Review 门禁表一致）
+bool _isPublicGuestPath(String loc) {
+  if (loc == '/splash' || loc == '/onboarding' || loc == '/invite') {
+    return true;
+  }
+  if (loc.startsWith('/auth/')) return true;
+  // 主 Tab：仅根路径（子路径如 /chat/search 需登录）
+  if (loc == '/home' || loc == '/chat' || loc == '/cart' || loc == '/profile') {
+    return true;
+  }
+  if (loc == '/search' || loc.startsWith('/search/')) return true;
+  if (loc.startsWith('/deals/')) return true;
+  if (loc.startsWith('/merchant/')) return true;
+  if (loc.startsWith('/brand/')) return true;
+  if (loc.startsWith('/legal/')) return true;
+  if (loc == '/support' || loc.startsWith('/support/')) return true;
+  return false;
+}
+
 /// Bridges Riverpod's authStateProvider → GoRouter's refreshListenable.
 /// GoRouter calls redirect() whenever this notifier fires.
 class _AuthChangeNotifier extends ChangeNotifier {
@@ -119,15 +138,16 @@ final routerProvider = Provider<GoRouter>((ref) {
         return currentPath == '/auth/reset-password' ? null : '/auth/reset-password';
       }
 
-      // 未登录 — 只允许 /auth/* 和 /onboarding
+      // 未登录 — 允许游客白名单路径；其余跳登录并带 redirect
       if (!isLoggedIn) {
         if (isAuthRoute || isOnboarding) return null;
-        // 首次安装 → 先走 Onboarding，完成后再跳登录
+        // 首次安装 → 先走 Onboarding（完成后 P1 进入 /home，不经登录墙）
         final isFirst = ref.read(isFirstLaunchProvider);
         if (isFirst && (isSplash || currentPath == '/')) {
           return '/onboarding';
         }
-        // 非首次 → 保留原路径作为 redirect 参数，登录后跳回
+        if (_isPublicGuestPath(currentPath)) return null;
+        // 非白名单 → 保留原路径作为 redirect 参数，登录后跳回
         if (currentPath != '/' && currentPath != '/splash') {
           return '/auth/login?redirect=${Uri.encodeComponent(currentPath)}';
         }
