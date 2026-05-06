@@ -226,7 +226,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
           ],
         ),
       );
-      if (mounted) context.pop();
+      if (mounted) _leaveCheckout();
       return;
     }
     setState(() => _cartEntryValidated = true);
@@ -242,6 +242,25 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     _stateCtrl.dispose();
     _postalCodeCtrl.dispose();
     super.dispose();
+  }
+
+  /// 离开结账页：登录后用 go 直达 checkout 时栈上无上一页，pop 会无效，需兜底导航
+  void _leaveCheckout() {
+    if (!mounted) return;
+    if (context.canPop()) {
+      context.pop();
+      return;
+    }
+    final id = widget.dealId;
+    if (id != null && id.isNotEmpty) {
+      context.go('/deals/$id');
+      return;
+    }
+    if (widget.isCartMode) {
+      context.go('/cart');
+      return;
+    }
+    context.go('/home');
   }
 
   // ── 已保存卡片加载 ───────────────────────────────────────────────
@@ -867,7 +886,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       appBar: AppBar(
         leading: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: () => context.pop(),
+          onTap: _leaveCheckout,
           child: Container(
             margin: const EdgeInsets.all(8),
             decoration: BoxDecoration(
@@ -1168,7 +1187,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
           appBar: AppBar(
             leading: GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTap: () => context.pop(),
+              onTap: _leaveCheckout,
               child: Container(
                 margin: const EdgeInsets.all(8),
                 decoration: BoxDecoration(

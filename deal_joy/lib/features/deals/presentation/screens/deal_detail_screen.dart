@@ -3336,6 +3336,14 @@ class _BottomBar extends ConsumerWidget {
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: () async {
+                  // 游客不能使用服务端购物车：引导登录，避免无用户 ID 仍弹「已加入」
+                  if (ref.read(authStateProvider).valueOrNull?.session == null) {
+                    if (!context.mounted) return;
+                    context.push(
+                      '/auth/login?redirect=${Uri.encodeComponent('/deals/${deal.id}')}',
+                    );
+                    return;
+                  }
                   // 校验选项组
                   if (deal.optionGroups.isNotEmpty) {
                     final selections = ref.read(dealOptionSelectionsProvider(deal.id));
