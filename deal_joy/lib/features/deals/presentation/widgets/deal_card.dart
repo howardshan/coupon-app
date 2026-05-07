@@ -315,10 +315,15 @@ class DealCard extends StatelessWidget {
                         ),
                         const SizedBox(width: 6),
                       ],
-                      Text(
-                        _locationLabel(),
-                        style: const TextStyle(
-                            fontSize: 12, color: AppColors.textSecondary),
+                      Flexible(
+                        child: Text(
+                          _locationLabel(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.right,
+                          style: const TextStyle(
+                              fontSize: 12, color: AppColors.textSecondary),
+                        ),
                       ),
                     ],
                   ),

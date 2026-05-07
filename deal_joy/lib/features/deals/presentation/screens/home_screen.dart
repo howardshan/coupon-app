@@ -1692,26 +1692,23 @@ class _MerchantGridCard extends StatelessWidget {
                         ),
                         const SizedBox(width: 6),
                       ],
-                      if (merchant.totalReviewCount != null &&
-                          merchant.totalReviewCount! > 0)
-                        Text(
-                          '${merchant.totalReviewCount} reviews',
+                      Flexible(
+                        child: Text(
+                          [
+                            if (merchant.totalReviewCount != null &&
+                                merchant.totalReviewCount! > 0)
+                              '${merchant.totalReviewCount} reviews',
+                            if (merchant.distanceMiles != null)
+                              '${merchant.distanceMiles!.toStringAsFixed(1)} mi',
+                          ].join('  '),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             fontSize: 11,
                             color: AppColors.textSecondary,
                           ),
                         ),
-                      // Near Me 模式下显示距离
-                      if (merchant.distanceMiles != null) ...[
-                        const SizedBox(width: 6),
-                        Text(
-                          '${merchant.distanceMiles!.toStringAsFixed(1)} mi',
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                      ],
+                      ),
                     ],
                   ),
                   // 最低价格（大字醒目）
