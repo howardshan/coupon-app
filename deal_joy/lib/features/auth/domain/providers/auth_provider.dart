@@ -5,6 +5,32 @@ import '../../../../shared/providers/supabase_provider.dart';
 import '../../data/repositories/auth_repository.dart';
 import '../../data/models/user_model.dart';
 
+/// `users` 表查询失败时，用 Auth session 构造最小资料（避免误判为未登录）
+UserModel _userModelFallbackFromAuthUser(User user) {
+  final now = DateTime.now();
+  final email = user.email ?? '';
+  final meta = user.userMetadata;
+  final fullName =
+      meta?['full_name'] as String? ?? meta?['name'] as String?;
+  final username = meta?['username'] as String?;
+  final provider = user.appMetadata['provider'] as String? ?? 'email';
+  final registrationSource = switch (provider) {
+    'google' => 'google',
+    'apple' => 'apple',
+    _ => 'email',
+  };
+  return UserModel(
+    id: user.id,
+    email: email,
+    username: username,
+    fullName: fullName,
+    role: 'user',
+    registrationSource: registrationSource,
+    createdAt: now,
+    updatedAt: now,
+  );
+}
+
 final authRepositoryProvider = Provider<AuthRepository>((ref) {
   return AuthRepository(ref.watch(supabaseClientProvider));
 });
@@ -26,8 +52,11 @@ final currentUserProvider = FutureProvider<UserModel?>((ref) async {
     final data =
         await client.from('users').select().eq('id', userId).single();
     return UserModel.fromJson(data);
-  } catch (_) {
-    return null;
+  } catch (e) {
+    if (kDebugMode) {
+      debugPrint('[currentUserProvider] users row fetch failed: $e');
+    }
+    return _userModelFallbackFromAuthUser(authState.session!.user);
   }
 });
 
