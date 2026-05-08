@@ -188,8 +188,9 @@ final dealDetailProvider = FutureProvider.family<DealModel, String>((
 });
 
 // Other deals from the same merchant
+// autoDispose：页面出栈后 Provider 释放，下次进入重新 fetch，确保显示最新 deal 列表
 final merchantDealsProvider =
-    FutureProvider.family<
+    FutureProvider.autoDispose.family<
       List<DealModel>,
       ({String merchantId, String excludeDealId})
     >((ref, params) async {

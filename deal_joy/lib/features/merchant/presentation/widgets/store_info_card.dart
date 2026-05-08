@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/maps_launcher.dart';
 import '../../data/models/merchant_detail_model.dart';
 import '../../data/models/review_stats_model.dart';
 import '../../data/models/store_facility_model.dart';
@@ -79,7 +80,7 @@ class StoreInfoCard extends StatelessWidget {
           // 第六行：地址 + 操作按钮
           if (merchant.address != null && merchant.address!.isNotEmpty) ...[
             const SizedBox(height: 12),
-            _buildAddressRow(),
+            _buildAddressRow(context),
           ],
         ],
       ),
@@ -264,7 +265,7 @@ class StoreInfoCard extends StatelessWidget {
     );
   }
 
-  Widget _buildAddressRow() {
+  Widget _buildAddressRow(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -289,10 +290,10 @@ class StoreInfoCard extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          // 导航按钮
+          // 导航按钮 — 弹出选择器让用户选 Apple Maps 或 Google Maps
           _CircleButton(
             icon: Icons.directions_car_outlined,
-            onTap: () => _openNavigation(),
+            onTap: () => showMapsChooser(context, merchant.address ?? ''),
           ),
           const SizedBox(width: 8),
           // 电话按钮
@@ -303,15 +304,6 @@ class StoreInfoCard extends StatelessWidget {
         ],
       ),
     );
-  }
-
-  Future<void> _openNavigation() async {
-    final encoded = Uri.encodeComponent(merchant.address ?? '');
-    // 使用 daddr（目的地地址）启动导航，地图上会显示实际地址
-    final uri = Uri.parse('https://maps.google.com/?daddr=$encoded');
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
   }
 
   Future<void> _callPhone() async {

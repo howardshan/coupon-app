@@ -90,7 +90,6 @@ class AuthNotifier extends Notifier<AsyncValue<UserModel?>> {
     String password,
     String fullName, {
     required String username,
-    required String dateOfBirth,
     bool marketingOptIn = false,
     bool analyticsOptIn = false,
   }) async {
@@ -101,7 +100,6 @@ class AuthNotifier extends Notifier<AsyncValue<UserModel?>> {
             password: password,
             fullName: fullName,
             username: username,
-            dateOfBirth: dateOfBirth,
             marketingOptIn: marketingOptIn,
             analyticsOptIn: analyticsOptIn,
           ),

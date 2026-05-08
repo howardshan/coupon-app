@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/maps_launcher.dart';
 import '../../../chat/presentation/widgets/share_to_friend_sheet.dart';
 import '../../data/models/deal_model.dart';
 import '../../data/models/review_model.dart';
@@ -2132,17 +2133,13 @@ class _RestaurantInfo extends StatelessWidget {
                   ),
                 ),
               const SizedBox(width: 8),
-              // Directions button
+              // Directions button — 弹出选择器让用户选 Apple Maps 或 Google Maps
               _ActionCircle(
                 icon: Icons.directions_outlined,
                 onTap: () {
                   final addr = deal.address ?? merchant.address;
                   if (addr != null && addr.isNotEmpty) {
-                    launchUrl(
-                      Uri.parse(
-                          'https://maps.google.com/?q=${Uri.encodeComponent(addr)}'),
-                      mode: LaunchMode.externalApplication,
-                    );
+                    showMapsChooser(context, addr);
                   }
                 },
               ),

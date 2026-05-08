@@ -115,48 +115,53 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
               ),
             ),
 
-            // 底部：指示器 + 按钮
+            // 底部：指示器 + 按钮（iPad 上加 maxWidth 约束，避免按钮横铺全屏）
             Padding(
               padding: EdgeInsets.fromLTRB(24, 0, 24, padding.bottom + 24),
-              child: Column(
-                children: [
-                  PageIndicator(
-                    count: slides.length,
-                    current: _currentPage,
-                    dark: false,
-                  ),
-                  const SizedBox(height: 32),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 52,
-                    child: ElevatedButton(
-                      onPressed: () {
-                        if (isLastPage) {
-                          _completeOnboarding();
-                        } else {
-                          _pageController.nextPage(
-                            duration: const Duration(milliseconds: 300),
-                            curve: Curves.easeInOut,
-                          );
-                        }
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 500),
+                  child: Column(
+                    children: [
+                      PageIndicator(
+                        count: slides.length,
+                        current: _currentPage,
+                        dark: false,
+                      ),
+                      const SizedBox(height: 32),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 52,
+                        child: ElevatedButton(
+                          onPressed: () {
+                            if (isLastPage) {
+                              _completeOnboarding();
+                            } else {
+                              _pageController.nextPage(
+                                duration: const Duration(milliseconds: 300),
+                                curve: Curves.easeInOut,
+                              );
+                            }
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: Text(
+                            isLastPage ? 'Get Started' : 'Next',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ),
                       ),
-                      child: Text(
-                        isLastPage ? 'Get Started' : 'Next',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
           ],
@@ -173,58 +178,67 @@ class _OnboardingPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
-      child: Column(
-        children: [
-          // 引导图（上半部分）
-          Expanded(
-            flex: 5,
-            child: slide.imageUrl.isNotEmpty
-                ? ClipRRect(
-                    borderRadius: BorderRadius.circular(20),
-                    child: AdaptiveImage(imageUrl: slide.imageUrl),
-                  )
-                : Center(
-                    child: Icon(
-                      Icons.local_offer,
-                      size: 120,
-                      color: AppColors.primary.withValues(alpha: 0.3),
-                    ),
-                  ),
-          ),
+    // 图片区高度：屏幕高度的 45%，最小 280，最大 400
+    // 在 iPad 宽屏上避免图片过度拉伸占满整个 Expanded 区域
+    final screenHeight = MediaQuery.of(context).size.height;
+    final imageHeight = (screenHeight * 0.45).clamp(280.0, 400.0);
 
-          const SizedBox(height: 32),
+    return Center(
+      child: ConstrainedBox(
+        // iPad 宽屏：内容区限制最大宽度 600，居中显示
+        constraints: const BoxConstraints(maxWidth: 600),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // 引导图（响应式高度，避免在 iPad 上过大或截断）
+              SizedBox(
+                height: imageHeight,
+                child: slide.imageUrl.isNotEmpty
+                    ? ClipRRect(
+                        borderRadius: BorderRadius.circular(20),
+                        child: AdaptiveImage(imageUrl: slide.imageUrl),
+                      )
+                    : Center(
+                        child: Icon(
+                          Icons.local_offer,
+                          size: 120,
+                          color: AppColors.primary.withValues(alpha: 0.3),
+                        ),
+                      ),
+              ),
 
-          // 标题
-          Expanded(
-            flex: 3,
-            child: Column(
-              children: [
-                Text(
-                  slide.title,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 26,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textPrimary,
-                    height: 1.2,
-                  ),
+              const SizedBox(height: 32),
+
+              // 标题 + 副标题（加 maxLines 防截断，overflow 用 ellipsis 兜底）
+              Text(
+                slide.title,
+                textAlign: TextAlign.center,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 26,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textPrimary,
+                  height: 1.2,
                 ),
-                const SizedBox(height: 12),
-                Text(
-                  slide.subtitle,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: AppColors.textSecondary,
-                    height: 1.5,
-                  ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                slide.subtitle,
+                textAlign: TextAlign.center,
+                maxLines: 5,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 16,
+                  color: AppColors.textSecondary,
+                  height: 1.5,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
