@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/maps_launcher.dart';
 import '../../../../core/widgets/back_or_home_app_bar_leading.dart';
 import '../../../cart/domain/providers/cart_provider.dart';
 import '../../../deals/domain/providers/deals_provider.dart';
@@ -1417,13 +1418,10 @@ class _VoucherQuickActionsState extends State<_VoucherQuickActions> {
     }
   }
 
+  // 打开地图导航 — 弹出选择器让用户选 Apple Maps 或 Google Maps
   Future<void> _navigateToStore() async {
-    if (_address == null) return;
-    final encoded = Uri.encodeComponent(_address!);
-    final uri = Uri.parse('https://maps.google.com/?q=$encoded');
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
+    if (_address == null || _address!.isEmpty) return;
+    await showMapsChooser(context, _address!);
   }
 
   Future<void> _callStore() async {
