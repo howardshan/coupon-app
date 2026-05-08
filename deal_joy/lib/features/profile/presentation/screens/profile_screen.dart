@@ -25,7 +25,9 @@ class ProfileScreen extends ConsumerWidget {
           // 未登录 → 显示登录/注册入口
           if (user == null) {
             return _GuestProfileBody(
-              onLogin: () => context.push('/auth/login'),
+              onLogin: () => context.push(
+                '/auth/login?redirect=${Uri.encodeComponent('/profile')}',
+              ),
             );
           }
           return _ProfileBody(

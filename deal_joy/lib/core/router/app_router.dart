@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -62,20 +64,90 @@ import '../widgets/splash_screen.dart';
 import 'app_route_observer.dart';
 import '../../shared/widgets/legal_document_screen.dart';
 
+/// 未登录游客可访问的路径（与 App Review 门禁表一致）
+/// 注意：不包含 /splash — 该路径仅为认证解析中的临时占位，见 redirect 中专向分发。
+bool _isPublicGuestPath(String loc) {
+  if (loc == '/onboarding' || loc == '/invite') {
+    return true;
+  }
+  if (loc.startsWith('/auth/')) return true;
+  // 主 Tab：仅根路径（子路径如 /chat/search 需登录）
+  if (loc == '/home' || loc == '/chat' || loc == '/cart' || loc == '/profile') {
+    return true;
+  }
+  if (loc == '/search' || loc.startsWith('/search/')) return true;
+  if (loc.startsWith('/deals/')) return true;
+  if (loc.startsWith('/merchant/')) return true;
+  if (loc.startsWith('/brand/')) return true;
+  if (loc.startsWith('/legal/')) return true;
+  if (loc == '/support' || loc.startsWith('/support/')) return true;
+  return false;
+}
+
 /// Bridges Riverpod's authStateProvider → GoRouter's refreshListenable.
 /// GoRouter calls redirect() whenever this notifier fires.
 class _AuthChangeNotifier extends ChangeNotifier {
+  final Ref _ref;
   late final ProviderSubscription _sub;
+  Timer? _loadingTimeoutTimer;
+  bool _authLoadingTimedOut = false;
+  static const _authLoadingTimeout = Duration(seconds: 6);
 
-  _AuthChangeNotifier(Ref ref) {
-    _sub = ref.listen(authStateProvider, (_, _) => notifyListeners());
+  _AuthChangeNotifier(this._ref) {
+    // fireImmediately：StreamProvider 若一直停在 loading 且订阅前后无「状态变化」，
+    // 默认 listen 不会回调，看门狗永远不会启动；首帧即用当前值同步一次。
+    _sub = _ref.listen(
+      authStateProvider,
+      (_, next) {
+        if (next.isLoading) {
+          _startLoadingWatchdog();
+        } else {
+          _stopLoadingWatchdog();
+        }
+        notifyListeners();
+      },
+      fireImmediately: true,
+    );
     // 注意：不再监听 currentUserProvider，因为 redirect 只依赖 authStateProvider。
     // currentUserProvider 是 FutureProvider，频繁触发会导致 GoRouter 在导航动画中
     // 重建路由栈，产生 Navigator key reservation 冲突。
   }
 
+  bool get authLoadingTimedOut => _authLoadingTimedOut;
+
+  void _startLoadingWatchdog() {
+    if (_loadingTimeoutTimer != null) return;
+    _authLoadingTimedOut = false;
+    _loadingTimeoutTimer = Timer(_authLoadingTimeout, () {
+      _authLoadingTimedOut = true;
+      debugPrint(
+        '[Router] authStateProvider loading timeout after '
+        '${_authLoadingTimeout.inSeconds}s — signOut + guest route',
+      );
+      // 清除本地会话，促使 authStateChanges 结束卡住并发出 signedOut
+      unawaited(_signOutAfterAuthTimeout());
+      notifyListeners();
+    });
+  }
+
+  /// 超时后 best-effort 登出；失败仅打日志，路由仍靠 authLoadingTimedOut 走游客路径
+  Future<void> _signOutAfterAuthTimeout() async {
+    try {
+      await _ref.read(authRepositoryProvider).signOut();
+    } catch (e, st) {
+      debugPrint('[Router] auth timeout signOut failed: $e\n$st');
+    }
+  }
+
+  void _stopLoadingWatchdog() {
+    _loadingTimeoutTimer?.cancel();
+    _loadingTimeoutTimer = null;
+    _authLoadingTimedOut = false;
+  }
+
   @override
   void dispose() {
+    _loadingTimeoutTimer?.cancel();
     _sub.close();
     super.dispose();
   }
@@ -110,6 +182,11 @@ final routerProvider = Provider<GoRouter>((ref) {
 
       // 认证状态解析中 — 停在 /splash 等待
       if (isLoading) {
+        if (notifier.authLoadingTimedOut) {
+          // 与游客主流程一致：不强制登录；超时后清会话（见 _signOutAfterAuthTimeout）
+          final isFirst = ref.read(isFirstLaunchProvider);
+          return isFirst ? '/onboarding' : '/home';
+        }
         if (isSplash) return null;
         return '/splash';
       }
@@ -119,15 +196,20 @@ final routerProvider = Provider<GoRouter>((ref) {
         return currentPath == '/auth/reset-password' ? null : '/auth/reset-password';
       }
 
-      // 未登录 — 只允许 /auth/* 和 /onboarding
+      // 未登录 — 允许游客白名单路径；其余跳登录并带 redirect
       if (!isLoggedIn) {
         if (isAuthRoute || isOnboarding) return null;
-        // 首次安装 → 先走 Onboarding，完成后再跳登录
+        // 首次安装 → 先走 Onboarding（完成后 P1 进入 /home，不经登录墙）
         final isFirst = ref.read(isFirstLaunchProvider);
         if (isFirst && (isSplash || currentPath == '/')) {
           return '/onboarding';
         }
-        // 非首次 → 保留原路径作为 redirect 参数，登录后跳回
+        // 非首次安装且仍在 /splash：认证已结束但未登录，不能当作白名单目的地否则永久卡住
+        if (isSplash) {
+          return '/home';
+        }
+        if (_isPublicGuestPath(currentPath)) return null;
+        // 非白名单 → 保留原路径作为 redirect 参数，登录后跳回
         if (currentPath != '/' && currentPath != '/splash') {
           return '/auth/login?redirect=${Uri.encodeComponent(currentPath)}';
         }

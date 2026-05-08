@@ -46,6 +46,17 @@
 - 受保护文件：
   - `deal_joy/lib/features/reviews/`（整个目录）
 
+#### 用户端 go_router `/splash` 永久加载修复 ✅
+- 状态：已修复（2026-05）。不删 App、仅结束进程后从 Xcode 再次 Run，不再一直停在「Crunchy Plum + 转圈」；模拟器与真机均已验证。
+- 涉及文件：`deal_joy/lib/core/router/app_router.dart`（核心路由，非下方 Auth/Deals 等受保护目录）
+- **现象**：冷启动或再次安装运行后，界面长期停留在 `/splash` 的 `SplashScreen`；删除 App 重装后往往恢复正常。
+- **根因**：`/splash` 本用于 `authStateProvider` 解析中的临时占位。在 `!isLoggedIn` 分支中，`/splash` 曾被列入 `_isPublicGuestPath`，对 **非首次安装** 用户：不会走「首次 → `/onboarding`」，随后命中白名单 **`return null`**，路由永久留在 `/splash`。删 App 常清空 `SharedPreferences`，`is_first_launch` 再次为 true，会先被重定向到 onboarding，从而绕过该死路，表现为「只有删 App 才好」。
+- **排查要点**：确认带「Crunchy Plum」文案的是 `SplashScreen`（`/splash`）；排除「认证一直 loading」误判后，检查 **`!isLoggedIn` 且 `matchedLocation == /splash`** 时的 redirect 分支；对照 Riverpod `listen` 默认不 `fireImmediately` 时对看门狗的影响（辅助项）。
+- **修复要点**：
+  1. 从 `_isPublicGuestPath` 移除 `/splash`（注释说明其仅作认证占位）。
+  2. 在 `!isLoggedIn` 中，在「首次安装 → onboarding」规则之后：若仍在 `/splash`，则 **`return '/home'`**（游客主流程，不强制登录）。
+  3. 保留：认证长时间 `loading` 时的看门狗、`fireImmediately: true`、超时后 `signOut` 与跳转 onboarding/home，作为 **auth 流卡住** 时的兜底（与本次白名单死锁互为补充）。
+
 ---
 
 ### 商家端（dealjoy_merchant）

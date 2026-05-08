@@ -108,17 +108,80 @@ class _CartScreenState extends ConsumerState<CartScreen> {
               child: cartAsync.when(
                 loading: () =>
                     const Center(child: CircularProgressIndicator()),
-                error: (err, _) => Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Text(
-                      'Failed to load cart. Please try again.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: AppColors.textSecondary),
+                error: (err, _) {
+                  final isGuest =
+                      ref.watch(authStateProvider).valueOrNull?.session ==
+                          null;
+                  if (isGuest) {
+                    return Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.shopping_cart_outlined,
+                              size: 48,
+                              color: AppColors.textSecondary,
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              'Sign in to view your cart.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 16,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            SizedBox(
+                              width: double.infinity,
+                              height: 48,
+                              child: FilledButton(
+                                onPressed: () => context.push(
+                                  '/auth/login?redirect=${Uri.encodeComponent('/cart')}',
+                                ),
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: AppColors.primary,
+                                  shape: const StadiumBorder(),
+                                ),
+                                child: const Text(
+                                  'Sign In',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text(
+                        'Failed to load cart. Please try again.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: AppColors.textSecondary),
+                      ),
                     ),
-                  ),
-                ),
+                  );
+                },
                 data: (items) {
+                  final isGuest =
+                      ref.watch(authStateProvider).valueOrNull?.session ==
+                          null;
+                  // 游客空车：说明购物车需登录，避免与「已登录但真为空」混淆
+                  if (items.isEmpty && isGuest) {
+                    return _GuestEmptyCart(
+                      onSignIn: () => context.push(
+                        '/auth/login?redirect=${Uri.encodeComponent('/cart')}',
+                      ),
+                    );
+                  }
                   if (items.isEmpty) return const _EmptyCart();
 
                   final dataGroups = _groupByDeal(items);
@@ -197,7 +260,81 @@ class _CartScreenState extends ConsumerState<CartScreen> {
   }
 }
 
-// ── 空购物车 ──────────────────────────────────────────────────
+// ── 游客空购物车（需登录才能使用服务端购物车）────────────────────
+class _GuestEmptyCart extends StatelessWidget {
+  final VoidCallback onSignIn;
+
+  const _GuestEmptyCart({required this.onSignIn});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 96,
+              height: 96,
+              decoration: const BoxDecoration(
+                color: AppColors.surfaceVariant,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.shopping_cart_outlined,
+                size: 40,
+                color: AppColors.textHint,
+              ),
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              'Cart requires an account',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'The shopping cart is only available when you are signed in. '
+              'You can still browse deals as a guest.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: AppColors.textSecondary,
+                height: 1.5,
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 28),
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: FilledButton(
+                onPressed: onSignIn,
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  shape: const StadiumBorder(),
+                ),
+                child: const Text(
+                  'Sign In / Register',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── 空购物车（已登录用户）─────────────────────────────────────
 class _EmptyCart extends StatelessWidget {
   const _EmptyCart();
 

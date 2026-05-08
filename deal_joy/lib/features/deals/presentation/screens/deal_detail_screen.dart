@@ -18,6 +18,15 @@ import '../../../cart/domain/providers/cart_provider.dart';
 import '../../../auth/domain/providers/auth_provider.dart';
 import '../../../reviews/domain/providers/review_eligibility_provider.dart';
 
+/// 离开 Deal 详情：从 checkout 经 go 回到详情时栈上可能无上一页，裸 pop 无效
+void _popDealDetailOrGoHome(BuildContext context) {
+  if (context.canPop()) {
+    context.pop();
+  } else {
+    context.go('/home');
+  }
+}
+
 class DealDetailScreen extends ConsumerWidget {
   final String dealId;
 
@@ -237,7 +246,7 @@ class _DealDetailBodyState extends ConsumerState<_DealDetailBody> {
                   _AdaptiveCircleButton(
                     icon: Icons.arrow_back,
                     progress: _scrollProgress,
-                    onTap: () => context.pop(),
+                    onTap: () => _popDealDetailOrGoHome(context),
                   ),
                   Row(
                     children: [
@@ -3242,7 +3251,7 @@ class _BottomBar extends ConsumerWidget {
                 ),
                 const SizedBox(height: 12),
                 TextButton.icon(
-                  onPressed: () => context.pop(),
+                  onPressed: () => _popDealDetailOrGoHome(context),
                   icon: const Icon(Icons.arrow_back, size: 20),
                   label: const Text('Back'),
                 ),
@@ -3333,6 +3342,14 @@ class _BottomBar extends ConsumerWidget {
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: () async {
+                  // 游客不能使用服务端购物车：引导登录，避免无用户 ID 仍弹「已加入」
+                  if (ref.read(authStateProvider).valueOrNull?.session == null) {
+                    if (!context.mounted) return;
+                    context.push(
+                      '/auth/login?redirect=${Uri.encodeComponent('/deals/${deal.id}')}',
+                    );
+                    return;
+                  }
                   // 校验选项组
                   if (deal.optionGroups.isNotEmpty) {
                     final selections = ref.read(dealOptionSelectionsProvider(deal.id));
