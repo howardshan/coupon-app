@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/maps_launcher.dart';
 
 /// 商家地址卡片组件
 /// 显示地址文本，提供地图导航和电话拨打两个快捷操作按钮
@@ -17,16 +18,6 @@ class StoreAddressCard extends StatelessWidget {
     this.lng,
     this.phone,
   });
-
-  /// 打开地图导航（用地址文本作为目的地，确保显示真实地址）
-  Future<void> _openNavigation() async {
-    final encoded = Uri.encodeComponent(address);
-    // 使用 daddr（目的地地址）启动导航，地图上会显示实际地址
-    final uri = Uri.parse('https://maps.google.com/?daddr=$encoded');
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
-  }
 
   /// 拨打电话
   Future<void> _callPhone() async {
@@ -88,11 +79,11 @@ class StoreAddressCard extends StatelessWidget {
             Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Drive 导航按钮
+                // Drive 导航按钮 — 弹出选择器让用户选 Apple Maps 或 Google Maps
                 _ActionButton(
                   icon: Icons.directions_car_outlined,
                   label: 'Drive',
-                  onTap: _openNavigation,
+                  onTap: () => showMapsChooser(context, address),
                 ),
                 const SizedBox(height: 8),
                 // Call 电话按钮（无电话时置灰）

@@ -437,18 +437,6 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       return;
     }
 
-    // 年龄检查：未满 18 岁禁止交易
-    if (user?.dateOfBirth != null) {
-      final age = DateTime.now().difference(user!.dateOfBirth!).inDays ~/ 365;
-      if (age < 18) {
-        _showPaymentFailedDialog('You must be at least 18 years old to make a purchase.');
-        return;
-      }
-    } else {
-      _showDateOfBirthRequiredDialog();
-      return;
-    }
-
     setState(() => _isProcessing = true);
     try {
       final repo = ref.read(checkoutRepositoryProvider);
@@ -583,18 +571,6 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     final userId = user?.id;
     if (userId == null || userId.isEmpty) {
       _showPaymentFailedDialog('Please sign in to complete your purchase.');
-      return;
-    }
-
-    // 年龄检查：未满 18 岁禁止交易
-    if (user?.dateOfBirth != null) {
-      final age = DateTime.now().difference(user!.dateOfBirth!).inDays ~/ 365;
-      if (age < 18) {
-        _showPaymentFailedDialog('You must be at least 18 years old to make a purchase.');
-        return;
-      }
-    } else {
-      _showDateOfBirthRequiredDialog();
       return;
     }
 
@@ -744,33 +720,6 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx),
             child: const Text('Try Again'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // 生日缺失引导弹窗 — 引导用户去 Edit Profile 补填
-  void _showDateOfBirthRequiredDialog() {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Date of Birth Required'),
-        content: const Text(
-          'You must provide your date of birth before making a purchase. '
-          'Please update your profile to continue.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              context.push('/profile/edit');
-            },
-            child: const Text('Go to Profile'),
           ),
         ],
       ),

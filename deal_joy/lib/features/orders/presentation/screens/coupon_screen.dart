@@ -11,6 +11,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/errors/app_exception.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/maps_launcher.dart';
 import '../../../../core/widgets/back_or_home_app_bar_leading.dart';
 import '../../../reviews/domain/providers/my_reviews_provider.dart';
 import '../../data/models/coupon_model.dart';
@@ -1459,22 +1460,11 @@ class _ActionButtonsState extends ConsumerState<_ActionButtons> {
   bool _isRefunding = false;
   bool _isGifting = false;
 
-  // 打开地图导航
+  // 打开地图导航 — 弹出选择器让用户选 Apple Maps 或 Google Maps
   Future<void> _navigateToStore() async {
     final address = widget.coupon.merchantAddress;
-    if (address == null) return;
-
-    final encoded = Uri.encodeComponent(address);
-    final uri = Uri.parse('https://maps.google.com/?q=$encoded');
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not open maps.')),
-        );
-      }
-    }
+    if (address == null || address.isEmpty) return;
+    await showMapsChooser(context, address);
   }
 
   // 拨打商户电话
