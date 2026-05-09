@@ -95,8 +95,12 @@
 ### 6.1 后端（与客户端共用）
 
 - **Edge Function**（如 `account-delete`）：`scope` = `merchant_only` | `full`（与客户端对齐命名）。
-- 步骤要点：服务端重算角色 → 店主则 close → staff / brand_admin 分支 → `full` 时与客户端共用用户级清理模块。
-- **Stripe**：不在此函数内调用「关闭 Stripe Connect 账户」类 API；若 `full` 删除需处理 **本应用内** Stripe CustomerId 等引用，与 [客户端计划书](./2026-05-08-deal-joy-account-deletion-customer.md) 对齐。
+- 步骤要点：服务端重算角色 → 店主则 close → staff / brand_admin 分支 → **`full` 时执行与「从客户端发起整账号删除」同一套用户级流水线**（不得仅删商家表而跳过消费者域）。
+- **`full` 与客户端计划书对齐范围（须同一实现、任一入口复用）**：  
+  - [客户端 §4](./2026-05-08-deal-joy-account-deletion-customer.md)：订单匿名化、未核销券退款/失效、Gift 送出/接收/退回失败 Fallback（§4.2 等价）与**幂等**、§4.4 其它域（或其实际定稿附录）。  
+  - [客户端 §6](./2026-05-08-deal-joy-account-deletion-customer.md)：Stripe **Customer / PaymentMethods** 处理顺序；**不**关闭商家 Connect（本文 §5.6）。
+- **`merchant_only`（B）**：仅处理商家侧关联与闭店编排；**不**执行客户端 §4 消费者券/订单流水线（用户仍保留客户端登录）。
+- **Stripe**：不在此函数内调用「关闭 Stripe Connect 账户」类 API；`full` 时消费者 **Customer** 清理见客户端 §6。
 
 ### 6.2 商家端 App（`dealjoy_merchant`）
 
@@ -148,7 +152,8 @@
 
 - **关联**：[客户端账户删除计划书](./2026-05-08-deal-joy-account-deletion-customer.md)  
 - **变更记录**  
-  - 2026-05-09：拆分为商家专用计划书；确认 5.4 并行客户端独立文档、5.6 Stripe 策略；§4 矩阵冻结。
+  - 2026-05-09：拆分为商家专用计划书；确认 5.4 并行客户端独立文档、5.6 Stripe 策略；§4 矩阵冻结。  
+  - 2026-05-10：§6.1 显式对齐客户端 `full` = 共用 §4–§6 用户级流水线；区分 `merchant_only` 不跑消费者域。
 
 ---
 
