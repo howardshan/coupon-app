@@ -1,0 +1,83 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../../core/router/app_router.dart';
+import '../../features/auth/domain/providers/auth_provider.dart';
+import '../account_deletion_self_initiated.dart';
+
+/// 订阅 auth_force_logout_signals：其他端整账号删除后先弹窗再登出
+class AccountForceLogoutListener {
+  AccountForceLogoutListener(this._ref);
+
+  final Ref _ref;
+  RealtimeChannel? _channel;
+  String? _boundUserId;
+
+  void bindSession(String? userId) {
+    if (userId == null || userId.isEmpty) {
+      unbind();
+      return;
+    }
+    if (_boundUserId == userId && _channel != null) return;
+    unbind();
+    _boundUserId = userId;
+    _channel = Supabase.instance.client
+        .channel('auth_force_logout_$userId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'auth_force_logout_signals',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'user_id',
+            value: userId,
+          ),
+          callback: (_) {
+            Future.microtask(() => _handleSignal());
+          },
+        )
+        .subscribe();
+  }
+
+  void unbind() {
+    _channel?.unsubscribe();
+    _channel = null;
+    _boundUserId = null;
+  }
+
+  Future<void> _handleSignal() async {
+    if (AccountDeletionSelfInitiated.active) return;
+
+    final ctx = rootNavigatorKey.currentContext;
+    if (ctx != null && ctx.mounted) {
+      await showDialog<void>(
+        context: ctx,
+        barrierDismissible: false,
+        builder: (dCtx) => AlertDialog(
+          title: const Text('Signed out'),
+          content: const Text(
+            'Your Crunchy Plum account was deleted from another app or device. '
+            'You will now be signed out.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dCtx).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    await _ref.read(authNotifierProvider.notifier).signOut();
+  }
+
+  void dispose() => unbind();
+}
+
+final accountForceLogoutListenerProvider = Provider<AccountForceLogoutListener>((ref) {
+  final listener = AccountForceLogoutListener(ref);
+  ref.onDispose(listener.dispose);
+  return listener;
+});

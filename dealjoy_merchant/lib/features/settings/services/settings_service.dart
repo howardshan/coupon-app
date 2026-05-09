@@ -3,6 +3,7 @@
 
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../shared/account_deletion_self_initiated.dart';
 import '../../store/services/store_service.dart';
 import '../models/settings_models.dart';
 
@@ -119,6 +120,38 @@ class SettingsService {
     // 清除品牌管理员持久化的门店 ID
     await StoreService.clearPersistedMerchantId();
     await _supabase.auth.signOut();
+  }
+
+  // ----------------------------------------------------------
+  // 7. 账户删除（统一 Edge：account-delete）
+  //    scope: merchant_only = 仅撤销商家侧；full = 整账号（含消费者域）
+  // ----------------------------------------------------------
+  Future<void> deleteAccount({required String scope}) async {
+    if (scope != 'merchant_only' && scope != 'full') {
+      throw Exception('Invalid scope');
+    }
+    try {
+      await _supabase.auth.refreshSession();
+    } catch (_) {}
+
+    final isFullDelete = scope == 'full';
+    if (isFullDelete) AccountDeletionSelfInitiated.active = true;
+    try {
+      final response = await _supabase.functions.invoke(
+        'account-delete',
+        body: {'scope': scope},
+        headers: StoreService.merchantIdHeaders,
+      );
+      if (response.status != 200) {
+        final data = response.data;
+        final msg = data is Map && data['error'] != null
+            ? data['error'].toString()
+            : 'Request failed (${response.status})';
+        throw Exception(msg);
+      }
+    } finally {
+      if (isFullDelete) AccountDeletionSelfInitiated.active = false;
+    }
   }
 
   // ----------------------------------------------------------

@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../auth/domain/providers/auth_provider.dart';
+import '../../domain/providers/account_deletion_provider.dart';
 import '../../domain/providers/referral_provider.dart';
 import 'referral_screen.dart';
 import '../../../../shared/widgets/legal_document_screen.dart';
@@ -450,6 +451,27 @@ _IconGridItem(
 
           const SizedBox(height: 12),
 
+          // ── Delete account（整账号，含商家身份若存在）────────────────
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: OutlinedButton.icon(
+              onPressed: () => _confirmDeleteEntireAccount(context, ref),
+              icon: const Icon(Icons.delete_forever_outlined, size: 16),
+              label: const Text('Delete account'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.red,
+                side: const BorderSide(color: Colors.red),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                minimumSize: const Size(double.infinity, 0),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 8),
+
           // ── Sign Out ─────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -790,3 +812,49 @@ class _GuestProfileBody extends StatelessWidget {
   }
 }
 
+// 整账号删除确认 + 调用 Edge + 登出（不修改受保护 auth_repository 内部逻辑）
+Future<void> _confirmDeleteEntireAccount(
+  BuildContext context,
+  WidgetRef ref,
+) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Delete account'),
+      content: const SingleChildScrollView(
+        child: Text(
+          'This permanently deletes your entire Crunchy Plum account. '
+          'If you also use the merchant app with this email, that access will end. '
+          'Unused vouchers are refunded or processed per our policies. '
+          'This cannot be undone.',
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(false),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(true),
+          style: TextButton.styleFrom(foregroundColor: Colors.red),
+          child: const Text('Delete account'),
+        ),
+      ],
+    ),
+  );
+  if (ok != true || !context.mounted) return;
+
+  try {
+    await ref.read(accountDeletionRepositoryProvider).deleteFullAccount();
+    await ref.read(authNotifierProvider.notifier).signOut();
+    if (context.mounted) {
+      context.go('/auth/login');
+    }
+  } catch (e) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not delete account: $e')),
+      );
+    }
+  }
+}

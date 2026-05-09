@@ -29,3 +29,7 @@ verify_jwt = false
 # Cron：仅 x-cron-secret，无用户 JWT
 [functions.escalate-disputes-to-after-sales]
 verify_jwt = false
+
+# 账户删除：必须携带用户 JWT，函数内 getUser + service_role 执行清理
+[functions.account-delete]
+verify_jwt = true
