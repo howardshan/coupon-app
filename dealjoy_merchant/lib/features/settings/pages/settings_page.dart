@@ -313,50 +313,102 @@ class SettingsPage extends ConsumerWidget {
   // ----------------------------------------------------------
   // 退出登录确认 Dialog
   // ----------------------------------------------------------
-  /// 删除账户：先选 B（仅商家）或 A（整账号），再二次确认
+  /// 删除账户：二选一（仅商家身份 vs 整账号），全宽按钮 + 二次确认
   Future<void> _confirmDeleteAccount(BuildContext context, WidgetRef ref) async {
+    const accent = Color(0xFFFF6B35);
+    const bodyMuted = TextStyle(fontSize: 13, height: 1.4, color: Color(0xFF616161));
+
     String? scope;
     final choice = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Delete account'),
+        contentPadding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+        titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const Text(
-                'Choose what you want to remove:',
-                style: TextStyle(fontWeight: FontWeight.w600),
+                'You use one email for both the merchant app and the customer app. Choose what to remove:',
+                style: TextStyle(fontSize: 14, height: 1.45, color: Color(0xFF424242)),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton(
+                  onPressed: () => Navigator.of(ctx).pop('merchant_only'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF1A1A1A),
+                    side: const BorderSide(color: accent, width: 1.5),
+                    padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Remove merchant access only',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                        ),
+                      ),
+                      SizedBox(height: 6),
+                      Text(
+                        'Stops merchant and brand roles. Store owners: open stores are closed first (same as Close Store). You keep this login for the Crunchy Plum customer app.',
+                        textAlign: TextAlign.start,
+                        style: bodyMuted,
+                      ),
+                    ],
+                  ),
+                ),
               ),
               const SizedBox(height: 12),
-              const Text(
-                'B — Remove merchant access only: you keep the same login for the Crunchy Plum customer app. Closed stores follow the normal close-store flow.',
-                style: TextStyle(fontSize: 14, color: Color(0xFF616161)),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton(
+                  onPressed: () => Navigator.of(ctx).pop('full'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.red.shade800,
+                    side: BorderSide(color: Colors.red.shade400, width: 1.5),
+                    padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Delete my entire Crunchy Plum account',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Permanently removes this login everywhere (merchant and customer). Unused vouchers are refunded or handled per policy. Cannot be undone.',
+                        textAlign: TextAlign.start,
+                        style: bodyMuted.copyWith(color: Colors.red.shade900.withValues(alpha: 0.85)),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-              const SizedBox(height: 12),
-              const Text(
-                'A — Delete entire Crunchy Plum account: you will lose access to both the merchant app and the customer app with this email. This cannot be undone.',
-                style: TextStyle(fontSize: 14, color: Color(0xFF616161)),
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Cancel'),
               ),
             ],
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop('merchant_only'),
-            child: const Text('B: Merchant only'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop('full'),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('A: Entire account'),
-          ),
-        ],
       ),
     );
     scope = choice;
@@ -365,23 +417,43 @@ class SettingsPage extends ConsumerWidget {
     final sure = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Are you sure?'),
-        content: Text(
-          scope == 'full'
-              ? 'Your full Crunchy Plum account will be deleted. Unused vouchers will be refunded or handled per policy. This is permanent.'
-              : 'Your merchant access will be removed. You can still use the customer app with this account.',
+        contentPadding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+        titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              scope == 'full'
+                  ? 'Your full Crunchy Plum account will be deleted. Unused vouchers will be refunded or handled per policy. This is permanent.'
+                  : 'Your merchant access will be removed. You can still use the customer app with this account.',
+              style: const TextStyle(fontSize: 14, height: 1.45, color: Color(0xFF424242)),
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                style: FilledButton.styleFrom(
+                  backgroundColor: scope == 'full' ? Colors.red.shade700 : accent,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: const Text('Confirm'),
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Confirm delete'),
-          ),
-        ],
       ),
     );
 
