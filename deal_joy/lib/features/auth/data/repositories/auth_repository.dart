@@ -249,8 +249,14 @@ class AuthRepository {
   }
 
   // ---- 登出 ----
+  /// 整账号删除后远端用户可能已删除，全局 revoke 易失败；降级为仅清除本地会话
   Future<void> signOut() async {
-    await _client.auth.signOut();
+    try {
+      await _client.auth.signOut();
+    } catch (e) {
+      debugPrint('[AuthRepository] signOut remote failed: $e — clearing local session');
+      await _client.auth.signOut(scope: sb.SignOutScope.local);
+    }
   }
 
   // ---- 发送密码重置邮件 ----

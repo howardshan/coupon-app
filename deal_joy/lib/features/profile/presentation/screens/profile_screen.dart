@@ -846,15 +846,21 @@ Future<void> _confirmDeleteEntireAccount(
 
   try {
     await ref.read(accountDeletionRepositoryProvider).deleteFullAccount();
-    await ref.read(authNotifierProvider.notifier).signOut();
-    if (context.mounted) {
-      context.go('/auth/login');
-    }
   } catch (e) {
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Could not delete account: $e')),
       );
     }
+    return;
+  }
+
+  try {
+    await ref.read(authNotifierProvider.notifier).signOut();
+  } catch (e) {
+    debugPrint('[Profile] signOut after account delete: $e');
+  }
+  if (context.mounted) {
+    context.go('/auth/login');
   }
 }
