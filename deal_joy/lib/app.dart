@@ -13,6 +13,7 @@ import 'features/reviews/domain/providers/my_reviews_provider.dart';
 import 'shared/providers/legal_provider.dart';
 import 'shared/services/location_sync_service.dart';
 import 'shared/services/push_notification_service.dart';
+import 'shared/services/account_force_logout_listener.dart';
 import 'shared/services/realtime_service.dart';
 import 'shared/services/referral_link_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show Supabase;
@@ -32,6 +33,15 @@ class CrunchyPlumApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(routerProvider);
+
+    // 整账号删除跨端通知：订阅 auth_force_logout_signals（loading 时不解绑，避免闪断）
+    ref.listen(authStateProvider, (previous, next) {
+      final state = next.asData?.value;
+      if (state == null) return;
+      ref
+          .read(accountForceLogoutListenerProvider)
+          .bindSession(state.session?.user.id);
+    });
 
     // 监听用户登录/登出状态，自动启停 Realtime 订阅和推送通知
     ref.listen(currentUserProvider, (previous, next) {

@@ -289,34 +289,59 @@ Deno.serve(async (req: Request) => {
     }
 
     // ----- full -----
-    if (hasAnyMerchantRole(roles)) {
-      await runMerchantCleanup(admin, userId, roles);
+    let logoutSignalInserted = false;
+    const revokeLogoutSignal = async () => {
+      if (!logoutSignalInserted) return;
+      await admin.from("auth_force_logout_signals").delete().eq("user_id", userId);
+      logoutSignalInserted = false;
+    };
+
+    try {
+      // 先完成闭店与数据清理；成功后再广播跨端登出，避免前端误提示而删号失败
+      if (hasAnyMerchantRole(roles)) {
+        await runMerchantCleanup(admin, userId, roles);
+      }
+
+      await tryReturnGiftsToGifter(admin, userId);
+      await markConsumerUnusedOrdersForRefund(admin, userId);
+      await cleanupStripeCustomer(admin, userId);
+
+      const { error: rpcErr } = await admin.rpc("account_delete_reassign_all", {
+        p_from: userId,
+        p_to: PLACEHOLDER_USER_ID,
+      });
+      if (rpcErr) {
+        console.error("[account-delete] rpc", rpcErr);
+        return json({ error: `Data cleanup failed: ${rpcErr.message}` }, 500);
+      }
+
+      const { error: sigErr } = await admin.from("auth_force_logout_signals").insert({
+        user_id: userId,
+        reason: "account_deleted",
+      });
+      if (sigErr) {
+        console.warn("[account-delete] force logout signal:", sigErr.message);
+      } else {
+        logoutSignalInserted = true;
+        await new Promise((r) => setTimeout(r, 250));
+      }
+
+      const { error: delErr } = await admin.auth.admin.deleteUser(userId);
+      if (delErr) {
+        console.error("[account-delete] auth delete", delErr);
+        await revokeLogoutSignal();
+        return json({ error: `Auth delete failed: ${delErr.message}` }, 500);
+      }
+
+      return json({
+        success: true,
+        scope: "full",
+        message: "Account deleted",
+      });
+    } catch (inner) {
+      await revokeLogoutSignal();
+      throw inner;
     }
-
-    await tryReturnGiftsToGifter(admin, userId);
-    await markConsumerUnusedOrdersForRefund(admin, userId);
-    await cleanupStripeCustomer(admin, userId);
-
-    const { error: rpcErr } = await admin.rpc("account_delete_reassign_all", {
-      p_from: userId,
-      p_to: PLACEHOLDER_USER_ID,
-    });
-    if (rpcErr) {
-      console.error("[account-delete] rpc", rpcErr);
-      return json({ error: `Data cleanup failed: ${rpcErr.message}` }, 500);
-    }
-
-    const { error: delErr } = await admin.auth.admin.deleteUser(userId);
-    if (delErr) {
-      console.error("[account-delete] auth delete", delErr);
-      return json({ error: `Auth delete failed: ${delErr.message}` }, 500);
-    }
-
-    return json({
-      success: true,
-      scope: "full",
-      message: "Account deleted",
-    });
   } catch (e) {
     console.error("[account-delete]", e);
     return json({ error: (e as Error).message ?? "Internal error" }, 500);

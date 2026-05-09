@@ -24,6 +24,7 @@ import 'features/menu/providers/menu_provider.dart';
 import 'features/menu/providers/category_provider.dart';
 import 'features/influencer/providers/influencer_provider.dart';
 import 'shared/providers/legal_provider.dart';
+import 'shared/services/account_force_logout_listener.dart';
 
 // 全局禁用 overscroll 拉伸效果（Android 默认有 stretch/glow）
 class _NoOverscrollBehavior extends ScrollBehavior {
@@ -85,11 +86,22 @@ class _DealJoyMerchantAppState extends ConsumerState<DealJoyMerchantApp> {
   @override
   void initState() {
     super.initState();
+    // 冷启动已有 Session 时绑定跨端删号 Realtime
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final uid = Supabase.instance.client.auth.currentSession?.user.id;
+      if (uid != null && mounted) {
+        ref.read(merchantAccountForceLogoutListenerProvider).bindSession(uid);
+      }
+    });
     // 监听账号切换：登录新账号后，invalidate 所有业务数据 Provider，
     // 避免新账号看到旧账号缓存数据（需要手动下拉刷新的问题）
     _authSub = Supabase.instance.client.auth.onAuthStateChange.listen((event) {
+      final listener = ref.read(merchantAccountForceLogoutListenerProvider);
       if (event.event == AuthChangeEvent.signedIn) {
+        listener.bindSession(event.session?.user.id);
         _invalidateAllBusinessProviders();
+      } else if (event.event == AuthChangeEvent.signedOut) {
+        listener.unbind();
       }
     });
   }
