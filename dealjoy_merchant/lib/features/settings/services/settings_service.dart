@@ -122,6 +122,31 @@ class SettingsService {
   }
 
   // ----------------------------------------------------------
+  // 7. 账户删除（统一 Edge：account-delete）
+  //    scope: merchant_only = 仅撤销商家侧；full = 整账号（含消费者域）
+  // ----------------------------------------------------------
+  Future<void> deleteAccount({required String scope}) async {
+    if (scope != 'merchant_only' && scope != 'full') {
+      throw Exception('Invalid scope');
+    }
+    try {
+      await _supabase.auth.refreshSession();
+    } catch (_) {}
+    final response = await _supabase.functions.invoke(
+      'account-delete',
+      body: {'scope': scope},
+      headers: StoreService.merchantIdHeaders,
+    );
+    if (response.status != 200) {
+      final data = response.data;
+      final msg = data is Map && data['error'] != null
+          ? data['error'].toString()
+          : 'Request failed (${response.status})';
+      throw Exception(msg);
+    }
+  }
+
+  // ----------------------------------------------------------
   // 辅助: 获取当前登录用户（快捷方法）
   // ----------------------------------------------------------
   User? get currentUser => _supabase.auth.currentUser;

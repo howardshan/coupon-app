@@ -198,6 +198,23 @@ class SettingsPage extends ConsumerWidget {
             ),
 
           // --------------------------------------------------
+          // Privacy：账户删除（Guideline 5.1.1(v)）
+          // --------------------------------------------------
+          SettingsSection(
+            title: 'Privacy',
+            children: [
+              SettingsTile(
+                icon: Icons.delete_forever_outlined,
+                title: 'Delete account',
+                subtitle:
+                    'Remove merchant access or delete your entire Crunchy Plum account',
+                showDivider: false,
+                onTap: () => _confirmDeleteAccount(context, ref),
+              ),
+            ],
+          ),
+
+          // --------------------------------------------------
           // Sign Out 按钮（红色，独立区块）
           // --------------------------------------------------
           Padding(
@@ -296,6 +313,106 @@ class SettingsPage extends ConsumerWidget {
   // ----------------------------------------------------------
   // 退出登录确认 Dialog
   // ----------------------------------------------------------
+  /// 删除账户：先选 B（仅商家）或 A（整账号），再二次确认
+  Future<void> _confirmDeleteAccount(BuildContext context, WidgetRef ref) async {
+    String? scope;
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete account'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Choose what you want to remove:',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'B — Remove merchant access only: you keep the same login for the Crunchy Plum customer app. Closed stores follow the normal close-store flow.',
+                style: TextStyle(fontSize: 14, color: Color(0xFF616161)),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'A — Delete entire Crunchy Plum account: you will lose access to both the merchant app and the customer app with this email. This cannot be undone.',
+                style: TextStyle(fontSize: 14, color: Color(0xFF616161)),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop('merchant_only'),
+            child: const Text('B: Merchant only'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop('full'),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('A: Entire account'),
+          ),
+        ],
+      ),
+    );
+    scope = choice;
+    if (scope == null || !context.mounted) return;
+
+    final sure = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Are you sure?'),
+        content: Text(
+          scope == 'full'
+              ? 'Your full Crunchy Plum account will be deleted. Unused vouchers will be refunded or handled per policy. This is permanent.'
+              : 'Your merchant access will be removed. You can still use the customer app with this account.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Confirm delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (sure != true || !context.mounted) return;
+
+    try {
+      final service = ref.read(settingsServiceProvider);
+      await service.deleteAccount(scope: scope);
+      await service.signOut();
+      ref.invalidate(storeProvider);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Your request has been completed.'),
+            backgroundColor: Color(0xFF2E7D32),
+          ),
+        );
+        context.go('/auth/login');
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Delete account failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _confirmSignOut(BuildContext context, WidgetRef ref) async {
     final confirmed = await showDialog<bool>(
       context: context,
