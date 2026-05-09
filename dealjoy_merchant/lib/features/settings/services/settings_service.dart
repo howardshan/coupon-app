@@ -3,6 +3,7 @@
 
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../shared/account_deletion_self_initiated.dart';
 import '../../store/services/store_service.dart';
 import '../models/settings_models.dart';
 
@@ -132,17 +133,24 @@ class SettingsService {
     try {
       await _supabase.auth.refreshSession();
     } catch (_) {}
-    final response = await _supabase.functions.invoke(
-      'account-delete',
-      body: {'scope': scope},
-      headers: StoreService.merchantIdHeaders,
-    );
-    if (response.status != 200) {
-      final data = response.data;
-      final msg = data is Map && data['error'] != null
-          ? data['error'].toString()
-          : 'Request failed (${response.status})';
-      throw Exception(msg);
+
+    final isFullDelete = scope == 'full';
+    if (isFullDelete) AccountDeletionSelfInitiated.active = true;
+    try {
+      final response = await _supabase.functions.invoke(
+        'account-delete',
+        body: {'scope': scope},
+        headers: StoreService.merchantIdHeaders,
+      );
+      if (response.status != 200) {
+        final data = response.data;
+        final msg = data is Map && data['error'] != null
+            ? data['error'].toString()
+            : 'Request failed (${response.status})';
+        throw Exception(msg);
+      }
+    } finally {
+      if (isFullDelete) AccountDeletionSelfInitiated.active = false;
     }
   }
 
