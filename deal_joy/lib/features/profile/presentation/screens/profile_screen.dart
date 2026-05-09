@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/constants/app_constants.dart';
+import '../../../../core/router/app_router.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../auth/domain/providers/auth_provider.dart';
 import '../../domain/providers/account_deletion_provider.dart';
@@ -860,7 +861,11 @@ Future<void> _confirmDeleteEntireAccount(
   } catch (e) {
     debugPrint('[Profile] signOut after account delete: $e');
   }
-  if (context.mounted) {
-    context.go('/auth/login');
-  }
+
+  ref.invalidate(currentUserProvider);
+
+  // 使用全局 GoRouter，避免 Shell 内 context 导航失效；下一帧再跳，确保会话已传播
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    ref.read(routerProvider).go('/auth/login');
+  });
 }

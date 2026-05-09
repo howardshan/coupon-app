@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../shared/account_deletion_self_initiated.dart';
@@ -28,6 +29,13 @@ class AccountDeletionRepository {
             ? data['error'].toString()
             : 'Request failed (${response.status})';
         throw Exception(msg);
+      }
+
+      // 服务端已删除 Auth 用户：立即清本地会话，避免默认 signOut 远程 revoke 挂死或抛错
+      try {
+        await _client.auth.signOut(scope: SignOutScope.local);
+      } catch (e) {
+        debugPrint('[AccountDeletionRepository] local signOut: $e');
       }
     } finally {
       AccountDeletionSelfInitiated.active = false;
