@@ -180,6 +180,13 @@ class MerchantAuthService {
 
     final fileBytes = await file.readAsBytes();
 
+    // 刷新 JWT，避免提交瞬间 Session 过期导致 Storage RLS 按 anon 拒绝
+    try {
+      await _supabase.auth.refreshSession();
+    } catch (_) {
+      // 无刷新令牌或网络问题时仍尝试上传（可能仍有有效 Session）
+    }
+
     // 上传到 merchant-documents bucket
     await _supabase.storage.from('merchant-documents').uploadBinary(
           storagePath,
