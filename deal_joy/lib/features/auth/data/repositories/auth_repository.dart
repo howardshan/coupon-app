@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert' show utf8;
 
 import 'package:crypto/crypto.dart';
@@ -249,8 +250,17 @@ class AuthRepository {
   }
 
   // ---- 登出 ----
+  /// 远端 revoke 在用户已删除时可能失败或长时间阻塞；超时后降级为仅清本地会话
   Future<void> signOut() async {
-    await _client.auth.signOut();
+    try {
+      await _client.auth.signOut().timeout(const Duration(seconds: 4));
+    } on TimeoutException catch (_) {
+      debugPrint('[AuthRepository] signOut remote timed out — clearing local session');
+      await _client.auth.signOut(scope: sb.SignOutScope.local);
+    } catch (e) {
+      debugPrint('[AuthRepository] signOut remote failed: $e — clearing local session');
+      await _client.auth.signOut(scope: sb.SignOutScope.local);
+    }
   }
 
   // ---- 发送密码重置邮件 ----
