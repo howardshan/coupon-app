@@ -185,7 +185,7 @@ Merchant agrees not to:
 
 (a) manipulate, solicit, or incentivize user reviews or ratings on the Platform in any way that is deceptive or violates FTC guidelines;
 
-(b) engage in or facilitate any transaction outside of the Platform that was initiated through Platform activity, for the purpose of circumventing Crunchy Plum's Commission;
+(b) engage in or facilitate any transaction outside of the Platform that was initiated through Platform activity, for the purpose of circumventing Crunchy Plum's Commission — including but not limited to accepting payment directly from a user at the point of service, or offering a discount equivalent to or based on a Deal listed on the Platform, when that user discovered or initiated contact through the Platform;
 
 (c) create multiple merchant accounts for the same business entity without prior written approval from Crunchy Plum;
 
@@ -193,7 +193,13 @@ Merchant agrees not to:
 
 (e) take any action that disrupts, damages, or interferes with the Platform or Crunchy Plum's systems.
 
-### 7.3 Merchant Compliance Responsibility
+### 7.3 Liquidated Damages for Platform Circumvention
+
+Merchant acknowledges that it would be difficult to precisely calculate the actual damages suffered by Crunchy Plum if Merchant engages in the conduct described in Section 7.2(b), including but not limited to lost commission revenue, harm to user trust, and damage to the Platform's marketplace integrity. Accordingly, for each verified incident in which Merchant accepts payment directly from a user outside of the Platform — or offers a discount equivalent to a Platform-listed Deal to a user who was acquired through Platform activity — Merchant agrees to pay Crunchy Plum liquidated damages in the amount of **Five Hundred U.S. Dollars ($500.00)** per incident. The parties agree that this amount represents a reasonable estimate of the damages caused by such conduct, and is not intended as a penalty.
+
+Crunchy Plum may deduct any liquidated damages owed under this Section directly from Merchant's settlement balance without prior notice, or invoice Merchant directly if settlement funds are insufficient. Merchant's obligation to pay liquidated damages under this Section is in addition to, and not in lieu of, any other remedies available to Crunchy Plum, including suspension or immediate termination of this Agreement under Section 13.2.
+
+### 7.4 Merchant Compliance Responsibility
 Merchant is solely responsible for ensuring that all Deals, goods, services, and business practices comply with all applicable laws and regulations, including but not limited to consumer protection laws, health and safety regulations, licensing requirements, and Texas sales tax laws. Crunchy Plum's approval of a Deal does not relieve Merchant of this responsibility.
 
 ---
