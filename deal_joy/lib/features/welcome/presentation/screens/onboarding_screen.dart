@@ -71,7 +71,22 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     if (_loading) {
       return Scaffold(
         backgroundColor: AppColors.background,
-        body: const Center(child: CircularProgressIndicator()),
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(height: 16),
+              Text(
+                'Loading…',
+                style: TextStyle(
+                  fontSize: 15,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
       );
     }
 
@@ -178,68 +193,82 @@ class _OnboardingPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 图片区高度：屏幕高度的 45%，最小 280，最大 400
-    // 在 iPad 宽屏上避免图片过度拉伸占满整个 Expanded 区域
-    final screenHeight = MediaQuery.of(context).size.height;
-    final imageHeight = (screenHeight * 0.45).clamp(280.0, 400.0);
+    final size = MediaQuery.sizeOf(context);
+    final screenHeight = size.height;
+    final isTablet = size.shortestSide >= 600;
+    // 平板：更高图片区 + BoxFit.contain，避免扁宽视口 + cover 裁切上下文案
+    // 手机：略低比例，仍用 contain 与审核环境一致
+    final double imageHeight = isTablet
+        ? (screenHeight * 0.48).clamp(340.0, 540.0)
+        : (screenHeight * 0.40).clamp(260.0, 400.0);
 
-    return Center(
-      child: ConstrainedBox(
-        // iPad 宽屏：内容区限制最大宽度 600，居中显示
-        constraints: const BoxConstraints(maxWidth: 600),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // 引导图（响应式高度，避免在 iPad 上过大或截断）
-              SizedBox(
-                height: imageHeight,
-                child: slide.imageUrl.isNotEmpty
-                    ? ClipRRect(
-                        borderRadius: BorderRadius.circular(20),
-                        child: AdaptiveImage(imageUrl: slide.imageUrl),
-                      )
-                    : Center(
-                        child: Icon(
-                          Icons.local_offer,
-                          size: 120,
-                          color: AppColors.primary.withValues(alpha: 0.3),
-                        ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 640),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+              physics: const BouncingScrollPhysics(),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: double.infinity,
+                      height: imageHeight,
+                      child: slide.imageUrl.isNotEmpty
+                          ? ClipRRect(
+                              borderRadius: BorderRadius.circular(20),
+                              child: ColoredBox(
+                                color: AppColors.background,
+                                child: AdaptiveImage(
+                                  imageUrl: slide.imageUrl,
+                                  fit: BoxFit.contain,
+                                  useProminentPlaceholder: true,
+                                ),
+                              ),
+                            )
+                          : Center(
+                              child: Icon(
+                                Icons.local_offer,
+                                size: 120,
+                                color: AppColors.primary.withValues(alpha: 0.3),
+                              ),
+                            ),
+                    ),
+                    SizedBox(height: isTablet ? 28 : 24),
+                    Text(
+                      slide.title,
+                      textAlign: TextAlign.center,
+                      maxLines: 4,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: isTablet ? 28 : 26,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimary,
+                        height: 1.25,
                       ),
-              ),
-
-              const SizedBox(height: 32),
-
-              // 标题 + 副标题（加 maxLines 防截断，overflow 用 ellipsis 兜底）
-              Text(
-                slide.title,
-                textAlign: TextAlign.center,
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 26,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
-                  height: 1.2,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      slide.subtitle,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: isTablet ? 17 : 16,
+                        color: AppColors.textSecondary,
+                        height: 1.5,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 12),
-              Text(
-                slide.subtitle,
-                textAlign: TextAlign.center,
-                maxLines: 5,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 16,
-                  color: AppColors.textSecondary,
-                  height: 1.5,
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
