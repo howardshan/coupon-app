@@ -1,6 +1,6 @@
 # 后台代商家注册（商户入驻辅助）开发计划
 
-**文档版本**: v1.0  
+**文档版本**: v1.1  
 **创建日期**: 2026-05-11  
 **影响范围**: Supabase Edge Functions、`deal_joy` 数据库与 RLS（按需）、Admin Portal（Next.js）、可选：`dealjoy_merchant` 文档或引导文案  
 **相关文档**: [商家邮件与通知](./2026-03-21-email-system.md)、[统一审批中心](./2026-04-01-unified-approvals-page.md)、[分模块活动时间线](./2026-04-03-admin-per-entity-activity-timelines.md)
@@ -194,3 +194,31 @@
 | 版本 | 日期 | 作者 | 说明 |
 | --- | --- | --- | --- |
 | v1.0 | 2026-05-11 | — | 初版，基于当前 `deal_joy` / `dealjoy_merchant` 代码结构整理 |
+| v1.1 | 2026-05-11 | — | 实施闭环：见「十一、已决产品/技术默认项」 |
+
+---
+
+## 十一、已决产品/技术默认项（实施阶段）
+
+以下为开发落地时采用的默认决策，便于与法务/运营后续迭代对照。
+
+1. **连锁 `multiple` 品牌创建失败**：仍**不阻断**入驻主流程（与既有 `merchant-register` 行为一致）。
+2. **M1/M2 邮件**：代提交与自助提交**共用**现有模板与触发条件；不在首版单独加「代提交」文案。
+3. **`consent_reference` / 内部备注**：写入 `merchant_activity_events.detail` 的 JSON 字符串（字段含 `source: "admin_merchant_onboard"`、`consent_reference`、`admin_user_id`、`onboarded_user_id` 等）。
+4. **权限**：`admin-merchant-onboard` 与后台 API 路由均允许 **`admin` 与 `super_admin`**（与 `platform-after-sales` 的 `resolveAdmin` 一致）。管理台 `guanli` 布局已允许 `super_admin` 进入与 `admin` 相同的侧栏导航。
+5. **两阶段账号**：Edge Function 支持 `action: "create_account_only"`，便于先拿到 `target_user_id` 再上传 `merchant-documents` 后提交（`submit_application` 在已有用户时用 `link_existing`）。
+6. **管理 UI 位置**：实现在 monorepo 的 **`crunchyplum_website`**（路径 `/guanli/merchants/onboard`），与现有「管理后台」同一应用；详细操作见 [`docs/sop/admin-assisted-merchant-onboarding-sop.md`](../sop/admin-assisted-merchant-onboarding-sop.md)。
+
+---
+
+## 十二、实现索引（代码入口）
+
+| 组件 | 路径 |
+| --- | --- |
+| 共享写入与校验 | `deal_joy/supabase/functions/_shared/merchant_application_submit.ts` |
+| 管理员 JWT 解析 | `deal_joy/supabase/functions/_shared/admin_resolve.ts` |
+| 商家自助注册（薄封装） | `deal_joy/supabase/functions/merchant-register/index.ts` |
+| 管理员代入驻 | `deal_joy/supabase/functions/admin-merchant-onboard/index.ts` |
+| Functions 网关 JWT | `deal_joy/supabase/config.toml` → `[functions.admin-merchant-onboard]` |
+| 管理台页面 | `crunchyplum_website/app/guanli/(dashboard)/merchants/onboard/` |
+| 辅助 API（lookup / 上传证件） | `crunchyplum_website/app/api/guanli/merchant-onboard/` |

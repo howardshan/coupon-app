@@ -28,6 +28,10 @@
 - 多设备同时登录: 允许，最多5个设备
 - 被封禁用户: 所有设备立即失效
 
+### 商家入驻（平台代开户）
+- 平台运营可在取得商家授权后，于管理后台代为创建账号并提交 `pending` 申请；商家仍使用**同一联系邮箱**登录本 App 查看进度与补充材料。
+- 技术说明见仓库 `coupon-app/docs/plans/2026-05-11-admin-assisted-merchant-onboarding.md` 与 `coupon-app/docs/sop/admin-assisted-merchant-onboarding-sop.md`。
+
 ## 2. 退款规则
 
 ### 自动退款条件（不需人工审核）
