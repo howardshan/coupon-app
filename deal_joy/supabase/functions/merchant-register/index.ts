@@ -11,6 +11,8 @@ import {
   type MerchantRegisterRequestBody,
 } from "../_shared/merchant_application_submit.ts";
 
+const CORS_ALLOW_HEADERS = "authorization, x-client-info, apikey, content-type";
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, {
@@ -18,7 +20,7 @@ Deno.serve(async (req: Request) => {
       headers: {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Authorization, Content-Type",
+        "Access-Control-Allow-Headers": CORS_ALLOW_HEADERS,
       },
     });
   }
@@ -91,6 +93,7 @@ function jsonResponse(data: unknown, status: number): Response {
     headers: {
       "Content-Type": "application/json",
       "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": CORS_ALLOW_HEADERS,
     },
   });
 }

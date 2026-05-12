@@ -40,12 +40,16 @@ interface AdminOnboardRequestBody {
   audit?: AuditPayload;
 }
 
+// Supabase JS（浏览器 invoke）会发送 apikey、x-client-info 等；预检须列入 Allow-Headers
+const CORS_ALLOW_HEADERS = "authorization, x-client-info, apikey, content-type";
+
 function jsonResponse(data: unknown, status: number): Response {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
       "Content-Type": "application/json",
       "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": CORS_ALLOW_HEADERS,
     },
   });
 }
@@ -167,7 +171,7 @@ Deno.serve(async (req: Request) => {
       headers: {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Authorization, Content-Type",
+        "Access-Control-Allow-Headers": CORS_ALLOW_HEADERS,
       },
     });
   }
