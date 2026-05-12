@@ -23,17 +23,18 @@
 
 ### 3.1 新建账号（推荐有证件时）
 
-1. 选择 **New account**，填写商家邮箱；可选填 **Initial password**（≥8 位）；不填则系统生成一次性密码（仅在响应/页面中展示一次，请立即复制保存）。
-2. 点击 **Create account only**（可选）：先创建 Auth 用户并拿到 **Target user id**，便于核对。
-3. 在 **Documents** 区按类型上传文件（需已有 target user id；若未点「仅建号」，在最终提交且无证件时可直接一步 `create_user`）。
-4. 填写 **Application**（公司名、联系人、电话、类别、EIN `XX-XXXXXXX`、地址等）；**联系邮箱必须与目标账号邮箱一致**。
-5. 点击 **Submit application**。若本次上传了证件，系统会先隐式建号（若尚未建）再上传并 **`link_existing`** 提交，避免重复账号。
+1. **步骤 1 Target account**：选择 **New account**，填写商家邮箱；可选 **Initial password**（≥8 位）；不填则系统在「仅建号」或提交时生成一次性密码。
+2. **步骤 2 Store type**：单店 / 连锁；连锁时填写品牌名与描述（与商家端一致）。
+3. **步骤 3 Business info**：公司名、联系人、电话；**联系邮箱**与步骤 1 的邮箱一致（页面只读展示）。
+4. **步骤 4 Business category**：选择类别（决定步骤 5 需要哪些证件，与商家端 `requiredDocuments` 一致）。
+5. **步骤 5 EIN and documents**：填写 EIN；**须先有 target user id** 才能使用真实文件选择器——新建账号请先点 **Create account only**，已有账号请 **Lookup** 或填写 User ID。若尚未建号，页面会显示说明按钮，点击会提示原因（避免误以为「选取文件」无反应）。
+6. **步骤 6 Store address**：与商家端一致——Address line 1（必填）、Address line 2（可选）、City、State、Zip（美国邮编格式）；提交时拼成与商家 App 相同的 `address` 字符串，并单独传 `city`。
+7. **步骤 7 Audit**：授权工单号等；**Submit application**。
 
 ### 3.2 已有账号
 
-1. 选择 **Existing account**，填写邮箱；**Lookup user by email** 或手动粘贴 **User ID**。
-2. 上传证件（路径为 `{userId}/{document_type}/...`）。
-3. 填写申请表并 **Submit application**（`link_existing`）。
+1. **步骤 1**：选择 **Existing account**，填写邮箱；**Lookup user by email** 或粘贴 **User ID**。
+2. 按 **3.1** 同样顺序完成步骤 2–7（步骤 5 上传前须已有 user id）。
 
 ---
 
