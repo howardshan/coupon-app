@@ -1,9 +1,12 @@
 // 商家端修改密码页
 // 逻辑与用户端 ChangePasswordScreen 对齐：旧密码 signInWithPassword 校验身份后 updateUser
+// 成功时先 pop 再在下一帧用根 ScaffoldMessenger 提示，避免与 SnackBar/Shell 重建叠帧导致「闪回改密页」
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../../../router/app_router.dart';
 
 const _primaryOrange = Color(0xFFFF6B35);
 
@@ -78,12 +81,15 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
       _errorMessage = null;
     });
 
+    var didPopForSuccess = false;
     try {
       final client = Supabase.instance.client;
       final email = client.auth.currentUser?.email;
 
       if (email == null) {
-        setState(() => _errorMessage = 'Unable to identify current user. Please log in again.');
+        if (mounted) {
+          setState(() => _errorMessage = 'Unable to identify current user. Please log in again.');
+        }
         return;
       }
 
@@ -97,13 +103,19 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
       );
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Password updated successfully!'),
-          backgroundColor: Color(0xFF2E7D32),
-        ),
-      );
+      // 先关闭子路由，再在下一帧用根 navigator 的 SnackBar，避免与当前页 dispose 冲突
       context.pop();
+      didPopForSuccess = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final rootCtx = merchantAppRootNavigatorKey.currentContext;
+        if (rootCtx == null || !rootCtx.mounted) return;
+        ScaffoldMessenger.of(rootCtx).showSnackBar(
+          const SnackBar(
+            content: Text('Password updated successfully!'),
+            backgroundColor: Color(0xFF2E7D32),
+          ),
+        );
+      });
     } on AuthException catch (e) {
       if (!mounted) return;
       setState(() => _errorMessage = _friendlyPasswordError(e.message));
@@ -111,7 +123,10 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
       if (!mounted) return;
       setState(() => _errorMessage = 'Something went wrong. Please try again.');
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      // 成功并已 pop 时不再 setState，避免在 dispose 边界重建当前页
+      if (mounted && !didPopForSuccess) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 

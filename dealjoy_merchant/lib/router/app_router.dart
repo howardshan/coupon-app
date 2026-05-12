@@ -89,18 +89,29 @@ import '../features/promotions/pages/campaign_report_page.dart';
 import '../features/promotions/pages/recharge_page.dart';
 
 // ─────────────────────────────────────────────────────────────
-// Auth 状态变化通知器：让 GoRouter 在 signIn/signOut 时自动重跑 redirect
+// Auth 状态变化通知器：让 GoRouter 在「会话身份变化」时重跑 redirect
+// 注意：勿对 userUpdated / tokenRefreshed 等事件 notify，否则改密后整树重建会触发
+// 子路由 Material 滑入动画，体感像「又进了一次改密页」。
 // ─────────────────────────────────────────────────────────────
 class _AuthChangeNotifier extends ChangeNotifier {
   late final StreamSubscription<AuthState> _sub;
 
+  /// 仅这些事件需要触发 GoRouter refresh（与 redirect 依赖的 session/恢复流程一致）
+  static bool _shouldRefreshRouter(AuthChangeEvent event) {
+    return event == AuthChangeEvent.initialSession ||
+        event == AuthChangeEvent.signedIn ||
+        event == AuthChangeEvent.signedOut ||
+        event == AuthChangeEvent.passwordRecovery;
+  }
+
   _AuthChangeNotifier() {
     _sub = Supabase.instance.client.auth.onAuthStateChange.listen((event) {
-      // 登出时清除审核状态缓存
       if (event.event == AuthChangeEvent.signedOut) {
         MerchantStatusCache.clear();
       }
-      notifyListeners();
+      if (_shouldRefreshRouter(event.event)) {
+        notifyListeners();
+      }
     });
   }
 
