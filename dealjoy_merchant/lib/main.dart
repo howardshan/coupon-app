@@ -83,6 +83,10 @@ class DealJoyMerchantApp extends ConsumerStatefulWidget {
 class _DealJoyMerchantAppState extends ConsumerState<DealJoyMerchantApp> {
   StreamSubscription<AuthState>? _authSub;
 
+  /// 上次因 signedIn 已执行全量 invalidate 的 user id。
+  /// 同一用户再次 signedIn（如改密时的 signInWithPassword）不重复 invalidate，避免 Shell/路由抖动。
+  String? _lastInvalidatedSignedInUserId;
+
   @override
   void initState() {
     super.initState();
@@ -98,9 +102,15 @@ class _DealJoyMerchantAppState extends ConsumerState<DealJoyMerchantApp> {
     _authSub = Supabase.instance.client.auth.onAuthStateChange.listen((event) {
       final listener = ref.read(merchantAccountForceLogoutListenerProvider);
       if (event.event == AuthChangeEvent.signedIn) {
-        listener.bindSession(event.session?.user.id);
-        _invalidateAllBusinessProviders();
+        final newId = event.session?.user.id;
+        listener.bindSession(newId);
+        // 仅真实换号时全量刷新；同账号重复 signedIn 不刷（改密流程会触发）
+        if (newId != null && newId != _lastInvalidatedSignedInUserId) {
+          _lastInvalidatedSignedInUserId = newId;
+          _invalidateAllBusinessProviders();
+        }
       } else if (event.event == AuthChangeEvent.signedOut) {
+        _lastInvalidatedSignedInUserId = null;
         listener.unbind();
       }
     });
