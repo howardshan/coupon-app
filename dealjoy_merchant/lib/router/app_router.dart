@@ -28,6 +28,7 @@ import '../features/settings/pages/notification_preferences_page.dart';
 import '../features/settings/pages/email_preferences_page.dart';
 import '../features/settings/pages/help_center_page.dart';
 import '../features/settings/pages/account_security_page.dart';
+import '../features/settings/pages/change_password_page.dart';
 import '../features/store/pages/staff_manage_page.dart';
 import '../features/support/pages/support_chat_page.dart';
 
@@ -467,6 +468,10 @@ final appRouter = GoRouter(
             GoRoute(
               path: 'account-security',
               builder: (context, state) => const AccountSecurityPage(),
+            ),
+            GoRoute(
+              path: 'change-password',
+              builder: (context, state) => const ChangePasswordPage(),
             ),
             GoRoute(
               path: 'staff',

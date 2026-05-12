@@ -1,20 +1,20 @@
-// 账号安全页面（V2 骨架）
-// 当前版本: 显示当前邮箱 + Coming in V2 各入口占位
-// V2 实现: 修改密码 / 绑定手机号 / 两步验证；修改后强制重新登录
+// 账号安全页面：展示当前邮箱；修改密码跳转独立页；2FA 为 V2 占位
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 // ============================================================
-// AccountSecurityPage — 账号安全（V2 骨架，ConsumerWidget）
+// AccountSecurityPage — 账号安全
 // ============================================================
 class AccountSecurityPage extends ConsumerWidget {
   const AccountSecurityPage({super.key});
 
+  static const _primaryOrange = Color(0xFFFF6B35);
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // 读取当前登录邮箱（只读展示）
     final email =
         Supabase.instance.client.auth.currentUser?.email ?? 'Not signed in';
 
@@ -30,30 +30,18 @@ class AccountSecurityPage extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // --------------------------------------------------
-          // 当前账号信息卡片
-          // --------------------------------------------------
           _buildCurrentAccountCard(email),
           const SizedBox(height: 24),
-
-          // --------------------------------------------------
-          // V2 功能占位列表
-          // --------------------------------------------------
+          _buildChangePasswordCard(context),
+          const SizedBox(height: 12),
           _buildV2PlaceholderCard(context),
           const SizedBox(height: 24),
-
-          // --------------------------------------------------
-          // V2 说明横幅
-          // --------------------------------------------------
           _buildV2Banner(),
         ],
       ),
     );
   }
 
-  // ----------------------------------------------------------
-  // 当前账号信息卡片（邮箱只读）
-  // ----------------------------------------------------------
   Widget _buildCurrentAccountCard(String email) {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -86,13 +74,13 @@ class AccountSecurityPage extends ConsumerWidget {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFF6B35).withValues(alpha: 0.1),
+                  color: _primaryOrange.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Icon(
                   Icons.email_outlined,
                   size: 20,
-                  color: Color(0xFFFF6B35),
+                  color: _primaryOrange,
                 ),
               ),
               const SizedBox(width: 12),
@@ -118,7 +106,6 @@ class AccountSecurityPage extends ConsumerWidget {
                   ],
                 ),
               ),
-              // 已验证标记
               Container(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -142,19 +129,8 @@ class AccountSecurityPage extends ConsumerWidget {
     );
   }
 
-  // ----------------------------------------------------------
-  // V2 功能占位列表
-  // ----------------------------------------------------------
-  Widget _buildV2PlaceholderCard(BuildContext context) {
-    final items = [
-      (Icons.lock_reset_outlined, 'Change Password',
-          'Update your login password'),
-      (Icons.phone_outlined, 'Link Phone Number',
-          'Add phone for account recovery'),
-      (Icons.security_outlined, 'Two-Factor Authentication',
-          'Add an extra layer of security'),
-    ];
-
+  /// 修改密码（可点，跳转与用户端逻辑一致的改密页）
+  Widget _buildChangePasswordCard(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -167,30 +143,84 @@ class AccountSecurityPage extends ConsumerWidget {
           ),
         ],
       ),
-      child: Column(
-        children: [
-          for (int i = 0; i < items.length; i++) ...[
-            _buildLockedTile(
-              icon: items[i].$1,
-              title: items[i].$2,
-              subtitle: items[i].$3,
-              context: context,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () => context.push('/me/change-password'),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: _primaryOrange.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.lock_reset_outlined,
+                    size: 20,
+                    color: _primaryOrange,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Change Password',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1A1A1A),
+                        ),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        'Update your login password',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF6B7280),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(Icons.chevron_right, color: Colors.grey.shade400),
+              ],
             ),
-            if (i < items.length - 1)
-              Divider(
-                height: 1,
-                indent: 64,
-                color: Colors.grey.withValues(alpha: 0.15),
-              ),
-          ],
-        ],
+          ),
+        ),
       ),
     );
   }
 
-  // ----------------------------------------------------------
-  // 单条锁定功能行（灰色 + V2 badge）
-  // ----------------------------------------------------------
+  /// 2FA 仍为 V2 占位
+  Widget _buildV2PlaceholderCard(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: _buildLockedTile(
+        icon: Icons.security_outlined,
+        title: 'Two-Factor Authentication',
+        subtitle: 'Add an extra layer of security',
+        context: context,
+      ),
+    );
+  }
+
   Widget _buildLockedTile({
     required IconData icon,
     required String title,
@@ -230,7 +260,6 @@ class AccountSecurityPage extends ConsumerWidget {
               ],
             ),
           ),
-          // V2 标记
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
             decoration: BoxDecoration(
@@ -254,17 +283,14 @@ class AccountSecurityPage extends ConsumerWidget {
     );
   }
 
-  // ----------------------------------------------------------
-  // V2 说明横幅
-  // ----------------------------------------------------------
   Widget _buildV2Banner() {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFFF6B35).withValues(alpha: 0.06),
+        color: _primaryOrange.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: const Color(0xFFFF6B35).withValues(alpha: 0.2),
+          color: _primaryOrange.withValues(alpha: 0.2),
         ),
       ),
       child: Row(
@@ -272,16 +298,15 @@ class AccountSecurityPage extends ConsumerWidget {
           Icon(
             Icons.info_outline,
             size: 20,
-            color: const Color(0xFFFF6B35).withValues(alpha: 0.8),
+            color: _primaryOrange.withValues(alpha: 0.85),
           ),
           const SizedBox(width: 12),
-          const Expanded(
+          Expanded(
             child: Text(
-              'Advanced security features are coming in V2. '
-              'Stay tuned for updates!',
+              'Two-factor authentication will be available in a future update.',
               style: TextStyle(
                 fontSize: 13,
-                color: Color(0xFFFF6B35),
+                color: _primaryOrange.withValues(alpha: 0.95),
                 height: 1.5,
               ),
             ),
