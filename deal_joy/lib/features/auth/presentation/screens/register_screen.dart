@@ -8,6 +8,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../../shared/widgets/app_text_field.dart';
 import '../../../auth/domain/providers/auth_provider.dart';
+import '../widgets/email_verification_actions.dart';
 import '../widgets/password_strength_indicator.dart';
 import '../../../../shared/widgets/legal_document_screen.dart';
 import '../../../../shared/providers/legal_provider.dart';
@@ -50,6 +51,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   Timer? _emailDebounce;
   // 版本号：防止旧的异步查询结果覆盖较新的状态
   int _emailCheckVersion = 0;
+
+  /// 注册页「重发验证码」按钮 loading
+  bool _registerResendOtpLoading = false;
 
   // Username 查重状态: null=未检查, true=已占用, false=可用
   bool? _usernameTaken;
@@ -510,25 +514,22 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 10),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            TextButton(
-                              onPressed: () {
+                        const SizedBox(height: 12),
+                        AnimatedBuilder(
+                          animation: _emailCtrl,
+                          builder: (context, _) {
+                            return EmailVerificationActions(
+                              showHeader: false,
+                              emailEmpty: _emailCtrl.text.trim().isEmpty,
+                              resendLoading: _registerResendOtpLoading,
+                              onEnterCode: () {
                                 final email = Uri.encodeComponent(
                                   _emailCtrl.text.trim(),
                                 );
                                 context.push('/auth/verify-otp?email=$email');
                               },
-                              child: const Text(
-                                'Enter verification code',
-                                style: TextStyle(fontWeight: FontWeight.w600),
-                              ),
-                            ),
-                            TextButton(
-                              onPressed: () async {
+                              onResend: () async {
+                                setState(() => _registerResendOtpLoading = true);
                                 try {
                                   await ref
                                       .read(authRepositoryProvider)
@@ -555,14 +556,16 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                                       backgroundColor: AppColors.error,
                                     ),
                                   );
+                                } finally {
+                                  if (mounted) {
+                                    setState(
+                                      () => _registerResendOtpLoading = false,
+                                    );
+                                  }
                                 }
                               },
-                              child: const Text(
-                                'Resend code',
-                                style: TextStyle(fontWeight: FontWeight.w600),
-                              ),
-                            ),
-                          ],
+                            );
+                          },
                         ),
                       ],
                     ),

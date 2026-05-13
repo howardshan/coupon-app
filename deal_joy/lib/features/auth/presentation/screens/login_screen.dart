@@ -7,6 +7,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../../shared/widgets/app_text_field.dart';
 import '../../../auth/domain/providers/auth_provider.dart';
+import '../widgets/email_verification_actions.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -238,71 +239,57 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ),
                   ),
 
-                // 邮箱未验证：引导输入验证码或重发
+                // 邮箱未验证：卡片式主次按钮（与 Sign In 主按钮层级一致）
                 if (_showEmailVerifyActions) ...[
                   const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    alignment: WrapAlignment.start,
-                    children: [
-                      TextButton(
-                        onPressed: _emailCtrl.text.trim().isEmpty || _resendOtpLoading
-                            ? null
-                            : () async {
-                                setState(() => _resendOtpLoading = true);
-                                try {
-                                  await ref
-                                      .read(authRepositoryProvider)
-                                      .resendSignupOtpForEmail(
-                                        _emailCtrl.text.trim(),
-                                      );
-                                  if (!context.mounted) return;
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text(
-                                        'Verification code sent. Check your inbox.',
-                                      ),
-                                      backgroundColor: AppColors.success,
-                                    ),
-                                  );
-                                } catch (e) {
-                                  if (!context.mounted) return;
-                                  final msg = e is AppException
-                                      ? e.message
-                                      : e.toString();
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(msg),
-                                      backgroundColor: AppColors.error,
-                                    ),
-                                  );
-                                } finally {
-                                  if (mounted) {
-                                    setState(() => _resendOtpLoading = false);
-                                  }
-                                }
-                              },
-                        child: Text(
-                          _resendOtpLoading ? 'Sending…' : 'Resend code',
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: _emailCtrl.text.trim().isEmpty
-                            ? null
-                            : () {
-                                final email = Uri.encodeComponent(
+                  AnimatedBuilder(
+                    animation: _emailCtrl,
+                    builder: (context, _) {
+                      return EmailVerificationActions(
+                        emailEmpty: _emailCtrl.text.trim().isEmpty,
+                        resendLoading: _resendOtpLoading,
+                        onEnterCode: () {
+                          final email = Uri.encodeComponent(
+                            _emailCtrl.text.trim(),
+                          );
+                          context.push('/auth/verify-otp?email=$email');
+                        },
+                        onResend: () async {
+                          setState(() => _resendOtpLoading = true);
+                          try {
+                            await ref
+                                .read(authRepositoryProvider)
+                                .resendSignupOtpForEmail(
                                   _emailCtrl.text.trim(),
                                 );
-                                context.push('/auth/verify-otp?email=$email');
-                              },
-                        child: const Text(
-                          'Enter verification code',
-                          style: TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                    ],
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Verification code sent. Check your inbox.',
+                                ),
+                                backgroundColor: AppColors.success,
+                              ),
+                            );
+                          } catch (e) {
+                            if (!context.mounted) return;
+                            final msg = e is AppException
+                                ? e.message
+                                : e.toString();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(msg),
+                                backgroundColor: AppColors.error,
+                              ),
+                            );
+                          } finally {
+                            if (mounted) {
+                              setState(() => _resendOtpLoading = false);
+                            }
+                          }
+                        },
+                      );
+                    },
                   ),
                 ],
 
