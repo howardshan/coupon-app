@@ -42,7 +42,10 @@ class _MainScaffoldState extends ConsumerState<MainScaffold>
     // 这样如果 Admin 在用户挂起 App 期间发布了新版本 ToS/Privacy 等，
     // 用户回到 App 立即看到 ConsentBarrier 弹窗
     if (state == AppLifecycleState.resumed) {
-      ref.invalidate(pendingConsentsProvider);
+      Future<void>.delayed(const Duration(milliseconds: 350), () {
+        if (!mounted) return;
+        ref.invalidate(pendingConsentsProvider);
+      });
     }
   }
 

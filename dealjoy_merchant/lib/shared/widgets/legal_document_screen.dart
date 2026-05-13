@@ -4,6 +4,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/legal_provider.dart';
+import '../utils/transient_network_retry.dart';
 
 // 商家端主题色（与 merchant_login_page 保持一致）
 const _primaryOrange = Color(0xFFFF6B35);
@@ -95,9 +96,9 @@ class LegalDocumentScreen extends ConsumerWidget {
               children: [
                 const Icon(Icons.error_outline, color: _errorColor, size: 48),
                 const SizedBox(height: 16),
-                const Text(
-                  'Failed to load document',
-                  style: TextStyle(
+                Text(
+                  userFacingLoadFailureTitle(),
+                  style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
                     color: _textPrimary,
@@ -105,12 +106,22 @@ class LegalDocumentScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  error.toString(),
+                  userFacingLoadFailureMessage(error),
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     fontSize: 14,
                     color: _textSecondary,
                   ),
+                ),
+                const SizedBox(height: 24),
+                FilledButton(
+                  onPressed: () =>
+                      ref.invalidate(legalDocumentContentProvider(slug)),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _primaryOrange,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('Retry'),
                 ),
               ],
             ),

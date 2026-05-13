@@ -5,6 +5,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/device_context_helper.dart';
+import '../utils/transient_network_retry.dart';
 
 // 商家端直接使用单例 client，不走 supabaseClientProvider
 final _supabase = Supabase.instance.client;
@@ -91,13 +92,15 @@ class LegalRepository {
     final user = _supabase.auth.currentUser;
     if (user == null) return [];
 
-    final result = await _supabase.rpc(
-      'check_pending_consents',
-      params: {
-        'p_user_id': user.id,
-        'p_role': 'merchant',
-      },
-    );
+    final result = await retryTransientNetwork(() async {
+      return await _supabase.rpc(
+        'check_pending_consents',
+        params: {
+          'p_user_id': user.id,
+          'p_role': 'merchant',
+        },
+      );
+    });
 
     if (result == null) return [];
     final list = result as List<dynamic>;
@@ -117,10 +120,12 @@ class LegalRepository {
       params['p_version'] = version;
     }
 
-    final result = await _supabase.rpc(
-      'get_legal_document_content',
-      params: params,
-    );
+    final result = await retryTransientNetwork(() async {
+      return await _supabase.rpc(
+        'get_legal_document_content',
+        params: params,
+      );
+    });
 
     if (result == null) return null;
 
@@ -141,11 +146,13 @@ class LegalRepository {
       String? merchantId;
       final user = _supabase.auth.currentUser;
       if (user != null) {
-        final mRow = await _supabase
-            .from('merchants')
-            .select('id')
-            .eq('user_id', user.id)
-            .maybeSingle();
+        final mRow = await retryTransientNetwork(() async {
+          return await _supabase
+              .from('merchants')
+              .select('id')
+              .eq('user_id', user.id)
+              .maybeSingle();
+        });
         merchantId = mRow?['id'] as String?;
       }
 
@@ -156,10 +163,12 @@ class LegalRepository {
         renderParams['p_merchant_id'] = merchantId;
       }
 
-      final rendered = await _supabase.rpc(
-        'render_legal_document',
-        params: renderParams,
-      );
+      final rendered = await retryTransientNetwork(() async {
+        return await _supabase.rpc(
+          'render_legal_document',
+          params: renderParams,
+        );
+      });
       if (rendered is String) {
         return LegalDocumentContent(
           documentId: doc.documentId,

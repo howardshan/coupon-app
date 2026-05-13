@@ -141,9 +141,13 @@ class _AppShellState extends ConsumerState<AppShell>
     // 如果此时 Admin 已发布新版本 Merchant Agreement / ToS 等强制重签文档，
     // 商家回到 App 会立即看到 ConsentBarrier 弹窗
     if (state == AppLifecycleState.resumed) {
-      ref.invalidate(pendingConsentsProvider);
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _checkConsent();
+      // 略延迟再拉取，减少刚从后台恢复时链路未稳导致的瞬时失败
+      Future<void>.delayed(const Duration(milliseconds: 350), () {
+        if (!mounted) return;
+        ref.invalidate(pendingConsentsProvider);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _checkConsent();
+        });
       });
     }
   }

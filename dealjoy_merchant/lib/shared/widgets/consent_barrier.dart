@@ -164,10 +164,38 @@ class _ConsentBarrierState extends ConsumerState<ConsentBarrier> {
           error: (e, _) => Center(
             child: Padding(
               padding: const EdgeInsets.all(24),
-              child: Text(
-                'Failed to load documents: $e',
-                style: const TextStyle(color: _errorColor),
-                textAlign: TextAlign.center,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Text(
+                    'Could not load policy updates. Please check your internet connection.',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: _errorColor,
+                      height: 1.4,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    '$e',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: _textSecondary,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 24),
+                  FilledButton(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: _primaryOrange,
+                      foregroundColor: Colors.white,
+                    ),
+                    onPressed: () =>
+                        ref.invalidate(pendingConsentsProvider),
+                    child: const Text('Retry'),
+                  ),
+                ],
               ),
             ),
           ),

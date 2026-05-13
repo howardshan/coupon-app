@@ -4,6 +4,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/device_context_helper.dart';
+import '../utils/transient_network_retry.dart';
 import 'supabase_provider.dart';
 
 // ─────────────────────────────────────────────
@@ -107,13 +108,15 @@ class LegalRepository {
       // 查询失败时使用默认角色 customer
     }
 
-    final result = await _supabase.rpc(
-      'check_pending_consents',
-      params: {
-        'p_user_id': user.id,
-        'p_role': role,
-      },
-    );
+    final result = await retryTransientNetwork(() async {
+      return await _supabase.rpc(
+        'check_pending_consents',
+        params: {
+          'p_user_id': user.id,
+          'p_role': role,
+        },
+      );
+    });
 
     if (result == null) return [];
     final list = result as List<dynamic>;
@@ -133,10 +136,12 @@ class LegalRepository {
       params['p_version'] = version;
     }
 
-    final result = await _supabase.rpc(
-      'get_legal_document_content',
-      params: params,
-    );
+    final result = await retryTransientNetwork(() async {
+      return await _supabase.rpc(
+        'get_legal_document_content',
+        params: params,
+      );
+    });
 
     if (result == null) return null;
 
@@ -150,28 +155,31 @@ class LegalRepository {
       doc = LegalDocumentContent.fromJson(result);
     }
     if (doc == null) return null;
+    final resolvedDoc = doc;
 
     // 调用 render_legal_document RPC 替换占位符
     try {
-      final rendered = await _supabase.rpc(
-        'render_legal_document',
-        params: {'p_content_html': doc.contentHtml},
-      );
+      final rendered = await retryTransientNetwork(() async {
+        return await _supabase.rpc(
+          'render_legal_document',
+          params: {'p_content_html': resolvedDoc.contentHtml},
+        );
+      });
       if (rendered is String) {
         return LegalDocumentContent(
-          documentId: doc.documentId,
-          slug: doc.slug,
-          title: doc.title,
-          version: doc.version,
+          documentId: resolvedDoc.documentId,
+          slug: resolvedDoc.slug,
+          title: resolvedDoc.title,
+          version: resolvedDoc.version,
           contentHtml: rendered,
-          summaryOfChanges: doc.summaryOfChanges,
-          publishedAt: doc.publishedAt,
+          summaryOfChanges: resolvedDoc.summaryOfChanges,
+          publishedAt: resolvedDoc.publishedAt,
         );
       }
     } catch (_) {
       // 占位符替换失败不阻塞展示，返回原始内容
     }
-    return doc;
+    return resolvedDoc;
   }
 
   /// 记录用户对指定法律文档的同意

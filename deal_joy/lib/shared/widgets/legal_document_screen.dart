@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_colors.dart';
 import '../providers/legal_provider.dart';
+import '../utils/transient_network_retry.dart';
 import 'app_button.dart';
 
 /// 法律文档全屏展示页面
@@ -89,7 +90,7 @@ class LegalDocumentScreen extends ConsumerWidget {
                 const Icon(Icons.error_outline, color: AppColors.error, size: 48),
                 const SizedBox(height: 16),
                 Text(
-                  'Failed to load document',
+                  userFacingLoadFailureTitle(),
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
@@ -98,12 +99,22 @@ class LegalDocumentScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  error.toString(),
+                  userFacingLoadFailureMessage(error),
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     fontSize: 14,
                     color: AppColors.textSecondary,
                   ),
+                ),
+                const SizedBox(height: 24),
+                FilledButton(
+                  onPressed: () =>
+                      ref.invalidate(legalDocumentContentProvider(slug)),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('Retry'),
                 ),
               ],
             ),
