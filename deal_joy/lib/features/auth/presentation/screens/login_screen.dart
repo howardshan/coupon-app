@@ -7,6 +7,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../../shared/widgets/app_text_field.dart';
 import '../../../auth/domain/providers/auth_provider.dart';
+import '../widgets/email_verification_actions.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -26,6 +27,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   // 登录错误信息（显示在密码框下方）
   String? _loginError;
 
+  /// 邮箱未验证时展示「输入验证码 / 重发」入口
+  bool _showEmailVerifyActions = false;
+
+  /// 重发注册 OTP 进行中
+  bool _resendOtpLoading = false;
+
   @override
   void dispose() {
     _emailCtrl.dispose();
@@ -41,7 +48,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   // 表单提交：验证后调用 signIn，清除旧错误
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
-    setState(() => _loginError = null);
+    setState(() {
+      _loginError = null;
+      _showEmailVerifyActions = false;
+    });
     await ref.read(authNotifierProvider.notifier).signIn(
           _emailCtrl.text.trim(),
           _passwordCtrl.text,
@@ -82,7 +92,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         final err = next.error!;
         // 直接取 AppException.message，避免显示 "AppException:" 前缀
         final msg = err is AppException ? err.message : err.toString();
-        setState(() => _loginError = msg);
+        final notConfirmed =
+            err is AppAuthException && err.code == 'email_not_confirmed';
+        setState(() {
+          _loginError = msg;
+          _showEmailVerifyActions = notConfirmed;
+        });
       }
     });
 
@@ -96,7 +111,33 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const SizedBox(height: 32),
+                // 顶部返回：从 Profile 等 push 进入时可明显返回
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: IconButton(
+                    icon: const Icon(Icons.arrow_back_ios_new_rounded),
+                    color: AppColors.textPrimary,
+                    onPressed: () {
+                      if (context.canPop()) {
+                        context.pop();
+                      } else {
+                        final redirect = GoRouterState.of(context)
+                            .uri
+                            .queryParameters['redirect'];
+                        if (redirect != null &&
+                            redirect.isNotEmpty &&
+                            redirect.startsWith('/') &&
+                            !redirect.startsWith('/auth')) {
+                          context.go(redirect);
+                        } else {
+                          context.go('/home');
+                        }
+                      }
+                    },
+                  ),
+                ),
+
+                const SizedBox(height: 8),
 
                 // ---- 品牌区域 ----
                 Center(
@@ -197,6 +238,60 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           ),
                     ),
                   ),
+
+                // 邮箱未验证：卡片式主次按钮（与 Sign In 主按钮层级一致）
+                if (_showEmailVerifyActions) ...[
+                  const SizedBox(height: 12),
+                  AnimatedBuilder(
+                    animation: _emailCtrl,
+                    builder: (context, _) {
+                      return EmailVerificationActions(
+                        emailEmpty: _emailCtrl.text.trim().isEmpty,
+                        resendLoading: _resendOtpLoading,
+                        onEnterCode: () {
+                          final email = Uri.encodeComponent(
+                            _emailCtrl.text.trim(),
+                          );
+                          context.push('/auth/verify-otp?email=$email');
+                        },
+                        onResend: () async {
+                          setState(() => _resendOtpLoading = true);
+                          try {
+                            await ref
+                                .read(authRepositoryProvider)
+                                .resendSignupOtpForEmail(
+                                  _emailCtrl.text.trim(),
+                                );
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Verification code sent. Check your inbox.',
+                                ),
+                                backgroundColor: AppColors.success,
+                              ),
+                            );
+                          } catch (e) {
+                            if (!context.mounted) return;
+                            final msg = e is AppException
+                                ? e.message
+                                : e.toString();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(msg),
+                                backgroundColor: AppColors.error,
+                              ),
+                            );
+                          } finally {
+                            if (mounted) {
+                              setState(() => _resendOtpLoading = false);
+                            }
+                          }
+                        },
+                      );
+                    },
+                  ),
+                ],
 
                 const SizedBox(height: 4),
 
