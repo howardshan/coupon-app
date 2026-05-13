@@ -1,7 +1,8 @@
 # SOP：后台代商家入驻（Merchant onboard）
 
 **适用对象**：具备 `admin` 或 `super_admin` 角色的运营人员  
-**系统入口**：管理后台 `https://<你的域名>/guanli/merchants/onboard`（与 Merchants 列表页中的「Merchant onboard」链接相同）
+**系统入口**：管理后台 `https://<你的域名>/guanli/merchants/onboard`（与 Merchants 列表页中的「Admin-assisted onboarding」入口相同）  
+**商家信息采集表（对外/打印）**：[中文版](../templates/merchant-assisted-onboarding-intake-zh.md) · [English](../templates/merchant-assisted-onboarding-intake-en.md) · [CSV/Excel 模版](../templates/merchant-assisted-onboarding-intake-template.csv)
 
 ---
 
