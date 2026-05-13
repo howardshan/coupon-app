@@ -2,8 +2,10 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/theme/app_colors.dart';
 import 'app_version_gate_evaluator.dart';
 
+/// 全屏强制更新页：与用户端 Crunchy Plum 强制更新页视觉对齐。
 class ForceUpdateScreen extends StatelessWidget {
   const ForceUpdateScreen({super.key, required this.decision});
 
@@ -17,6 +19,7 @@ class ForceUpdateScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
     return PopScope(
       canPop: false,
       child: Scaffold(
@@ -30,21 +33,25 @@ class ForceUpdateScreen extends StatelessWidget {
                 Icon(
                   Icons.system_update,
                   size: 64,
-                  color: Theme.of(context).colorScheme.primary,
+                  color: AppColors.primary,
                 ),
                 const SizedBox(height: 24),
                 Text(
                   decision.title,
                   textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                  style: textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
+                  ),
                 ),
                 const SizedBox(height: 16),
                 Text(
                   decision.body,
                   textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodyLarge,
+                  style: textTheme.bodyLarge?.copyWith(
+                    color: AppColors.textSecondary,
+                    height: 1.45,
+                  ),
                 ),
                 const Spacer(),
                 FilledButton(
