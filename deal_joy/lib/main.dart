@@ -14,6 +14,7 @@ import 'features/deals/domain/providers/deals_provider.dart';
 import 'shared/services/referral_link_service.dart';
 import 'features/welcome/domain/providers/welcome_provider.dart';
 import 'app.dart';
+import 'shared/app_version_gate/app_version_gate_host.dart';
 
 // FCM 后台消息处理器（必须是顶层函数）
 @pragma('vm:entry-point')
@@ -130,7 +131,9 @@ void main() async {
   runApp(
     UncontrolledProviderScope(
       container: container,
-      child: const CrunchyPlumApp(),
+      child: const AppVersionGateHost(
+        child: CrunchyPlumApp(),
+      ),
     ),
   );
 }
