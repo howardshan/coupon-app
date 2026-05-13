@@ -33,11 +33,11 @@ class AuthRepository {
       if (response.user == null) {
         throw const AppAuthException('Invalid email or password');
       }
-      // 邮箱未验证时：登出并提示用户去验证
+      // 邮箱未验证时：登出并提示用户去验证（本应用使用邮件 OTP 验证码，非链接）
       if (response.user!.emailConfirmedAt == null) {
         await _client.auth.signOut();
         throw const AppAuthException(
-          'Please verify your email before signing in. Check your inbox for the verification link.',
+          'Please verify your email before signing in. Check your inbox for the verification code.',
           code: 'email_not_confirmed',
         );
       }
@@ -48,7 +48,7 @@ class AuthRepository {
       if (msg.contains('email not confirmed') ||
           msg.contains('not confirmed')) {
         throw const AppAuthException(
-          'Please verify your email before signing in. Check your inbox for the verification link.',
+          'Please verify your email before signing in. Check your inbox for the verification code.',
           code: 'email_not_confirmed',
         );
       }
@@ -67,6 +67,37 @@ class AuthRepository {
         .eq('username', username)
         .maybeSingle();
     return result != null;
+  }
+
+  /// 查询 auth 侧邮箱验证状态：`none` | `unconfirmed` | `confirmed`；RPC 失败返回 null
+  Future<String?> getEmailAuthStatus(String email) async {
+    try {
+      final result = await _client.rpc(
+        'email_auth_status',
+        params: {'p_email': email.trim().toLowerCase()},
+      );
+      if (result is String) {
+        final s = result.toLowerCase().trim();
+        if (s == 'none' || s == 'unconfirmed' || s == 'confirmed') {
+          return s;
+        }
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 未登录也可调用：向该邮箱重发注册用 OTP 验证码邮件
+  Future<void> resendSignupOtpForEmail(String email) async {
+    try {
+      await _client.auth.resend(
+        type: sb.OtpType.signup,
+        email: email.trim(),
+      );
+    } on sb.AuthException catch (e) {
+      throw AppAuthException(e.message, code: e.statusCode?.toString());
+    }
   }
 
   // ---- 检查邮箱是否已被注册（查 auth.users，含商家账号）----
@@ -112,8 +143,16 @@ class AuthRepository {
       // Supabase 对已存在邮箱返回 fake 用户，identities 为空
       final identities = response.user!.identities;
       if (identities == null || identities.isEmpty) {
+        final status = await getEmailAuthStatus(email);
+        if (status == 'unconfirmed') {
+          throw const AppAuthException(
+            'This email is already registered but not verified yet. Please verify your email.',
+            code: 'email_unconfirmed_existing',
+          );
+        }
         throw const AppAuthException(
           'This email is already registered. Please sign in instead.',
+          code: 'email_already_registered',
         );
       }
       return _fetchUserProfile(response.user!.id);

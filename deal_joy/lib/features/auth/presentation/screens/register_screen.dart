@@ -3,6 +3,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../../core/errors/app_exception.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../../shared/widgets/app_text_field.dart';
@@ -44,6 +45,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   // 邮箱查重状态: null=未检查, true=已占用, false=可用
   bool? _emailTaken;
   bool _emailChecking = false;
+  /// auth 侧状态：`none` | `unconfirmed` | `confirmed`；null 表示未拉取或 RPC 失败
+  String? _emailAuthStatus;
   Timer? _emailDebounce;
   // 版本号：防止旧的异步查询结果覆盖较新的状态
   int _emailCheckVersion = 0;
@@ -92,19 +95,24 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     if (!_emailRegex.hasMatch(trimmed)) {
       setState(() {
         _emailTaken = null;
+        _emailAuthStatus = null;
         _emailChecking = false;
       });
       return;
     }
     setState(() => _emailChecking = true);
     _emailDebounce = Timer(const Duration(milliseconds: 500), () async {
-      final taken = await ref
-          .read(authRepositoryProvider)
-          .isEmailTaken(trimmed);
+      final repo = ref.read(authRepositoryProvider);
+      final taken = await repo.isEmailTaken(trimmed);
+      String? authStatus;
+      if (taken) {
+        authStatus = await repo.getEmailAuthStatus(trimmed);
+      }
       // 只有版本号未被更新（无更新的请求/提交覆盖）时才应用结果
       if (mounted && _emailCheckVersion == capturedVersion) {
         setState(() {
           _emailTaken = taken;
+          _emailAuthStatus = authStatus;
           _emailChecking = false;
         });
       }
@@ -202,16 +210,28 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       final state = ref.read(authNotifierProvider);
       if (state.hasError) {
         // 邮箱已注册错误 → 设置状态并刷新表单
-        final errMsg = state.error.toString();
-        if (errMsg.contains('already registered')) {
-          // 递增版本号，使任何飞行中的 isEmailTaken 查询失效
+        final err = state.error!;
+        if (err is AppAuthException && err.code == 'email_unconfirmed_existing') {
           _emailDebounce?.cancel();
           _emailCheckVersion++;
           setState(() {
             _emailTaken = true;
+            _emailAuthStatus = 'unconfirmed';
             _emailChecking = false;
           });
-          _formKey.currentState!.validate();
+          _formKey.currentState?.validate();
+        } else {
+          final errMsg = err.toString();
+          if (errMsg.contains('already registered')) {
+            _emailDebounce?.cancel();
+            _emailCheckVersion++;
+            setState(() {
+              _emailTaken = true;
+              _emailAuthStatus = 'confirmed';
+              _emailChecking = false;
+            });
+            _formKey.currentState?.validate();
+          }
         }
       } else {
         // signUp 成功：记录用户对法律文档的同意（不阻塞注册流程）
@@ -252,8 +272,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     ref.listen(authNotifierProvider, (_, next) {
       if (next is AsyncError) {
         final errMsg = next.error.toString();
-        // 邮箱重复错误已在 email 字段下方显示，不再弹 SnackBar
+        // 邮箱重复 / 待验证已在字段下方展示，不再弹 SnackBar
         if (errMsg.contains('already registered')) return;
+        if (errMsg.contains('not verified')) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(errMsg),
@@ -420,8 +441,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                     if (!_emailRegex.hasMatch(v.trim())) {
                       return 'Enter a valid email address';
                     }
-                    if (_emailTaken == true) {
-                      return 'This email is already registered';
+                    if (_emailTaken == true && _emailAuthStatus != 'unconfirmed') {
+                      return 'This email is already registered. Please sign in instead.';
                     }
                     return null;
                   },
@@ -461,6 +482,87 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                             fontSize: 12,
                             color: AppColors.success,
                           ),
+                        ),
+                      ],
+                    ),
+                  )
+                else if (_emailTaken == true && _emailAuthStatus == 'unconfirmed')
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8, left: 4),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(Icons.info_outline, size: 16, color: AppColors.primary),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'This email is registered but not verified yet. '
+                                'Enter the code we sent, or resend a new code.',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  height: 1.35,
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            TextButton(
+                              onPressed: () {
+                                final email = Uri.encodeComponent(
+                                  _emailCtrl.text.trim(),
+                                );
+                                context.push('/auth/verify-otp?email=$email');
+                              },
+                              child: const Text(
+                                'Enter verification code',
+                                style: TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: () async {
+                                try {
+                                  await ref
+                                      .read(authRepositoryProvider)
+                                      .resendSignupOtpForEmail(
+                                        _emailCtrl.text.trim(),
+                                      );
+                                  if (!context.mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Verification code sent. Check your inbox.',
+                                      ),
+                                      backgroundColor: AppColors.success,
+                                    ),
+                                  );
+                                } catch (e) {
+                                  if (!context.mounted) return;
+                                  final msg = e is AppException
+                                      ? e.message
+                                      : e.toString();
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(msg),
+                                      backgroundColor: AppColors.error,
+                                    ),
+                                  );
+                                }
+                              },
+                              child: const Text(
+                                'Resend code',
+                                style: TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
