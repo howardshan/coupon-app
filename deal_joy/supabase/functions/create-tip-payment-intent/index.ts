@@ -80,6 +80,22 @@ function stripDataUrlBase64(input: string): string {
   return m ? m[1]!.trim() : input.trim();
 }
 
+/** US card estimate (2.9% + $0.30). Kept on platform via application_fee so Connect transfer is net of Stripe fee. */
+function estimateStripeFeeCents(amountCents: number): number {
+  if (amountCents <= 0) return 0;
+  return Math.min(amountCents, Math.round(amountCents * 0.029 + 30));
+}
+
+function tipConnectChargeParams(amountCents: number, connectId: string) {
+  const applicationFeeAmountCents = estimateStripeFeeCents(amountCents);
+  return {
+    application_fee_amount: applicationFeeAmountCents,
+    transfer_data: { destination: connectId },
+    merchantTransferCents: amountCents - applicationFeeAmountCents,
+    applicationFeeAmountCents,
+  };
+}
+
 type StripeLikeErr = { payment_intent?: Stripe.PaymentIntent; code?: string; type?: string };
 
 function paymentIntentFromStripeError(err: unknown): Stripe.PaymentIntent | null {
@@ -463,15 +479,27 @@ Deno.serve(async (req) => {
     merchant_id: redeemMerchantId,
   };
 
+  const connectCharge = tipConnectChargeParams(amountCents, connectId);
+  console.log("[create-tip-payment-intent] connect charge", {
+    tipId,
+    amountCents,
+    applicationFeeAmountCents: connectCharge.applicationFeeAmountCents,
+    merchantTransferCents: connectCharge.merchantTransferCents,
+  });
+
   async function createGuestPaymentIntentAndReturn(): Promise<Response> {
     try {
       const pi = await stripe.paymentIntents.create({
         amount: amountCents,
         currency: "usd",
         automatic_payment_methods: { enabled: true },
-        application_fee_amount: 0,
-        transfer_data: { destination: connectId },
-        metadata: commonMetadata,
+        application_fee_amount: connectCharge.applicationFeeAmountCents,
+        transfer_data: connectCharge.transfer_data,
+        metadata: {
+          ...commonMetadata,
+          stripe_fee_estimate_cents: String(connectCharge.applicationFeeAmountCents),
+          merchant_transfer_estimate_cents: String(connectCharge.merchantTransferCents),
+        },
       });
       await supabaseAdmin
         .from("coupon_tips")
@@ -520,9 +548,13 @@ Deno.serve(async (req) => {
       payment_method_types: ["card"],
       confirm: true,
       off_session: true,
-      application_fee_amount: 0,
-      transfer_data: { destination: connectId },
-      metadata: commonMetadata,
+      application_fee_amount: connectCharge.applicationFeeAmountCents,
+      transfer_data: connectCharge.transfer_data,
+      metadata: {
+        ...commonMetadata,
+        stripe_fee_estimate_cents: String(connectCharge.applicationFeeAmountCents),
+        merchant_transfer_estimate_cents: String(connectCharge.merchantTransferCents),
+      },
     });
   } catch (e) {
     const fromErr = paymentIntentFromStripeError(e);
