@@ -1,6 +1,6 @@
 # TC009: EIN 格式验证
-# 测试步骤：注册到 Step 4 → 输入无 dash 的 EIN → Next 应报错 → 输入正确格式 → 上传证件 → Next 应通过
-# 预期结果：无 dash 格式 "123456789" 被拒绝，"12-3456789" 格式被接受
+# 测试步骤：注册到 Step 4 → 输入 9 位数字（自动格式化为 XX-XXXXXXX）→ 上传证件 → Next 应通过
+# 预期结果：输入 "123456789" 自动变为 "12-3456789" 并通过校验
 appId: com.dealjoy.dealjoy_merchant
 
 ---
@@ -59,27 +59,28 @@ appId: com.dealjoy.dealjoy_merchant
     visible: "EIN / Tax ID"
     timeout: 10000
 
-# 输入错误格式（无 dash）
+# 输入 9 位数字（应用自动插入 dash，无需手动输入 -）
 - tapOn: "EIN / Tax ID"
 - inputText: "123456789"
 - hideKeyboard
 
-- takeScreenshot: TC009_ein_wrong_format
+- takeScreenshot: TC009_ein_auto_formatted
 
-# 点击 Next — 应该显示错误（EIN 格式不对 + 证件未上传）
+# 未满 9 位时 Next 应仍停留在 Step 4（EIN 校验失败）
+- tapOn: "EIN / Tax ID"
+- eraseText: 30
+- inputText: "12345"
+- hideKeyboard
 - tapOn: "Next"
-
-# 验证仍在 Step 4（没有进入下一步）
 - extendedWaitUntil:
     visible: "EIN / Tax ID"
     timeout: 5000
+- takeScreenshot: TC009_ein_incomplete_rejected
 
-- takeScreenshot: TC009_ein_error_shown
-
-# 清除错误的 EIN，输入正确格式
+# 输入完整 9 位
 - tapOn: "EIN / Tax ID"
 - eraseText: 30
-- inputText: "12-3456789"
+- inputText: "123456789"
 - hideKeyboard
 
 - takeScreenshot: TC009_ein_correct_format

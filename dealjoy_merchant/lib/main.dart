@@ -24,6 +24,7 @@ import 'features/menu/providers/menu_provider.dart';
 import 'features/menu/providers/category_provider.dart';
 import 'features/influencer/providers/influencer_provider.dart';
 import 'shared/providers/legal_provider.dart';
+import 'shared/app_version_gate/app_version_gate_host.dart';
 import 'shared/services/account_force_logout_listener.dart';
 
 // 全局禁用 overscroll 拉伸效果（Android 默认有 stretch/glow）
@@ -66,9 +67,10 @@ Future<void> main() async {
   }
 
   runApp(
-    // Riverpod 全局 Provider 容器
     const ProviderScope(
-      child: DealJoyMerchantApp(),
+      child: AppVersionGateHost(
+        child: DealJoyMerchantApp(),
+      ),
     ),
   );
 }

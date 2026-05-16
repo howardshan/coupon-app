@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:go_router/go_router.dart';
@@ -13,6 +14,7 @@ import '../models/merchant_application.dart';
 import '../providers/merchant_auth_provider.dart';
 import '../widgets/category_selector.dart';
 import '../widgets/document_upload_tile.dart';
+import '../widgets/ein_input_formatter.dart';
 import '../../../shared/widgets/legal_document_screen.dart';
 
 // ============================================================
@@ -767,13 +769,15 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
             hint: 'XX-XXXXXXX',
             valueKey: 'register_ein',
             keyboardType: TextInputType.number,
+            inputFormatters: [EinInputFormatter()],
+            helperText: 'Enter 9 digits — the dash is added automatically',
             validator: (v) {
               if (v == null || v.trim().isEmpty) {
                 return 'EIN/Tax ID is required';
               }
               final einReg = RegExp(r'^\d{2}-\d{7}$');
               if (!einReg.hasMatch(v.trim())) {
-                return 'Format must be XX-XXXXXXX (e.g. 12-3456789)';
+                return 'Enter all 9 digits (e.g. 12-3456789)';
               }
               return null;
             },
@@ -1296,7 +1300,8 @@ class _MerchantRegisterPageState extends ConsumerState<MerchantRegisterPage> {
     _contactNameCtrl.text = app.contactName;
     _contactEmailCtrl.text = app.contactEmail;
     _phoneCtrl.text = app.phone;
-    _einCtrl.text = app.ein;
+    final einDigits = app.ein.replaceAll(RegExp(r'\D'), '');
+    _einCtrl.text = EinInputFormatter.formatEinDigits(einDigits);
     _address1Ctrl.text = app.address1;
     _address2Ctrl.text = app.address2;
     _cityCtrl.text = app.city;
@@ -1426,6 +1431,8 @@ class _AppTextField extends StatelessWidget {
     this.validator,
     this.readOnly = false,
     this.valueKey,
+    this.inputFormatters,
+    this.helperText,
   });
 
   final TextEditingController controller;
@@ -1437,6 +1444,8 @@ class _AppTextField extends StatelessWidget {
   final String? Function(String?)? validator;
   final bool readOnly;
   final String? valueKey;
+  final List<TextInputFormatter>? inputFormatters;
+  final String? helperText;
   final int maxLines = 1;
 
   @override
@@ -1448,10 +1457,16 @@ class _AppTextField extends StatelessWidget {
       obscureText: obscureText,
       readOnly: readOnly,
       maxLines: maxLines,
+      inputFormatters: inputFormatters,
       validator: validator,
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
+        helperText: helperText,
+        helperStyle: const TextStyle(
+          fontSize: 12,
+          color: Color(0xFF757575),
+        ),
         suffixIcon: suffixIcon,
         filled: true,
         fillColor: Colors.white,

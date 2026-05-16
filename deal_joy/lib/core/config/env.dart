@@ -13,4 +13,14 @@ class Env {
 
   static String get googleWebClientId =>
       dotenv.env['GOOGLE_WEB_CLIENT_ID'] ?? '';
+
+  /// 强制更新兜底：App Store 产品页（`app_version_gate.ios_store_url` 为空时使用）。
+  static String get storeUrlIosConsumer =>
+      dotenv.env['STORE_URL_IOS_CONSUMER'] ?? dotenv.env['STORE_URL_IOS'] ?? '';
+
+  /// 强制更新兜底：Google Play 应用页（`android_store_url` 为空时使用）。
+  static String get storeUrlAndroidConsumer =>
+      dotenv.env['STORE_URL_ANDROID_CONSUMER'] ??
+      dotenv.env['STORE_URL_ANDROID'] ??
+      '';
 }

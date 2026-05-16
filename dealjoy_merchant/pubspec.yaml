@@ -1,7 +1,7 @@
 name: dealjoy_merchant
 description: "Crunchy Plum Merchant — 商家端 App"
 publish_to: 'none'
-version: 1.1.1+1
+version: 1.1.1+2
 
 environment:
   sdk: ^3.11.0

@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+
 import 'app_colors.dart';
 
+/// 与用户端 [deal_joy/lib/core/theme/app_theme.dart] 对齐；
+/// 含 [FilledButton] 样式，供强制更新页等与 Elevated 主按钮一致。
 class AppTheme {
   static ThemeData get light => ThemeData(
         useMaterial3: true,
